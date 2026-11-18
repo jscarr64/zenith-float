@@ -88,6 +88,31 @@ fn any_nan(args: &[&ExactComplex]) -> bool {
     args.iter().any(|z| z.is_nan())
 }
 
+/// `log1p(z)` at the working width, no correct-rounding loop.
+/// Same parts as `log1p_word`: Re = ½ log1p(x(2+x)+y²), Im = atan2(y, 1+x).
+fn rc_log1p_none(z: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
+    let x = z.re();
+    let y = z.im();
+    let two_x = ExactNum::from_u8(2, p).add(x, p, rm());
+    let t = ExactNum::mul_ref(x, &two_x, p, rm()).add(&y.sqr(p, rm()), p, rm());
+    let re = t.log1p(p, rm(), cc).ldexp(-1, p, rm());
+    let one_x = ExactNum::from_u8(1, p).add(x, p, rm());
+    let im = y.atan2(&one_x, p, rm(), cc);
+    ExactComplex::new(re, im)
+}
+
+/// `atan(z)` at the working width, no correct-rounding loop.
+/// `atan(z)=(i/2) log1p(2z/(i−z))`. Forming `ln((i+z)/(i−z))` first loses
+/// ~p/6 bits when `z` is small (the late R_J increments, where `1+e_m≈1`).
+fn rc_atan_none(z: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
+    let i = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(1, p));
+    let twoz = z.mul(&c_u32(2, p), p, rm());
+    let w = twoz.div(&i.sub(z, p, rm()), p, rm());
+    let ln = rc_log1p_none(&w, p, cc);
+    let half_i = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(1, p).ldexp(-1, p, rm()));
+    half_i.mul(&ln, p, rm())
+}
+
 /// \(R_C(x,y)=R_F(x,y,y)\).
 fn carlson_rc(x0: &ExactComplex, y0: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
     if any_nan(&[x0, y0]) {
@@ -111,7 +136,39 @@ fn carlson_rc(x0: &ExactComplex, y0: &ExactComplex, p: usize, cc: &mut Consts) -
         hp = hp.div(&c_u32(2, p), p, rm());
         return hp.div(&y.sqrt(p, rm(), cc), p, rm());
     }
-    carlson_rf(&x, &y, &y, p, cc)
+    // Proven source: the real `carlson_rc` in ops/special.rs (DLMF 19.2.18–19).
+    //   y>x: atan(√((y−x)/x)) / √(y−x)
+    //   y<x: atanh(√((x−y)/x)) / √(x−y)
+    // The previous path called R_F(x,y,y), a full 3-argument duplication, on
+    // every R_J increment. Complete and incomplete Π then timed out under
+    // ZFS_WALL=120 at dest p=8192 (Harper T4 S2).
+    // Evaluate the elementary form at the working width with RoundingMode::None;
+    // public complex atan/atanh would start a nested correct-rounding Ziv.
+    let both_real_pos =
+        is_real_c(&x) && is_real_c(&y) && x.re().is_positive() && y.re().is_positive();
+    if both_real_pos {
+        match y.re().compare(x.re()) {
+            Some(1) => {
+                let d = ExactNum::sub_ref(y.re(), x.re(), p, rm());
+                let arg = ExactNum::div_ref(&d, x.re(), p, rm()).sqrt(p, rm());
+                let val = arg.atan(p, rm(), cc).div(&d.sqrt(p, rm()), p, rm());
+                ExactComplex::from_real(val, p)
+            }
+            Some(-1) => {
+                let d = ExactNum::sub_ref(x.re(), y.re(), p, rm());
+                let arg = ExactNum::div_ref(&d, x.re(), p, rm()).sqrt(p, rm());
+                let val = arg.atanh(p, rm(), cc).div(&d.sqrt(p, rm()), p, rm());
+                ExactComplex::from_real(val, p)
+            }
+            _ => c_u32(1, p).div(&x.sqrt(p, rm(), cc), p, rm()),
+        }
+    } else {
+        let d = ExactComplex::sub_ref(&y, &x, p, rm());
+        let arg = ExactComplex::sub_ref(&y, &x, p, rm())
+            .div(&x, p, rm())
+            .sqrt(p, rm(), cc);
+        rc_atan_none(&arg, p, cc).div(&d.sqrt(p, rm(), cc), p, rm())
+    }
 }
 
 /// Symmetric \(R_F(x,y,z)\). At most one argument may be \(0\).
@@ -1930,6 +1987,36 @@ mod tests {
             tiny(got.im(), p),
             "lower-side im should be ~0, got {:?}",
             got.im()
+        );
+        Ok(())
+    }
+
+    /// Harper T4 S2: complete Π(1+i, 0) at dest p=8192 timed out under ZFS_WALL=120.
+    /// Each R_J increment called a full R_F for R_C. Closed form: Π(n,0)=π/(2√(1−n)).
+    /// For n=1+i this is π√2 (1+i)/4.
+    #[test]
+    fn zf_elliptic_pi_complete_modest_n_at_p8192_finishes() -> Result<(), crate::Error> {
+        let p = 8192;
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+        let got = n.elliptic_pi_complete(&ExactComplex::zero(p), p, r, &mut cc);
+        assert!(!got.is_nan(), "Π(1+i, 0) is NaN {:?}", got);
+        let q = cc
+            .pi(p, RoundingMode::None)
+            .mul(&ExactNum::from_u8(2, p).sqrt(p, r), p, r)
+            .div(&ExactNum::from_u8(4, p), p, r);
+        assert!(
+            near(got.re(), &q, p, 8),
+            "Π(1+i, 0) re got {:?} want {:?}",
+            got.re(),
+            q
+        );
+        assert!(
+            near(got.im(), &q, p, 8),
+            "Π(1+i, 0) im got {:?} want {:?}",
+            got.im(),
+            q
         );
         Ok(())
     }

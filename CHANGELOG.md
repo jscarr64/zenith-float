@@ -39,6 +39,8 @@ Shape-A site list (internal, no code change): Jeff signed off `tools/ziv_shape_a
 
 ### Changed
 
+Complex Carlson \(R_C(x,y)\) uses the elementary form from the real `carlson_rc` (DLMF 19.2.18–19): \(\operatorname{atan}(\sqrt{(y-x)/x})/\sqrt{y-x}\) or the atanh twin, evaluated at the working width with no nested Ziv (`atan(z)=(i/2)\operatorname{log1p}(2z/(i-z))`). It previously called a full \(R_F(x,y,y)\) on every \(R_J\) increment, so complete and incomplete \(\Pi\) timed out the 120 s harness at dest 8192 (Harper T4 S2). Test `zf_elliptic_pi_complete_modest_n_at_p8192_finishes` (\(\Pi(1+i,0)\) versus \(\pi\sqrt{2}(1+i)/4\)) is green in 11 s.
+
 Complex \(\ln\Gamma(z)\) forms the rising-factorial product \(z(z+1)\cdots(z+n-1)\) and takes one logarithm, the same product the complex \(\Gamma\) path already used, instead of summing a principal log at every integer shift. At dest 8192 the old sum was thousands of \(\ln\) calls and timed out the 120 s harness on modest \(|z|\).
 
 Complex Bessel \(J_\nu,Y_\nu,I_\nu,K_\nu\) at a negative-real argument with a signed-zero imaginary part now follows Arb's principal value (the from-above sheet, Arg = +π), ignoring the sign of that zero (Jeff 2026-11-18 10:37 CT). The previous contract took the C99 lower sheet for Im = −0. Scoped to the four complex Bessel entry points; `ExactComplex::pow` / `ln` are unchanged.
