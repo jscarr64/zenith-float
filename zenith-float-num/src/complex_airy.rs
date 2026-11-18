@@ -8,13 +8,14 @@
 
 use crate::common::util::round_p;
 use crate::complex_special::half_c;
+use crate::complex_special::nan_pair;
 use crate::complex_special::neg_c;
 use crate::complex_special::pi_c;
-use crate::complex_special::series_term_cap;
 use crate::complex_special::term_negligible;
 use crate::complex_special::two_c;
 use crate::complex_special::ziv_complex;
 use crate::Consts;
+use crate::Error;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
@@ -248,11 +249,29 @@ impl ExactComplex {
         let mut tg = self.clone();
         let mut g = self.clone();
         // Terms peak near k ≈ |ξ|/2 and need ≈ e|ξ| more to fall below 2^-p.
-        let cap = series_term_cap(p).max(airy_series_guard(self));
-        for k in 1..=cap {
-            let k3 = ExactComplex::from_real(ExactNum::from_u32((3 * k) as u32, p), p);
-            let k3m1 = ExactComplex::from_real(ExactNum::from_u32((3 * k - 1) as u32, p), p);
-            let k3p1 = ExactComplex::from_real(ExactNum::from_u32((3 * k + 1) as u32, p), p);
+        let mut k: u32 = 1;
+        loop {
+            let Some(k3n) = k.checked_mul(3) else {
+                return (
+                    nan_pair(Error::PrecisionRetryExhausted),
+                    nan_pair(Error::PrecisionRetryExhausted),
+                );
+            };
+            let Some(k3m1n) = k3n.checked_sub(1) else {
+                return (
+                    nan_pair(Error::PrecisionRetryExhausted),
+                    nan_pair(Error::PrecisionRetryExhausted),
+                );
+            };
+            let Some(k3p1n) = k3n.checked_add(1) else {
+                return (
+                    nan_pair(Error::PrecisionRetryExhausted),
+                    nan_pair(Error::PrecisionRetryExhausted),
+                );
+            };
+            let k3 = ExactComplex::from_real(ExactNum::from_u32(k3n, p), p);
+            let k3m1 = ExactComplex::from_real(ExactNum::from_u32(k3m1n, p), p);
+            let k3p1 = ExactComplex::from_real(ExactNum::from_u32(k3p1n, p), p);
             tf = tf.mul(&x3, p, RoundingMode::None).div(
                 &k3.mul(&k3m1, p, RoundingMode::None),
                 p,
@@ -268,6 +287,13 @@ impl ExactComplex {
             if term_negligible(&tf, p) && term_negligible(&tg, p) {
                 break;
             }
+            let Some(next) = k.checked_add(1) else {
+                return (
+                    nan_pair(Error::PrecisionRetryExhausted),
+                    nan_pair(Error::PrecisionRetryExhausted),
+                );
+            };
+            k = next;
         }
         (f, g)
     }
@@ -319,18 +345,18 @@ impl ExactComplex {
         let mut sum = one;
         let mut prev_abs = ExactNum::from_u8(1, p);
         let mut xi_pow = xi.clone();
-        let cap = series_term_cap(p).min(p.saturating_add(8));
-        for k in 1..=cap {
-            let num = ExactNum::from_u32((6 * k - 5) as u32, p).mul(
-                &ExactNum::from_u32((6 * k - 1) as u32, p),
-                p,
-                RoundingMode::None,
-            );
-            let den = ExactNum::from_u32(72, p).mul(
-                &ExactNum::from_u32(k as u32, p),
-                p,
-                RoundingMode::None,
-            );
+        let mut k: u32 = 1;
+        loop {
+            let Some(n1) = k.checked_mul(6).and_then(|v| v.checked_sub(5)) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            let Some(n2) = k.checked_mul(6).and_then(|v| v.checked_sub(1)) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            let num =
+                ExactNum::from_u32(n1, p).mul(&ExactNum::from_u32(n2, p), p, RoundingMode::None);
+            let den =
+                ExactNum::from_u32(72, p).mul(&ExactNum::from_u32(k, p), p, RoundingMode::None);
             let ratio = ExactComplex::from_real(num.div(&den, p, RoundingMode::None), p);
             u = u.mul(&ratio, p, RoundingMode::None);
             let mut t = u.div(&xi_pow, p, RoundingMode::None);
@@ -347,6 +373,10 @@ impl ExactComplex {
             }
             prev_abs = ta;
             xi_pow = xi_pow.mul(xi, p, RoundingMode::None);
+            let Some(next) = k.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            k = next;
         }
         sum
     }

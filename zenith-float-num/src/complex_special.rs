@@ -200,6 +200,7 @@ where
     Ok(())
 }
 
+#[allow(dead_code)]
 pub(crate) fn series_term_cap(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE)
 }
@@ -640,10 +641,17 @@ impl ExactComplex {
         let mut upow = u.clone();
         let mut nfact = ExactNum::from_u8(1, p);
         let mut sum = u.clone();
-        for n in 1..=series_term_cap(p) {
-            nfact = nfact.mul(&ExactNum::from_u32(n as u32, p), p, RoundingMode::None);
+        let mut n: u32 = 1;
+        loop {
+            nfact = nfact.mul(&ExactNum::from_u32(n, p), p, RoundingMode::None);
             upow = upow.mul(&u2, p, RoundingMode::None);
-            let two_n_1 = ExactNum::from_u32((2 * n + 1) as u32, p);
+            let two_n_1 = n
+                .checked_mul(2)
+                .and_then(|v| v.checked_add(1))
+                .map(|v| ExactNum::from_u32(v, p));
+            let Some(two_n_1) = two_n_1 else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
             let den = two_n_1.mul(&nfact, p, RoundingMode::None);
             let mut t = upow.div(&ExactComplex::from_real(den, p), p, RoundingMode::None);
             if n % 2 == 1 {
@@ -653,6 +661,10 @@ impl ExactComplex {
             if term_negligible(&t, p) {
                 break;
             }
+            let Some(next) = n.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            n = next;
         }
         ExactComplex::from_real(scale, p).mul(&sum, dest_p, RoundingMode::None)
     }
@@ -664,8 +676,13 @@ impl ExactComplex {
         let mut term = ExactComplex::one(p);
         let mut s = ExactComplex::one(p);
         let mut prev_e = Exponent::MIN;
-        for m in 1..=series_term_cap(p) {
-            let odd = ExactComplex::from_real(ExactNum::from_u32((2 * m - 1) as u32, p), p);
+        let mut m: u32 = 1;
+        loop {
+            let odd_n = m.checked_mul(2).and_then(|v| v.checked_sub(1));
+            let Some(odd_n) = odd_n else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            let odd = ExactComplex::from_real(ExactNum::from_u32(odd_n, p), p);
             term = term
                 .mul(&odd, p, RoundingMode::None)
                 .div(&two_z2, p, RoundingMode::None);
@@ -681,6 +698,10 @@ impl ExactComplex {
                 break;
             }
             prev_e = e;
+            let Some(next) = m.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            m = next;
         }
         let sqrt_pi =
             ExactComplex::from_real(cc.pi(p, RoundingMode::None).sqrt(p, RoundingMode::None), p);
@@ -828,8 +849,8 @@ impl ExactComplex {
         let two_u2 = u_abs.mul(u_abs).mul_pow2(1);
         let mut term = ub.clone();
         let mut sum = ub;
-        let cap = series_term_cap(p).saturating_add(guard.saturating_mul(3));
-        for n in 1..=cap {
+        let mut n: usize = 1;
+        loop {
             let n32 = u32::try_from(n).ok()?;
             let k2 = n32.checked_mul(2)?.checked_add(1)?;
             term = term
@@ -847,8 +868,8 @@ impl ExactComplex {
             if small && ratio_ok {
                 return sum.widen(am).mul_real(&scale, p);
             }
+            n = n.checked_add(1)?;
         }
-        None
     }
 
     /// \(w(z)\sim i/(z\sqrt\pi)\sum_m(2m-1)!!/(2z^2)^m\) for \(\mathrm{Im}\,z > 0\), `z` exact,
@@ -874,8 +895,9 @@ impl ExactComplex {
         let mut term = CB::int(1);
         let mut s = CB::int(1);
         let mut prev_e: Option<Exponent> = None;
-        for m in 1..=series_term_cap(q) {
-            let odd = u32::try_from(2 * m - 1).ok()?;
+        let mut m: usize = 1;
+        loop {
+            let odd = u32::try_from(m.checked_mul(2)?.checked_sub(1)?).ok()?;
             term = term
                 .mul_real(&RB::exact(ExactNum::from_u32(odd, WORD_BIT_SIZE)), q)?
                 .div(&two_z2, q)?;
@@ -895,8 +917,8 @@ impl ExactComplex {
                 return None;
             }
             prev_e = Some(e);
+            m = m.checked_add(1)?;
         }
-        None
     }
 
     /// Upper bound of the DLMF 7.12(i) remainder factor for `z` (`Im z > 0`): 1 when
@@ -1017,7 +1039,6 @@ impl ExactComplex {
         };
         let mut zpow = self.clone();
         let mut prev_e = Exponent::MIN;
-        let mut done = false;
         for (k, b) in bs.iter().enumerate() {
             let k = k + 1;
             let two_k = ExactNum::from_u32((2 * k) as u32, p);
@@ -1031,7 +1052,6 @@ impl ExactComplex {
                 .exponent()
                 .unwrap_or(Exponent::MIN);
             if term_negligible(&term, p) {
-                done = true;
                 break;
             }
             if k > 2 && e > prev_e {
@@ -1041,9 +1061,6 @@ impl ExactComplex {
             zpow = zpow
                 .mul(self, p, RoundingMode::None)
                 .mul(self, p, RoundingMode::None);
-        }
-        if !done {
-            return nan_pair(Error::PrecisionRetryExhausted);
         }
         s
     }
@@ -1154,7 +1171,6 @@ impl ExactComplex {
             Err(e) => return nan_pair(e),
         };
         let mut prev_e = Exponent::MIN;
-        let mut done = false;
         for (k, b) in bs.iter().enumerate() {
             let k = k + 1;
             zp = zp.mul(&z2, p, RoundingMode::None);
@@ -1167,16 +1183,12 @@ impl ExactComplex {
                 .exponent()
                 .unwrap_or(Exponent::MIN);
             if term_negligible(&term, p) {
-                done = true;
                 break;
             }
             if k > 2 && e > prev_e {
                 break;
             }
             prev_e = e;
-        }
-        if !done {
-            return nan_pair(Error::PrecisionRetryExhausted);
         }
         s
     }
@@ -1217,20 +1229,23 @@ mod tests {
         let mut xpow = mk_x();
         let mut nfact = ExactNum::from_u8(1, p);
         let mut sum = mk_x();
-        for n in 1..=series_term_cap(p) {
-            nfact = nfact.mul(&ExactNum::from_u32(n as u32, p), p, RoundingMode::None);
+        let mut n: u32 = 1;
+        loop {
+            nfact = nfact.mul(&ExactNum::from_u32(n, p), p, RoundingMode::None);
             xpow = xpow.mul(&x2, p, RoundingMode::None);
-            let den = ExactNum::mul_ref(
-                &nfact,
-                &ExactNum::from_u32((2 * n + 1) as u32, p),
-                p,
-                RoundingMode::None,
-            );
+            let Some(odd) = n.checked_mul(2).and_then(|v| v.checked_add(1)) else {
+                break;
+            };
+            let den = ExactNum::mul_ref(&nfact, &ExactNum::from_u32(odd, p), p, RoundingMode::None);
             let t = ExactNum::div_ref(&xpow, &den, p, RoundingMode::None);
             sum = sum.add(&t, p, RoundingMode::None);
             if t.is_zero() || t.exponent().is_some_and(|e| e + (p as i64) < 0) {
                 break;
             }
+            let Some(next) = n.checked_add(1) else {
+                break;
+            };
+            n = next;
         }
         scale.mul(&sum, p, RoundingMode::None)
     }

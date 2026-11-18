@@ -230,7 +230,6 @@ impl ExactNumNumber {
         let mut s = Self::from_word(1, p)?;
         let mut term = Self::from_word(1, p)?;
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for k in 1..=(p + 8) {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
             let ratio = odd.div(&two_x2, p, RoundingMode::None)?;
@@ -242,13 +241,9 @@ impl ExactNumNumber {
             term.set_sign(if k % 2 == 1 { Sign::Neg } else { Sign::Pos });
             s = s.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
-                done = true;
                 break;
             }
             term.set_sign(Sign::Pos);
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         pre.mul(&s, p, RoundingMode::None)
     }
@@ -940,7 +935,6 @@ impl ExactNumNumber {
 
         let mut zpow = self.clone()?; // z^{1} for k=1 term z^{2k-1}
                                       // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for (i, b) in bern.iter().enumerate() {
             let k = i + 1;
             let two_k = Self::from_word((2 * k) as Word, p)?;
@@ -952,14 +946,10 @@ impl ExactNumNumber {
             let term = b.div(&den, p, RoundingMode::None)?;
             s = s.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
-                done = true;
                 break;
             }
             zpow = zpow.mul(self, p, RoundingMode::None)?;
             zpow = zpow.mul(self, p, RoundingMode::None)?;
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         Ok(s)
     }
@@ -1572,7 +1562,6 @@ impl ExactNumNumber {
         let mut s = term.clone()?;
         let mut prev_e = Exponent::MAX;
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for k in 1..=(p + 8) {
             term = term.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
             term = term.div(self, p, RoundingMode::None)?;
@@ -1583,12 +1572,8 @@ impl ExactNumNumber {
             prev_e = e;
             s = s.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || e + (p as i64) < 0 {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         pre.mul(&s, p, RoundingMode::None)
     }
@@ -1657,10 +1642,21 @@ impl ExactNumNumber {
         let mut t = self.clone()?;
         let mut sum = t.clone()?;
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
-        for n in 1..=series_n_max(p, self.exponent()) {
-            let two_n = Self::from_word((2 * n) as Word, p)?;
-            let two_n_1 = Self::from_word((2 * n + 1) as Word, p)?;
+        let mut n: usize = 1;
+        loop {
+            let two_n = Self::from_word(
+                n.checked_mul(2)
+                    .and_then(|v| Word::try_from(v).ok())
+                    .ok_or(Error::PrecisionRetryExhausted)?,
+                p,
+            )?;
+            let two_n_1 = Self::from_word(
+                n.checked_mul(2)
+                    .and_then(|v| v.checked_add(1))
+                    .and_then(|v| Word::try_from(v).ok())
+                    .ok_or(Error::PrecisionRetryExhausted)?,
+                p,
+            )?;
             t = t.mul(&x2, p, RoundingMode::None)?;
             t = t.div(&two_n, p, RoundingMode::None)?;
             t = t.div(&two_n_1, p, RoundingMode::None)?;
@@ -1670,12 +1666,9 @@ impl ExactNumNumber {
             }
             sum = sum.add(&piece, p, RoundingMode::None)?;
             if series_negligible(&piece, &sum, p) {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
+            n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
         Ok(sum)
     }
@@ -1755,10 +1748,21 @@ impl ExactNumNumber {
         u.set_sign(Sign::Neg);
         let mut sum = u.div(&two, p, RoundingMode::None)?;
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
-        for n in 2..=series_n_max(p, self.exponent()) {
-            let a = Self::from_word((2 * n - 1) as Word, p)?;
-            let b = Self::from_word((2 * n) as Word, p)?;
+        let mut n: usize = 2;
+        loop {
+            let a = Self::from_word(
+                n.checked_mul(2)
+                    .and_then(|v| v.checked_sub(1))
+                    .and_then(|v| Word::try_from(v).ok())
+                    .ok_or(Error::PrecisionRetryExhausted)?,
+                p,
+            )?;
+            let b = Self::from_word(
+                n.checked_mul(2)
+                    .and_then(|v| Word::try_from(v).ok())
+                    .ok_or(Error::PrecisionRetryExhausted)?,
+                p,
+            )?;
             u = u.mul(&x2, p, RoundingMode::None)?;
             u = u.div(&a, p, RoundingMode::None)?;
             u = u.div(&b, p, RoundingMode::None)?;
@@ -1766,12 +1770,9 @@ impl ExactNumNumber {
             let piece = u.div(&b, p, RoundingMode::None)?;
             sum = sum.add(&piece, p, RoundingMode::None)?;
             if piece.is_zero() || piece.exponent() + (p as i64) < 0 {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
+            n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
         g.add(&lnx, p, RoundingMode::None)?
             .add(&sum, p, RoundingMode::None)
@@ -1798,7 +1799,6 @@ impl ExactNumNumber {
         let mut g = g_term.clone()?;
         let mut prev_e = f_term.exponent();
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for k in 0..=(p + 8) {
             let a = Self::from_word((2 * k + 1) as Word, p)?;
             let b = Self::from_word((2 * k + 2) as Word, p)?;
@@ -1821,12 +1821,8 @@ impl ExactNumNumber {
             f = f.add(&f_term, p, RoundingMode::None)?;
             g = g.add(&g_term, p, RoundingMode::None)?;
             if f_term.is_zero() || e + (p as i64) < 0 {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         Ok((f, g))
     }
@@ -1993,7 +1989,6 @@ impl ExactNumNumber {
         let mut g_sum = g_term.clone()?;
         let mut prev_e = f_term.exponent();
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for n in 0..=(p + 8) {
             let a = Self::from_word((4 * n + 1) as Word, p)?;
             let b = Self::from_word((4 * n + 3) as Word, p)?;
@@ -2016,12 +2011,8 @@ impl ExactNumNumber {
             f_sum = f_sum.add(&f_term, p, RoundingMode::None)?;
             g_sum = g_sum.add(&g_term, p, RoundingMode::None)?;
             if f_term.is_zero() || e + (p as i64) < 0 {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         Ok((
             inv_pix.mul(&f_sum, p, RoundingMode::None)?,
@@ -2043,10 +2034,16 @@ impl ExactNumNumber {
         sum.set_sign(Sign::Pos);
         let mut first = true;
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
-        for n in 0..=series_n_max(p, self.exponent()) {
-            let den_i = if sine { 4 * n + 3 } else { 4 * n + 1 };
-            let den = Self::from_word(den_i as Word, p)?;
+        let mut n: usize = 0;
+        loop {
+            let den_i = if sine {
+                n.checked_mul(4).and_then(|v| v.checked_add(3))
+            } else {
+                n.checked_mul(4).and_then(|v| v.checked_add(1))
+            }
+            .and_then(|v| Word::try_from(v).ok())
+            .ok_or(Error::PrecisionRetryExhausted)?;
+            let den = Self::from_word(den_i, p)?;
             let mut piece = pi2_pow.mul(&pow_x, p, RoundingMode::None)?;
             piece = piece.div(&fact, p, RoundingMode::None)?;
             piece = piece.div(&den, p, RoundingMode::None)?;
@@ -2060,7 +2057,6 @@ impl ExactNumNumber {
                 sum = sum.add(&piece, p, RoundingMode::None)?;
             }
             if series_negligible(&piece, &sum, p) {
-                done = true;
                 break;
             }
             let np1 = n + 1;
@@ -2094,9 +2090,7 @@ impl ExactNumNumber {
                 .mul(&pi2, p, RoundingMode::None)?;
             pow_x = pow_x.mul(&x4, p, RoundingMode::None)?;
             sign_pos = !sign_pos;
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
+            n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
         Ok(sum)
     }
@@ -2246,7 +2240,6 @@ impl ExactNumNumber {
         let mut num = pow;
 
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for k in 1..=(p + n + 8) {
             kfact = kfact.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
             knfact = knfact.mul(&Self::from_word((k + n) as Word, p)?, p, RoundingMode::None)?;
@@ -2258,12 +2251,8 @@ impl ExactNumNumber {
             }
             sum = sum.add(&t, p, RoundingMode::None)?;
             if series_negligible(&t, &sum, p) {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         Ok(sum)
     }
@@ -2621,18 +2610,15 @@ impl ExactNumNumber {
         let mut peak = if term.is_zero() { Exponent::MIN } else { term.exponent() };
         let mut terms = 1usize;
         let hh = half.mul(&half, p, RoundingMode::None)?;
-        // `series_n_max` is O(p) once the exponent is ≥ 16, which stops I_ν before the
-        // peak at k ≈ |x|/2 (I_1(20000) never reached k ≈ 10000). J/Y keep the old cap:
-        // past the Hankel validity region they take Hankel instead of this series.
-        let mut nmax = series_n_max(p, self.exponent());
-        if !alternating && self.exponent() > 0 {
-            let e = (self.exponent() as u32).min(20);
-            nmax = nmax.saturating_add(1usize << e).min(u32::MAX as usize);
-        }
-        // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
-        for k in 1..=nmax {
-            let kk = Self::from_word(k as Word, p)?;
+        // Terms grow until k ≈ |x|/2 and then decay. Run until the tail is
+        // below 2^{-p}; never use a partial sum (the old series_n_max, even
+        // with a 2^20 bump, stopped I_ν short of the peak for large |x|).
+        let mut k: usize = 1;
+        loop {
+            let kk = Self::from_word(
+                Word::try_from(k).map_err(|_| Error::PrecisionRetryExhausted)?,
+                p,
+            )?;
             let den = kk
                 .add(nu, p, RoundingMode::None)?
                 .mul(&kk, p, RoundingMode::None)?;
@@ -2648,12 +2634,9 @@ impl ExactNumNumber {
                 peak = peak.max(term.exponent());
             }
             if series_negligible(&term, &sum, p) {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
+            k = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
         Ok((sum, peak, terms))
     }
@@ -2751,7 +2734,6 @@ impl ExactNumNumber {
         let mut prev_e = Exponent::MAX;
         let k_max = (p + 64).min((Word::MAX as usize - 1) / 2);
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for k in 1..=k_max {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
             let odd2 = odd.mul(&odd, p, RoundingMode::None)?;
@@ -2772,16 +2754,12 @@ impl ExactNumNumber {
             }
             let e = term.exponent();
             if term.is_zero() || e + (p as i64) < 0 {
-                done = true;
                 break;
             }
             if k > 2 && e > prev_e {
                 break;
             }
             prev_e = e;
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         Ok((psum, qsum))
     }
@@ -2856,9 +2834,16 @@ impl ExactNumNumber {
         let mut zk = Self::from_word(1, p)?;
         let mut sum = Self::from_word(0, p)?;
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
-        for m in 1..=series_n_max(p, self.exponent()) {
-            fact = fact.mul(&Self::from_word(m as Word, p)?, p, RoundingMode::None)?;
+        let mut m: usize = 1;
+        loop {
+            fact = fact.mul(
+                &Self::from_word(
+                    Word::try_from(m).map_err(|_| Error::PrecisionRetryExhausted)?,
+                    p,
+                )?,
+                p,
+                RoundingMode::None,
+            )?;
             zk = zk.mul(&z, p, RoundingMode::None)?;
             let h = harmonic_u(m, p)?;
             let mut term = h.div(
@@ -2867,17 +2852,14 @@ impl ExactNumNumber {
                 RoundingMode::None,
             )?;
             term = term.mul(&zk, p, RoundingMode::None)?;
-            if m % 2 == 0 {
+            if m.is_multiple_of(2) {
                 term = term.neg()?;
             }
             sum = sum.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
+            m = m.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
         two_pi.mul(
             &prefix
@@ -2902,8 +2884,8 @@ impl ExactNumNumber {
         let mut zk = Self::from_word(1, p)?;
         let mut sum = Self::from_word(0, p)?;
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
-        for k in 0..=series_n_max(p, self.exponent()) {
+        let mut k: usize = 0;
+        loop {
             let hk = harmonic_u(k, p)?;
             let hkp1 = hk.add(
                 &Self::from_word((k + 1) as Word, p)?.reciprocal(p, RoundingMode::None)?,
@@ -2923,20 +2905,28 @@ impl ExactNumNumber {
             }
             sum = sum.add(&term, p, RoundingMode::None)?;
             if (term.is_zero() || term.exponent() + (p as i64) < 0) && k > 0 {
-                done = true;
                 break;
             }
-            let kp = k + 1;
-            kfact = kfact.mul(&Self::from_word(kp as Word, p)?, p, RoundingMode::None)?;
+            let kp = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
+            kfact = kfact.mul(
+                &Self::from_word(
+                    Word::try_from(kp).map_err(|_| Error::PrecisionRetryExhausted)?,
+                    p,
+                )?,
+                p,
+                RoundingMode::None,
+            )?;
             kp1fact = kp1fact.mul(
-                &Self::from_word((kp + 1) as Word, p)?,
+                &Self::from_word(
+                    Word::try_from(kp.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?)
+                        .map_err(|_| Error::PrecisionRetryExhausted)?,
+                    p,
+                )?,
                 p,
                 RoundingMode::None,
             )?;
             zk = zk.mul(&z, p, RoundingMode::None)?;
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
+            k = kp;
         }
         let a = two_pi.mul(
             &prefix.mul(&j1, p, RoundingMode::None)?,
@@ -3015,13 +3005,14 @@ impl ExactNumNumber {
         let mut psi = one.digamma_at(p, cc)?;
         let mut sum = psi.clone()?;
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
-        for k in 1..=series_n_max(p, self.exponent()) {
-            fact = fact.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
+        let mut k: usize = 1;
+        loop {
+            let kw = Word::try_from(k).map_err(|_| Error::PrecisionRetryExhausted)?;
+            fact = fact.mul(&Self::from_word(kw, p)?, p, RoundingMode::None)?;
             zk = zk.mul(&z, p, RoundingMode::None)?;
             // ψ(k+1) = ψ(k) + 1/k (a fresh digamma per term made K_n very slow).
             psi = psi.add(
-                &Self::from_word(k as Word, p)?.reciprocal(p, RoundingMode::None)?,
+                &Self::from_word(kw, p)?.reciprocal(p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
             )?;
@@ -3034,12 +3025,9 @@ impl ExactNumNumber {
                 .mul(&zk, p, RoundingMode::None)?;
             sum = sum.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
+            k = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
         half.ln(p, RoundingMode::None, cc)?
             .neg()?
@@ -3111,7 +3099,6 @@ impl ExactNumNumber {
         let mut prev_e = Exponent::MAX;
         // The smallest term is near k ≈ 2x; stop there or at 2^-p.
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for k in 1..=(p + 64) {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
             let factor = four_nu2
@@ -3132,13 +3119,9 @@ impl ExactNumNumber {
             }
             sum = sum.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || e + (p as i64) < 0 {
-                done = true;
                 break;
             }
             prev_e = e;
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         let pi = cc.pi_num(p, RoundingMode::None)?;
         let two = Self::from_word(2, p)?;
@@ -6018,6 +6001,7 @@ fn extra_bits_for_degree(n: u32) -> usize {
     round_p(n as usize)
 }
 
+#[allow(dead_code)]
 pub(crate) fn series_n_max(p: usize, exp: Exponent) -> usize {
     let mag = if exp <= 0 {
         0
@@ -8507,6 +8491,36 @@ mod tests {
         let x = from_usize_p(20_000, 64)?;
         let g = bessel_cancel_bits(&x, 3, 2)?;
         assert!(g > (1 << 14), "guard for |x|=20000 was {g}, still capped?");
+        Ok(())
+    }
+
+    /// `series_n_max` is O(p) once the exponent is ≥ 16, and even at exponent 14
+    /// it is only p+32+2^12. For I_1(10000) the peak is at k ≈ 5000, past that
+    /// old limit, so a cap there returns PrecisionRetryExhausted (or, before
+    /// the `!done` check, a truncated sum). The series must run past the peak
+    /// until the tail is below 2^{-p}.
+    #[test]
+    fn test_bessel_i_series_past_old_n_max() -> Result<(), crate::Error> {
+        let p = 64;
+        let mut cc = Consts::new()?;
+        let rm = RoundingMode::ToEven;
+        let x = ExactNumNumber::from_word(10_000, p)?;
+        let nmax = series_n_max(p, x.exponent());
+        assert!(
+            nmax < 5000,
+            "series_n_max({p}, exp={}) = {nmax}, no longer short of the I-peak?",
+            x.exponent()
+        );
+        let one = ExactNumNumber::from_word(1, p)?;
+        let got = x.bessel_i(&one, p, rm, &mut cc)?;
+        let gold = ExactNumNumber::parse(
+            "3.51328038895374889521677916179094689012e+4340",
+            crate::defs::Radix::Dec,
+            p,
+            rm,
+            &mut cc,
+        )?;
+        bits_agree(&got, &gold, p, 56, "I_1(10000)")?;
         Ok(())
     }
 

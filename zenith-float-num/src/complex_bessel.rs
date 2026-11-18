@@ -5,7 +5,6 @@ use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
 use crate::complex_special::neg_c;
 use crate::complex_special::pi_c;
-use crate::complex_special::series_term_cap;
 use crate::complex_special::term_negligible;
 use crate::complex_special::two_c;
 use crate::complex_special::ziv_complex;
@@ -129,12 +128,6 @@ fn i_series_guard_bits(z: &ExactComplex, nu: &ExactComplex) -> usize {
 /// Enough terms to pass the peak near \(k\approx\lvert z\rvert/2\) and the Gaussian tail.
 /// The cap must not track the guard: a `1.5·|z|` guard made this accidentally large, and a
 /// small guard must still be allowed to run \(O(|z|)\) terms.
-fn i_series_term_cap(z: &ExactComplex, dest_p: usize) -> usize {
-    series_term_cap(dest_p)
-        .saturating_add(abs_bound(z).saturating_mul(2))
-        .min(u32::MAX as usize)
-}
-
 fn term_mag_exp(t: &ExactComplex) -> Option<Exponent> {
     let at = t.abs(64, RoundingMode::None);
     if at.is_zero() {
@@ -729,10 +722,9 @@ impl ExactComplex {
     fn bessel_i_series(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         let positive = i_terms_all_positive(self, nu);
         let mut guard = i_series_guard_bits(self, nu);
-        let cap = i_series_term_cap(self, dest_p);
         if positive {
             return self
-                .sum_bessel_i_series(nu, work_p.saturating_add(guard), dest_p, cap, cc)
+                .sum_bessel_i_series(nu, work_p.saturating_add(guard), dest_p, cc)
                 .0;
         }
         let guard_limit = guard
@@ -741,7 +733,7 @@ impl ExactComplex {
             .saturating_add(64);
         loop {
             let (sum, peak_exp, sum_exp) =
-                self.sum_bessel_i_series(nu, work_p.saturating_add(guard), dest_p, cap, cc);
+                self.sum_bessel_i_series(nu, work_p.saturating_add(guard), dest_p, cc);
             if sum.is_nan() || guard >= guard_limit {
                 return sum;
             }
@@ -769,7 +761,6 @@ impl ExactComplex {
         nu: &Self,
         wp: usize,
         dest_p: usize,
-        term_cap: usize,
         cc: &mut Consts,
     ) -> (Self, Option<Exponent>, Option<Exponent>) {
         let half = self.mul(&half_c(wp), wp, RoundingMode::None);
@@ -782,9 +773,10 @@ impl ExactComplex {
         let mut sum = term.clone();
         let mut peak_exp = term_mag_exp(&term);
         let hh = half.mul(&half, wp, RoundingMode::None);
-        for k in 1..=term_cap {
-            let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, wp), wp);
-            let den = ExactComplex::from_real(ExactNum::from_u32(k as u32, wp), wp)
+        let mut k: u32 = 1;
+        loop {
+            let kk = ExactComplex::from_real(ExactNum::from_u32(k, wp), wp);
+            let den = ExactComplex::from_real(ExactNum::from_u32(k, wp), wp)
                 .add(nu, wp, RoundingMode::None)
                 .mul(&kk, wp, RoundingMode::None);
             term = term
@@ -798,9 +790,11 @@ impl ExactComplex {
                 let sum_exp = term_mag_exp(&sum);
                 return (sum, peak_exp, sum_exp);
             }
+            let Some(next) = k.checked_add(1) else {
+                return (nan_pair(Error::PrecisionRetryExhausted), None, None);
+            };
+            k = next;
         }
-        // Cap reached with terms still above 2^-dest_p of the sum: refuse, never truncate.
-        (nan_pair(Error::PrecisionRetryExhausted), None, None)
     }
 
     fn bessel_k_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -1002,10 +996,9 @@ impl ExactComplex {
             return None;
         }
         let mut sum = psi.clone();
-        let cap = i_series_term_cap(self, p);
-        let mut done = false;
-        for k in 1..=cap {
-            let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
+        let mut k: u32 = 1;
+        loop {
+            let kk = ExactComplex::from_real(ExactNum::from_u32(k, p), p);
             fact = fact.mul(&kk, p, RoundingMode::None);
             zk = zk.mul(&z, p, RoundingMode::None);
             let rec = ExactComplex::one(p).div(&kk, p, RoundingMode::None);
@@ -1019,11 +1012,11 @@ impl ExactComplex {
                 .mul(&zk, p, RoundingMode::None);
             sum = sum.add(&term, p, RoundingMode::None);
             if term_negligible(&term, p) {
-                done = true;
                 break;
             }
+            k = k.checked_add(1)?;
         }
-        if !done || sum.is_nan() {
+        if sum.is_nan() {
             return None;
         }
         let v = half
@@ -1123,10 +1116,10 @@ impl ExactComplex {
         let hh = half.mul(&half, p, RoundingMode::None);
         // The terms peak near k ≈ |z|/2 and fall as a Gaussian after it: allow 2·bound(|z|)
         // past the precision cap, and refuse (never truncate) if that is not enough.
-        let cap = i_series_term_cap(self, p);
-        for k in 1..=cap {
-            let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
-            let den = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p)
+        let mut k: u32 = 1;
+        loop {
+            let kk = ExactComplex::from_real(ExactNum::from_u32(k, p), p);
+            let den = ExactComplex::from_real(ExactNum::from_u32(k, p), p)
                 .add(nu, p, RoundingMode::None)
                 .mul(&kk, p, RoundingMode::None);
             term = term
@@ -1137,8 +1130,11 @@ impl ExactComplex {
             if sum.is_nan() || term_small_rel(&term, &sum, p) {
                 return sum;
             }
+            let Some(next) = k.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            k = next;
         }
-        nan_pair(Error::PrecisionRetryExhausted)
     }
 
     fn bessel_y_nonint(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -1207,24 +1203,25 @@ impl ExactComplex {
         let mut fact = ExactNum::from_u8(1, work_p);
         let mut zk = ExactComplex::one(work_p);
         let mut sum = ExactComplex::zero(work_p);
-        for m in 1..=series_term_cap(work_p) {
-            fact = fact.mul(
-                &ExactNum::from_u32(m as u32, work_p),
-                work_p,
-                RoundingMode::None,
-            );
+        let mut m: u32 = 1;
+        loop {
+            fact = fact.mul(&ExactNum::from_u32(m, work_p), work_p, RoundingMode::None);
             zk = zk.mul(&z2, work_p, RoundingMode::None);
-            let h = harmonic(m, work_p);
+            let h = harmonic(m as usize, work_p);
             let den = fact.sqr(work_p, RoundingMode::None);
             let mut term = ExactComplex::from_real(h.div(&den, work_p, RoundingMode::None), work_p)
                 .mul(&zk, work_p, RoundingMode::None);
-            if m % 2 == 0 {
+            if m.is_multiple_of(2) {
                 term = neg_c(term);
             }
             sum = sum.add(&term, work_p, RoundingMode::None);
             if term_negligible(&term, work_p) {
                 break;
             }
+            let Some(next) = m.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            m = next;
         }
         two_pi.mul(
             &prefix
@@ -1251,10 +1248,11 @@ impl ExactComplex {
         let mut kp1fact = ExactNum::from_u8(1, work_p);
         let mut zk = ExactComplex::one(work_p);
         let mut sum = ExactComplex::zero(work_p);
-        for k in 0..=series_term_cap(work_p) {
-            let hk = harmonic(k, work_p);
+        let mut k: u32 = 0;
+        loop {
+            let hk = harmonic(k as usize, work_p);
             let rec = ExactNum::from_u8(1, work_p).div(
-                &ExactNum::from_u32((k + 1) as u32, work_p),
+                &ExactNum::from_u32(k.saturating_add(1), work_p),
                 work_p,
                 RoundingMode::None,
             );
@@ -1273,18 +1271,16 @@ impl ExactComplex {
             if k > 0 && term_negligible(&term, work_p) {
                 break;
             }
-            let kp = k + 1;
-            kfact = kfact.mul(
-                &ExactNum::from_u32(kp as u32, work_p),
-                work_p,
-                RoundingMode::None,
-            );
-            kp1fact = kp1fact.mul(
-                &ExactNum::from_u32((kp + 1) as u32, work_p),
-                work_p,
-                RoundingMode::None,
-            );
+            let Some(kp) = k.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            kfact = kfact.mul(&ExactNum::from_u32(kp, work_p), work_p, RoundingMode::None);
+            let Some(kp1) = kp.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            kp1fact = kp1fact.mul(&ExactNum::from_u32(kp1, work_p), work_p, RoundingMode::None);
             zk = zk.mul(&z2, work_p, RoundingMode::None);
+            k = kp;
         }
         let a = two_pi.mul(
             &prefix.mul(&j1, work_p, RoundingMode::None),

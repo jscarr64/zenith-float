@@ -7,7 +7,6 @@ use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
 use crate::complex_special::neg_c;
 use crate::complex_special::pi_c;
-use crate::complex_special::series_term_cap;
 use crate::complex_special::term_negligible;
 use crate::complex_special::two_c;
 use crate::complex_special::ziv_complex;
@@ -308,16 +307,10 @@ impl ExactComplex {
         let lnz = self.ln(p, RoundingMode::None, cc);
         let mut term = self.clone();
         let mut sum = term.clone();
-        // Terms peak near n = |z|; allow e·|z| terms beyond the precision-based cap.
-        let az_bound = self
-            .abs(64, RoundingMode::None)
-            .exponent()
-            .map_or(
-                0usize,
-                |e| if e > 0 { 3usize << (e as u32).min(40) } else { 0 },
-            );
-        for n in 2..=series_term_cap(p).max(az_bound.saturating_add(WORD_BIT_SIZE)) {
-            let nw = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p);
+        // Terms peak near n = |z| and then decay; run until the tail is below 2^{-p}.
+        let mut n: u32 = 2;
+        loop {
+            let nw = ExactComplex::from_real(ExactNum::from_u32(n, p), p);
             term = term
                 .mul(self, p, RoundingMode::None)
                 .div(&nw, p, RoundingMode::None);
@@ -326,6 +319,10 @@ impl ExactComplex {
             if term_negligible(&piece, p) {
                 break;
             }
+            let Some(next) = n.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            n = next;
         }
         g.add(&lnz, p, RoundingMode::None)
             .add(&sum, p, RoundingMode::None)
@@ -339,8 +336,9 @@ impl ExactComplex {
         let mut term = ExactComplex::one(p);
         let mut s = term.clone();
         let mut prev_e = Exponent::MIN;
-        for k in 1..=series_term_cap(p) {
-            let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
+        let mut k: u32 = 1;
+        loop {
+            let kk = ExactComplex::from_real(ExactNum::from_u32(k, p), p);
             term = term
                 .mul(&kk, p, RoundingMode::None)
                 .div(self, p, RoundingMode::None);
@@ -356,6 +354,10 @@ impl ExactComplex {
             if term_negligible(&term, p) {
                 break;
             }
+            let Some(next) = k.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            k = next;
         }
         pre.mul(&s, p, RoundingMode::None)
     }
