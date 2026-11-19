@@ -44,6 +44,28 @@ fn is_c_one(z: &ExactComplex, _p: usize) -> bool {
     z.im().is_zero() && z.re().compare(&ExactNum::from_u8(1, WORD_BIT_SIZE)) == Some(0)
 }
 
+/// Compact limit of complete Π(n, 1). Re(1/(1−n)) has the sign of
+/// (1 − Re n); Im has the sign of Im n. A vanishing coefficient is a
+/// compact zero, not an infinity (Re n = 1, Im n ≠ 0 → 0 + i∞ sign(Im n);
+/// real n → ∞ sign(1−n)+0i).
+fn pi_complete_m1_infinity(n: &ExactComplex) -> ExactComplex {
+    let one = ExactNum::from_u8(1, WORD_BIT_SIZE);
+    let re = match one.compare(n.re()) {
+        Some(1) => crate::INF_POS,
+        Some(-1) => crate::INF_NEG,
+        Some(0) => crate::complex::compact_signed_zero(false),
+        _ => return nan_pair(Error::InvalidArgument),
+    };
+    let im = if n.im().is_zero() {
+        crate::complex::compact_signed_zero(false)
+    } else if n.im().is_negative() {
+        crate::INF_NEG
+    } else {
+        crate::INF_POS
+    };
+    ExactComplex::new(re, im)
+}
+
 fn c_abs(z: &ExactComplex, p: usize) -> ExactNum {
     z.abs(p, rm())
 }
@@ -1586,6 +1608,12 @@ impl ExactComplex {
         if self.re().is_inf() || self.im().is_inf() {
             return ExactComplex::zero(dest);
         }
+        // DLMF 19.6.4: as m→1−, Π(n,m) ∼ [1/(2(1−n))] log 1/(1−m)
+        // diverges in the direction of 1/(1−n). After |n|=∞ → 0, so
+        // Π(∞, 1) stays 0. n=1 is already InvalidArgument.
+        if is_c_one(m, dest) {
+            return pi_complete_m1_infinity(self);
+        }
         ziv_complex(dest, rm, |pw| self.elliptic_pi_complete_at(m, pw, dest, cc))
     }
 
@@ -1703,6 +1731,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::INF_NEG;
     use crate::INF_POS;
     use crate::Sign;
     use core::ops::Neg;
@@ -2406,6 +2435,186 @@ mod tests {
                 assert!(!got.is_nan(), "Π(+∞, {label}) p={p} is NaN {:?}", got);
                 assert!(got.re().is_zero(), "Π(+∞, {label}) p={p} re {:?}", got.re());
                 assert!(got.im().is_zero(), "Π(+∞, {label}) p={p} im {:?}", got.im());
+            }
+        }
+        Ok(())
+    }
+
+    /// Complete Π(n, 1) has the log singularity of DLMF 19.6.4, coefficient
+    /// 1/(1−n). The via_rd path used to return InvalidArgument at exact m=1.
+    #[test]
+    fn zf_elliptic_pi_complete_m1_is_signed_infinity() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ];
+        // Each part: None = compact zero, Some(true)=+∞, Some(false)=−∞.
+        let cases: &[(&str, fn(usize) -> ExactComplex, Option<bool>, Option<bool>)] = &[
+            // remaining-28 n = 1/2+3/4 i → +∞ + i∞
+            (
+                "1/2+3/4i",
+                |p| {
+                    let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+                    let three_four = ExactNum::from_u8(3, p).ldexp(-2, p, RoundingMode::None);
+                    ExactComplex::new(half, three_four)
+                },
+                Some(true),
+                Some(true),
+            ),
+            // remaining-28 n = 10−3i → −∞ − i∞
+            (
+                "10-3i",
+                |p| {
+                    ExactComplex::new(ExactNum::from_u8(10, p), ExactNum::from_u8(3, p).neg())
+                },
+                Some(false),
+                Some(false),
+            ),
+            // remaining-28 n = 2^{-60}+i → +∞ + i∞
+            (
+                "2^{-60}+i",
+                |p| {
+                    ExactComplex::new(
+                        ExactNum::from_u8(1, p).ldexp(-60, p, RoundingMode::None),
+                        ExactNum::from_u8(1, p),
+                    )
+                },
+                Some(true),
+                Some(true),
+            ),
+            // real n < 1 → +∞ + 0i (DLMF 19.6.4, sign(1-n)=+)
+            (
+                "1/2",
+                |p| {
+                    ExactComplex::from_real(
+                        ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None),
+                        p,
+                    )
+                },
+                Some(true),
+                None,
+            ),
+            (
+                "-1",
+                |p| ExactComplex::from_real(ExactNum::from_i8(-1, p), p),
+                Some(true),
+                None,
+            ),
+            // real n > 1 → −∞ + 0i
+            (
+                "2",
+                |p| ExactComplex::from_real(ExactNum::from_u8(2, p), p),
+                Some(false),
+                None,
+            ),
+            // n=0 is Π(0,1)=K(1)=+∞ + 0i
+            ("0", |p| ExactComplex::zero(p), Some(true), None),
+            // Re n = 1, Im n ≠ 0: 1/(1-n) is purely imaginary → 0 + i∞ sign(Im n)
+            (
+                "1+i",
+                |p| ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
+                None,
+                Some(true),
+            ),
+            (
+                "1-i",
+                |p| {
+                    ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p).neg())
+                },
+                None,
+                Some(false),
+            ),
+        ];
+        for p in [64usize, 256, 8192] {
+            let m1 = ExactComplex::from_real(ExactNum::from_u8(1, p), p);
+            for rm in modes {
+                for &(label, mk, re_pos, im_pos) in cases {
+                    let n = mk(p);
+                    let got = n.elliptic_pi_complete(&m1, p, rm, &mut cc);
+                    assert!(
+                        !got.is_nan(),
+                        "Π({label}, 1) p={p} {rm:?} is NaN {:?}",
+                        got
+                    );
+                    match re_pos {
+                        None => assert!(
+                            got.re().is_zero(),
+                            "Π({label}, 1) p={p} {rm:?} re {:?}",
+                            got.re()
+                        ),
+                        Some(true) => assert!(
+                            got.re().is_inf_pos(),
+                            "Π({label}, 1) p={p} {rm:?} re {:?}",
+                            got.re()
+                        ),
+                        Some(false) => assert!(
+                            got.re().is_inf_neg(),
+                            "Π({label}, 1) p={p} {rm:?} re {:?}",
+                            got.re()
+                        ),
+                    }
+                    match im_pos {
+                        None => assert!(
+                            got.im().is_zero(),
+                            "Π({label}, 1) p={p} {rm:?} im {:?}",
+                            got.im()
+                        ),
+                        Some(true) => assert!(
+                            got.im().is_inf_pos(),
+                            "Π({label}, 1) p={p} {rm:?} im {:?}",
+                            got.im()
+                        ),
+                        Some(false) => assert!(
+                            got.im().is_inf_neg(),
+                            "Π({label}, 1) p={p} {rm:?} im {:?}",
+                            got.im()
+                        ),
+                    }
+                }
+                // n=1 stays a pole
+                let n1 = ExactComplex::from_real(ExactNum::from_u8(1, p), p);
+                let pole = n1.elliptic_pi_complete(&m1, p, rm, &mut cc);
+                assert!(
+                    pole.is_nan(),
+                    "Π(1, 1) p={p} {rm:?} should stay IA, got {:?}",
+                    pole
+                );
+                // n=+∞ and n=−∞ at m=1 stay 0 (existing |n|→∞ path)
+                for (ninf, lab) in [
+                    (ExactComplex::from_real(INF_POS.clone(), p), "+∞"),
+                    (ExactComplex::from_real(INF_NEG.clone(), p), "−∞"),
+                ] {
+                    let got = ninf.elliptic_pi_complete(&m1, p, rm, &mut cc);
+                    assert!(!got.is_nan(), "Π({lab}, 1) p={p} {rm:?} is NaN");
+                    assert!(
+                        got.re().is_zero() && got.im().is_zero(),
+                        "Π({lab}, 1) p={p} {rm:?} {:?}",
+                        got
+                    );
+                }
+                // neighbor m=1−2^{-(p+8)} is finite, not a compact infinity and not IA
+                let eps = ExactNum::from_u8(1, p).ldexp(-(p as i64 + 8), p, RoundingMode::None);
+                let m_near = ExactComplex::from_real(
+                    ExactNum::from_u8(1, p).sub(&eps, p, RoundingMode::None),
+                    p,
+                );
+                let n_half = ExactComplex::from_real(
+                    ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None),
+                    p,
+                );
+                let neigh = n_half.elliptic_pi_complete(&m_near, p, rm, &mut cc);
+                assert!(!neigh.is_nan(), "Π(1/2, 1-eps) p={p} {rm:?} is NaN");
+                assert!(
+                    !neigh.re().is_inf(),
+                    "Π(1/2, 1-eps) p={p} {rm:?} should be finite re {:?}",
+                    neigh.re()
+                );
             }
         }
         Ok(())
