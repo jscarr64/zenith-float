@@ -51,6 +51,7 @@ mod ext;
 mod gauss_kronrod;
 mod hash;
 mod heun_fox;
+mod hurwitz_jet;
 mod ieee_soft;
 mod integer;
 mod mantissa;

@@ -503,6 +503,7 @@ fn hurwitz_em(s: u64, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
 }
 
 /// \(m\)-th derivative of \(\ln x/x^2\) at `x` (Leibniz).
+#[cfg(test)]
 fn zeta_prime_2(p: usize, cc: &mut Consts) -> ExactNum {
     // Euler–Maclaurin for Σ ln(n)/n² = −ζ'(2). The former 36-term / N≤256 caps left an
     // error around 2^-440, corrupting ln A and Barnes G at high precision.
@@ -601,11 +602,13 @@ fn cached_const(
 }
 
 #[cfg(feature = "std")]
+#[cfg(test)]
 static LN_GLAISHER: std::sync::RwLock<Option<ExactNum>> = std::sync::RwLock::new(None);
 #[cfg(feature = "std")]
 static ZETA3: std::sync::RwLock<Option<ExactNum>> = std::sync::RwLock::new(None);
 
 /// ln A at `p` bits (ζ'(2) costs about p/2 logarithms; Barnes G would pay it on every call).
+#[cfg(test)]
 fn ln_glaisher(p: usize, cc: &mut Consts) -> ExactNum {
     cached_const(
         #[cfg(feature = "std")]
@@ -627,6 +630,7 @@ fn zeta3(p: usize, cc: &mut Consts) -> ExactNum {
     )
 }
 
+#[cfg(test)]
 fn ln_glaisher_uncached(p: usize, cc: &mut Consts) -> ExactNum {
     let g = cc.euler_gamma(p, RoundingMode::None);
     let two = ExactNum::from_u8(2, p);
@@ -2658,48 +2662,13 @@ fn barnes_g_reflect(w: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -
 /// ln G(z0) for z0 > 0: shift up until Stirling (DLMF 5.17.5) is past the working width, then subtract the Γ
 /// product. NaN if the asymptotic series did not reach the width (never a truncated value).
 fn barnes_ln_g(z0: &ExactNum, wrk: usize, cc: &mut Consts) -> ExactNum {
-    // Shift up until Stirling covers the destination word, then divide by the Γ product.
-    // Below 160 bits, z = 24 already leaves a guard past the stored word.
-    let mut z = z0.clone();
-    // e^{-2πz} (the asymptotic series' floor) is below 2^-(1.8 wrk) at z = 32 + wrk/5.
-    let height = 32 + wrk / 5;
-    // ln G and the Γ product grow like height² ln height: carry those bits as absolute guard.
-    let wrk = word_p(wrk + 2 * (usize::BITS - height.leading_zeros()) as usize + 16);
-    let shift_to = ExactNum::from_u32(height as u32, wrk);
-    let mut steps: usize = 0;
-    while matches!(z.compare(&shift_to), Some(c) if c < 0) {
-        steps += 1;
-        z = z.add(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None);
-    }
-    // Σ_{k=0}^{n-1} ln Γ(z0+k) = n·ln Γ(z0) + Σ_{j=0}^{n-2} (n-1-j)·ln(z0+j),
-    // from ln Γ(w+1) = ln Γ(w) + ln w. One ln Γ, then ordinary logs.
-    let mut ln_prod = ExactNum::new(wrk);
-    if steps > 0 {
-        let mut arg = z0.clone();
-        ln_prod = arg.ln_gamma(wrk, RoundingMode::None, cc).mul(
-            &ExactNum::from_u32(steps as u32, wrk),
-            wrk,
-            RoundingMode::None,
-        );
-        for j in 0..steps - 1 {
-            let weight = (steps - 1 - j) as u32;
-            let term = arg.ln(wrk, RoundingMode::None, cc).mul(
-                &ExactNum::from_u32(weight, wrk),
-                wrk,
-                RoundingMode::None,
-            );
-            ln_prod = ln_prod.add(&term, wrk, RoundingMode::None);
-            arg = arg.add(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None);
-        }
-    }
-    // Now G(self) = G(z) / Π Γ, and z = self + n with n steps. Stirling for ln G(z):
-    // ln G(z+1) = z ln Γ(z+1) − z(z+1)/2 + (z/2) ln(2π) − ln A + Σ B_{2k+2}/(4k(k+1) z^{2k})
-    // We have G(z) = G((z-1)+1).
-    let zm1 = z.sub(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None);
-    let ln_g_z = barnes_ln_g_plus1(&zm1, wrk, cc);
-    ln_g_z.sub(&ln_prod, wrk, RoundingMode::None)
+    // FLINT `_acb_log_barnes_g_zeta`: LogG(z)=(z−1)LogΓ(z) − ζ'(−1,z) + ζ'(−1).
+    // The former shift-to-height 32+wrk/5 plus a 13,000-term log product cannot
+    // finish at dest p=2^16 inside ZFS_WALL. The EM jet is bound-driven.
+    crate::hurwitz_jet::log_barnes_g_zeta(z0, wrk, cc)
 }
 
+#[cfg(test)]
 fn barnes_ln_g_plus1(z: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     // DLMF 5.17.5: ln G(z+1) ∼ (z²/2) ln z − (3/4) z² + (z/2) ln(2π) − (1/12) ln z
     //              + ζ'(−1) + Σ_{k≥1} B_{2k+2} / (4k(k+1) z^{2k}),  ζ'(−1)=1/12−ln A.
@@ -2987,6 +2956,153 @@ mod tests {
             assert!(
                 nan.scorer_hi(p, RoundingMode::ToEven, &mut cc).is_nan(),
                 "Hi(NaN)"
+            );
+        }
+        Ok(())
+    }
+
+    /// LogG via the EM jet agrees with the Stirling formula at a height
+    /// where the old path is already accurate (z=32, p=256).
+    #[test]
+    fn zf_barnes_logg_em_matches_stirling_at_height_32() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 256usize;
+        let z = ExactNum::from_u32(32, p);
+        let em = crate::hurwitz_jet::log_barnes_g_zeta(&z, p, &mut cc);
+        let st = barnes_ln_g_plus1(&z.sub(&ExactNum::from_u8(1, p), p, RoundingMode::None), p, &mut cc);
+        assert!(near(&em, &st, p), "EM {:?} vs Stirling {:?}", em, st);
+        Ok(())
+    }
+
+    /// FLINT 3.6 golds for G(±1/2) at p=64 and p=256. The p=65536 landing is
+    /// the six remaining-28 TIMEOUT rows; that width is tested separately.
+    #[test]
+    fn zf_barnes_g_half_matches_flint_golds() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let cases: &[(usize, &str, &str, &str)] = &[
+            (
+                64,
+                "0.6032442812094462061914292245347020799",
+                "-0.1701720698965615191650119108353393216",
+                "-0.5054330544896953827976849898083449517",
+            ),
+            (
+                256,
+                "0.60324428120944620619142922453470207988300342038945976538776920411943278567933529074829868836987",
+                "-0.17017206989656151916501191083533932159543634434543587506565817193148051677954844820299361047756",
+                "-0.50543305448969538279768498980834495172139910146661993278982756034184925772233499926828249610945",
+            ),
+            (
+                1024,
+                "0.60324428120944620619142922453470207988300342038945976538776920411943278567933529074829868836987374145499098282178654258945350301298541945816732560358510209692692633243411756714351602421054351840512029944936374185787771519482152901122412567242217387753020259455670990756936630586008503618662704901631303620538430522485783118283",
+                "-0.17017206989656151916501191083533932159543634434543587506565817193148051677954844820299361047756152558220446726300626182221833720769976988706338711073742052629396032776735761700020545059602742370195421981524096266998385349195698524738205413652794130600284864016812012148785749644645775865137635398164260924315154612356632101720",
+                "-0.50543305448969538279768498980834495172139910146661993278982756034184925772233499926828249610945144825215140496314472505251613924092530457949088976177276258115793711047920896359726607916443054161767942128102038575551812482701832682374028795290197380809339690939009861812749702849212581763201032051583311442539622205135106285824",
+            ),
+        ];
+        for &(p, gpos, gneg, lng) in cases {
+            let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+            let g = half.barnes_g(p, RoundingMode::ToEven, &mut cc);
+            let want = ExactNum::parse(gpos, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            let d = ExactNum::sub_ref(&g, &want, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() { 10_000 } else { (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32 };
+            assert!(
+                bits >= (p as i32) - 16 || d.is_zero(),
+                "G(1/2) p={p} only {bits} bits"
+            );
+            let gm = half.clone().neg().barnes_g(p, RoundingMode::ToEven, &mut cc);
+            let wantn = ExactNum::parse(gneg, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            assert!(near(&gm, &wantn, p), "G(-1/2) p={p} got {:?}", gm);
+            let lg = crate::hurwitz_jet::log_barnes_g_zeta(&half, p, &mut cc);
+            let wantl = ExactNum::parse(lng, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            assert!(near(&lg, &wantl, p), "LogG(1/2) p={p} got {:?}", lg);
+        }
+        Ok(())
+    }
+
+    /// FLINT 3.6 golds for G(±1/2) at p=4096 and 16384 (dest widths below
+    /// the six remaining-28 TIMEOUT rows at p=65536, which live in the
+    /// ignored `zf_barnes_g_half_matches_flint_golds_p65536` test).
+    #[test]
+    fn zf_barnes_g_half_matches_flint_golds_high_p() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let raw = include_str!("testdata/barnes_g_half_flint_golds.txt");
+        for ln in raw.lines() {
+            let ln = ln.trim();
+            if ln.is_empty() || ln.starts_with('#') {
+                continue;
+            }
+            let mut parts = ln.splitn(3, ' ');
+            let p: usize = parts.next().unwrap().parse().unwrap();
+            let sign = parts.next().unwrap();
+            let dec = parts.next().unwrap();
+            if p >= 65_536 {
+                continue;
+            }
+            let t0 = std::time::Instant::now();
+            let mut z = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+            if sign == "-" {
+                z = z.neg();
+            }
+            let g = z.barnes_g(p, RoundingMode::ToEven, &mut cc);
+            let ms = t0.elapsed().as_millis();
+            let want = ExactNum::parse(dec, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            let d = ExactNum::sub_ref(&g, &want, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
+            eprintln!("G({sign}1/2) p={p}: {ms} ms, {bits} bits");
+            assert!(
+                bits >= (p as i32) - 16 || d.is_zero(),
+                "G({sign}1/2) p={p} only {bits} bits after {ms} ms"
+            );
+            assert!(
+                ms < 90_000,
+                "G({sign}1/2) p={p} must finish under 90 s; took {ms} ms"
+            );
+        }
+        Ok(())
+    }
+
+
+    /// FLINT golds for G(±1/2) at dest p=2^16. Ignored in the default suite:
+    /// the sieved EM jet is correct (~330 s, full width) but over `ZFS_WALL`.
+    #[test]
+    #[ignore = "G(±1/2) at p=65536 is ~330 s; over ZFS_WALL because of ln cost"]
+    fn zf_barnes_g_half_matches_flint_golds_p65536() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let raw = include_str!("testdata/barnes_g_half_flint_golds.txt");
+        for ln in raw.lines() {
+            let ln = ln.trim();
+            if ln.is_empty() || ln.starts_with('#') {
+                continue;
+            }
+            let mut parts = ln.splitn(3, ' ');
+            let p: usize = parts.next().unwrap().parse().unwrap();
+            let sign = parts.next().unwrap();
+            let dec = parts.next().unwrap();
+            if p < 65_536 {
+                continue;
+            }
+            let t0 = std::time::Instant::now();
+            let mut z = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+            if sign == "-" {
+                z = z.neg();
+            }
+            let g = z.barnes_g(p, RoundingMode::ToEven, &mut cc);
+            let ms = t0.elapsed().as_millis();
+            let want = ExactNum::parse(dec, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            let d = ExactNum::sub_ref(&g, &want, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
+            eprintln!("G({sign}1/2) p={p}: {ms} ms, {bits} bits");
+            assert!(
+                bits >= (p as i32) - 16 || d.is_zero(),
+                "G({sign}1/2) p={p} only {bits} bits after {ms} ms"
             );
         }
         Ok(())
