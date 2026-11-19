@@ -2,6 +2,9 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! ExactNumNumber formatting.
 
+use crate::Consts;
+use crate::Exponent;
+use crate::Sign;
 #[cfg(test)]
 use crate::common::util::round_p;
 use crate::defs::Error;
@@ -10,9 +13,6 @@ use crate::defs::RoundingMode;
 #[cfg(test)]
 use crate::defs::WORD_BIT_SIZE;
 use crate::num::ExactNumNumber;
-use crate::Consts;
-use crate::Exponent;
-use crate::Sign;
 
 #[cfg(feature = "std")]
 use std::vec::Vec;
@@ -122,25 +122,24 @@ impl ExactNumNumber {
             let (s, m, e) = self.convert_to_radix(rdx, rm, cc)?;
             return self.render(rdx, s, &m, e);
         }
+        // Non-power-of-two bases: MPFR mpfr_get_str. The first spelling uses `m =
+        // 1 + ceil(p·log(2)/log(b))` digits, correctly rounded in `rm`. A directed
+        // mode can sit on the side that the same mode parses to a neighbor (or
+        // past ±MAX), so later attempts round the digits the other way and add
+        // digits until the text parses back. There is no digit cap (P9): a stall
+        // is a clear error, never a non-round-tripping string.
         let mut extra = 0usize;
         loop {
-            // The first spelling uses `rm`. A directed mode can sit on the side of
-            // the value that the same mode parses to a neighbor, so later attempts
-            // round the digits the other way and add digits until it lands back.
             let digit_rm = if extra == 0 { rm } else { decimal_digit_mode(rm, self.is_positive()) };
-            let (s, m, e) = if rdx == Radix::Dec {
-                self.convert_to_dec_extra(digit_rm, cc, extra)?
-            } else {
-                self.convert_to_general_extra(rdx.value(), digit_rm, cc, extra)?
-            };
+            let (s, m, e) = self.convert_to_general_extra(rdx.value(), digit_rm, cc, extra)?;
             let text = self.render(rdx, s, &m, e)?;
             if self.spelling_round_trips(&text, rdx, rm, cc)? {
                 return Ok(text);
             }
-            if extra >= 16 {
-                return Ok(text);
-            }
             extra += 1;
+            if extra > crate::common::util::MAX_PREC_RETRY {
+                return Err(Error::PrecisionRetryExhausted);
+            }
         }
     }
 
@@ -244,8 +243,8 @@ mod tests {
     use crate::common::test_rng::random;
 
     use crate::{
-        common::util::random_subnormal, common::util::test_loop_count, common::util::MAX_DEC_SCALE,
-        common::util::TEST_EXP_BOUND, Exponent, WORD_BIT_SIZE,
+        Exponent, WORD_BIT_SIZE, common::util::MAX_DEC_SCALE, common::util::TEST_EXP_BOUND,
+        common::util::random_subnormal, common::util::test_loop_count,
     };
 
     use super::*;

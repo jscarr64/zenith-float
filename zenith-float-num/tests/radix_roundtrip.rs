@@ -1,8 +1,8 @@
 //! Structured stress tests for parse/format round-trip across radices 2–36.
 
 use zenith_float_num::{
-    seeded_random as random, Consts, Error, ExactNum, Exponent, Radix, RoundingMode, Sign,
-    DEFAULT_RANDOM_SEED, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT,
+    Consts, DEFAULT_RANDOM_SEED, Error, ExactNum, Exponent, Radix, RoundingMode, Sign,
+    WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT, Word, seeded_random as random,
 };
 
 const LOOPS_PER_BASE: usize = 24;
@@ -114,6 +114,70 @@ fn radix_roundtrip_extremes() -> Result<(), Box<dyn std::error::Error>> {
         ] {
             roundtrip_exact(rdx, &n, p, rm, &mut cc)?;
         }
+    }
+    Ok(())
+}
+
+/// Official W1 rows: format must parse back in the same mode. 16 extra digits
+/// were not enough (and for general radix were added to the bit width, not the
+/// digit count). The digit count is MPFR's `1 + ceil(p·log(2)/log(b))`.
+#[test]
+fn zf_format_minpos_maxv_and_dense_round_trip() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
+    let modes = [
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::FromZero,
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::None,
+    ];
+
+    // minpos:128 radix 10 — official WRONG in Up, FromZero, ToEven, ToOdd.
+    let minpos = ExactNum::min_positive(128);
+    let dec = Radix::Dec;
+    for rm in [
+        RoundingMode::Up,
+        RoundingMode::FromZero,
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+    ] {
+        let s = minpos.format(dec, rm, &mut cc)?;
+        let back = ExactNum::parse(&s, dec, 128, rm, &mut cc);
+        assert!(
+            !back.is_nan() && minpos.compare(&back) == Some(0) && minpos.sign() == back.sign(),
+            "min_positive(128) radix 10 {rm:?}: format {s} parsed back to {back:?}"
+        );
+    }
+
+    // maxv:1024 radix 3 — official WRONG in every mode.
+    let maxv = ExactNum::max_value(1024);
+    let r3 = Radix::try_new(3)?;
+    for rm in modes {
+        let s = maxv.format(r3, rm, &mut cc)?;
+        let back = ExactNum::parse(&s, r3, 1024, rm, &mut cc);
+        assert!(
+            !back.is_nan() && maxv.compare(&back) == Some(0) && maxv.sign() == back.sign(),
+            "max_value(1024) radix 3 {rm:?}: format {s:?} ({} chars) parsed back to {back:?}",
+            s.len()
+        );
+    }
+
+    // Dense 1024-bit mantissa, radix 3 (official c0576495): hex a..ab times 2^{-1025}
+    // (harness token `...abp-1025`), i.e. that significand at exponent -1.
+    let mut words = [0xaaaaaaaaaaaaaaaa as Word; 16];
+    words[0] = 0xaaaaaaaaaaaaaaab as Word;
+    let n = ExactNum::from_words(&words, Sign::Pos, -1);
+    assert!(!n.is_nan(), "dense a..abp-1025 construction");
+    for rm in [RoundingMode::Down, RoundingMode::ToZero, RoundingMode::None] {
+        let s = n.format(r3, rm, &mut cc)?;
+        let back = ExactNum::parse(&s, r3, 1024, rm, &mut cc);
+        assert!(
+            !back.is_nan() && n.compare(&back) == Some(0) && n.sign() == back.sign(),
+            "dense a..abp-1025 radix 3 {rm:?}: format ({} chars) did not round-trip",
+            s.len()
+        );
     }
     Ok(())
 }
