@@ -17,45 +17,60 @@ const ODE_FAC_DEN: i64 = 10;
 const ODE_H_GROW: i64 = 5;
 /// Maximum step shrink is `1/ODE_H_SHRINK_DEN`.
 const ODE_H_SHRINK_DEN: i64 = 5;
-/// If Dormand–Prince has not accepted a single step after this many
-/// attempts at a modest working precision, and that precision already
-/// supports the tolerance, `rk45_adaptive` switches to Bulirsch–Stoer.
-/// A finishable transient
-/// (see `zf_54_probe_must_not_refuse_a_finishable_transient`, wrk ≈ 128)
-/// accepts well before this cap. At a wider working precision each
-/// Dormand–Prince attempt is expensive (seven right-hand-side evaluations
-/// at that width), so [`dp_switch_no_accept`] lowers the cap: a smooth
-/// problem whose order-5 step would have to be ~2^{-102} still never
-/// accepts, and takes the BS path after a short documented prefix.
-const ODE_DP_SWITCH_NO_ACCEPT_LO: u32 = 512;
-const ODE_DP_SWITCH_NO_ACCEPT_HI: u32 = 8;
+/// Maximum accepted Dormand–Prince steps under a *stable* order-5
+/// error constant before `rk45_adaptive` switches to Bulirsch–Stoer.
+///
+/// After each trial the controller proposes `h ← h (9/10) (scale/err)^{1/5}`
+/// (growth cap 5, shrink cap 1/5). After each accepted step the
+/// remaining span would be covered in `N ≈ remain / h` accepted
+/// steps of the proposed size. That projection is trusted only
+/// when `h` is stable: over [`ODE_DP_STABILITY_WINDOW`] successive
+/// accepted steps it has grown by less than
+/// `2^{ODE_DP_STABILITY_GROW_BITS}`. Rejected steps reset the
+/// window (the controller is still hunting). A finishable
+/// transient grows `h` through the tail faster than that bound, so
+/// it never meets the test with a large `N`. When `N` exceeds
+/// this bound at a stable `h`, a 5th-order explicit method is the
+/// wrong algorithm (more than `7 · 2^{14} ≈ 10^5` right-hand-side
+/// evaluations on a constant-C problem). The bound is a
+/// method-selection threshold, not a wall-clock and not a
+/// working-precision carve-out. Harper ZF-54 (`h ≲ 2^{-102}` on
+/// `[0, 1]`) holds `h` steady with `N ≈ 2^{102}` and switches
+/// after one window.
+const ODE_DP_MAX_CONST_C_STEPS: u32 = 1 << 14;
 
-fn dp_switch_no_accept(wrk: usize) -> u32 {
-    // wrk ≈ 128 for the finishable-transient probe (p = 64). That
-    // run accepts after a short shrink-through-the-layer and must
-    // stay on Dormand–Prince.
-    if wrk <= 192 {
-        ODE_DP_SWITCH_NO_ACCEPT_LO
-    } else {
-        ODE_DP_SWITCH_NO_ACCEPT_HI
+/// Length of the accepted-step window used to decide whether the
+/// order-5 constant is stable. Eight accepted steps is a short
+/// method-selection prefix (`8 · 7` right-hand-side evaluations),
+/// far below [`ODE_DP_MAX_CONST_C_STEPS`].
+const ODE_DP_STABILITY_WINDOW: u32 = 8;
+
+/// If `h` grows by at least `2^{ODE_DP_STABILITY_GROW_BITS}` over
+/// one [`ODE_DP_STABILITY_WINDOW`], the controller is still
+/// expanding and `N` will fall (mean ratio `8^{1/8} = 2^{3/8} ≈
+/// 1.30` per step, well below the grow cap of 5 and above
+/// equilibrium chatter). A finishable transient's tail grows
+/// faster than this (the P9 probe grows `16×` in the same
+/// window). A crawl at nearly-constant `h` grows by `1×`.
+const ODE_DP_STABILITY_GROW_BITS: i64 = 3;
+
+/// `true` when a stable order-5 step of size `h` would need more than
+/// [`ODE_DP_MAX_CONST_C_STEPS`] accepted steps to cover `remain`.
+fn const_c_step_count_exceeds(remain: &ExactNum, h: &ExactNum, wrk: usize) -> bool {
+    if !finite(remain) || !finite(h) || h.is_zero() || h.is_negative() || remain.is_zero() {
+        return false;
     }
+    let n = remain
+        .clone()
+        .abs()
+        .div(&h.clone().abs(), wrk, RoundingMode::None);
+    if !finite(&n) {
+        return true;
+    }
+    let cap = ExactNum::from_u32(ODE_DP_MAX_CONST_C_STEPS, wrk);
+    matches!(n.compare(&cap), Some(1))
 }
 
-/// Total Dormand–Prince attempts (accepted or rejected) before the
-/// switch at a wide working precision. A tight tolerance on a smooth
-/// problem can start accepting micro-steps of size ~tol^{1/5} and
-/// crawl across the span (hundreds of thousands of evaluations)
-/// without ever hitting the no-accept cap. At modest wrk the probe
-/// is allowed to finish on Dormand–Prince (`u32::MAX` here); the
-/// no-accept cap still catches a low-width smooth problem that
-/// never accepts.
-fn dp_switch_total_attempts(wrk: usize) -> u32 {
-    if wrk <= 192 {
-        u32::MAX
-    } else {
-        ODE_DP_SWITCH_NO_ACCEPT_HI
-    }
-}
 /// Maximum extrapolation rows in one Bulirsch–Stoer step (even sequence
 /// `n = 2,4,...,2 K_MAX`, order `2 K_MAX`). Tighter remaining error
 /// shrinks `H` and retries.
@@ -632,17 +647,10 @@ where
     let mut h = span.clone().ldexp(-4, wrk, RoundingMode::None);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
+    let mut stable_n: u32 = 0;
+    let mut stable_h0: Option<ExactNum> = None;
     push_pair(&mut ts, &mut ys, t.clone(), y.clone());
-    let mut attempts: u32 = 0;
     while t.compare(t1) == Some(-1) {
-        attempts = attempts.saturating_add(1);
-        // Only the initial point is in `ys` until the first accept.
-        if ts.len() == 1 && attempts > dp_switch_no_accept(wrk) {
-            return Err(OdeError::ToleranceUnreachable);
-        }
-        if attempts > dp_switch_total_attempts(wrk) {
-            return Err(OdeError::ToleranceUnreachable);
-        }
         let remain = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
         if h.compare(&remain) == Some(1) {
             h = remain.clone();
@@ -714,14 +722,46 @@ where
                 raw
             }
         };
+        let h_used = h.clone();
         h = h.mul(&ratio, wrk, RoundingMode::None);
         if !ok && !finite(&h) {
             return Err(OdeError::InvalidArgument);
         }
+        // Rejected steps reset the stability window (still hunting).
+        // After a full window of accepts, a small net growth in `h`
+        // plus a large constant-C projection means a crawl; a
+        // finishable tail grows `h` faster than the documented bound.
+        if ok {
+            if stable_n == 0 {
+                stable_h0 = Some(h_used.clone());
+            }
+            stable_n = stable_n.saturating_add(1);
+            if stable_n >= ODE_DP_STABILITY_WINDOW {
+                let grew = match stable_h0.as_ref() {
+                    Some(h0) => {
+                        let mark =
+                            h0.clone()
+                                .ldexp(ODE_DP_STABILITY_GROW_BITS, wrk, RoundingMode::None);
+                        matches!(h_used.compare(&mark), Some(c) if c >= 0)
+                    }
+                    None => true,
+                };
+                if !grew {
+                    let rem = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
+                    if const_c_step_count_exceeds(&rem, &h, wrk) {
+                        return Err(OdeError::ToleranceUnreachable);
+                    }
+                }
+                stable_n = 0;
+                stable_h0 = None;
+            }
+        } else {
+            stable_n = 0;
+            stable_h0 = None;
+        }
     }
     Ok((ts, ys))
 }
-
 
 /// Modified midpoint (Gragg) over one span `H` with `n` substeps.
 fn modified_midpoint<F>(
@@ -918,17 +958,27 @@ where
 /// Bulirsch–Stoer extrapolation for tolerances Dormand–Prince can't
 /// reach, documented". If Dormand–Prince returns
 /// [`OdeError::ToleranceUnreachable`] at a working precision that
-/// already supports the tolerance — including the case of
-/// [`dp_switch_no_accept`] attempts with no accepted step, or
-/// [`dp_switch_total_attempts`] attempts at a wide working
-/// precision (so a crawl of micro-steps cannot delay the switch) — the
-/// same call continues with a modified-midpoint / polynomial
-/// extrapolation (Gragg–Bulirsch–Stoer, even sequence
+/// already supports the tolerance — including when a stable
+/// order-5 step (net growth of `h` below
+/// `2^{ODE_DP_STABILITY_GROW_BITS}` over
+/// [`ODE_DP_STABILITY_WINDOW`] accepted steps) would need more
+/// than [`ODE_DP_MAX_CONST_C_STEPS`] accepted steps on the
+/// remaining span — the same call continues with a
+/// modified-midpoint
+/// / polynomial extrapolation (Gragg–Bulirsch–Stoer, even sequence
 /// `n = 2, 4, …, 2 K`) rather than refusing. The switch is
-/// deterministic: it depends only on the inputs and those documented
-/// constants, not on a wall clock or a step-counter of a finishable
-/// run. A finishable transient still completes on the Dormand–Prince
-/// path (`zf_54_probe_must_not_refuse_a_finishable_transient`).
+/// deterministic and derived from Dormand–Prince's error model
+/// (`err ≈ C h^5`, `h ← (9/10) (scale/err)^{1/5}`): it fires only
+/// when `h` is stable over [`ODE_DP_STABILITY_WINDOW`] accepted
+/// steps and the implied step would still crawl, and it does not
+/// use a fixed attempt count or a working-precision carve-out. A
+/// finishable transient grows `h` through the tail faster than
+/// `2^{ODE_DP_STABILITY_GROW_BITS}` per window, so it stays on
+/// Dormand–Prince
+/// (`zf_54_probe_must_not_refuse_a_finishable_transient`). A smooth
+/// problem whose equilibrium step is too small (Harper ZF-54,
+/// `h ≲ 2^{-102}` on `[0, 1]`) reaches equilibrium with
+/// `N ≈ 2^{102}` and switches.
 pub fn rk45_adaptive<F>(
     mut f: F,
     t0: &ExactNum,
@@ -1401,6 +1451,173 @@ mod tests {
         .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(te.len(), n + 1);
         assert_eq!(ye.len(), n + 1);
+        Ok(())
+    }
+
+    /// A zero span (`t1 = t0`) is not an empty successful trajectory:
+    /// it is `InvalidArgument`, the same as a reversed span.
+    #[test]
+    fn zf_54_zero_span_is_invalid() -> Result<(), crate::Error> {
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let tol = one.clone().ldexp(-16, p, RoundingMode::None);
+        let mut evals = 0u32;
+        let got = rk45_adaptive(
+            |_t, _y, _q, _r, _cc| {
+                evals += 1;
+                ExactNum::new(p)
+            },
+            &zero,
+            &one,
+            &zero,
+            &tol,
+            &tol,
+            p,
+            rm,
+            &mut cc,
+        );
+        assert_eq!(got.err(), Some(OdeError::InvalidArgument));
+        assert_eq!(evals, 0, "zero span refuses before any evaluation");
+        Ok(())
+    }
+
+    /// A reversed span (`t1 < t0`) is `InvalidArgument`, not a backward
+    /// integration and not `ToleranceUnreachable`.
+    #[test]
+    fn zf_54_reversed_span_is_invalid() -> Result<(), crate::Error> {
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let two = ExactNum::from_u8(2, p);
+        let tol = one.clone().ldexp(-16, p, RoundingMode::None);
+        let mut evals = 0u32;
+        let got = rk45_adaptive(
+            |_t, _y, _q, _r, _cc| {
+                evals += 1;
+                ExactNum::new(p)
+            },
+            &two,
+            &one,
+            &zero,
+            &tol,
+            &tol,
+            p,
+            rm,
+            &mut cc,
+        );
+        assert_eq!(got.err(), Some(OdeError::InvalidArgument));
+        assert_eq!(evals, 0, "reversed span refuses before any evaluation");
+        Ok(())
+    }
+
+    /// A tolerance at the working-precision floor (`atol = 2^{-(wrk-9)}`,
+    /// just inside [`wrk_supports_tol`]) on `y' = cos(t)` must finish,
+    /// either on Dormand–Prince or by the documented Bulirsch–Stoer
+    /// switch, and match the closed form.
+    #[test]
+    fn zf_54_tol_at_precision_floor_matches_closed_form() -> Result<(), crate::Error> {
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let wrk = super::work_p(p);
+        // wrk_supports_tol requires scale > 2^{-(wrk-8)}. Use 2^{-(wrk-9)}.
+        let exp = -i64::try_from(wrk.saturating_sub(9)).unwrap();
+        let atol = one.clone().ldexp(exp, p, RoundingMode::None);
+        assert!(
+            super::wrk_supports_tol(&atol, &ExactNum::new(p), &one, wrk),
+            "this atol must sit just inside the wrk floor"
+        );
+        let wall = std::time::Instant::now();
+        let got = rk45_adaptive(
+            |t, _y, q, r, cc| t.cos(q, r, cc),
+            &zero,
+            &one,
+            &one,
+            &atol,
+            &ExactNum::new(p),
+            p,
+            rm,
+            &mut cc,
+        );
+        let ms = wall.elapsed().as_millis();
+        let (ts, ys) = match got {
+            Ok(v) => v,
+            Err(e) => panic!("tol at wrk floor must finish, not {e:?} in {ms} ms"),
+        };
+        let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(tend.compare(&one), Some(0));
+        let expect = one.clone().add(&one.sin(p, rm, &mut cc), p, rm);
+        let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
+        let band = one.clone().ldexp(-20, p, RoundingMode::None);
+        assert!(
+            err.is_zero() || err.compare(&band) != Some(1),
+            "y(1) vs 1+sin(1) at the wrk floor; {ms} ms"
+        );
+        assert!(ms < 5_000, "floor-tol run must be quick; took {ms} ms");
+        let _ = ts;
+        Ok(())
+    }
+
+    /// A moderately stiff linear sink `y' = −λ y` with `λ = 40` on
+    /// `[0, 1]` (stability bound `h ≲ 3/λ ≈ 0.075` for explicit RK)
+    /// is finishable on Dormand–Prince and must match `e^{{-40}}`.
+    /// This is stiffer than `y' = −y` but not a stability-limited
+    /// crawl; the error-model switch must not fire.
+    #[test]
+    fn zf_54_stiffish_transient_matches_closed_form() -> Result<(), crate::Error> {
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let lam = ExactNum::from_u32(40, p);
+        let atol = one.clone().ldexp(-24, p, RoundingMode::None);
+        let mut evals = 0u32;
+        let wall = std::time::Instant::now();
+        let got = rk45_adaptive(
+            |_t, y, q, r, _cc| {
+                evals += 1;
+                y.clone().mul(&lam, q, r).neg_via_mul()
+            },
+            &zero,
+            &one,
+            &one,
+            &atol,
+            &atol,
+            p,
+            rm,
+            &mut cc,
+        );
+        let ms = wall.elapsed().as_millis();
+        let (ts, ys) = match got {
+            Ok(v) => v,
+            Err(e) => panic!("stiff-ish y'=-40y must finish, not {e:?}; evals={evals} in {ms} ms"),
+        };
+        let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(tend.compare(&one), Some(0));
+        let expect = lam.neg_via_mul().exp(p, rm, &mut cc);
+        let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
+        let band = one.clone().ldexp(-16, p, RoundingMode::None);
+        assert!(
+            err.is_zero() || err.compare(&band) != Some(1),
+            "y(1) vs e^{{-40}}; evals={evals} in {ms} ms"
+        );
+        assert!(evals > 16, "must actually integrate; evals={evals}");
+        assert!(evals < 10_000, "must not crawl; evals={evals}");
+        assert!(
+            ms < 2_000,
+            "stiff-ish run must be quick; took {ms} ms, evals={evals}"
+        );
+        let _ = ts;
         Ok(())
     }
 }
