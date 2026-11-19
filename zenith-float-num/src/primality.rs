@@ -33,32 +33,6 @@ pub(crate) fn trial_prime_factor(n: &ExactInt) -> Option<ExactInt> {
     None
 }
 
-/// Divide all prime powers `p^k || m` for `p ≤ limit` out of `m`, accumulating
-/// the product into `f` and the distinct primes into `qs`.
-pub(crate) fn divide_out_primes_upto(
-    m: &mut ExactInt,
-    f: &mut ExactInt,
-    qs: &mut Vec<ExactInt>,
-    limit: u64,
-) {
-    for p in primes_upto(limit) {
-        let q = ExactInt::from_u64(u64::from(p));
-        if m.soft_cmp(&q) == Ordering::Less {
-            break;
-        }
-        while let Some((d, r)) = m.div_rem(&q) {
-            if !r.is_zero() {
-                break;
-            }
-            if !qs.contains(&q) {
-                qs.push(q.clone());
-            }
-            *f = f.mul(&q);
-            *m = d;
-        }
-    }
-}
-
 /// Baillie–PSW: Miller–Rabin with base 2, then a strong Lucas–Selfridge test.
 /// This is a composite filter only, not a primality proof.
 pub(crate) fn bpsw(n: &ExactInt) -> bool {
@@ -79,7 +53,7 @@ pub(crate) fn bpsw(n: &ExactInt) -> bool {
     strong_lucas_selfridge(&n)
 }
 
-fn jacobi(mut a: ExactInt, mut n: ExactInt) -> i8 {
+pub(crate) fn jacobi(mut a: ExactInt, mut n: ExactInt) -> i8 {
     if n.is_zero() || is_even(&n) || n.is_negative() {
         return 0;
     }
@@ -190,7 +164,7 @@ fn strong_lucas_selfridge(n: &ExactInt) -> bool {
     false
 }
 
-fn lucas_uv(
+pub(crate) fn lucas_uv(
     n: &ExactInt,
     p: &ExactInt,
     q: &ExactInt,
@@ -463,7 +437,7 @@ fn ecm_stage2(
     as_factor(acc.gcd(n), n)
 }
 
-fn primes_upto(limit: u64) -> Vec<u32> {
+pub(crate) fn primes_upto(limit: u64) -> Vec<u32> {
     let lim = limit.min(u32::MAX as u64) as usize;
     if lim < 2 {
         return Vec::new();

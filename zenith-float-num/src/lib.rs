@@ -25,6 +25,7 @@ compile_error!("zenith-float-num requires a 64-bit target (target_pointer_width 
 extern crate alloc;
 
 mod accuracy;
+mod aprcl;
 mod ball;
 mod binfmt;
 mod catalog;

@@ -1,7 +1,6 @@
 //! Modular exponentiation, inverses, Miller–Rabin, and Pollard–Brent on [`ExactInt`].
 
 use crate::ExactInt;
-use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
@@ -299,18 +298,16 @@ const SMALL_PRIMES: [u64; 13] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41]
 /// 385 961 981` (Sorenson & Webster, Math. Comp. 86 (2017)), which covers `2^64`.
 const MR13_BOUND: u128 = 3_317_044_064_679_887_385_961_981;
 
-/// Proven primality of `|n|`, like FLINT's `fmpz_is_prime` (ZF-53).
+/// Proven primality of `|n|`, like FLINT 3.6 `fmpz_is_prime` (ZF-53).
 ///
 /// - `|n| < 3.3·10^24` (past `2^64`): Miller–Rabin with the first 13 prime bases, which is
 ///   deterministic there (Sorenson & Webster).
 /// - Larger: Baillie–PSW (Miller–Rabin base 2 plus a strong Lucas–Selfridge test)
 ///   rejects composites. A probable-prime result is never returned as a proof. A
-///   Pocklington–Lehmer `n − 1` certificate then proves primality. `n − 1` is factored
-///   (trial division, then [`is_prime`] and ECM or Brent ρ on the cofactors,
-///   recursively) until the proven part `F` satisfies `F² > n`. Each prime `q | F`
-///   then needs a witness `a` with `a^(n−1) ≡ 1` and `gcd(a^((n−1)/q) − 1, n) = 1`.
-///   Witnesses are tried from `a = 2` up, and an `a` sharing a factor with `n` proves
-///   it composite, so the search terminates.
+///   Brillhart–Lehmer–Selfridge `n-1` / `n+1` test with only a partial
+///   factorization of `n±1` then proves primality when the factored part is
+///   large enough. If that front end does not decide, the Cohen–Lenstra
+///   Jacobi-sum APRCL test does. Neither step ECM-factors `n-1`.
 ///
 /// No step is capped. The answer is a proof either way.
 pub fn is_prime(n: &ExactInt) -> bool {
@@ -332,115 +329,7 @@ pub fn is_prime(n: &ExactInt) -> bool {
     if !crate::primality::bpsw(&n) {
         return false;
     }
-    pocklington(&n)
-}
-
-/// Distinct proven prime factors `q` of `n − 1` whose product with multiplicity, `F`,
-/// divides `n − 1` and satisfies `F² > n` (the Pocklington bound). Factoring stops as soon
-/// as the bound holds, so a hard cofactor of `n − 1` left over is never split.
-fn certified_part(nm1: &ExactInt, n: &ExactInt) -> Vec<ExactInt> {
-    let mut f = ExactInt::one();
-    let mut qs: Vec<ExactInt> = Vec::new();
-    let done = |f: &ExactInt| f.mul(f).soft_cmp(n) == Ordering::Greater;
-    let mut m = nm1.clone();
-    for &q in SMALL_PRIMES.iter() {
-        let qi = ExactInt::from_u64(q);
-        while let Some((d, r)) = m.div_rem(&qi) {
-            if !r.is_zero() {
-                break;
-            }
-            if !qs.contains(&qi) {
-                qs.push(qi.clone());
-            }
-            f = f.mul(&qi);
-            m = d;
-        }
-    }
-    crate::primality::divide_out_primes_upto(&mut m, &mut f, &mut qs, crate::primality::TRIAL_LIMIT);
-    let mut stack = vec![m];
-    while let Some(x) = stack.pop() {
-        if done(&f) {
-            break;
-        }
-        if x.is_one() || x.is_zero() {
-            continue;
-        }
-        if is_prime(&x) {
-            f = f.mul(&x);
-            if !qs.contains(&x) {
-                qs.push(x);
-            }
-            continue;
-        }
-        let d = if is_even(&x) { two() } else { split_composite(&x) };
-        let g = x.div_rem(&d).map(|(q, _)| q).unwrap_or_else(ExactInt::one);
-        // The smaller part first: it is cheaper to certify.
-        if d.soft_cmp(&g) == Ordering::Less {
-            stack.push(g);
-            stack.push(d);
-        } else {
-            stack.push(d);
-            stack.push(g);
-        }
-    }
-    qs
-}
-
-/// Pocklington–Lehmer proof for an odd strong probable prime `n` (see [`is_prime`]):
-/// `F | n − 1`, `F² > n`, and for each prime `q | F` some `a` with `a^(n−1) ≡ 1 (mod n)`
-/// and `gcd(a^((n−1)/q) − 1, n) = 1` (Crandall & Pomerance, Thm 4.1.3).
-fn pocklington(n: &ExactInt) -> bool {
-    let one = ExactInt::one();
-    let nm1 = n.sub(&one);
-    let qs = certified_part(&nm1, n);
-    let mut f = ExactInt::one();
-    for q in &qs {
-        // Reconstruct F from the distinct primes with the multiplicity in n−1.
-        let mut tmp = nm1.clone();
-        while let Some((d, r)) = tmp.div_rem(q) {
-            if !r.is_zero() {
-                break;
-            }
-            f = f.mul(q);
-            tmp = d;
-        }
-    }
-    if f.mul(&f).soft_cmp(n) != Ordering::Greater {
-        // Incomplete n−1 factorization is not a proof. certified_part keeps
-        // splitting until the bound holds, so this path is defensive.
-        return false;
-    }
-    for q in &qs {
-        let e = match nm1.div_rem(q) {
-            Some((e, _)) => e,
-            None => return false,
-        };
-        let mut a = two();
-        loop {
-            // An `a` sharing a factor with n proves n composite; it also bounds the search
-            // by n's least prime factor.
-            if !a.gcd(n).is_one() {
-                return false;
-            }
-            match mod_pow(&a, &nm1, n) {
-                Some(x) if x.is_one() => {}
-                _ => return false,
-            }
-            let t = match mod_pow(&a, &e, n) {
-                Some(t) => t,
-                None => return false,
-            };
-            let h = abs_int(&t.sub(&one)).gcd(n);
-            if h.is_one() {
-                break;
-            }
-            if h != *n {
-                return false;
-            }
-            a = a.add(&one);
-        }
-    }
-    true
+    crate::aprcl::prove_prime(&n)
 }
 
 #[cfg(test)]
@@ -482,12 +371,13 @@ mod tests {
         Ok(())
     }
 
-    /// ZF-53 / d0225257: a FLINT-style proof path (BPSW, then a
-    /// Pocklington–Lehmer n−1 certificate whose factoring uses ECM).
+    /// ZF-53 / d0225257: a FLINT 3.6-style proof path (BPSW filter,
+    /// BLS n−1/n+1 with a partial factorization, then Jacobi-sum APRCL).
     /// Probable-prime filters are never returned as a proof. Covers
     /// 2^255−19, the ZF-53 Mersennes, Carmichael numbers, strong
     /// pseudoprimes to several bases, and semiprimes with large
-    /// balanced factors.
+    /// balanced factors. 2^255−19 must finish well under 1 s (FLINT
+    /// does it in ~14 ms); the timing bound is a generous margin.
     #[test]
     fn zf_53_pollard_rho_proof_path() -> Result<(), crate::Error> {
         fn dec(s: &str) -> ExactInt {
@@ -522,14 +412,14 @@ mod tests {
             assert!(!q.is_one() && q != *n);
         }
 
-        // Curve25519 prime, d0225257: needs ECM in the n−1 proof, not ρ.
+        // Curve25519 prime, d0225257: APRCL, not an ECM/ρ search of n−1.
         let p255 = ExactInt::from_u64(2).pow(255).sub(&ExactInt::from_u64(19));
         let t0 = std::time::Instant::now();
         assert_proved_prime(&p255);
+        let ms = t0.elapsed().as_millis();
         assert!(
-            t0.elapsed().as_secs() < 110,
-            "2^255-19 must finish under the 120 s wall, not a ρ search; took {:?}"
-            , t0.elapsed()
+            ms < 1_000,
+            "2^255-19 must finish well under 1 s; took {ms} ms"
         );
 
         // ZF-53 Mersennes (d0225248, d0225251).
