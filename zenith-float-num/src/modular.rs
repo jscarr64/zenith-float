@@ -279,10 +279,7 @@ fn split_composite(n: &ExactInt) -> ExactInt {
                     return f;
                 }
             }
-            c = match c.checked_add(1) {
-                Some(v) => v,
-                None => 1,
-            };
+            c = c.checked_add(1).unwrap_or(1);
         }
         match b1.checked_mul(3) {
             Some(v) if v > b1 => b1 = v,

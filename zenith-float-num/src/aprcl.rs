@@ -41,7 +41,7 @@ fn is_prime_u64(n: u64) -> bool {
     if n == 2 || n == 3 || n == 5 || n == 7 {
         return true;
     }
-    if n % 2 == 0 || n % 3 == 0 || n % 5 == 0 || n % 7 == 0 {
+    if n.is_multiple_of(2) || n.is_multiple_of(3) || n.is_multiple_of(5) || n.is_multiple_of(7) {
         return false;
     }
     let v = ExactInt::from_u64(n);
@@ -61,9 +61,9 @@ fn factor_u64(mut m: u64) -> Vec<(u64, u32)> {
     }
     let mut p = 2u64;
     while p * p <= m {
-        if m % p == 0 {
+        if m.is_multiple_of(p) {
             let mut e = 0u32;
-            while m % p == 0 {
+            while m.is_multiple_of(p) {
                 m /= p;
                 e += 1;
             }
@@ -82,7 +82,7 @@ fn p_power_in_q(mut q: u64, p: u64) -> u32 {
         return 0;
     }
     let mut k = 0u32;
-    while q != 0 && q % p == 0 {
+    while q != 0 && q.is_multiple_of(p) {
         k += 1;
         q /= p;
     }
@@ -164,7 +164,7 @@ fn isqrt(n: &ExactInt) -> ExactInt {
         };
     }
     let bits = n.bit_length();
-    let mut hi = ExactInt::from_u64(2).pow(((bits + 1) / 2 + 1) as u64);
+    let mut hi = ExactInt::from_u64(2).pow((bits.div_ceil(2) + 1) as u64);
     let mut lo = ExactInt::zero();
     let one = one();
     while hi.sub(&lo).soft_cmp(&one) == Ordering::Greater {
@@ -353,7 +353,7 @@ impl Config {
         }
         let mut prime = 3u64;
         while 2u64.saturating_mul(prime.saturating_sub(1)) <= r {
-            if is_prime_u64(prime) && r % (prime - 1) == 0 {
+            if is_prime_u64(prime) && r.is_multiple_of(prime - 1) {
                 let e = p_power_in_q(r, prime) + 1;
                 if let Some(pow) = pow_u64(prime, e) {
                     qs.push((prime, e));
@@ -397,7 +397,7 @@ impl Config {
                 num = num.saturating_add(phi.saturating_mul(phi));
             }
             w_num[i] = num;
-            let bits = 64u32.saturating_sub((q as u64).leading_zeros());
+            let bits = 64u32.saturating_sub(q.leading_zeros());
             w_den[i] = (exp as u128).saturating_mul(bits.max(1) as u128).max(1);
         }
         loop {
@@ -849,10 +849,13 @@ impl UnityZp {
         let mut i = self.slots;
         while i > pk {
             i -= 1;
-            if self.slot(i).is_none_or(limbs_is_zero) {
+            let Some(slot) = self.slot(i) else {
+                continue;
+            };
+            if limbs_is_zero(slot) {
                 continue;
             }
-            let v = self.slot(i).unwrap().to_vec();
+            let v = slot.to_vec();
             self.slot_mut(i).fill(0);
             self.ensure(i - pk);
             add_mod_limbs(self.slot_mut(i - pk), &v, &n);
@@ -870,10 +873,16 @@ impl UnityZp {
         let mut i = self.slots;
         while i > cycl {
             i -= 1;
-            if i >= self.slots || self.slot(i).is_none_or(limbs_is_zero) {
+            if i >= self.slots {
                 continue;
             }
-            let v = self.slot(i).unwrap().to_vec();
+            let Some(slot) = self.slot(i) else {
+                continue;
+            };
+            if limbs_is_zero(slot) {
+                continue;
+            }
+            let v = slot.to_vec();
             self.slot_mut(i).fill(0);
             for j in 0..p - 1 {
                 let ind = i - cycl + j * ppow;
@@ -1248,12 +1257,8 @@ fn additional_test(n: &ExactInt, p: u64) -> u8 {
             }
         }
     }
-    if p_counter == 0 {
-        if rem_u64(n, p) == 0 {
-            result = 2;
-        } else if is_perfect_power(n) {
-            result = 2;
-        }
+    if p_counter == 0 && (rem_u64(n, p) == 0 || is_perfect_power(n)) {
+        result = 2;
     }
     result
 }
@@ -1379,15 +1384,15 @@ fn is_prime_jacobi(n: &ExactInt) -> Status {
         }
     }
     if result == Status::Probabprime {
-        for i in 0..lambdas.len() {
-            if lambdas[i] == 0 {
-                match additional_test(n, conf.rs[i]) {
+        for (lam, &r) in lambdas.iter_mut().zip(conf.rs.iter()) {
+            if *lam == 0 {
+                match additional_test(n, r) {
                     2 => result = Status::Composite,
                     1 => {}
                     _ => result = Status::Unknown,
                 }
                 if result == Status::Probabprime {
-                    lambdas[i] = 1;
+                    *lam = 1;
                 }
             }
         }
@@ -1623,15 +1628,11 @@ fn morrison(n: &ExactInt, pp1: &[u64]) -> Option<(ExactInt, ExactInt, bool)> {
 fn bls_nminus1_square(n: &ExactInt, f1: &ExactInt) -> Option<bool> {
     // n = c2 F^2 + c1 F + 1; composite if c1^2 - 4 c2 is a square.
     let n1 = n.sub(&one());
-    let Some((n1f, rem1)) = n1.div_rem(f1) else {
-        return None;
-    };
+    let (n1f, rem1) = n1.div_rem(f1)?;
     if !rem1.is_zero() {
         return None;
     }
-    let Some((c2, c1)) = n1f.div_rem(f1) else {
-        return None;
-    };
+    let (c2, c1) = n1f.div_rem(f1)?;
     let disc = c1.mul(&c1).sub(&c2.mul(&ExactInt::from_u64(4)));
     Some(!is_square(&disc))
 }
