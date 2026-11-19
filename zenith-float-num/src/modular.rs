@@ -13,11 +13,11 @@ pub const POLLARD_RHO_ITER_MAX: usize = 1_048_576;
 /// Brent inner-loop product batch.
 const POLLARD_BRENT_M: usize = 128;
 
-fn two() -> ExactInt {
+pub(crate) fn two() -> ExactInt {
     ExactInt::from_u64(2)
 }
 
-fn abs_int(a: &ExactInt) -> ExactInt {
+pub(crate) fn abs_int(a: &ExactInt) -> ExactInt {
     if a.is_negative() {
         a.neg()
     } else {
@@ -25,11 +25,11 @@ fn abs_int(a: &ExactInt) -> ExactInt {
     }
 }
 
-fn is_even(a: &ExactInt) -> bool {
+pub(crate) fn is_even(a: &ExactInt) -> bool {
     a.low_word() & 1 == 0
 }
 
-fn rem_nonneg(a: &ExactInt, m: &ExactInt) -> Option<ExactInt> {
+pub(crate) fn rem_nonneg(a: &ExactInt, m: &ExactInt) -> Option<ExactInt> {
     let mabs = abs_int(m);
     if mabs.is_zero() {
         return None;
@@ -42,12 +42,16 @@ fn rem_nonneg(a: &ExactInt, m: &ExactInt) -> Option<ExactInt> {
     }
 }
 
-fn mul_mod(a: &ExactInt, b: &ExactInt, m: &ExactInt) -> Option<ExactInt> {
+pub(crate) fn mul_mod(a: &ExactInt, b: &ExactInt, m: &ExactInt) -> Option<ExactInt> {
     rem_nonneg(&a.mul(b), m)
 }
 
-fn add_mod(a: &ExactInt, b: &ExactInt, m: &ExactInt) -> Option<ExactInt> {
+pub(crate) fn add_mod(a: &ExactInt, b: &ExactInt, m: &ExactInt) -> Option<ExactInt> {
     rem_nonneg(&a.add(b), m)
+}
+
+pub(crate) fn sub_mod(a: &ExactInt, b: &ExactInt, m: &ExactInt) -> Option<ExactInt> {
+    rem_nonneg(&a.sub(b), m)
 }
 
 /// `base^exp mod modulus`. `exp < 0` or a zero modulus is `None`.
@@ -233,32 +237,58 @@ pub fn pollard_rho(n: &ExactInt) -> Option<ExactInt> {
 /// perfect power or a cycle that closes on `n` moves on to the next `c`; every odd
 /// composite has a `c` for which the cycle separates a factor.
 fn split_composite(n: &ExactInt) -> ExactInt {
-    let mut c = 1u64;
-    loop {
-        if let Some(f) = brent_once(n, &ExactInt::from_u64(c)) {
-            if !f.is_one() && f != *n {
-                return f;
-            }
-        }
-        // A cycle that never separates for every c below 2^64 would need n's prime
-        // factors to share every orbit; trial division settles it before c wraps.
-        c = match c.checked_add(1) {
-            Some(v) => v,
-            None => return trial_factor(n),
-        };
-    }
-}
-
-/// Smallest prime factor of the composite `n` by trial division (the last resort of
-/// [`split_composite`]; never reached in practice).
-fn trial_factor(n: &ExactInt) -> ExactInt {
-    let mut d = ExactInt::from_u64(3);
-    let two = two();
-    loop {
-        if rem_nonneg(n, &d).is_some_and(|r| r.is_zero()) {
+    if let Some(d) = crate::primality::trial_prime_factor(n) {
+        if d != *n {
             return d;
         }
-        d = d.add(&two);
+    }
+    // ECM with growing B1 first. Brent ρ is uncapped, but a single brent_once
+    // on a ~55-bit factor is O(2^{27}) ExactInt operations, which is the
+    // hang we are replacing. Defer ρ until ECM has tried a large B1; then
+    // ρ still runs without a cap if ECM has not found a factor.
+    let bits = n.bit_length();
+    let mut b1 = if bits > 140 {
+        11_000u64
+    } else if bits > 90 {
+        2_000u64
+    } else {
+        200u64
+    };
+    let mut sigma = 6u64;
+    let mut c = 1u64;
+    loop {
+        let curves: u32 = if b1 < 2_000 {
+            20
+        } else if b1 < 20_000 {
+            50
+        } else {
+            80
+        };
+        // B2 = 40 B1: stage 2 still helps, without a 100× sieve/walk cost.
+        let b2 = b1.saturating_mul(40);
+        for _ in 0..curves {
+            if let Some(f) = crate::primality::ecm_curve(n, b1, b2, sigma) {
+                if !f.is_one() && f != *n {
+                    return f;
+                }
+            }
+            sigma = sigma.saturating_add(1).max(6);
+        }
+        if b1 >= 50_000 {
+            if let Some(f) = brent_once(n, &ExactInt::from_u64(c)) {
+                if !f.is_one() && f != *n {
+                    return f;
+                }
+            }
+            c = match c.checked_add(1) {
+                Some(v) => v,
+                None => 1,
+            };
+        }
+        match b1.checked_mul(3) {
+            Some(v) if v > b1 => b1 = v,
+            _ => b1 = u64::MAX / 4,
+        }
     }
 }
 
@@ -272,13 +302,15 @@ const MR13_BOUND: u128 = 3_317_044_064_679_887_385_961_981;
 /// Proven primality of `|n|`, like FLINT's `fmpz_is_prime` (ZF-53).
 ///
 /// - `|n| < 3.3·10^24` (past `2^64`): Miller–Rabin with the first 13 prime bases, which is
-///   deterministic there.
-/// - Larger: a strong probable-prime test with those bases rejects composites, then a
-///   Pocklington–Lehmer `n − 1` certificate proves primality. `n − 1` is factored (trial
-///   division, then [`is_prime`] and Brent ρ on the cofactors, recursively) until the
-///   proven part `F` satisfies `F² > n`. Each prime `q | F` then needs a witness `a` with
-///   `a^(n−1) ≡ 1` and `gcd(a^((n−1)/q) − 1, n) = 1`. Witnesses are tried from `a = 2` up,
-///   and an `a` sharing a factor with `n` proves it composite, so the search terminates.
+///   deterministic there (Sorenson & Webster).
+/// - Larger: Baillie–PSW (Miller–Rabin base 2 plus a strong Lucas–Selfridge test)
+///   rejects composites. A probable-prime result is never returned as a proof. A
+///   Pocklington–Lehmer `n − 1` certificate then proves primality. `n − 1` is factored
+///   (trial division, then [`is_prime`] and ECM or Brent ρ on the cofactors,
+///   recursively) until the proven part `F` satisfies `F² > n`. Each prime `q | F`
+///   then needs a witness `a` with `a^(n−1) ≡ 1` and `gcd(a^((n−1)/q) − 1, n) = 1`.
+///   Witnesses are tried from `a = 2` up, and an `a` sharing a factor with `n` proves
+///   it composite, so the search terminates.
 ///
 /// No step is capped. The answer is a proof either way.
 pub fn is_prime(n: &ExactInt) -> bool {
@@ -286,24 +318,19 @@ pub fn is_prime(n: &ExactInt) -> bool {
     if n.soft_cmp(&two()) == Ordering::Less {
         return false;
     }
-    for &q in SMALL_PRIMES.iter() {
-        let qi = ExactInt::from_u64(q);
-        if n == qi {
-            return true;
-        }
-        if rem_nonneg(&n, &qi).is_some_and(|r| r.is_zero()) {
-            return false;
-        }
-    }
-    let wits: Vec<ExactInt> = SMALL_PRIMES
-        .iter()
-        .map(|&q| ExactInt::from_u64(q))
-        .collect();
-    if !miller_rabin(&n, &wits) {
-        return false;
+    if let Some(d) = crate::primality::trial_prime_factor(&n) {
+        return n == d;
     }
     if n.soft_cmp(&ExactInt::from_u128(MR13_BOUND)) == Ordering::Less {
-        return true;
+        let wits: Vec<ExactInt> = SMALL_PRIMES
+            .iter()
+            .map(|&q| ExactInt::from_u64(q))
+            .collect();
+        return miller_rabin(&n, &wits);
+    }
+    // Filter only. A BPSW probable prime is not a proof.
+    if !crate::primality::bpsw(&n) {
+        return false;
     }
     pocklington(&n)
 }
@@ -329,6 +356,7 @@ fn certified_part(nm1: &ExactInt, n: &ExactInt) -> Vec<ExactInt> {
             m = d;
         }
     }
+    crate::primality::divide_out_primes_upto(&mut m, &mut f, &mut qs, crate::primality::TRIAL_LIMIT);
     let mut stack = vec![m];
     while let Some(x) = stack.pop() {
         if done(&f) {
@@ -364,7 +392,25 @@ fn certified_part(nm1: &ExactInt, n: &ExactInt) -> Vec<ExactInt> {
 fn pocklington(n: &ExactInt) -> bool {
     let one = ExactInt::one();
     let nm1 = n.sub(&one);
-    for q in &certified_part(&nm1, n) {
+    let qs = certified_part(&nm1, n);
+    let mut f = ExactInt::one();
+    for q in &qs {
+        // Reconstruct F from the distinct primes with the multiplicity in n−1.
+        let mut tmp = nm1.clone();
+        while let Some((d, r)) = tmp.div_rem(q) {
+            if !r.is_zero() {
+                break;
+            }
+            f = f.mul(q);
+            tmp = d;
+        }
+    }
+    if f.mul(&f).soft_cmp(n) != Ordering::Greater {
+        // Incomplete n−1 factorization is not a proof. certified_part keeps
+        // splitting until the bound holds, so this path is defensive.
+        return false;
+    }
+    for q in &qs {
         let e = match nm1.div_rem(q) {
             Some((e, _)) => e,
             None => return false,
@@ -433,6 +479,105 @@ mod tests {
         );
         assert!(pollard_rho(&ExactInt::from_u64(31)).is_none());
         assert!(mod_pow(&two, &ExactInt::from_i64(-1), &m).is_none());
+        Ok(())
+    }
+
+    /// ZF-53 / d0225257: a FLINT-style proof path (BPSW, then a
+    /// Pocklington–Lehmer n−1 certificate whose factoring uses ECM).
+    /// Probable-prime filters are never returned as a proof. Covers
+    /// 2^255−19, the ZF-53 Mersennes, Carmichael numbers, strong
+    /// pseudoprimes to several bases, and semiprimes with large
+    /// balanced factors.
+    #[test]
+    fn zf_53_pollard_rho_proof_path() -> Result<(), crate::Error> {
+        fn dec(s: &str) -> ExactInt {
+            ExactInt::from_dec_string(s).expect("test integer")
+        }
+        fn assert_proved_prime(n: &ExactInt) {
+            // pollard_rho proves primality via is_prime and returns None.
+            // Do not also call is_prime first: the certificate is not cached,
+            // and a second proof would double the wall time.
+            assert!(
+                pollard_rho(n).is_none(),
+                "must be a proved prime (pollard_rho yields None) {}",
+                n.to_dec_string()
+            );
+        }
+        fn assert_proved_composite(n: &ExactInt) {
+            assert!(
+                !is_prime(n),
+                "must be proved composite {}",
+                n.to_dec_string()
+            );
+            let f = pollard_rho(n).expect("a composite must yield a proper factor");
+            assert!(
+                f.soft_cmp(&ExactInt::one()) == Ordering::Greater
+                    && f.soft_cmp(n) == Ordering::Less,
+                "factor {} is not proper for {}",
+                f.to_dec_string(),
+                n.to_dec_string()
+            );
+            let (q, r) = n.div_rem(&f).expect("div");
+            assert!(r.is_zero(), "factor does not divide");
+            assert!(!q.is_one() && q != *n);
+        }
+
+        // Curve25519 prime, d0225257: needs ECM in the n−1 proof, not ρ.
+        let p255 = ExactInt::from_u64(2).pow(255).sub(&ExactInt::from_u64(19));
+        let t0 = std::time::Instant::now();
+        assert_proved_prime(&p255);
+        assert!(
+            t0.elapsed().as_secs() < 110,
+            "2^255-19 must finish under the 120 s wall, not a ρ search; took {:?}"
+            , t0.elapsed()
+        );
+
+        // ZF-53 Mersennes (d0225248, d0225251).
+        assert_proved_prime(&ExactInt::from_u64(2).pow(89).sub(&ExactInt::one()));
+        assert_proved_prime(&ExactInt::from_u64(2).pow(127).sub(&ExactInt::one()));
+
+        // Carmichael numbers (Fermat PSP to every coprime base).
+        for s in [
+            "561",
+            "1105",
+            "1729",
+            "2465",
+            "2821",
+            "6601",
+            "8911",
+            "10585",
+            "15841",
+            "29341",
+            "172081",
+            "2152302898747",
+            "105098405405550221251",
+            "3211971524423007740460469",
+            // Chernick U_k, k=13679106, above the MR13 deterministic bound.
+            "3317249643051242788534009",
+        ] {
+            assert_proved_composite(&dec(s));
+        }
+
+        // Strong pseudoprimes to the first several prime bases.
+        for s in [
+            "1373653",    // strong PSP to 2 and 3
+            "25326001",
+            "161304001",
+            "960946321",
+            "1156916633",
+            "3215031751", // strong PSP to 2, 3, 5, and 7
+            "75130373920513",
+        ] {
+            assert_proved_composite(&dec(s));
+        }
+
+        // Semiprimes with large balanced factors.
+        let p40a = dec("1099511627791");
+        let p40b = dec("1099511627803");
+        assert_proved_composite(&p40a.mul(&p40b));
+        let p48a = dec("281474976710677");
+        let p48b = dec("281474976710717");
+        assert_proved_composite(&p48a.mul(&p48b));
         Ok(())
     }
 }

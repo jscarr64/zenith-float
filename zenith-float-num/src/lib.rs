@@ -54,6 +54,7 @@ mod ieee_soft;
 mod integer;
 mod mantissa;
 mod modular;
+mod primality;
 mod num;
 mod ode;
 mod ops;
