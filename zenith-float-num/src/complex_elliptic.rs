@@ -1141,71 +1141,105 @@ fn leave_cut_visible(z: &ExactComplex, p: usize, force_lower: bool) -> ExactComp
 /// is the branch that matches \(R_J\) on the lower side of the \(m\)-cut.
 /// Real \(m\ge 1\), including \(m=2+0i\), is forced onto that lower side (Jeff / 3b5e5bd).
 
-/// DLMF 19.8.7–19.8.8, domain −∞ < k² < 1 and −∞ < α² < 1.
+/// True when `z` is real and `Re(z) ≥ 1` (the Legendre cut of \(K\) and \(\Pi\)).
+fn on_legendre_cut(z: &ExactComplex, p: usize) -> bool {
+    if !is_real_c(z) || z.re().is_negative() {
+        return false;
+    }
+    matches!(z.re().compare(&ExactNum::from_u8(1, p)), Some(c) if c >= 0)
+}
+
+/// Sufficient domain for the principal-sqrt DLMF 19.8.7–19.8.8 AGM,
+/// pinned against Arb `acb_elliptic_pi` (python-flint 0.9.0) at 128 bits.
+///
+/// DLMF states the formula for real \(-\infty<k^2<1\) and \(-\infty<\alpha^2<1\)
+/// (`m=k^2`, `n=\alpha^2`). The same recurrences with the principal square
+/// root continue \(\Pi\) to complex `(n,m)` and match Arb's
+/// \(R_F+(n/3)R_J\) branch when `n` and `m` are not on the cut `[1,+\infty)`,
+/// are not the poles `n=1` or `m=1`, and `Re(n) ≤ 1`.
+///
+/// `Re(n) ≤ 1` is sufficient, not necessary: many points with `Re(n)>1`
+/// also agree, but a thin tongue just below the `n`-cut (`Re(n)>1`,
+/// `Im(n)` slightly negative) for some `m` (e.g. `m=1/2+i/2`) lands on a
+/// different sheet from Arb, so those stay on the \(R_F+R_J\) path.
+/// Official complete-Π remainder: the `Π(1+i, 2)` family (`m ∈ [1,+\infty)`),
+/// already served by the DLMF 19.21.6 / lower-side \(R_D\) path, and the
+/// incomplete row `Π(0;1/2|1/2+i/2)`.
+fn pi_complete_agm_applicable(n: &ExactComplex, m: &ExactComplex, p: usize) -> bool {
+    if is_c_one(n, p) || is_c_one(m, p) {
+        return false;
+    }
+    if on_legendre_cut(n, p) || on_legendre_cut(m, p) {
+        return false;
+    }
+    matches!(n.re().compare(&ExactNum::from_u8(1, p)), Some(c) if c <= 0)
+}
+
+/// DLMF 19.8.7–19.8.8, principal square roots.
 /// Π(n, m) = π / (4 M(1, √(1−m))) · (2 + n/(1−n) Σ Q_j),
 /// a₀=1, g₀=√(1−m), p₀=√(1−n), Q₀=1,
 /// p_{j+1}=(p_j² + a_j g_j)/(2 p_j), ε_j=(p_j² − a_j g_j)/(p_j² + a_j g_j),
 /// Q_{j+1}=ε_j Q_j / 2.
-fn pi_complete_agm_real(
+fn pi_complete_agm(
     n: &ExactComplex,
     m: &ExactComplex,
     p: usize,
     _dest: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let one = ExactNum::from_u8(1, p);
-    let two = ExactNum::from_u8(2, p);
+    let one = ExactComplex::one(p);
+    let two = c_u32(2, p);
     let mut a = one.clone();
-    let om = one.clone().sub(m.re(), p, rm());
-    if !om.is_positive() {
+    let om = one_minus(m, p);
+    let on = one_minus(n, p);
+    if is_c_zero(&on) {
         return nan_pair(Error::InvalidArgument);
     }
-    let mut g = om.sqrt(p, rm());
-    let on = one.clone().sub(n.re(), p, rm());
-    if on.is_zero() {
+    let mut g = om.sqrt(p, rm(), cc);
+    let mut pn = on.sqrt(p, rm(), cc);
+    if is_c_zero(&pn) || g.is_nan() || pn.is_nan() {
         return nan_pair(Error::InvalidArgument);
     }
-    // p₀ = √(1−n). For n=−2, 1−n=3>0. If 1−n<0 (n>1) we would be in 19.8.9, not here.
-    if !on.is_positive() {
-        return nan_pair(Error::InvalidArgument);
-    }
-    let mut pn = on.sqrt(p, rm());
     let mut q = one.clone();
     let mut qsum = q.clone();
-    let thresh = one.ldexp(-((p as Exponent) + 32), p, rm());
-    // Quadratic AGM: well under p iterations.
+    let thresh = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) + 32), p, rm());
+    // Quadratic AGM: about log2(p) iterations.
     for _ in 0..=p {
-        let ag = a.clone().mul(&g, p, rm());
-        let pn2 = pn.sqr(p, rm());
+        let ag = a.mul(&g, p, rm());
+        let pn2 = pn.mul(&pn, p, rm());
         let den = pn2.clone().add(&ag, p, rm());
-        if den.is_zero() {
+        if is_c_zero(&den) {
             return nan_pair(Error::InvalidArgument);
         }
-        let num = pn2.sub(&ag, p, rm());
-        let eps = num.div(&den, p, rm());
+        let eps = pn2.sub(&ag, p, rm()).div(&den, p, rm());
         q = eps.mul(&q, p, rm()).div(&two, p, rm());
         qsum = qsum.add(&q, p, rm());
         let an = a.add(&g, p, rm()).div(&two, p, rm());
-        g = ag.sqrt(p, rm());
+        g = ag.sqrt(p, rm(), cc);
+        if is_c_zero(&pn) {
+            return nan_pair(Error::InvalidArgument);
+        }
         pn = den.div(&two, p, rm()).div(&pn, p, rm());
         a = an;
-        let spread = a.clone().sub(&g, p, rm()).abs();
-        let qabs = q.clone().abs();
+        let spread = c_abs(&ExactComplex::sub_ref(&a, &g, p, rm()), p);
+        let qabs = c_abs(&q, p);
         if matches!(spread.compare(&thresh), Some(c) if c < 0)
             && matches!(qabs.compare(&thresh), Some(c) if c < 0)
         {
             break;
         }
     }
-    // M = a (or g); Π = π/(4M) * (2 + n/(1−n) * qsum)
-    let four = ExactNum::from_u8(4, p);
-    let pi = cc.pi(p, rm());
+    // M = a; Π = π/(4M) * (2 + n/(1−n) * qsum)
+    let four = c_u32(4, p);
+    let pi = ExactComplex::from_real(cc.pi(p, rm()), p);
     let pref = pi.div(&four, p, rm()).div(&a, p, rm());
-    let n_over = n.re().clone().div(&on, p, rm());
+    let n_over = n.div(&on, p, rm());
     let inner = two.add(&n_over.mul(&qsum, p, rm()), p, rm());
     let val = pref.mul(&inner, p, rm());
-    // Carry the signed-zero imaginary part of a real value.
-    ExactComplex::from_real(val, p)
+    if is_real_c(n) && is_real_c(m) {
+        return ExactComplex::from_real(val.re().clone(), p);
+    }
+    val
 }
 
 fn pi_complete_via_rd(
@@ -1248,6 +1282,32 @@ fn pi_complete_via_rd(
     let rj = right.div(&fac, p, rm());
     rf0.add(&n.div(&three, p, rm()).mul(&rj, p, rm()), p, rm())
 }
+
+
+fn pi_complete_via_rf_rj(
+    n: &ExactComplex,
+    m: &ExactComplex,
+    p: usize,
+    dest: usize,
+    cc: &mut Consts,
+    on_cut: bool,
+) -> ExactComplex {
+    let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+    let zero = ExactComplex::zero(wp);
+    let one = ExactComplex::one(wp);
+    let three = c_u32(3, wp);
+    let om = leave_cut(&one_minus(m, wp), dest);
+    let on = leave_cut(&one_minus(n, wp), dest);
+    let rf = carlson_rf(&zero, &om, &one, wp, cc);
+    let rj = carlson_rj(&zero, &om, &one, &on, wp, cc);
+    let v = rf.add(&n.div(&three, wp, rm()).mul(&rj, wp, rm()), wp, rm());
+    if on_cut {
+        flush_cut_bias(v, dest)
+    } else {
+        v
+    }
+}
+
 
 impl ExactComplex {
     /// Complete elliptic \(K(m)\), \(m=k^2\). Cut on \([1,+\infty)\). \(m=1\) is \(+\infty\).
@@ -1541,17 +1601,13 @@ impl ExactComplex {
                 .div(&c_u32(2, p), p, rm());
             return half_pi.div(&s, p, rm());
         }
-        // DLMF 19.8.7: complete Π(n, m) by AGM when n and m are real
-        // and −∞ < m < 1, −∞ < n < 1. Quadratic in the iterates.
-        if is_real_c(self) && is_real_c(m) {
-            let nre = self.re();
-            let mre = m.re();
-            let one = ExactNum::from_u8(1, p);
-            if matches!(mre.compare(&one), Some(c) if c < 0)
-                && matches!(nre.compare(&one), Some(c) if c < 0)
-            {
-                return pi_complete_agm_real(self, m, p, dest, cc);
-            }
+        // DLMF 19.8.7–19.8.8 AGM, principal square roots, in the
+        // sufficient complex domain pinned against Arb (see
+        // `pi_complete_agm_applicable`). About log2(p) iterations
+        // instead of O(p) R_J duplications. Official remainder
+        // (m on [1,+∞), incomplete Π) keeps the paths below.
+        if pi_complete_agm_applicable(self, m, p) {
+            return pi_complete_agm(self, m, p, dest, cc);
         }
         let om_tmp = one_minus(m, p);
         let on_tmp = one_minus(self, p);
@@ -1565,20 +1621,7 @@ impl ExactComplex {
             let v = pi_complete_via_rd(self, m, p, cc);
             return if on_cut { flush_cut_bias(v, dest) } else { v };
         }
-        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
-        let zero = ExactComplex::zero(wp);
-        let one = ExactComplex::one(wp);
-        let three = c_u32(3, wp);
-        let om = leave_cut(&one_minus(m, wp), dest);
-        let on = leave_cut(&one_minus(self, wp), dest);
-        let rf = carlson_rf(&zero, &om, &one, wp, cc);
-        let rj = carlson_rj(&zero, &om, &one, &on, wp, cc);
-        let v = rf.add(&self.div(&three, wp, rm()).mul(&rj, wp, rm()), wp, rm());
-        if on_cut {
-            flush_cut_bias(v, dest)
-        } else {
-            v
-        }
+        pi_complete_via_rf_rj(self, m, p, dest, cc, on_cut)
     }
 
     /// Incomplete \(\Pi(n;x|m)\). `self` is the characteristic \(n\).
@@ -1967,6 +2010,175 @@ mod tests {
             elapsed < std::time::Duration::from_secs(5),
             "Π(-2,1/2) p=16384 took {elapsed:?}"
         );
+        Ok(())
+    }
+
+
+    /// Complex DLMF 19.8.7–19.8.8 AGM matches the existing R_F+(n/3)R_J
+    /// path at dest 64/256/1024 on the official in-domain complete-Π rows,
+    /// including both tight rows.
+    #[test]
+    fn zf_pi_complete_agm_matches_rf_rj_official_rows() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        for p in [64usize, 256, 1024] {
+            let one = ExactNum::from_u8(1, p);
+            let half = one.clone().div(&ExactNum::from_u8(2, p), p, r);
+            let cases: &[(&str, ExactComplex, ExactComplex)] = &[
+                (
+                    "Pi(-2,1/2)",
+                    ExactComplex::from_real(ExactNum::from_u8(2, p).neg(), p),
+                    ExactComplex::from_real(half.clone(), p),
+                ),
+                (
+                    "Pi(1+i,-1)",
+                    ExactComplex::new(one.clone(), one.clone()),
+                    ExactComplex::from_real(one.clone().neg(), p),
+                ),
+                (
+                    "Pi(1+i,0)",
+                    ExactComplex::new(one.clone(), one.clone()),
+                    ExactComplex::zero(p),
+                ),
+                (
+                    "Pi(1+i,1/2+i/2)",
+                    ExactComplex::new(one.clone(), one.clone()),
+                    ExactComplex::new(half.clone(), half.clone()),
+                ),
+            ];
+            for (lab, n, m) in cases {
+                assert!(
+                    pi_complete_agm_applicable(n, m, p),
+                    "{lab} p={p} should be in the AGM domain"
+                );
+                let agm = pi_complete_agm(n, m, p, p, &mut cc);
+                let rj = pi_complete_via_rf_rj(n, m, p, p, &mut cc, false);
+                assert!(!agm.is_nan() && !rj.is_nan(), "{lab} p={p} NaN");
+                assert!(
+                    near(agm.re(), rj.re(), p, 16) && near(agm.im(), rj.im(), p, 16),
+                    "{lab} p={p} AGM {:?} RJ {:?}",
+                    agm,
+                    rj
+                );
+            }
+            // Official remainder: m=2 stays off the AGM path.
+            let n = ExactComplex::new(one.clone(), one.clone());
+            let m2 = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
+            assert!(
+                !pi_complete_agm_applicable(&n, &m2, p),
+                "Pi(1+i,2) must stay on the R_D / lower-side path"
+            );
+        }
+        Ok(())
+    }
+
+    /// A box around both tight official rows at dest 64: every in-domain
+    /// point of the AGM path matches R_F+R_J.
+    #[test]
+    fn zf_pi_complete_agm_grid_around_tight_rows() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let p = 64usize;
+        let one = ExactNum::from_u8(1, p);
+        let two = ExactNum::from_u8(2, p);
+        let four = ExactNum::from_u8(4, p);
+        let half = one.clone().div(&two, p, r);
+        let qtr = one.clone().div(&four, p, r);
+        let centers: [(ExactComplex, ExactComplex, &str); 2] = [
+            (
+                ExactComplex::new(one.clone(), one.clone()),
+                ExactComplex::from_real(one.clone().neg(), p),
+                "Pi(1+i,-1)",
+            ),
+            (
+                ExactComplex::new(one.clone(), one.clone()),
+                ExactComplex::new(half.clone(), half.clone()),
+                "Pi(1+i,1/2+i/2)",
+            ),
+        ];
+        // Offsets ±0, ±1/4, ±1/2 in Re and Im of n and (separately) of m.
+        let offs = [
+            ExactNum::from_u8(0, p),
+            qtr.clone(),
+            qtr.clone().neg(),
+            half.clone(),
+            half.clone().neg(),
+        ];
+        let mut checked = 0usize;
+        for (n0, m0, lab) in &centers {
+            for dre in &offs {
+                for dim in &offs {
+                    let n = ExactComplex::new(
+                        n0.re().clone().add(&dre, p, r),
+                        n0.im().clone().add(&dim, p, r),
+                    );
+                    let m = m0.clone();
+                    if !pi_complete_agm_applicable(&n, &m, p) {
+                        continue;
+                    }
+                    let agm = pi_complete_agm(&n, &m, p, p, &mut cc);
+                    let rj = pi_complete_via_rf_rj(&n, &m, p, p, &mut cc, false);
+                    assert!(
+                        !agm.is_nan() && !rj.is_nan()
+                            && near(agm.re(), rj.re(), p, 16)
+                            && near(agm.im(), rj.im(), p, 16),
+                        "{lab} n-shift dre/dim AGM {:?} RJ {:?}",
+                        agm,
+                        rj
+                    );
+                    checked += 1;
+                }
+            }
+            for dre in &offs {
+                for dim in &offs {
+                    let n = n0.clone();
+                    let m = ExactComplex::new(
+                        m0.re().clone().add(&dre, p, r),
+                        m0.im().clone().add(&dim, p, r),
+                    );
+                    if !pi_complete_agm_applicable(&n, &m, p) {
+                        continue;
+                    }
+                    let agm = pi_complete_agm(&n, &m, p, p, &mut cc);
+                    let rj = pi_complete_via_rf_rj(&n, &m, p, p, &mut cc, false);
+                    assert!(
+                        !agm.is_nan() && !rj.is_nan()
+                            && near(agm.re(), rj.re(), p, 16)
+                            && near(agm.im(), rj.im(), p, 16),
+                        "{lab} m-shift dre/dim AGM {:?} RJ {:?}",
+                        agm,
+                        rj
+                    );
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked >= 40, "grid too small: checked={checked}");
+        Ok(())
+    }
+
+    /// After the AGM dispatch, both tight official rows at dest 8192 must
+    /// finish in well under a second (the R_J path was a few seconds).
+    #[test]
+    fn zf_pi_complete_agm_tight_rows_p8192_fast() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let p = 8192usize;
+        let one = ExactNum::from_u8(1, p);
+        let n = ExactComplex::new(one.clone(), one.clone());
+        let m1 = ExactComplex::from_real(one.clone().neg(), p);
+        let half = one.div(&ExactNum::from_u8(2, p), p, r);
+        let m2 = ExactComplex::new(half.clone(), half);
+        for (lab, m) in [("Pi(1+i,-1)", &m1), ("Pi(1+i,1/2+i/2)", &m2)] {
+            let t0 = std::time::Instant::now();
+            let got = n.elliptic_pi_complete(m, p, r, &mut cc);
+            let dt = t0.elapsed();
+            assert!(!got.is_nan(), "{lab} p=8192 NaN");
+            assert!(
+                dt < std::time::Duration::from_secs(2),
+                "{lab} p=8192 took {dt:?}"
+            );
+        }
         Ok(())
     }
 
