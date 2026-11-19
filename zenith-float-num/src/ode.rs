@@ -45,10 +45,12 @@ pub enum OdeError {
     /// derivative or step, or a failed allocation of the output arrays.
     InvalidArgument,
     /// The step size has fallen below what the working precision can
-    /// represent, or the error estimate cannot decrease at the current
+    /// represent, the error estimate cannot decrease at the current
     /// precision (for example a zero tolerance with a method whose
-    /// truncation term is nonzero). A clear error, not a silent `None`
-    /// (ZF-54).
+    /// truncation term is nonzero), or an a priori order-5 bound from
+    /// the opening step shows that the trajectory needed to meet the
+    /// tolerance cannot be allocated or represented. A clear error,
+    /// not a silent `None` (ZF-54). This is never a step counter.
     ToleranceUnreachable,
 }
 
@@ -480,6 +482,93 @@ fn wrk_supports_tol(atol: &ExactNum, rtol: &ExactNum, y: &ExactNum, wrk: usize) 
     matches!(padded.compare(&scale), Some(c) if c < 0)
 }
 
+/// Mantissa limbs of one [`ExactNum`] at precision `p`.
+fn mantissa_words(p: usize) -> usize {
+    p.div_ceil(WORD_BIT_SIZE).max(1)
+}
+
+/// Largest number of sample instants whose two output arrays (`t` and
+/// `y`) can be represented: `2 * n * mantissa_words(p)` must fit in
+/// `usize`. This is an architectural bound on the trajectory, not a
+/// trial cap, and is computed from the precision alone.
+fn max_representable_trajectory_len(p: usize) -> usize {
+    let per = mantissa_words(p).saturating_mul(2);
+    if per == 0 {
+        usize::MAX
+    } else {
+        usize::MAX / per
+    }
+}
+
+/// Cap-free a priori proof that the Dormand–Prince trajectory needed
+/// to meet `atol`/`rtol` cannot be represented. One opening order-5
+/// probe at the integrator's initial step `h0` gives the local error
+/// `err`. If that step is already accepted, or `err` is zero or not
+/// finite, the run is not refused. Otherwise the required step is
+/// `h_req = h0 (scale/err)^{1/5}`, and the span is unrepresentable
+/// when `span > h_req * (max_n - 1)` for
+/// `max_n = max_representable_trajectory_len(wrk)`.
+///
+/// This is not a step counter. It never fires when the comparison
+/// says the run would finish, and it does not refuse when the probe
+/// is inconclusive (`NaN`).
+fn a_priori_trajectory_unrepresentable<F>(
+    tab: &Dp45,
+    f: &mut F,
+    t0: &ExactNum,
+    y0: &ExactNum,
+    h0: &ExactNum,
+    span: &ExactNum,
+    atol: &ExactNum,
+    rtol: &ExactNum,
+    wrk: usize,
+    cc: &mut Consts,
+) -> Result<bool, OdeError>
+where
+    F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    let (y5, y4) = dp45_step(tab, f, t0, y0, h0, wrk, RoundingMode::None, cc)
+        .ok_or(OdeError::InvalidArgument)?;
+    let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::None).abs();
+    if err.is_zero() || !finite(&err) {
+        return Ok(false);
+    }
+    let scale = step_scale(atol, rtol, y0, &y5, wrk);
+    if scale.is_zero() || !finite(&scale) {
+        return Ok(false);
+    }
+    if step_ok(&err, &scale) {
+        return Ok(false);
+    }
+    let ratio = scale.div(&err, wrk, RoundingMode::None);
+    if !finite(&ratio) || ratio.is_zero() || ratio.is_negative() {
+        return Ok(false);
+    }
+    let root = ratio.nth_root(5, wrk, RoundingMode::None);
+    if !finite(&root) || root.is_zero() || root.is_negative() {
+        return Ok(false);
+    }
+    let h_req = h0.clone().mul(&root, wrk, RoundingMode::None);
+    if !finite(&h_req) || h_req.is_zero() || h_req.is_negative() {
+        return Ok(false);
+    }
+    let max_n = max_representable_trajectory_len(wrk);
+    if max_n <= 1 {
+        return Ok(true);
+    }
+    let cap = match i64::try_from(max_n - 1) {
+        Ok(n) => ExactNum::from_i64(n, wrk),
+        // `max_n` too large to name as `i64`: the representable
+        // length is huge; do not refuse.
+        Err(_) => return Ok(false),
+    };
+    let max_span = h_req.mul(&cap, wrk, RoundingMode::None);
+    if !finite(&max_span) {
+        return Ok(false);
+    }
+    Ok(span.clone().abs().compare(&max_span) == Some(1))
+}
+
 fn rk45_at_prec<F>(
     mut f: F,
     t0: &ExactNum,
@@ -503,10 +592,24 @@ where
     let _ = t.set_precision(wrk, RoundingMode::None);
     let _ = y.set_precision(wrk, RoundingMode::None);
     let span = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None);
-    let mut h = span.ldexp(-4, wrk, RoundingMode::None);
+    let mut h = span.clone().ldexp(-4, wrk, RoundingMode::None);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
     push_pair(&mut ts, &mut ys, t.clone(), y.clone());
+    if a_priori_trajectory_unrepresentable(
+        &tab,
+        &mut f,
+        &t,
+        &y,
+        &h,
+        &span,
+        atol,
+        rtol,
+        wrk,
+        cc,
+    )? {
+        return Err(OdeError::ToleranceUnreachable);
+    }
     while t.compare(t1) == Some(-1) {
         let remain = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
         if h.compare(&remain) == Some(1) {
@@ -596,10 +699,14 @@ where
 /// Returns [`OdeError::InvalidArgument`] if `t1 ≤ t0`, a value is non-finite,
 /// a tolerance is negative, or the output arrays cannot be allocated.
 /// Returns [`OdeError::ToleranceUnreachable`] when the step falls below
-/// [`ode_min_step`] (what the working precision can represent), or when the
-/// error estimate cannot decrease at the current precision (ZF-54). When the
-/// tolerance is finer than the current working precision can support, the
-/// working precision is raised and the integration is retried.
+/// [`ode_min_step`] (what the working precision can represent), when the
+/// error estimate cannot decrease at the current precision, or when an
+/// a priori order-5 bound from the opening step shows that the needed
+/// trajectory cannot be allocated or represented (ZF-54). The bound is
+/// computed up front from the inputs and is not a step counter; it does
+/// not fire when a run would finish. When the tolerance is finer than
+/// the current working precision can support, the working precision is
+/// raised and the integration is retried.
 pub fn rk45_adaptive<F>(
     mut f: F,
     t0: &ExactNum,
@@ -794,6 +901,108 @@ mod tests {
         );
         assert_eq!(got.err(), Some(OdeError::ToleranceUnreachable));
         assert_eq!(evals, 0, "zero tolerance refuses before any step");
+        Ok(())
+    }
+
+    /// ZF-54: a cap-free order-5 a priori bound. The Harper tolerance
+    /// (atol = rtol = 2^{-512} on [0,1] at p=1024) needs ~2^{102} steps,
+    /// which cannot be represented as a trajectory, and returns
+    /// [`OdeError::ToleranceUnreachable`] after one opening DP5 probe,
+    /// not a step counter. A tight but reachable tolerance on the same
+    /// problem (and on y' = -y) still returns the correctly controlled
+    /// value. The bound must not fire on a run that would finish.
+    #[test]
+    fn zf_54_rk45_order5_bound_refuses_only_when_unrepresentable() -> Result<(), crate::Error> {
+        let rm = RoundingMode::ToEven;
+
+        // Unreachable: Harper ZF-54 / d0229592.
+        let p_h = 1024;
+        let mut cc = Consts::new()?;
+        let zero = ExactNum::new(p_h);
+        let one = ExactNum::from_u8(1, p_h);
+        let tol_h = ExactNum::from_u8(1, p_h).ldexp(-512, p_h, RoundingMode::None);
+        let mut evals = 0u32;
+        let t0 = std::time::Instant::now();
+        let got = rk45_adaptive(
+            |t, _y, q, r, cc| {
+                evals += 1;
+                t.cos(q, r, cc)
+            },
+            &zero,
+            &one,
+            &one,
+            &tol_h,
+            &tol_h,
+            p_h,
+            rm,
+            &mut cc,
+        );
+        let ms = t0.elapsed().as_millis();
+        assert_eq!(got.err(), Some(OdeError::ToleranceUnreachable));
+        assert!(evals > 0, "the order-5 estimate uses one opening probe");
+        assert!(evals <= 16, "fail-fast after the probe, not a step counter; evals={evals}");
+        assert!(ms < 5_000, "named Err must arrive fast; took {ms} ms");
+
+        // Reachable tight tolerance: same f, y(1) = 1 + sin(1).
+        let p = 256;
+        let mut cc = Consts::new()?;
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let tol = ExactNum::from_u8(1, p).ldexp(-48, p, RoundingMode::None);
+        let mut evals_r = 0u32;
+        let (ts, ys) = rk45_adaptive(
+            |t, _y, q, r, cc| {
+                evals_r += 1;
+                t.cos(q, r, cc)
+            },
+            &zero,
+            &one,
+            &one,
+            &tol,
+            &tol,
+            p,
+            rm,
+            &mut cc,
+        )
+        .map_err(|_| crate::Error::InvalidArgument)?;
+        let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(tend.compare(&one), Some(0));
+        let expect = one.clone().add(&one.sin(p, rm, &mut cc), p, rm);
+        let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
+        // The accepted local scale is atol + rtol |y| ≈ 2^{-47}. Allow a
+        // generous global multiple of that scale, still far below 2^{-40}.
+        let band = ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
+        assert!(
+            err.is_zero() || err.compare(&band) != Some(1),
+            "reachable tight tol must return 1+sin(1); evals={evals_r}"
+        );
+        assert!(evals_r > 16, "a finishable run actually integrates; evals={evals_r}");
+
+        // Same reachable bar on a different f, so the bound is class-wide.
+        let mut evals_e = 0u32;
+        let ( _, ye) = rk45_adaptive(
+            |_t, y, _q, _r, _cc| {
+                evals_e += 1;
+                y.neg_via_mul()
+            },
+            &zero,
+            &one,
+            &one,
+            &tol,
+            &tol,
+            p,
+            rm,
+            &mut cc,
+        )
+        .map_err(|_| crate::Error::InvalidArgument)?;
+        let yende = ye.get(ye.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        let einv = one.neg_via_mul().exp(p, rm, &mut cc);
+        let erre = ExactNum::sub_ref(yende, &einv, p, rm).abs();
+        assert!(
+            erre.is_zero() || erre.compare(&band) != Some(1),
+            "y'=-y at the same tight tol must return e^{{-1}}; evals={evals_e}"
+        );
         Ok(())
     }
 
