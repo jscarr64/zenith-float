@@ -483,14 +483,15 @@ fn wrk_supports_tol(atol: &ExactNum, rtol: &ExactNum, y: &ExactNum, wrk: usize) 
 }
 
 /// Mantissa limbs of one [`ExactNum`] at precision `p`.
+#[cfg(test)]
 fn mantissa_words(p: usize) -> usize {
     p.div_ceil(WORD_BIT_SIZE).max(1)
 }
 
-/// Largest number of sample instants whose two output arrays (`t` and
-/// `y`) can be represented: `2 * n * mantissa_words(p)` must fit in
-/// `usize`. This is an architectural bound on the trajectory, not a
-/// trial cap, and is computed from the precision alone.
+/// Witness for the unsound 4e6c7e7 opening-probe rule, kept only so
+/// the counterexample can show that rule would refuse a finishable
+/// run. Not used in production.
+#[cfg(test)]
 fn max_representable_trajectory_len(p: usize) -> usize {
     let per = mantissa_words(p).saturating_mul(2);
     if per == 0 {
@@ -500,18 +501,11 @@ fn max_representable_trajectory_len(p: usize) -> usize {
     }
 }
 
-/// Cap-free a priori proof that the Dormand–Prince trajectory needed
-/// to meet `atol`/`rtol` cannot be represented. One opening order-5
-/// probe at the integrator's initial step `h0` gives the local error
-/// `err`. If that step is already accepted, or `err` is zero or not
-/// finite, the run is not refused. Otherwise the required step is
-/// `h_req = h0 (scale/err)^{1/5}`, and the span is unrepresentable
-/// when `span > h_req * (max_n - 1)` for
-/// `max_n = max_representable_trajectory_len(wrk)`.
-///
-/// This is not a step counter. It never fires when the comparison
-/// says the run would finish, and it does not refuse when the probe
-/// is inconclusive (`NaN`).
+/// The 4e6c7e7 opening-probe rule, kept only as a test witness.
+/// One DP5 step at `h0` estimates the step size needed at `t0`. That
+/// is not a lower bound on the step count over the whole span, so
+/// this must not be used as a production refusal.
+#[cfg(test)]
 fn a_priori_trajectory_unrepresentable<F>(
     tab: &Dp45,
     f: &mut F,
@@ -596,20 +590,6 @@ where
     let mut ts = Vec::new();
     let mut ys = Vec::new();
     push_pair(&mut ts, &mut ys, t.clone(), y.clone());
-    if a_priori_trajectory_unrepresentable(
-        &tab,
-        &mut f,
-        &t,
-        &y,
-        &h,
-        &span,
-        atol,
-        rtol,
-        wrk,
-        cc,
-    )? {
-        return Err(OdeError::ToleranceUnreachable);
-    }
     while t.compare(t1) == Some(-1) {
         let remain = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
         if h.compare(&remain) == Some(1) {
@@ -904,46 +884,105 @@ mod tests {
         Ok(())
     }
 
-    /// ZF-54: a cap-free order-5 a priori bound. The Harper tolerance
-    /// (atol = rtol = 2^{-512} on [0,1] at p=1024) needs ~2^{102} steps,
-    /// which cannot be represented as a trajectory, and returns
-    /// [`OdeError::ToleranceUnreachable`] after one opening DP5 probe,
-    /// not a step counter. A tight but reachable tolerance on the same
-    /// problem (and on y' = -y) still returns the correctly controlled
-    /// value. The bound must not fire on a run that would finish.
+    /// The 4e6c7e7 opening-probe rule is not a whole-span proof: a
+    /// sharp transient at t0 plus a long smooth tail can make one DP5
+    /// step at h0 = span/16 predict more than max_n steps, while the
+    /// true adaptive run shrinks through the layer and then grows h
+    /// across the tail and finishes. The right-hand side is the
+    /// non-stiff quadrature y' = λ exp(−λ t) (Lipschitz constant in y
+    /// is 0). A stiff linear sink cannot be used here: explicit RK45
+    /// would stay limited by the stability region.
     #[test]
-    fn zf_54_rk45_order5_bound_refuses_only_when_unrepresentable() -> Result<(), crate::Error> {
+    fn zf_54_probe_must_not_refuse_a_finishable_transient() -> Result<(), crate::Error> {
+        let p = 64;
         let rm = RoundingMode::ToEven;
-
-        // Unreachable: Harper ZF-54 / d0229592.
-        let p_h = 1024;
         let mut cc = Consts::new()?;
-        let zero = ExactNum::new(p_h);
-        let one = ExactNum::from_u8(1, p_h);
-        let tol_h = ExactNum::from_u8(1, p_h).ldexp(-512, p_h, RoundingMode::None);
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let t1 = one.clone().ldexp(400, p, RoundingMode::None);
+        let lam = ExactNum::from_u32(256, p);
+        let atol = one.clone().ldexp(-16, p, RoundingMode::None);
+        let rtol = ExactNum::new(p); // zero: scale stays at atol
+        let wrk = super::work_p(p);
+        let tab = super::Dp45::new(wrk, RoundingMode::None);
+        let span = ExactNum::sub_ref(&t1, &zero, wrk, RoundingMode::None);
+        let h0 = span.clone().ldexp(-4, wrk, RoundingMode::None);
+        let mut y0 = zero.clone();
+        let _ = y0.set_precision(wrk, RoundingMode::None);
+        let mut t0 = zero.clone();
+        let _ = t0.set_precision(wrk, RoundingMode::None);
+        let mut lam_w = lam.clone();
+        let _ = lam_w.set_precision(wrk, RoundingMode::None);
+        let mut pulse = |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
+            let nt = lam_w.clone().mul(tt, q, r).neg_via_mul();
+            lam_w.clone().mul(&nt.exp(q, r, c), q, r)
+        };
+        let decided = super::a_priori_trajectory_unrepresentable(
+            &tab,
+            &mut pulse,
+            &t0,
+            &y0,
+            &h0,
+            &span,
+            &atol,
+            &rtol,
+            wrk,
+            &mut cc,
+        );
+        assert_eq!(
+            decided,
+            Ok(true),
+            "the 4e6c7e7 probe must predict N > max_n on this problem"
+        );
+
         let mut evals = 0u32;
-        let t0 = std::time::Instant::now();
+        let wall = std::time::Instant::now();
         let got = rk45_adaptive(
-            |t, _y, q, r, cc| {
+            |tt, _y, q, r, c| {
                 evals += 1;
-                t.cos(q, r, cc)
+                let nt = lam.clone().mul(tt, q, r).neg_via_mul();
+                lam.clone().mul(&nt.exp(q, r, c), q, r)
             },
             &zero,
-            &one,
-            &one,
-            &tol_h,
-            &tol_h,
-            p_h,
+            &zero,
+            &t1,
+            &atol,
+            &rtol,
+            p,
             rm,
             &mut cc,
         );
-        let ms = t0.elapsed().as_millis();
-        assert_eq!(got.err(), Some(OdeError::ToleranceUnreachable));
-        assert!(evals > 0, "the order-5 estimate uses one opening probe");
-        assert!(evals <= 16, "fail-fast after the probe, not a step counter; evals={evals}");
-        assert!(ms < 5_000, "named Err must arrive fast; took {ms} ms");
+        let ms = wall.elapsed().as_millis();
+        let (ts, ys) = match got {
+            Ok(v) => v,
+            Err(e) => panic!("adaptive run must finish, not {e:?}; evals={evals} in {ms} ms"),
+        };
+        let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(tend.compare(&t1), Some(0), "must land on t1; evals={evals}");
+        // Exact y(t) = 1 - exp(-λ t) → 1 at t = 2^{400}.
+        let err = ExactNum::sub_ref(yend, &one, p, rm).abs();
+        let band = one.clone().ldexp(-12, p, RoundingMode::None);
+        assert!(
+            err.is_zero() || err.compare(&band) != Some(1),
+            "y(t1) must be 1 within a generous multiple of atol; evals={evals}"
+        );
+        assert!(evals > 16, "the run must actually integrate; evals={evals}");
+        assert!(evals < 100_000, "the tail must grow, not crawl; evals={evals}");
+        assert!(ms < 2_000, "the finishable run must be quick; took {ms} ms, evals={evals}");
+        let _ = ts;
+        Ok(())
+    }
 
-        // Reachable tight tolerance: same f, y(1) = 1 + sin(1).
+    /// Tight but reachable tolerances on y' = cos(t) and y' = -y still
+    /// return the correctly controlled values. The Harper ZF-54
+    /// tolerance is not refused here: a single opening probe is not a
+    /// whole-span proof, and no general substitute is claimed.
+    #[test]
+    fn zf_54_rk45_reachable_tight_tol_still_integrates() -> Result<(), crate::Error> {
+        let rm = RoundingMode::ToEven;
+
+        // Reachable tight tolerance: y' = cos(t), y(1) = 1 + sin(1).
         let p = 256;
         let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
