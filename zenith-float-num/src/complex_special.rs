@@ -1279,6 +1279,8 @@ impl ExactComplex {
     }
 
     /// Gamma \(\Gamma(z)\). Poles at non-positive integers → NaN.
+    /// At exact \(+\infty+0i\) the value is compact \(+\infty+0i\) (DLMF 5.11.1);
+    /// \(-\infty\) and non-real infinities have no compact limit.
     ///
     /// # Precision
     ///
@@ -1301,6 +1303,9 @@ impl ExactComplex {
         if is_nonpos_integer(self) {
             return nan_pair(Error::InvalidArgument);
         }
+        if self.re().is_inf_pos() && self.im().is_zero() {
+            return crate::complex::compact_inf(false, false);
+        }
         ziv_complex(round_p(p), rm, |pw| self.gamma_at(pw, cc))
     }
 
@@ -1309,6 +1314,7 @@ impl ExactComplex {
     /// reflection formula with `log_sin_pi` when \(\operatorname{Re} z<0\).
     /// The imaginary part may leave \((-\pi,\pi]\) (it differs from the principal
     /// logarithm of \(\Gamma(z)\) by \(2\pi i k\)). Poles → NaN.
+    /// At exact \(+\infty+0i\) the value is compact \(+\infty+0i\) (DLMF 5.11.1).
     ///
     /// # Precision
     ///
@@ -1331,10 +1337,16 @@ impl ExactComplex {
         if is_nonpos_integer(self) {
             return nan_pair(Error::InvalidArgument);
         }
+        if self.re().is_inf_pos() && self.im().is_zero() {
+            return crate::complex::compact_inf(false, false);
+        }
         ziv_complex(round_p(p), rm, |pw| self.ln_gamma_at(pw, cc))
     }
 
     /// Digamma \(\psi(z)=\Gamma'/\Gamma\). Poles at non-positive integers → NaN.
+    /// At exact \(+\infty\) with a finite imaginary part the value is compact
+    /// \(+\infty+0i\); at finite real part and imaginary \(\pm\infty\) it is
+    /// \(+\infty+i\operatorname{sgn}(\operatorname{Im})\pi/2\) (DLMF 5.11.2).
     ///
     /// # Precision
     ///
@@ -1356,6 +1368,27 @@ impl ExactComplex {
         }
         if is_nonpos_integer(self) {
             return nan_pair(Error::InvalidArgument);
+        }
+        if self.re().is_inf_pos() && !self.im().is_inf() && !self.im().is_nan() {
+            return crate::complex::compact_inf(false, false);
+        }
+        if self.im().is_inf() && !self.re().is_inf() && !self.re().is_nan() {
+            let dest = round_p(p);
+            let im_neg = self.im().is_negative();
+            let rm_im = if im_neg {
+                match rm {
+                    RoundingMode::Up => RoundingMode::Down,
+                    RoundingMode::Down => RoundingMode::Up,
+                    other => other,
+                }
+            } else {
+                rm
+            };
+            let mut im = cc.pi(dest, rm_im).ldexp(-1, dest, RoundingMode::None);
+            if im_neg {
+                im = im.neg();
+            }
+            return ExactComplex::new(crate::INF_POS.clone(), im);
         }
         ziv_complex(round_p(p), rm, |pw| self.digamma_at(pw, cc))
     }
@@ -3088,6 +3121,88 @@ mod tests {
         );
         assert!(!d.is_nan(), "digamma(-i) p=32768 NaN");
         assert!(cnear_bits(&d, &d64, 64, 4), "digamma(-i) p=32768 vs p=64");
+        Ok(())
+    }
+
+    /// Compact limits of complex Gamma, log-Gamma, and digamma at exact infinity.
+    /// Gamma(+∞+0i)=Ln Gamma(+∞+0i)=psi(+∞+0i)=+∞+0i (DLMF 5.11.1–2);
+    /// psi(a+i∞)=+∞+i sgn(Im) π/2 (5.11.2). The via-Ziv path used to return
+    /// InvalidArgument at every infinity.
+    #[test]
+    fn zf_gamma_ln_gamma_digamma_at_infinity() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ];
+        for p in [64usize, 256, 2048] {
+            let pos = ExactComplex::from_real(crate::INF_POS.clone(), p);
+            let neg = ExactComplex::from_real(crate::INF_NEG.clone(), p);
+            let iinf = ExactComplex::new(ExactNum::from_u8(1, p), crate::INF_POS.clone());
+            let niinf = ExactComplex::new(ExactNum::from_u8(1, p), crate::INF_NEG.clone());
+            for rm in modes {
+                for (lab, got) in [
+                    ("gamma(+∞)", pos.gamma(p, rm, &mut cc)),
+                    ("ln_gamma(+∞)", pos.ln_gamma(p, rm, &mut cc)),
+                    ("digamma(+∞)", pos.digamma(p, rm, &mut cc)),
+                ] {
+                    assert!(
+                        !got.is_nan() && got.re().is_inf_pos() && got.im().is_zero() && !got.im().is_negative(),
+                        "{lab} p={p} {rm:?} {:?}",
+                        got
+                    );
+                }
+                let dp = iinf.digamma(p, rm, &mut cc);
+                let dn = niinf.digamma(p, rm, &mut cc);
+                let hp = cc.pi(p, rm).ldexp(-1, p, RoundingMode::None);
+                let hp_m = {
+                    let rm_m = match rm {
+                        RoundingMode::Up => RoundingMode::Down,
+                        RoundingMode::Down => RoundingMode::Up,
+                        other => other,
+                    };
+                    cc.pi(p, rm_m).ldexp(-1, p, RoundingMode::None).neg()
+                };
+                assert!(
+                    !dp.is_nan() && dp.re().is_inf_pos() && dp.im().compare(&hp) == Some(0),
+                    "digamma(1+i∞) p={p} {rm:?} {:?}",
+                    dp
+                );
+                assert!(
+                    !dn.is_nan() && dn.re().is_inf_pos() && dn.im().compare(&hp_m) == Some(0),
+                    "digamma(1-i∞) p={p} {rm:?} {:?}",
+                    dn
+                );
+                for (lab, z) in [("gamma", neg.gamma(p, rm, &mut cc)), ("ln_gamma", neg.ln_gamma(p, rm, &mut cc)), ("digamma", neg.digamma(p, rm, &mut cc))] {
+                    assert!(z.is_nan(), "{lab}(−∞) p={p} {rm:?} should stay IA, got {:?}", z);
+                }
+                let nan = ExactComplex::new(crate::NAN.clone(), ExactNum::new(p));
+                let gn = nan.gamma(p, rm, &mut cc);
+                assert!(gn.is_nan(), "gamma(NaN) p={p} {rm:?} {:?}", gn);
+            }
+            if p > 256 {
+                continue;
+            }
+            let ten = ExactComplex::from_real(ExactNum::from_u8(10, p), p);
+            let g10 = ten.gamma(p, RoundingMode::ToEven, &mut cc);
+            assert!(
+                !g10.is_nan() && !g10.re().is_inf() && g10.re().is_positive(),
+                "gamma(10) should be finite, got {:?}",
+                g10
+            );
+            let z10i = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(10, p));
+            let d10i = z10i.digamma(p, RoundingMode::ToEven, &mut cc);
+            assert!(
+                !d10i.is_nan() && !d10i.re().is_inf() && !d10i.im().is_inf(),
+                "digamma(1+10i) should be finite, got {:?}",
+                d10i
+            );
+        }
         Ok(())
     }
 }

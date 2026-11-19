@@ -1385,6 +1385,9 @@ impl ExactComplex {
     }
 
     /// Complete elliptic \(E(m)\). \(E(1)=1\). Cut of \(K\) inherited through \(1-m\).
+    /// At exact \(+\infty+0i\) the value is compact \(+0-i\infty\) (lower side of
+    /// the \(m>1\) cut, same sign as finite real \(m>1\) with imag \(+0\)); at
+    /// \(+\infty-0i\) it is \(+0+i\infty\); at \(-\infty+0i\) it is compact \(+\infty+0i\).
     ///
     /// # Precision
     ///
@@ -1405,6 +1408,19 @@ impl ExactComplex {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
         let dest = round_p(p);
+        if self.im().is_zero() && self.re().is_inf() {
+            if self.re().is_negative() {
+                return crate::complex::compact_inf(false, false);
+            }
+            // Finite real m>1 already returns +0 · π/(4√m) with Im of opposite
+            // sign to the signed zero (lower side at +0, matching the m>1 cut).
+            let im = if self.im().is_negative() {
+                crate::INF_POS.clone()
+            } else {
+                crate::INF_NEG.clone()
+            };
+            return ExactComplex::new(crate::complex::compact_signed_zero(false), im);
+        }
         if is_c_one(self, dest) {
             return crate::complex::compact_one();
         }
@@ -2698,5 +2714,111 @@ mod tests {
         assert!(t3.elapsed().as_secs() < 1, "E(1) took {:?}", t3.elapsed());
         assert_eq!(e1.re().compare(&ExactNum::from_u8(1, 64)), Some(0));
         assert!(e1.im().is_zero(), "E(1) im {:?}", e1.im());
+    }
+
+    /// Compact limits of complete E and of F/E(x,0)=asin(x) at exact ±∞.
+    /// E(+∞+0i)=+0−i∞ (lower side of the m>1 cut); E(−∞+0i)=+∞+0i; F/E(+∞+0i, 0)=π/2+i∞ (DLMF 4.23.20, upper side).
+    /// The via-Ziv / inv_axis path used to return InvalidArgument at every infinity.
+    #[test]
+    fn zf_elliptic_e_complete_and_fe_at_infinity() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ];
+        for p in [64usize, 256, 2048, 8192] {
+            let z0 = ExactComplex::zero(p);
+            let one = ExactComplex::from_real(ExactNum::from_u8(1, p), p);
+            for rm in modes {
+                let epos = ExactComplex::from_real(INF_POS.clone(), p).elliptic_e_complete(p, rm, &mut cc);
+                assert!(
+                    !epos.is_nan() && epos.re().is_zero() && !epos.re().is_negative() && epos.im().is_inf_neg(),
+                    "E(+∞+0i) p={p} {rm:?} {:?}",
+                    epos
+                );
+                let epos_m = ExactComplex::new(INF_POS.clone(), crate::complex::compact_signed_zero(true))
+                    .elliptic_e_complete(p, rm, &mut cc);
+                assert!(
+                    !epos_m.is_nan() && epos_m.re().is_zero() && !epos_m.re().is_negative() && epos_m.im().is_inf_pos(),
+                    "E(+∞-0i) p={p} {rm:?} {:?}",
+                    epos_m
+                );
+                let eneg = ExactComplex::from_real(INF_NEG.clone(), p).elliptic_e_complete(p, rm, &mut cc);
+                assert!(
+                    !eneg.is_nan() && eneg.re().is_inf_pos() && eneg.im().is_zero(),
+                    "E(−∞) p={p} {rm:?} {:?}",
+                    eneg
+                );
+                let hp = cc.pi(p, rm).ldexp(-1, p, RoundingMode::None);
+                let hp_m = {
+                    let rm_m = match rm {
+                        RoundingMode::Up => RoundingMode::Down,
+                        RoundingMode::Down => RoundingMode::Up,
+                        other => other,
+                    };
+                    cc.pi(p, rm_m).ldexp(-1, p, RoundingMode::None).neg()
+                };
+                let pz = crate::complex::compact_signed_zero(false);
+                let mz = crate::complex::compact_signed_zero(true);
+                let cases = [
+                    ("+∞+0i", INF_POS.clone(), pz.clone(), &hp, true),
+                    ("+∞-0i", INF_POS.clone(), mz.clone(), &hp, false),
+                    ("-∞+0i", INF_NEG.clone(), pz.clone(), &hp_m, true),
+                    ("-∞-0i", INF_NEG.clone(), mz.clone(), &hp_m, false),
+                ];
+                for (lab, re, im, want_re, im_pos) in cases {
+                    let x = ExactComplex::new(re, im);
+                    for (fnlab, got) in [
+                        ("asin", x.asin(p, rm, &mut cc)),
+                        ("F", x.elliptic_f(&z0, p, rm, &mut cc)),
+                        ("E", x.elliptic_e(&z0, p, rm, &mut cc)),
+                    ] {
+                        assert!(!got.is_nan(), "{fnlab}({lab}, 0) p={p} {rm:?} is NaN");
+                        assert!(
+                            got.re().compare(want_re) == Some(0),
+                            "{fnlab}({lab}, 0) p={p} {rm:?} re {:?} want {:?}",
+                            got.re(),
+                            want_re
+                        );
+                        if im_pos {
+                            assert!(
+                                got.im().is_inf_pos(),
+                                "{fnlab}({lab}, 0) p={p} {rm:?} im {:?}",
+                                got.im()
+                            );
+                        } else {
+                            assert!(
+                                got.im().is_inf_neg(),
+                                "{fnlab}({lab}, 0) p={p} {rm:?} im {:?}",
+                                got.im()
+                            );
+                        }
+                    }
+                }
+                // W4: E(∞, 1) stays +∞+0i
+                let ew4 = ExactComplex::from_real(INF_POS.clone(), p).elliptic_e(&one, p, rm, &mut cc);
+                assert!(
+                    !ew4.is_nan() && ew4.re().is_inf_pos() && ew4.im().is_zero(),
+                    "E(+∞, 1) p={p} {rm:?} should stay +∞+0i, got {:?}",
+                    ew4
+                );
+            }
+            if p > 256 {
+                continue;
+            }
+            let hundred = ExactComplex::from_real(ExactNum::from_u8(100, p), p);
+            let e100 = hundred.elliptic_e_complete(p, RoundingMode::ToEven, &mut cc);
+            assert!(
+                !e100.is_nan() && !e100.re().is_inf() && !e100.im().is_inf() && e100.re().is_positive() && e100.im().is_negative(),
+                "E(100+0i) should be a finite + − i (lower side), got {:?}",
+                e100
+            );
+        }
+        Ok(())
     }
 }

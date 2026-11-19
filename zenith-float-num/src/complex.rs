@@ -2064,8 +2064,11 @@ impl ExactComplex {
 
     /// Principal `asin`: `-i ln(i z + √(1 − z²))`.
     ///
-    /// On the real cut `|re| > 1`, an imaginary part of `+0` is the principal
-    /// value and an imaginary part of `-0` is its conjugate.
+    /// On the real cut `|re| > 1`, DLMF 4.23.20–21 take the upper sign on the
+    /// upper side and the lower sign on the lower side: `casin(x ± i0) =
+    /// sgn(x)·π/2 ± i·acosh|x|`. An imaginary part of `+0` is therefore the
+    /// upper side (`+i acosh|x|`), and `-0` is the lower side (the principal
+    /// value, `-i acosh|x|`). The same signs hold at exact real `±∞`.
     ///
     /// Accuracy: correctly-rounded
     pub fn asin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -2078,6 +2081,26 @@ impl ExactComplex {
     fn asin_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if let Some(r) = self.inv_axis(InvFn::Asin, p, rm, cc) {
             return r;
+        }
+        // Exact real ±∞ with imag zero: inv_axis refuses non-finite inputs.
+        // DLMF 4.23.20–21: upper side (+0 imag) takes the upper sign.
+        if self.im.is_zero() && self.re.is_inf() {
+            let signed = |neg: bool, f: &mut dyn FnMut(RoundingMode) -> ExactNum| {
+                if neg {
+                    f(mirror_rm(rm)).neg()
+                } else {
+                    f(rm)
+                }
+            };
+            let re = signed(self.re.is_negative(), &mut |m| {
+                cc.pi(p, m).ldexp(-1, p, RoundingMode::None)
+            });
+            let im = if self.im.is_negative() {
+                crate::ext::INF_NEG.clone()
+            } else {
+                crate::ext::INF_POS.clone()
+            };
+            return Self::new(re, im);
         }
         let below = self.asin_below_cut();
         Self::certified(
@@ -3013,5 +3036,74 @@ mod tests {
         let t1 = std::time::Instant::now();
         let lg = z.log(&base, p, rm, &mut cc);
         assert_dest_oom_fast("log_{1+i}(-2-0i)", lg, t1);
+    }
+
+    /// Compact asin at exact real ±∞ with a signed-zero imaginary part
+    /// (DLMF 4.23.20–21: upper side takes the upper sign). The finite-cut
+    /// path already uses the same convention; inv_axis used to refuse ±∞.
+    #[test]
+    fn zf_asin_at_signed_infinity() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ];
+        for p in [64usize, 256, 2048, 8192] {
+            for rm in modes {
+                let hp = cc.pi(p, rm).ldexp(-1, p, RoundingMode::None);
+                let hp_m = {
+                    let rm_m = match rm {
+                        RoundingMode::Up => RoundingMode::Down,
+                        RoundingMode::Down => RoundingMode::Up,
+                        other => other,
+                    };
+                    cc.pi(p, rm_m).ldexp(-1, p, RoundingMode::None).neg()
+                };
+                let pz = compact_signed_zero(false);
+                let mz = compact_signed_zero(true);
+                let cases = [
+                    ("+∞+0i", crate::INF_POS.clone(), pz.clone(), &hp, true),
+                    ("+∞-0i", crate::INF_POS.clone(), mz.clone(), &hp, false),
+                    ("-∞+0i", crate::INF_NEG.clone(), pz.clone(), &hp_m, true),
+                    ("-∞-0i", crate::INF_NEG.clone(), mz.clone(), &hp_m, false),
+                ];
+                for (lab, re, im, want_re, im_pos) in cases {
+                    let got = ExactComplex::new(re, im).asin(p, rm, &mut cc);
+                    assert!(!got.is_nan(), "asin({lab}) p={p} {rm:?} is NaN");
+                    assert!(
+                        got.re().compare(want_re) == Some(0),
+                        "asin({lab}) p={p} {rm:?} re {:?} want {:?}",
+                        got.re(),
+                        want_re
+                    );
+                    if im_pos {
+                        assert!(got.im().is_inf_pos(), "asin({lab}) p={p} {rm:?} im {:?}", got.im());
+                    } else {
+                        assert!(got.im().is_inf_neg(), "asin({lab}) p={p} {rm:?} im {:?}", got.im());
+                    }
+                }
+                // Finite cut must stay consistent with the infinity signs (DLMF 4.23.20).
+                let two_p = ExactComplex::new(ExactNum::from_u8(2, p), compact_signed_zero(false))
+                    .asin(p, rm, &mut cc);
+                let two_m = ExactComplex::new(ExactNum::from_u8(2, p), compact_signed_zero(true))
+                    .asin(p, rm, &mut cc);
+                assert!(
+                    !two_p.is_nan() && two_p.im().is_positive(),
+                    "asin(2+0i) p={p} {rm:?} should have +Im, got {:?}",
+                    two_p
+                );
+                assert!(
+                    !two_m.is_nan() && two_m.im().is_negative(),
+                    "asin(2-0i) p={p} {rm:?} should have −Im, got {:?}",
+                    two_m
+                );
+            }
+        }
+        Ok(())
     }
 }
