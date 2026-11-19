@@ -7363,15 +7363,22 @@ fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<Exact
         // `wp(k)` is non-decreasing in `k`, so the band works at `wp(k_hi)`.
         let wp = even_bernoulli_zeta_wp(k_hi, p)?;
         let mut k_lo = k_hi;
+        let hi_euler = (k_hi as u128).saturating_mul(2).saturating_mul(10) <= (wp as u128).saturating_mul(7);
         while k_lo > k0 {
             let nxt = k_lo - 1;
-            match euler_product_limit(2 * nxt, wp) {
+            let n_nxt = 2 * nxt;
+            // Keep one ζ method per band: the short tail is only valid when
+            // n > 0.7 wp, so crossing that threshold starts a new band.
+            let nxt_euler = (n_nxt as u128).saturating_mul(10) <= (wp as u128).saturating_mul(7);
+            if nxt_euler != hi_euler {
+                break;
+            }
+            match euler_product_limit(n_nxt, wp) {
                 Ok(j) if j <= BERNOULLI_ZETA_BAND_J_MAX => k_lo = nxt,
                 _ => break,
             }
         }
         let n_hi = k_hi.checked_mul(2).ok_or(Error::InvalidArgument)?;
-        let n_lo = k_lo.checked_mul(2).ok_or(Error::InvalidArgument)?;
         let piwp = round_p(wp.saturating_add(2 * bitlen_usize(n_hi)));
         let fac = factorial(n_hi, piwp)?;
         let pi = cc.pi_num(piwp, RoundingMode::None)?;
@@ -7385,11 +7392,24 @@ fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<Exact
             .div(&pow, wp, RoundingMode::None)?;
         // Bloemen reverse iterator (FLINT/Arb): each stored power walks
         // down by a multiply by `q^2`, so ζ(n) / 1/ζ(n) is not rebuilt.
-        let j_max = euler_product_limit(n_lo, wp)?;
+        //
+        // Hold only the terms needed at the current n. Pre-building
+        // j_max(n_lo) powers at n_hi underflows for the larger primes
+        // (`q^{-n_hi}` is 0 at `wp`), and a later multiply by `q^2`
+        // cannot recover them, so mid-band B_{2k} would miss Euler
+        // factors. It is also the cost leak: a p=65536 band from
+        // k=4097 to 10596 used 54 primes on every step, and the
+        // k=2732..4096 band used ~564, even though the top of each
+        // band needs only a handful. New primes (or j) are added,
+        // with a fresh q^{-n}, when the walk reaches an n that needs
+        // them.
+        let mut j_max = euler_product_limit(n_hi, wp).unwrap_or(2);
         // Same threshold as `even_bernoulli_from_f` / Arb: Euler product
         // when `n ≤ 0.7 wp`, otherwise the short tail over every `j`.
-        let use_euler = (n_lo as u128).saturating_mul(10) <= (wp as u128).saturating_mul(7);
-        let primes = if use_euler { primes_upto(j_max) } else { Vec::new() };
+        // Chosen at n_hi; the k_lo split above keeps the method fixed
+        // for the band.
+        let use_euler = (n_hi as u128).saturating_mul(10) <= (wp as u128).saturating_mul(7);
+        let mut primes = if use_euler { primes_upto(j_max) } else { Vec::new() };
         let mut terms: Vec<ExactNumNumber> = Vec::new();
         if use_euler {
             for &q in &primes {
@@ -7402,11 +7422,37 @@ fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<Exact
                 terms.push(one.div(&jn, wp, RoundingMode::None)?);
             }
         }
+        let tiny = Exponent::try_from(wp.saturating_add(8)).unwrap_or(Exponent::MAX);
         let mut k = k_hi;
         loop {
+            let n_cur = 2 * k;
+            if let Ok(need) = euler_product_limit(n_cur, wp) {
+                if need > j_max {
+                    if use_euler {
+                        let have = primes.last().copied().unwrap_or(0) as usize;
+                        for q in primes_upto(need) {
+                            if (q as usize) <= have {
+                                continue;
+                            }
+                            let qn = pow_ui(&from_usize_p(q as usize, wp)?, n_cur, wp)?;
+                            terms.push(one.div(&qn, wp, RoundingMode::None)?);
+                            primes.push(q);
+                        }
+                    } else {
+                        for j in (j_max + 1)..=need {
+                            let jn = pow_ui(&from_usize_p(j, wp)?, n_cur, wp)?;
+                            terms.push(one.div(&jn, wp, RoundingMode::None)?);
+                        }
+                    }
+                    j_max = need;
+                }
+            }
             let mut b = if use_euler {
                 let mut inv = one.clone()?;
                 for t in &terms {
+                    if t.is_zero() || t.exponent() < -tiny {
+                        continue;
+                    }
                     let factor = one.sub(t, wp, RoundingMode::None)?;
                     inv = inv.mul(&factor, wp, RoundingMode::None)?;
                 }
@@ -7414,6 +7460,9 @@ fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<Exact
             } else {
                 let mut z = one.clone()?;
                 for t in &terms {
+                    if t.is_zero() || t.exponent() < -tiny {
+                        continue;
+                    }
                     z = z.add(t, wp, RoundingMode::None)?;
                 }
                 f.mul(&z, wp, RoundingMode::None)?
@@ -7634,6 +7683,27 @@ pub(crate) fn with_exact_bernoulli<R>(
         let mut c = BernoulliCache::new();
         c.grow_exact(n)?;
         f(c.exact.get(..n).ok_or(Error::InvalidArgument)?)
+    }
+}
+
+/// `B_n` at `p` bits (ToEven). `B_0 = 1`, `B_1 = -1/2`, odd `n > 1` is 0,
+/// and even `n = 2k` uses [`with_even_bernoulli`].
+#[cfg(test)]
+pub(crate) fn bernoulli_ui(n: usize, p: usize) -> Result<ExactNumNumber, Error> {
+    match n {
+        0 => ExactNumNumber::from_word(1, p),
+        1 => {
+            let one = ExactNumNumber::from_word(1, p)?;
+            let two = ExactNumNumber::from_word(2, p)?;
+            one.div(&two, p, RoundingMode::ToEven)?.neg()
+        }
+        n if !n.is_multiple_of(2) => ExactNumNumber::from_word(0, p),
+        n => {
+            let k = n / 2;
+            with_even_bernoulli(k, p, |v| {
+                v.get(k - 1).ok_or(Error::InvalidArgument)?.clone()
+            })
+        }
     }
 }
 
@@ -8359,6 +8429,133 @@ mod tests {
                 let e = &exact[k - 1];
                 assert!(z.cmp(e) == 0, "k={k}: zeta path differs from exact cache");
             }
+            Ok(())
+        })
+    }
+
+    /// FLINT 3.6 exact `B_n` (num/den, including B_0, B_1, B_2 and odd n)
+    /// plus working-precision midpoints at dest p = 64, 256, and 4096.
+    #[test]
+    fn zf_bernoulli_matches_flint_golds() -> Result<(), crate::Error> {
+        bernoulli_flint_golds_at(&[64, 256, 4096])
+    }
+
+    /// FLINT 3.6 working-precision midpoints at dest p = 65536, including
+    /// the largest even index used by the Barnes G EM tail (`B_21192`).
+    #[test]
+    fn zf_bernoulli_matches_flint_golds_p65536() -> Result<(), crate::Error> {
+        bernoulli_flint_golds_at(&[65536])
+    }
+
+    #[test]
+    fn zf_bernoulli_edge_cases() -> Result<(), crate::Error> {
+        let p = 256usize;
+        let b0 = bernoulli_ui(0, p)?;
+        let one = ExactNumNumber::from_word(1, p)?;
+        assert!(b0.cmp(&one) == 0, "B_0 must be 1");
+
+        let b1 = bernoulli_ui(1, p)?;
+        let two = ExactNumNumber::from_word(2, p)?;
+        let half = one.div(&two, p, RoundingMode::ToEven)?.neg()?;
+        assert!(b1.cmp(&half) == 0, "B_1 must be -1/2");
+
+        let b2 = bernoulli_ui(2, p)?;
+        let six = ExactNumNumber::from_word(6, p)?;
+        let sixth = one.div(&six, p, RoundingMode::ToEven)?;
+        assert!(b2.cmp(&sixth) == 0, "B_2 must be 1/6");
+
+        for n in [3usize, 5, 7, 11, 21, 101] {
+            let b = bernoulli_ui(n, p)?;
+            assert!(b.is_zero(), "B_{n} for odd n>1 must be 0");
+        }
+        Ok(())
+    }
+
+    fn bernoulli_flint_golds_at(precs: &[usize]) -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let raw = include_str!("../testdata/bernoulli_flint_golds.txt");
+        for line in raw.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.splitn(4, ' ');
+            let kind = parts.next().ok_or(crate::Error::InvalidArgument)?;
+            if kind == "exact" {
+                let n: usize = parts
+                    .next()
+                    .ok_or(crate::Error::InvalidArgument)?
+                    .parse()
+                    .map_err(|_| crate::Error::InvalidArgument)?;
+                let frac = parts.next().ok_or(crate::Error::InvalidArgument)?;
+                check_exact_bernoulli_gold(n, frac)?;
+            } else if kind == "arb" {
+                let p: usize = parts
+                    .next()
+                    .ok_or(crate::Error::InvalidArgument)?
+                    .parse()
+                    .map_err(|_| crate::Error::InvalidArgument)?;
+                if !precs.contains(&p) {
+                    continue;
+                }
+                let n: usize = parts
+                    .next()
+                    .ok_or(crate::Error::InvalidArgument)?
+                    .parse()
+                    .map_err(|_| crate::Error::InvalidArgument)?;
+                let dec = parts.next().ok_or(crate::Error::InvalidArgument)?;
+                let got = bernoulli_ui(n, p)?;
+                let want = ExactNumNumber::parse(
+                    dec,
+                    crate::defs::Radix::Dec,
+                    4 * p,
+                    RoundingMode::ToEven,
+                    &mut cc,
+                )?;
+                let min = Exponent::try_from(p.saturating_sub(16)).unwrap_or(16);
+                bits_agree(&got, &want, p, min, &format!("B_{n} p={p}"))?;
+            } else {
+                return Err(crate::Error::InvalidArgument);
+            }
+        }
+        Ok(())
+    }
+
+    fn check_exact_bernoulli_gold(n: usize, frac: &str) -> Result<(), crate::Error> {
+        if n == 0 {
+            let b = bernoulli_ui(0, 64)?;
+            let one = ExactNumNumber::from_word(1, 64)?;
+            assert!(b.cmp(&one) == 0, "exact B_0");
+            return Ok(());
+        }
+        if n == 1 {
+            let b = bernoulli_ui(1, 64)?;
+            let one = ExactNumNumber::from_word(1, 64)?;
+            let two = ExactNumNumber::from_word(2, 64)?;
+            let half = one.div(&two, 64, RoundingMode::ToEven)?.neg()?;
+            assert!(b.cmp(&half) == 0, "exact B_1");
+            return Ok(());
+        }
+        if !n.is_multiple_of(2) {
+            let b = bernoulli_ui(n, 64)?;
+            assert!(b.is_zero(), "exact B_{n} odd");
+            return Ok(());
+        }
+        let (num_s, den_s) = if let Some((a, b)) = frac.split_once('/') {
+            (a, b)
+        } else {
+            (frac, "1")
+        };
+        let k = n / 2;
+        with_exact_bernoulli(k, |rats| {
+            let (num, den) = rats.get(k - 1).ok_or(crate::Error::InvalidArgument)?;
+            let (sn, sd) = (dec_int(num_s)?, dec_int(den_s)?);
+            let pl = round_p(num.mantissa_max_bit_len() + sd.mantissa_max_bit_len());
+            let pr = round_p(den.mantissa_max_bit_len() + sn.mantissa_max_bit_len());
+            let lhs = num.mul(&sd, pl, RoundingMode::None)?;
+            let rhs = den.mul(&sn, pr, RoundingMode::None)?;
+            assert!(!lhs.inexact() && !rhs.inexact(), "exact B_{n}: inexact product");
+            assert!(lhs.cmp(&rhs) == 0, "exact B_{n} differs from FLINT");
             Ok(())
         })
     }
