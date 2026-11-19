@@ -16,17 +16,8 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use core::ops::Neg;
 
-/// `|t| < 2^-p |s|` (or `t = 0`).
-fn term_small_rel(t: &ExactComplex, s: &ExactComplex, p: usize) -> bool {
-    let at = t.abs(64, RoundingMode::None);
-    if at.is_zero() {
-        return true;
-    }
-    match (at.exponent(), s.abs(64, RoundingMode::None).exponent()) {
-        (Some(et), Some(es)) => et + (p as i64) < es,
-        _ => term_negligible(t, p),
-    }
-}
+#[path = "hypgeom_pfq.rs"]
+mod hypgeom_pfq;
 
 /// Use the power series when \(\lvert z\rvert\) is below this (and \(\lvert z\rvert^2\)
 /// is large enough for the Hankel expansion only beyond destination precision).
@@ -849,38 +840,24 @@ impl ExactComplex {
         dest_p: usize,
         cc: &mut Consts,
     ) -> (Self, Option<Exponent>, Option<Exponent>) {
+        // I_ν(z) = (z/2)^ν / Γ(ν+1) · ₀F₁(;ν+1;z²/4), 0F1 via Arb pfq_sum_bs.
+        let _ = dest_p;
         let half = self.mul(&half_c(wp), wp, RoundingMode::None);
         let pow = half.pow(nu, wp, RoundingMode::None, cc);
-        let g =
-            ExactComplex::one(wp)
-                .add(nu, wp, RoundingMode::None)
-                .gamma(wp, RoundingMode::None, cc);
-        let mut term = pow.div(&g, wp, RoundingMode::None);
-        let mut sum = term.clone();
-        let mut peak_exp = term_mag_exp(&term);
-        let hh = half.mul(&half, wp, RoundingMode::None);
-        let mut k: u32 = 1;
-        loop {
-            let kk = ExactComplex::from_real(ExactNum::from_u32(k, wp), wp);
-            let den = ExactComplex::from_real(ExactNum::from_u32(k, wp), wp)
-                .add(nu, wp, RoundingMode::None)
-                .mul(&kk, wp, RoundingMode::None);
-            term = term
-                .mul(&hh, wp, RoundingMode::None)
-                .div(&den, wp, RoundingMode::None);
-            if let Some(e) = term_mag_exp(&term) {
-                peak_exp = Some(peak_exp.map_or(e, |p| p.max(e)));
-            }
-            sum = sum.add(&term, wp, RoundingMode::None);
-            if sum.is_nan() || term_small_rel(&term, &sum, dest_p) {
-                let sum_exp = term_mag_exp(&sum);
-                return (sum, peak_exp, sum_exp);
-            }
-            let Some(next) = k.checked_add(1) else {
-                return (nan_pair(Error::PrecisionRetryExhausted), None, None);
-            };
-            k = next;
-        }
+        let a = ExactComplex::one(wp).add(nu, wp, RoundingMode::None);
+        let g = a.gamma(wp, RoundingMode::None, cc);
+        let prefix = pow.div(&g, wp, RoundingMode::None);
+        let w = half.mul(&half, wp, RoundingMode::None);
+        let f = hypgeom_pfq::hypgeom_0f1(&a, &w, wp);
+        let sum = prefix.mul(&f, wp, RoundingMode::None);
+        let sum_exp = term_mag_exp(&sum);
+        // Peak-term cancellation is bounded by i_series_exp_cancel_bits; the
+        // caller already pads the working width with that plus I_SERIES_PAD.
+        let peak_exp = match sum_exp {
+            Some(se) => Some(se + i_series_exp_cancel_bits(self) as i64),
+            None => None,
+        };
+        (sum, peak_exp, sum_exp)
     }
 
     fn bessel_k_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -1191,36 +1168,16 @@ impl ExactComplex {
     }
 
     fn bessel_j_series(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
+        // J_ν(z) = (z/2)^ν / Γ(ν+1) · ₀F₁(;ν+1;−z²/4). The 0F1 is Arb's
+        // acb_hypgeom_pfq_direct / pfq_sum_bs (FLINT 3.6.0).
         let half = self.mul(&half_c(p), p, RoundingMode::None);
         let pow = half.pow(nu, p, RoundingMode::None, cc);
-        let g =
-            ExactComplex::one(p)
-                .add(nu, p, RoundingMode::None)
-                .gamma(p, RoundingMode::None, cc);
-        let mut term = pow.div(&g, p, RoundingMode::None);
-        let mut sum = term.clone();
-        let hh = half.mul(&half, p, RoundingMode::None);
-        // The terms peak near k ≈ |z|/2 and fall as a Gaussian after it: allow 2·bound(|z|)
-        // past the precision cap, and refuse (never truncate) if that is not enough.
-        let mut k: u32 = 1;
-        loop {
-            let kk = ExactComplex::from_real(ExactNum::from_u32(k, p), p);
-            let den = ExactComplex::from_real(ExactNum::from_u32(k, p), p)
-                .add(nu, p, RoundingMode::None)
-                .mul(&kk, p, RoundingMode::None);
-            term = term
-                .mul(&hh, p, RoundingMode::None)
-                .div(&den, p, RoundingMode::None);
-            term = neg_c(term);
-            sum = sum.add(&term, p, RoundingMode::None);
-            if sum.is_nan() || term_small_rel(&term, &sum, p) {
-                return sum;
-            }
-            let Some(next) = k.checked_add(1) else {
-                return nan_pair(Error::PrecisionRetryExhausted);
-            };
-            k = next;
-        }
+        let a = ExactComplex::one(p).add(nu, p, RoundingMode::None);
+        let g = a.gamma(p, RoundingMode::None, cc);
+        let prefix = pow.div(&g, p, RoundingMode::None);
+        let w = neg_c(half.mul(&half, p, RoundingMode::None));
+        let f = hypgeom_pfq::hypgeom_0f1(&a, &w, p);
+        prefix.mul(&f, p, RoundingMode::None)
     }
 
     fn bessel_y_nonint(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
