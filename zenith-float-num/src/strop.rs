@@ -25,24 +25,6 @@ const DIGIT_CHARS: [char; 36] = [
     'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 ];
 
-/// Rounding mode for a decimal spelling that parses back to the same value under `rm`.
-fn decimal_digit_mode(rm: RoundingMode, positive: bool) -> RoundingMode {
-    if rm == RoundingMode::ToEven || rm == RoundingMode::ToOdd {
-        return rm;
-    }
-    let not_above = match rm {
-        RoundingMode::Up => true,
-        RoundingMode::Down => false,
-        RoundingMode::FromZero => positive,
-        _ => !positive,
-    };
-    if not_above == positive {
-        RoundingMode::ToZero
-    } else {
-        RoundingMode::FromZero
-    }
-}
-
 /// `val` is a `u64` so a 32-bit `usize` cannot truncate or saturate an i64 exponent magnitude.
 fn format_uint_radix(val: u64, rdx: Radix, out: &mut String) -> Result<(), Error> {
     let base = u64::from(rdx.value());
@@ -117,64 +99,15 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - ExponentOverflow: the resulting exponent becomes greater than the maximum allowed value for the exponent.
     pub fn format(&self, rdx: Radix, rm: RoundingMode, cc: &mut Consts) -> Result<String, Error> {
-        // Power-of-two radices convert by shifting, so the spelling is exact.
-        if rdx.value().is_power_of_two() {
-            let (s, m, e) = self.convert_to_radix(rdx, rm, cc)?;
-            return self.render(rdx, s, &m, e);
-        }
-        // Non-power-of-two bases: MPFR mpfr_get_str. The first spelling uses `m =
-        // 1 + ceil(p·log(2)/log(b))` digits, correctly rounded in `rm`. A directed
-        // mode can sit on the side that the same mode parses to a neighbor (or
-        // past ±MAX), so later attempts round the digits the other way and add
-        // digits until the text parses back. There is no digit cap (P9): a stall
-        // is a clear error, never a non-round-tripping string.
-        let mut extra = 0usize;
-        loop {
-            let digit_rm = if extra == 0 { rm } else { decimal_digit_mode(rm, self.is_positive()) };
-            let (s, m, e) = self.convert_to_general_extra(rdx.value(), digit_rm, cc, extra)?;
-            let text = self.render(rdx, s, &m, e)?;
-            if self.spelling_round_trips(&text, rdx, rm, cc)? {
-                return Ok(text);
-            }
-            extra += 1;
-            if extra > crate::common::util::MAX_PREC_RETRY {
-                return Err(Error::PrecisionRetryExhausted);
-            }
-        }
-    }
-
-    fn spelling_round_trips(
-        &self,
-        text: &str,
-        rdx: Radix,
-        rm: RoundingMode,
-        cc: &mut Consts,
-    ) -> Result<bool, Error> {
-        let ps = match crate::parser::parse(text, rdx) {
-            Ok(ps) => ps,
-            Err(_) => return Ok(false),
-        };
-        if ps.is_nan() || ps.is_inf() || ps.out_of_range() != 0 {
-            return Ok(false);
-        }
-        let (digits, sign, exp) = ps.raw_parts();
-        // A directed spelling of ±MAX lies past MAX, so it parses in `rm` to an
-        // overflow: that text does not round-trip, and the next attempt rounds the
-        // decimal back inside the range.
-        let back = match Self::convert_from_radix(
-            sign,
-            digits,
-            exp,
-            rdx,
-            self.mantissa_max_bit_len(),
-            rm,
-            cc,
-        ) {
-            Ok(back) => back,
-            Err(Error::ExponentOverflow(_)) => return Ok(false),
-            Err(e) => return Err(e),
-        };
-        Ok(self.cmp(&back) == 0 && self.sign() == back.sign())
+        // Power-of-two radices convert by shifting. Non-power-of-two bases use
+        // one correctly rounded `mpfr_get_str` spelling at
+        // `m = 1 + ceil(p·log(2)/log(b))` digits in `rm`. MPFR does not retry
+        // with the opposite digit mode: `mpfr_get_str_aux` lines 171–194 only
+        // map the extra digit when `size_s1 == m+1` in RNDN, and the Ziv loop
+        // (`mpfr_get_str` lines 2890–2915) grows working precision when
+        // `mpfr_can_round` fails. A parse-back retry is therefore not used.
+        let (s, m, e) = self.convert_to_radix(rdx, rm, cc)?;
+        self.render(rdx, s, &m, e)
     }
 
     fn render(&self, rdx: Radix, s: Sign, m: &[u8], e: Exponent) -> Result<String, Error> {

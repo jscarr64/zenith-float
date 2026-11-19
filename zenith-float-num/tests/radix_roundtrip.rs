@@ -74,7 +74,6 @@ fn radix_roundtrip_commensurable() -> Result<(), Box<dyn std::error::Error>> {
 fn radix_roundtrip_general_bases() -> Result<(), Box<dyn std::error::Error>> {
     let mut cc = Consts::new()?;
     let p = 192;
-
     for base in [3u8, 5, 7, 9, 11, 12, 15, 20, 36] {
         let rdx = Radix::try_new(base)?;
         for lit in ["0.1", "1.0", "2.5"] {
@@ -177,6 +176,64 @@ fn zf_format_minpos_maxv_and_dense_round_trip() -> Result<(), Box<dyn std::error
             !back.is_nan() && n.compare(&back) == Some(0) && n.sign() == back.sign(),
             "dense a..abp-1025 radix 3 {rm:?}: format ({} chars) did not round-trip",
             s.len()
+        );
+    }
+    Ok(())
+}
+
+/// Official leftovers after a09e84b: `r.format` of minpos in radices 3 and 36
+/// must return a spelling that parses back, never `Err`. That includes p=256
+/// Up/FromZero (official 1 ulp) and Down/ToZero/None (CORRECT at fb66cec, then
+/// `S:Err`). `convert_to_radix` radix 10 of minpos must round-trip too.
+#[test]
+fn zf_format_minpos_radix3_36_and_radix_conv_round_trip() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut cc = Consts::new()?;
+    let modes = [
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::FromZero,
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::None,
+    ];
+    for p in [256usize, 1024] {
+        let minpos = ExactNum::min_positive(p);
+        for &base in &[3u8, 36] {
+            let rdx = Radix::try_new(base)?;
+            for rm in modes {
+                let s = minpos.format(rdx, rm, &mut cc)?;
+                assert!(
+                    s != "Err" && !s.ends_with("Err") && !s.contains("Err"),
+                    "min_positive({p}) radix {base} {rm:?} gave {s:?}"
+                );
+                let back = ExactNum::parse(&s, rdx, p, rm, &mut cc);
+                assert!(
+                    !back.is_nan()
+                        && minpos.compare(&back) == Some(0)
+                        && minpos.sign() == back.sign(),
+                    "min_positive({p}) radix {base} {rm:?}: format {s:?} parsed back to {back:?}"
+                );
+            }
+        }
+    }
+    for p in [128usize, 2048] {
+        let minpos = ExactNum::min_positive(p);
+        let (sgn, digits, exp) =
+            minpos.convert_to_radix(Radix::Dec, RoundingMode::ToEven, &mut cc)?;
+        let back = ExactNum::convert_from_radix(
+            sgn,
+            &digits,
+            exp,
+            Radix::Dec,
+            p,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        assert!(
+            !back.is_nan() && minpos.compare(&back) == Some(0) && minpos.sign() == back.sign(),
+            "convert_to_radix min_positive({p}) radix 10 ToEven did not round-trip"
         );
     }
     Ok(())

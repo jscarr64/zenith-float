@@ -184,6 +184,7 @@ impl WordBuf {
     }
 
     /// Try to extend the size to fit the precision p. Data is shifted to the left by d bits.
+    #[cfg(test)]
     pub fn try_extend_3(&mut self, p: usize, d: usize) -> Result<(), Error> {
         let n = p.div_ceil(WORD_BIT_SIZE);
         let l = self.len();

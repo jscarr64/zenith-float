@@ -1118,6 +1118,7 @@ impl Mantissa {
     }
 
     /// Shift to the left by n bits and increase or decrease precision if needed just to fit the data.
+    #[cfg(test)]
     pub fn shift_left_resize(&mut self, n: usize) -> Result<(), Error> {
         if self.max_bit_len() >= self.bit_len() + n {
             self.shift_left(n);
@@ -1347,6 +1348,7 @@ impl Mantissa {
         Ok((e_shift, m3))
     }
 
+    #[cfg(test)]
     pub fn from_word_buf(m: WordBuf) -> Self {
         let n = Self::find_bit_len(&m);
         Mantissa { m, n }

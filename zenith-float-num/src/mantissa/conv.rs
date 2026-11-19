@@ -2,19 +2,25 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! Base conversion.
 
+#[cfg(test)]
 use crate::common::buf::WordBuf;
+#[cfg(test)]
 use crate::common::int::SliceWithSign;
+#[cfg(test)]
 use crate::common::util::shift_slice_right;
 use crate::mantissa::Mantissa;
+#[cfg(test)]
 use crate::{Error, Word, WORD_BIT_SIZE};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
 // Number of decimal digits per word.
+#[cfg(test)]
 const WORD_TENPOWER_LEN: usize = if WORD_BIT_SIZE < 64 { 8 } else { 16 };
 
 // A starting id in tenpowers cache depending on the word size.
+#[cfg(test)]
 const TENPOWER_START_ID: usize = if WORD_BIT_SIZE < 64 { 3 } else { 4 };
 
 impl Mantissa {
@@ -22,6 +28,7 @@ impl Mantissa {
     /// `l` is the number of decimal digits in the input ceiled to a power of 10.
     /// `p` is the current depth of `tenpowers` for the given `input`.
     /// `most_significant` true if `self` contains the most significant part (ignores leading zeroes if ture).
+    #[cfg(test)]
     pub(crate) fn conv_to_dec(
         &mut self,
         l: usize,
@@ -92,6 +99,7 @@ impl Mantissa {
     }
 
     /// Compute powers of 10 up to the depth of `p` and save the result in `tenpowers`.
+    #[cfg(test)]
     pub(crate) fn compute_tenpowers(
         tenpowers: &mut Vec<(WordBuf, WordBuf, usize)>,
         p: usize,
@@ -130,6 +138,7 @@ impl Mantissa {
     }
 
     /// Convert `input` in decimal base to the mantissa using divide and conquer.
+    #[cfg(test)]
     pub fn conv_from_dec(
         input: &[u8],
         tenpowers: &[(WordBuf, WordBuf, usize)],

@@ -338,7 +338,8 @@ impl Mantissa {
     }
 
     // general case division
-    pub(super) fn div_unbalanced(m1: &[Word], m2: &[Word]) -> Result<(WordBuf, WordBuf), Error> {
+    /// Integer `m1 / m2` and remainder. Used by radix scaling (`conv_mpn_exp`).
+    pub(crate) fn div_unbalanced(m1: &[Word], m2: &[Word]) -> Result<(WordBuf, WordBuf), Error> {
         if m1.len() < m2.len() {
             let mut q = WordBuf::new(1)?;
             q[0] = 0;

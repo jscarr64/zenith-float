@@ -39,6 +39,7 @@ mod complex_elliptic;
 mod complex_hypergeom;
 mod complex_special;
 mod conv;
+mod conv_mpn_exp;
 mod csvfmt;
 pub mod ctx;
 mod defs;
