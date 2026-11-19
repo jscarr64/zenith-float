@@ -1081,9 +1081,18 @@ impl ExactNumNumber {
                         .checked_sub(n as i64)
                         .ok_or(Error::ExponentOverflow(self.sign()))?;
                     let p_out = self.mantissa_max_bit_len();
-                    yint = Self::round_trip_adjust(
-                        self, yint, base, scale, p_out, rm, &bn, &bn1, &mut e,
-                    )?;
+                    // An exact 2-adic integer is the unique correctly rounded
+                    // significand. `spelling_recovers` can still reject it:
+                    // `mul_base_pow` forms `b^{scale}` in binary, which is
+                    // inexact for odd bases, then dest-rounds that product in
+                    // `rm`. Y±1 must not replace the exact spelling with a
+                    // neighbor (MPFR `mpfr_get_str` of ±1 in radix 3, n=0, is
+                    // `1000...0` exp 1 under every mode).
+                    if !y_is_int {
+                        yint = Self::round_trip_adjust(
+                            self, yint, base, scale, p_out, rm, &bn, &bn1, &mut e,
+                        )?;
+                    }
                     let mut digits = Self::int_to_radix_digits(&yint, base, n, p_wrk)?;
                     while digits.last() == Some(&0) {
                         digits.pop();
@@ -1424,8 +1433,12 @@ mod tests {
     /// the "unknown p" round trip in `test_conv_num`, in order. Words are 64-bit, little end first.
     /// Vectors 2 and 3 (EXPONENT_MIN/10-123) used to have n one ulp below g because the
     /// decimal-only kernel's spelling was short; the mpfr_get_str path emits enough digits
-    /// that n recovers g. Vector 5 is the same significand as the previous 4-limb pin,
-    /// with three low zero limbs from the general path's unknown-p working width.
+    /// that n recovers g. Vector 5 is that same 4-limb significand at exponent 236.
+    /// At `e8502fe` / `60c30b2` it was stored with three low zero limbs (7-limb,
+    /// 448-bit working width) because Y±1 was applied to an exact 2-adic integer
+    /// and the parse-back of the neighbor spelling widened the unknown-p result.
+    /// Skipping Y±1 for exact integers keeps the compact spelling; g and n stay
+    /// at 256 bits with the same significant words and exponent.
     type DecPin = (Exponent, &'static [u64], Exponent, &'static [u64]);
     const CONV_DEC_PINS: [DecPin; 5] = [
         (
@@ -1507,9 +1520,6 @@ mod tests {
         (
             236,
             &[
-                0,
-                0,
-                0,
                 5812446391292657664,
                 17568215927531755994,
                 9442323477031879346,
@@ -1517,9 +1527,6 @@ mod tests {
             ],
             236,
             &[
-                0,
-                0,
-                0,
                 5812446391292657664,
                 17568215927531755994,
                 9442323477031879346,

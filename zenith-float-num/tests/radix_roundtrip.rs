@@ -301,3 +301,60 @@ fn zf_format_minpos_radix3_36_and_radix_conv_round_trip() -> Result<(), Box<dyn 
     }
     Ok(())
 }
+
+/// Exact binary values ±1, ±2, ±8 (`±1p0`, `±1p1`, `±1p3`) are exact after
+/// the 2-adic scale test in `conv_to_general`. They must keep the compact
+/// exact spelling that MPFR `mpfr_get_str` (n=0) produces for every rounding
+/// mode — trailing zeros, not a Y±1 neighbor. The negative spelling is the
+/// positive spelling with a leading minus.
+///
+/// RED on unpatched `60c30b2`: `-1` radix 3 Up is
+/// `-1.00000000000000000000000000000000000000001e+0` because `round_trip_adjust`
+/// still runs after the exact integer is found, and `spelling_recovers` rejects
+/// that integer (`mul_base_pow` forms inexact `3^{-k}` in binary).
+#[test]
+fn zf_format_exact_negatives_match_positive_mirrors() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
+    let modes = [
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::FromZero,
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::None,
+    ];
+    // Compact exact spellings (MPFR n=0, trailing zeros trimmed).
+    // radix 3: 1 = 1·3^0, 2 = 2·3^0, 8 = 22_3 · 3^1.
+    // radix 36 uses an underscore before the exponent.
+    let expected: &[(i32, u8, &str)] = &[
+        (1, 3, "1.e+0"),
+        (2, 3, "2.e+0"),
+        (8, 3, "2.2e+1"),
+        (1, 36, "1._e+0"),
+        (2, 36, "2._e+0"),
+        (8, 36, "8._e+0"),
+    ];
+    for p in [128usize, 256, 1024] {
+        for &(k, base, compact) in expected {
+            let rdx = Radix::try_new(base)?;
+            let pos = ExactNum::from_i32(k, p);
+            let mut neg = pos.clone();
+            neg.set_sign(Sign::Neg);
+            let want_neg = format!("-{compact}");
+            for rm in modes {
+                let sp = pos.format(rdx, rm, &mut cc)?;
+                let sn = neg.format(rdx, rm, &mut cc)?;
+                assert_eq!(
+                    sp, compact,
+                    "+{k} p={p} radix {base} {rm:?}: got {sp:?}, want compact {compact:?}"
+                );
+                assert_eq!(
+                    sn, want_neg,
+                    "-{k} p={p} radix {base} {rm:?}: got {sn:?}, want {want_neg:?} (positive mirror was {sp:?})"
+                );
+            }
+        }
+    }
+    Ok(())
+}
