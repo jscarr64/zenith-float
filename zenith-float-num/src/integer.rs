@@ -105,6 +105,18 @@ impl ExactInt {
         self.limbs.is_empty()
     }
 
+    /// `Some(n)` if `self` is a non-negative integer that fits in `u128`.
+    pub(crate) fn to_u128(&self) -> Option<u128> {
+        if self.is_negative() || self.bit_length() > 128 {
+            return None;
+        }
+        let mut n = 0u128;
+        for (i, &w) in self.limbs.iter().enumerate() {
+            n |= (w as u128) << (i * WORD_BIT_SIZE);
+        }
+        Some(n)
+    }
+
     /// True if the value is strictly negative.
     pub fn is_negative(&self) -> bool {
         self.sign == Sign::Neg && !self.is_zero()

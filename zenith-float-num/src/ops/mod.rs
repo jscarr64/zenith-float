@@ -21,6 +21,7 @@ mod ieee;
 mod jacobi;
 pub use jacobi::JACOBI_AGM_MAX;
 mod log;
+pub(crate) mod log_primes;
 mod log1p;
 mod nroot;
 mod pow;

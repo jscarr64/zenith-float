@@ -8,12 +8,11 @@
 //! Riemann-zeta Euler–Maclaurin path.
 //!
 //! At `s = -1` and `a ∈ {1, 1/2}` the finite power-sum is sieved:
-//! `Σ k ln k = Σ_p ln(p) Σ_j p^j T(⌊n/p^j⌋)`. LogG(1/2) uses the closed
+//! `Σ k ln k = Σ_p ln(p) Σ_j p^j T(⌊n/p^j⌋)`. The prime logs come from
+//! FLINT 3.6 `arb_log_primes_vec_bsplit` (Machin atanh binary splitting,
+//! then `2 atanh(1/(2p^2-1))` for later primes). LogG(1/2) uses the closed
 //! form `ζ'(-1, 1/2) = -(ln 2)/24 - ζ'(-1)/2`, so G(±1/2) pays only the
-//! `a = 1` jet. Dest `p = 2^16` is correct against FLINT golds (~330 s on
-//! this box) but over `ZFS_WALL = 120` because `ExactNum::ln` is ~160 ms
-//! at that width (`π(N) ≈ 1280` logs with `N ≈ 10^4`). Dest `p ≤ 2^14`
-//! finishes in a few seconds.
+//! `a = 1` jet. Dest `p ≤ 2^14` finishes in a few seconds.
 
 use crate::defs::WORD_BIT_SIZE;
 use crate::ops::special::with_even_bernoulli;
@@ -426,10 +425,9 @@ fn sum_k_ln_k(n: u64, p: usize, cc: &mut Consts) -> ExactNum {
     if n == 0 {
         return ExactNum::new(p);
     }
-    let primes = crate::primality::primes_upto(n);
+    let lns = crate::ops::log_primes::ln_primes_upto(n, p, cc);
     let mut acc = ExactNum::new(p);
-    for pr in primes {
-        let pru = pr as u64;
+    for (pru, ln) in lns {
         let mut pj = pru;
         let mut coeff = 0u128;
         loop {
@@ -440,7 +438,6 @@ fn sum_k_ln_k(n: u64, p: usize, cc: &mut Consts) -> ExactNum {
                 _ => break,
             }
         }
-        let ln = ExactNum::from_u64(pru, p).ln(p, NR, cc);
         let c = crate::ExactInt::from_u128(coeff).to_exact_num(p, NR);
         acc = acc.add(&ln.mul(&c, p, NR), p, NR);
     }

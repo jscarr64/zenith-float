@@ -820,4 +820,112 @@ mod tests {
         assert!(d1.cmp(&refn) == 0);
         Ok(())
     }
+
+
+    #[test]
+    fn zf_ln_matches_flint_golds() -> Result<(), crate::Error> {
+        // FLINT 3.6 arb.log midpoints at dest p = 64, 4096, 65536, and 2^20.
+        let mut cc = crate::Consts::new()?;
+        let raw = include_str!("../testdata/ln_flint_golds.txt");
+        for line in raw.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.splitn(3, ' ');
+            let p: usize = parts.next().unwrap().parse().unwrap();
+            let arg = parts.next().unwrap();
+            let dec = parts.next().unwrap();
+            let t0 = std::time::Instant::now();
+            let x = crate::ExactNum::parse(
+                arg,
+                crate::Radix::Dec,
+                p,
+                RoundingMode::ToEven,
+                &mut cc,
+            );
+            let got = x.ln(p, RoundingMode::ToEven, &mut cc);
+            let ms = t0.elapsed().as_millis();
+            let want = crate::ExactNum::parse(
+                dec,
+                crate::Radix::Dec,
+                4 * p,
+                RoundingMode::ToEven,
+                &mut cc,
+            );
+            let d = crate::ExactNum::sub_ref(&got, &want, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
+            eprintln!("ln({arg}) p={p}: {ms} ms, {bits} bits");
+            assert!(
+                bits >= (p as i32) - 16 || d.is_zero(),
+                "ln({arg}) p={p} only {bits} bits after {ms} ms"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn zf_ln_edge_cases() -> Result<(), crate::Error> {
+        let mut cc = crate::Consts::new()?;
+        let p = 256usize;
+        let one = crate::ExactNum::from_u8(1, p);
+        let z = one.ln(p, RoundingMode::ToEven, &mut cc);
+        assert!(z.is_zero(), "ln(1) must be 0");
+
+        // x near 1: ln(1 + 2^{-40}) ≈ 2^{-40}.
+        let eps = crate::ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
+        let near = crate::ExactNum::add_ref(&one, &eps, p, RoundingMode::None);
+        let ln_near = near.ln(p, RoundingMode::ToEven, &mut cc);
+        let d = crate::ExactNum::sub_ref(&ln_near, &eps, p, RoundingMode::None).abs();
+        // next term is ~eps^2/2 = 2^{-81}, so at 256 bits this is many bits of agreement
+        // on a 2^{-40} value (~40 bits of cancellation vs unit scale).
+        let agree = if d.is_zero() {
+            10_000
+        } else {
+            (eps.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+        };
+        assert!(agree >= 16, "ln(1+2^{{-40}}) vs 2^{{-40}}: only {agree} bits");
+
+        let ln2 = cc.ln_2(p, RoundingMode::ToEven);
+        for exp in [1000i64, -1000, 1_000_000, -1_000_000] {
+            let x = crate::ExactNum::from_u8(1, p).ldexp(exp, p, RoundingMode::None);
+            let got = x.ln(p, RoundingMode::ToEven, &mut cc);
+            let k = crate::ExactNum::from_i64(exp, p);
+            let want = crate::ExactNum::mul_ref(&ln2, &k, p, RoundingMode::ToEven);
+            let d = crate::ExactNum::sub_ref(&got, &want, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
+            assert!(
+                bits >= (p as i32) - 16 || d.is_zero(),
+                "ln(2^{exp}) vs {exp}*ln2 only {bits} bits"
+            );
+        }
+
+        // Subnormal-range input: a 2-bit mantissa with exponent well below 1-p.
+        let sub = crate::ExactNum::from_u8(3, p).ldexp(-(p as i64 + 500), p, RoundingMode::None);
+        let got = sub.ln(p, RoundingMode::ToEven, &mut cc);
+        assert!(!got.is_nan(), "ln(subnormal-range) is finite");
+        assert!(got.is_negative(), "ln of a subnormal-range value in (0,1) is negative");
+        let k = crate::ExactNum::from_i64(-(p as i64 + 500), p);
+        let ln3 = crate::ExactNum::from_u8(3, p).ln(p, RoundingMode::ToEven, &mut cc);
+        let want = crate::ExactNum::add_ref(&ln3, &crate::ExactNum::mul_ref(&ln2, &k, p, RoundingMode::None), p, RoundingMode::ToEven);
+        let d = crate::ExactNum::sub_ref(&got, &want, p, RoundingMode::None).abs();
+        let bits = if d.is_zero() {
+            10_000
+        } else {
+            (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+        };
+        assert!(
+            bits >= (p as i32) - 16 || d.is_zero(),
+            "ln(3*2^{{-(p+500)}}) only {bits} bits"
+        );
+        Ok(())
+    }
 }
