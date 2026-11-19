@@ -337,6 +337,42 @@ fn meijer_g_series(
     GEval::Val(sum)
 }
 
+
+/// \(G^{1,1}_{1,1}(z\mid 1;0)\). The Mellin–Barnes contour does not exist
+/// (DLMF 16.17: \(a-b=1\) is a positive integer), but the residue series in a
+/// parameter shift has finite part \(-\gamma-\ln(1+z)\) (Jeff 2026-11-17 8:33 AM
+/// CST: use the residue series; the finite part at \(z=0\) is \(-\gamma\)).
+/// mpmath's `meijerg(..., 0) = 0` is the cancelled \(-1/\varepsilon\) pole, not
+/// the constant term.
+fn is_g1111_one_zero(an: &[ExactNum], ap: &[ExactNum], bm: &[ExactNum], bq: &[ExactNum], p: usize) -> bool {
+    if !(an.len() == 1 && ap.is_empty() && bm.len() == 1 && bq.is_empty()) {
+        return false;
+    }
+    let one = ExactNum::from_u8(1, p);
+    let zero = ExactNum::new(p);
+    exactly_equal(&an[0], &one) && exactly_equal(&bm[0], &zero)
+}
+
+fn meijer_g1111_finite_part(z: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
+    if !finite(z) {
+        return cat_nan();
+    }
+    let one = ExactNum::from_u8(1, p);
+    let g = cc.euler_gamma(p, RoundingMode::None);
+    if z.is_zero() {
+        return g.neg();
+    }
+    let arg = ExactNum::add_ref(&one, z, p, RoundingMode::None);
+    if !finite(&arg) || !arg.is_positive() || arg.is_zero() {
+        return cat_nan();
+    }
+    let ln = arg.ln(p, RoundingMode::None, cc);
+    if !finite(&ln) {
+        return cat_nan();
+    }
+    g.add(&ln, p, RoundingMode::None).neg()
+}
+
 fn meijer_g_inner(
     z: &ExactNum,
     an: &[ExactNum],
@@ -347,6 +383,9 @@ fn meijer_g_inner(
     p: usize,
     cc: &mut Consts,
 ) -> ExactNum {
+    if is_g1111_one_zero(an, ap, bm, bq, p) {
+        return meijer_g1111_finite_part(z, p, cc);
+    }
     match meijer_g_series(z, an, ap, bm, bq, r, p, cc) {
         GEval::Val(v) => v,
         GEval::Bad => cat_nan(),
@@ -4422,6 +4461,75 @@ mod tests {
             }
         }
         assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+        Ok(())
+    }
+
+    /// Residue-series finite part of \(G^{1,1}_{1,1}(z\mid 1;0)\) is
+    /// \(-\gamma-\ln(1+z)\), so \(z=0\) is \(-\gamma\), not typeless / InvalidArgument
+    /// and not the spurious mpmath 0 (Jeff 2026-11-17 8:33 AM CST).
+    #[test]
+    fn zf_meijer_fox_g1111_at_zero_is_neg_gamma() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ];
+        for p in [64usize, 256, 1024, 2048] {
+            let zero = ExactNum::new(p);
+            let one = ExactNum::from_u8(1, p);
+            let an = [one.clone()];
+            let bm = [zero.clone()];
+            for rm in modes {
+                let wrk = work_p(p);
+                let want = finish(cc.euler_gamma(wrk, RoundingMode::None).neg(), p, rm);
+                let g = zero.meijer_g(&an, &[], &bm, &[], p, rm, &mut cc);
+                assert!(
+                    !g.is_nan() && g.compare(&want) == Some(0),
+                    "meijer_g p={p} {rm:?} got {g} want {want}"
+                );
+                let h = zero.fox_h(
+                    &[(one.clone(), one.clone())],
+                    &[],
+                    &[(zero.clone(), one.clone())],
+                    &[],
+                    p,
+                    rm,
+                    &mut cc,
+                );
+                assert!(
+                    !h.is_nan() && h.compare(&want) == Some(0),
+                    "fox_h p={p} {rm:?} got {h} want {want}"
+                );
+            }
+            if p > 256 {
+                continue;
+            }
+            let rm = RoundingMode::ToEven;
+            for &(num, den) in &[(1u8, 2u8), (1, 1), (2, 1)] {
+                let z = ExactNum::from_u8(num, p).div(&ExactNum::from_u8(den, p), p, rm);
+                let arg = ExactNum::from_u8(1, p).add(&z, p, rm);
+                let want = cc
+                    .euler_gamma(p, rm)
+                    .add(&arg.ln(p, rm, &mut cc), p, rm)
+                    .neg();
+                let g = z.meijer_g(&an, &[], &bm, &[], p, rm, &mut cc);
+                assert!(
+                    !g.is_nan() && near(&g, &want, p),
+                    "meijer_g z neighbor p={p} got {g} want {want}"
+                );
+            }
+            // siblings at z=0 stay as they are: G^{1,0}_{0,1}(0 | ; 0) = 1 (0^0).
+            let sib = zero.meijer_g(&[], &[], core::slice::from_ref(&zero), &[], p, rm, &mut cc);
+            assert!(
+                sib.compare(&one) == Some(0),
+                "sibling G^{{1,0}}_{{0,1}}(0) p={p} got {sib}"
+            );
+        }
         Ok(())
     }
 }
