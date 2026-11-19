@@ -47,7 +47,7 @@ impl Mantissa {
     }
 
     // general case multiplication
-    pub(super) fn mul_unbalanced(m1: &[Word], m2: &[Word], m3: &mut [Word]) -> Result<(), Error> {
+    pub(crate) fn mul_unbalanced(m1: &[Word], m2: &[Word], m3: &mut [Word]) -> Result<(), Error> {
         let (sm, lg) = if m1.len() < m2.len() { (m1, m2) } else { (m2, m1) };
 
         if lg.len() / 2 >= sm.len() && sm.len() > 70 {

@@ -149,6 +149,21 @@ impl ExactNumNumber {
             return Self::new2(p, Sign::Pos, self.inexact());
         }
 
+        // FLINT arb_log_newton near-1 short series: |x-1| < 2^{-p/16}.
+        if self.ln_is_near_one(p)? {
+            let mut p_inc = WORD_BIT_SIZE;
+            let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+            loop {
+                let p_x = p_wrk + additional_prec;
+                let mut ret = self.ln_near_one(p_x)?;
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(ret.inexact() | self.inexact());
+                    return Ok(ret);
+                }
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            }
+        }
+
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
@@ -161,7 +176,11 @@ impl ExactNumNumber {
             }
             x.set_exponent(0);
 
-            let p1 = Self::ln_series(x, RoundingMode::None)?;
+            let p1 = if p_x > crate::ops::log_newton::ARB_LOG_NEWTON_PREC / 2 {
+                x.ln_newton(p_x, cc)?
+            } else {
+                Self::ln_series(x, RoundingMode::None)?
+            };
 
             let mut ret = if e == 0 {
                 p1
@@ -186,7 +205,7 @@ impl ExactNumNumber {
         }
     }
 
-    fn ln_series(mut x: Self, rm: RoundingMode) -> Result<Self, Error> {
+    pub(super) fn ln_series(mut x: Self, rm: RoundingMode) -> Result<Self, Error> {
         let p = x.mantissa_max_bit_len();
         let mut polycoeff_gen = AtanhPolycoeffGen::new(p)?;
         let (mut reduction_times, niter, e_eff) =
@@ -846,10 +865,13 @@ mod tests {
             );
             let got = x.ln(p, RoundingMode::ToEven, &mut cc);
             let ms = t0.elapsed().as_millis();
+            // The gold is a FLINT midpoint with far more digits than dest p;
+            // p+256 is enough to compare to dest-p accuracy without a 4p parse
+            // at dest 2^20 (4*2^20 bits of decimal conversion is minutes).
             let want = crate::ExactNum::parse(
                 dec,
                 crate::Radix::Dec,
-                4 * p,
+                p.saturating_add(256),
                 RoundingMode::ToEven,
                 &mut cc,
             );
@@ -926,6 +948,61 @@ mod tests {
             bits >= (p as i32) - 16 || d.is_zero(),
             "ln(3*2^{{-(p+500)}}) only {bits} bits"
         );
+
+        // Near 1 at a Newton-log precision (p = 4096 > ARB_LOG_NEWTON_PREC/2).
+        let p4 = 4096usize;
+        let one4 = crate::ExactNum::from_u8(1, p4);
+        let eps4 = crate::ExactNum::from_u8(1, p4).ldexp(-80, p4, RoundingMode::None);
+        let near4 = crate::ExactNum::add_ref(&one4, &eps4, p4, RoundingMode::None);
+        let ln_near4 = near4.ln(p4, RoundingMode::ToEven, &mut cc);
+        let d4 = crate::ExactNum::sub_ref(&ln_near4, &eps4, p4, RoundingMode::None).abs();
+        let agree4 = if d4.is_zero() {
+            10_000
+        } else {
+            (eps4.exponent().unwrap_or(0) - d4.exponent().unwrap_or(0)) as i32
+        };
+        assert!(agree4 >= 16, "ln(1+2^{{-80}}) at p=4096 vs 2^{{-80}}: only {agree4} bits");
+        Ok(())
+    }
+
+    #[test]
+    fn zf_ln_exp_roundtrip() -> Result<(), crate::Error> {
+        let mut cc = crate::Consts::new()?;
+        // 64 and 4096 cover the series and Newton paths; 65536 covers bit-burst exp + Newton log.
+        for p in [64usize, 4096, 65536] {
+            for arg in ["2", "10", "0.5"] {
+                let t0 = std::time::Instant::now();
+                let x = crate::ExactNum::parse(arg, crate::Radix::Dec, p, RoundingMode::ToEven, &mut cc);
+                let ln_x = x.ln(p, RoundingMode::ToEven, &mut cc);
+                let back = ln_x.exp(p, RoundingMode::ToEven, &mut cc);
+                let d = crate::ExactNum::sub_ref(&back, &x, p, RoundingMode::None).abs();
+                let bits = if d.is_zero() {
+                    10_000
+                } else {
+                    (x.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+                };
+                let ms = t0.elapsed().as_millis();
+                eprintln!("exp(ln({arg})) p={p}: {ms} ms, {bits} bits");
+                assert!(
+                    bits >= (p as i32) - 16 || d.is_zero(),
+                    "exp(ln({arg})) p={p} only {bits} bits after {ms} ms"
+                );
+            }
+            // ln(exp(x)) for a non-integer x (covers the exp-first order).
+            let x = crate::ExactNum::parse("0.5", crate::Radix::Dec, p, RoundingMode::ToEven, &mut cc);
+            let e = x.exp(p, RoundingMode::ToEven, &mut cc);
+            let back = e.ln(p, RoundingMode::ToEven, &mut cc);
+            let d = crate::ExactNum::sub_ref(&back, &x, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (x.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
+            assert!(
+                bits >= (p as i32) - 16 || d.is_zero(),
+                "ln(exp(0.5)) p={p} only {bits} bits"
+            );
+        }
         Ok(())
     }
 }

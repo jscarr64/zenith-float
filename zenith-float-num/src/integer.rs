@@ -3,6 +3,7 @@
 use crate::common::util::add_carry;
 use crate::common::util::sub_borrow;
 use crate::defs::DoubleWord;
+use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
@@ -257,6 +258,22 @@ impl ExactInt {
         }
         let sign = if self.sign == rhs.sign { Sign::Pos } else { Sign::Neg };
         Self::from_limbs(sign, out)
+    }
+
+    /// Product using the mantissa Toom/FFT multipliers once either factor
+    /// exceeds 32 words. The schoolbook [`Self::mul`] path is kept for small
+    /// operands and for callers that want an infallible multiply.
+    pub(crate) fn mul_fast(&self, rhs: &Self) -> Result<Self, Error> {
+        if self.is_zero() || rhs.is_zero() {
+            return Ok(Self::zero());
+        }
+        if self.limbs.len() <= 32 && rhs.limbs.len() <= 32 {
+            return Ok(self.mul(rhs));
+        }
+        let mut out = vec![0; self.limbs.len() + rhs.limbs.len()];
+        crate::mantissa::Mantissa::mul_unbalanced(&self.limbs, &rhs.limbs, &mut out)?;
+        let sign = if self.sign == rhs.sign { Sign::Pos } else { Sign::Neg };
+        Ok(Self::from_limbs(sign, out))
     }
 
     fn shl_one(a: &mut Vec<Word>) {
