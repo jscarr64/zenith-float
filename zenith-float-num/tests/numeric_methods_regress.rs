@@ -166,8 +166,7 @@ fn chebyshev_equal_exponent_interval() -> Result<(), Box<dyn std::error::Error>>
         P,
         RM,
         &mut cc,
-    )
-    .ok_or("none value")?;
+    )?;
     let x = ExactNum::parse("2.5", Radix::Dec, P, RM, &mut cc);
     let v = chebyshev_eval(&c, &x, &n(2), &n(3), P, RM);
     assert!(close(&v, &x.ln(4 * P, RM, &mut cc), 120));

@@ -5,6 +5,7 @@ use crate::complex_ball::CB;
 use crate::complex_ball::RB;
 use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
+use crate::complex_special::typed_nan_pair;
 use crate::complex_special::neg_c;
 use crate::complex_special::pi_c;
 use crate::complex_special::term_negligible;
@@ -77,7 +78,7 @@ impl ExactComplex {
     /// Implementation of [`Self::ei`] on operands without inexact history.
     fn ei_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         if self.re().is_zero() && self.im().is_zero() {
             return nan_pair(Error::InvalidArgument);
@@ -104,7 +105,7 @@ impl ExactComplex {
     /// Implementation of [`Self::si`] on operands without inexact history.
     fn si_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         // Si(0) = 0, odd, with C99 signed zeros. Must not allocate dest.
         if self.re().is_zero() && self.im().is_zero() {
@@ -161,7 +162,7 @@ impl ExactComplex {
     /// Implementation of [`Self::ci`] on operands without inexact history.
     fn ci_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         if self.re().is_zero() && self.im().is_zero() {
             return nan_pair(Error::InvalidArgument);
@@ -197,7 +198,7 @@ impl ExactComplex {
     /// Implementation of [`Self::li`] on operands without inexact history.
     fn li_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         if self.re().is_zero() && self.im().is_zero() {
             return nan_pair(Error::InvalidArgument);
@@ -223,7 +224,7 @@ impl ExactComplex {
     /// Implementation of [`Self::fresnel_s`] on operands without inexact history.
     fn fresnel_s_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         // S(0) is an exact signed zero (C99 odd, conjugate-symmetric; Im(S)
         // takes the opposite sign of Im(z)). Must not allocate dest.
@@ -268,7 +269,7 @@ impl ExactComplex {
     /// Implementation of [`Self::fresnel_c`] on operands without inexact history.
     fn fresnel_c_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         // C(0) is an exact signed zero that copies the operand's signed zeros
         // (C99 odd, conjugate-symmetric; C(z) ~ z). Must not allocate dest.

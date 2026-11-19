@@ -485,6 +485,17 @@ pub(crate) fn nan_pair(e: Error) -> ExactComplex {
     ExactComplex::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e)))
 }
 
+/// Both parts a typed NaN. Uses the input's `err()` if either part has one,
+/// otherwise `InvalidArgument`. P20: a NaN result always carries `err()`.
+pub(crate) fn typed_nan_pair(z: &ExactComplex) -> ExactComplex {
+    let e = z
+        .re()
+        .err()
+        .or_else(|| z.im().err())
+        .unwrap_or(Error::InvalidArgument);
+    nan_pair(e)
+}
+
 pub(crate) fn neg_c(z: ExactComplex) -> ExactComplex {
     z.neg()
 }
@@ -1149,7 +1160,7 @@ impl ExactComplex {
     /// Implementation of [`Self::erf`] on operands without inexact history.
     fn erf_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         let dest = round_p(p);
         if !finite_parts(self) {
@@ -1261,7 +1272,7 @@ impl ExactComplex {
     /// Implementation of [`Self::erfc`] on operands without inexact history.
     fn erfc_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         let dest = round_p(p);
         if !finite_parts(self) {
@@ -1298,7 +1309,7 @@ impl ExactComplex {
     /// Implementation of [`Self::gamma`] on operands without inexact history.
     fn gamma_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         if is_nonpos_integer(self) {
             return nan_pair(Error::InvalidArgument);
@@ -1332,7 +1343,7 @@ impl ExactComplex {
     /// Implementation of [`Self::ln_gamma`] on operands without inexact history.
     fn ln_gamma_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         if is_nonpos_integer(self) {
             return nan_pair(Error::InvalidArgument);
@@ -1364,7 +1375,7 @@ impl ExactComplex {
     /// Implementation of [`Self::digamma`] on operands without inexact history.
     fn digamma_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         if is_nonpos_integer(self) {
             return nan_pair(Error::InvalidArgument);
@@ -3201,6 +3212,74 @@ mod tests {
                 !d10i.is_nan() && !d10i.re().is_inf() && !d10i.im().is_inf(),
                 "digamma(1+10i) should be finite, got {:?}",
                 d10i
+            );
+        }
+        Ok(())
+    }
+
+    fn assert_typed_ia(lab: &str, p: usize, rm: RoundingMode, call: ExactComplex) {
+        assert!(
+            call.re().is_nan()
+                && call.im().is_nan()
+                && call.re().err() == Some(Error::InvalidArgument)
+                && call.im().err() == Some(Error::InvalidArgument),
+            "{lab} p={p} {rm:?} re {:?} im {:?}",
+            call.re(),
+            call.im()
+        );
+    }
+
+    /// Typeless nan+i, i*nan, nan+nan, and already-typed InvalidArgument must
+    /// come out as a typed NaN in both parts (P20: err() is always set). Finite
+    /// neighbors stay finite. Covers every clone-on-NaN site.
+    #[test]
+    fn zf_typed_nan_at_nan_plus_i() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ];
+        for p in [64usize, 256, 2048] {
+            let nan_plus_i = ExactComplex::new(crate::NAN.clone(), ExactNum::from_u8(1, p));
+            let i_times_nan = ExactComplex::new(ExactNum::from_u8(1, p), crate::NAN.clone());
+            let nan_plus_nan = ExactComplex::new(crate::NAN.clone(), crate::NAN.clone());
+            let typed = ExactComplex::new(
+                ExactNum::nan(Some(Error::InvalidArgument)),
+                ExactNum::from_u8(1, p),
+            );
+            for rm in modes {
+                for (lab, z) in [
+                    ("nan+i typeless", nan_plus_i.clone()),
+                    ("i*nan typeless", i_times_nan.clone()),
+                    ("nan+nan typeless", nan_plus_nan.clone()),
+                    ("nan+i typed IA", typed.clone()),
+                ] {
+                    assert_typed_ia(lab, p, rm, z.gamma(p, rm, &mut cc));
+                    assert_typed_ia(lab, p, rm, z.ln_gamma(p, rm, &mut cc));
+                    assert_typed_ia(lab, p, rm, z.digamma(p, rm, &mut cc));
+                    assert_typed_ia(lab, p, rm, z.ai(p, rm, &mut cc));
+                    assert_typed_ia(lab, p, rm, z.bi(p, rm, &mut cc));
+                    assert_typed_ia(lab, p, rm, z.erf(p, rm, &mut cc));
+                    assert_typed_ia(lab, p, rm, z.erfc(p, rm, &mut cc));
+                    assert_typed_ia(lab, p, rm, z.ei(p, rm, &mut cc));
+                    assert_typed_ia(lab, p, rm, z.elliptic_k(p, rm, &mut cc));
+                    assert_typed_ia(lab, p, rm, z.elliptic_e_complete(p, rm, &mut cc));
+                }
+            }
+            if p > 256 {
+                continue;
+            }
+            let z = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+            let g = z.gamma(p, RoundingMode::ToEven, &mut cc);
+            assert!(
+                !g.is_nan() && !g.re().is_inf(),
+                "gamma(1+i) should be finite, got {:?}",
+                g
             );
         }
         Ok(())

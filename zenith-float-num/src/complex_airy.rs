@@ -9,6 +9,7 @@
 use crate::common::util::round_p;
 use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
+use crate::complex_special::typed_nan_pair;
 use crate::complex_special::neg_c;
 use crate::complex_special::pi_c;
 use crate::complex_special::term_negligible;
@@ -143,7 +144,7 @@ impl ExactComplex {
     /// Implementation of [`Self::ai`] on operands without inexact history.
     fn ai_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         let dest = round_p(p);
         ziv_complex(dest, rm, |pw| self.ai_at(pw, dest, cc, true))
@@ -167,7 +168,7 @@ impl ExactComplex {
     /// Implementation of [`Self::bi`] on operands without inexact history.
     fn bi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         let dest = round_p(p);
         ziv_complex(dest, rm, |pw| self.bi_at(pw, dest, cc))

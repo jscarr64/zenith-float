@@ -1,10 +1,11 @@
 //! Chebyshev interpolation and Clenshaw evaluation on [`ExactNum`].
 
+use crate::common::util::reserve_probe;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
+use crate::Error;
 use crate::ExactNum;
 use crate::RoundingMode;
-use crate::NAN;
 use alloc::vec::Vec;
 
 /// Historical public constant; [`chebyshev_coeffs`] is no longer refused at this degree.
@@ -96,8 +97,10 @@ fn node_cos_j(
 /// `c_0 = (1/n) Σ f(x_k)`, `c_j = (2/n) Σ f(x_k) T_j(t_k)` for `j ≥ 1`,
 /// so `f(x) ≈ Σ_{j=0}^{n-1} c_j T_j(t(x))` with `t` the affine map to `[-1, 1]`.
 ///
-/// `None` if `n` is 0 or does not fit in `u32`, or if the
-/// interval is not a finite `a < b`.
+/// `Err(InvalidArgument)` if `n` is 0 or does not fit in `u32`, or if the
+/// interval is not a finite `a < b`. `Err(MemoryAllocation)` (or the
+/// precision-range error) if dest or the working width cannot be reserved
+/// (P20: OOM and invalid precision are `Result::Err`, never typeless `None`).
 pub fn chebyshev_coeffs<F>(
     mut f: F,
     n: usize,
@@ -106,17 +109,19 @@ pub fn chebyshev_coeffs<F>(
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
-) -> Option<Vec<ExactNum>>
+) -> Result<Vec<ExactNum>, Error>
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     if n == 0 || n > u32::MAX as usize {
-        return None;
+        return Err(Error::InvalidArgument);
     }
     if !finite(&a) || !finite(b) || a.compare(b) != Some(-1) {
-        return None;
+        return Err(Error::InvalidArgument);
     }
     let wrk = work_p(p);
+    reserve_probe(p)?;
+    reserve_probe(wrk)?;
     let (mid, half) = unit_map(a, b, wrk, RoundingMode::None);
     let mut fx = Vec::with_capacity(n);
     for k in 0..n {
@@ -124,7 +129,7 @@ where
         let x = map_from_unit(&t, &mid, &half, wrk, RoundingMode::None);
         let y = f(&x, wrk, RoundingMode::None, cc);
         if !finite(&y) {
-            return None;
+            return Err(Error::InvalidArgument);
         }
         fx.push(y);
     }
@@ -149,7 +154,7 @@ where
         let _ = c.set_precision(p, rm);
         coeffs.push(c);
     }
-    Some(coeffs)
+    Ok(coeffs)
 }
 
 /// Clenshaw recurrence for `Σ_{k=0}^{n-1} c_k T_k(x)` at precision `p`.
@@ -161,7 +166,7 @@ pub fn clenshaw(coeffs: &[ExactNum], x: &ExactNum, p: usize, rm: RoundingMode) -
         return ExactNum::new(p);
     }
     if !finite(x) || coeffs.iter().any(|c| !finite(c)) {
-        return NAN;
+        return ExactNum::nan(Some(Error::InvalidArgument));
     }
     let wrk = work_p(p);
     let mut b1 = ExactNum::new(wrk);
@@ -197,7 +202,7 @@ pub fn chebyshev_eval(
 ) -> ExactNum {
     match map_to_unit(x, a, b, p, rm) {
         Some(t) => clenshaw(coeffs, &t, p, rm),
-        None => NAN,
+        None => ExactNum::nan(Some(Error::InvalidArgument)),
     }
 }
 
@@ -291,7 +296,7 @@ mod tests {
             rm,
             &mut cc,
         )
-        .ok_or(crate::Error::InvalidArgument)?;
+        ?;
         assert_eq!(coeffs.len(), CHEBYSHEV_EXP_TERMS);
 
         let ten = ExactNum::from_u8(10, p);
@@ -336,7 +341,7 @@ mod tests {
             rm,
             &mut cc,
         )
-        .ok_or(crate::Error::InvalidArgument)?;
+        ?;
         let one = ExactNum::from_u8(1, p);
         assert_eq!(id_c[1].compare(&one), Some(0));
         for k in 0..IDENTITY_NODES {
@@ -366,7 +371,8 @@ mod tests {
         assert_eq!(via_clenshaw.compare(&via_direct), Some(0));
 
         assert!(
-            chebyshev_coeffs(|x, p, rm, cc| x.exp(p, rm, cc), 0, a, &b, p, rm, &mut cc).is_none()
+            chebyshev_coeffs(|x, p, rm, cc| x.exp(p, rm, cc), 0, a, &b, p, rm, &mut cc)
+                == Err(crate::Error::InvalidArgument)
         );
         // Past the old CHEBYSHEV_MAX_DEGREE = 256 refusal.
         let big = chebyshev_coeffs(
@@ -380,9 +386,49 @@ mod tests {
         );
         assert_eq!(
             big.as_ref().map(|c| c.len()),
-            Some(CHEBYSHEV_MAX_DEGREE + 1)
+            Ok(CHEBYSHEV_MAX_DEGREE + 1)
         );
         assert!(chebyshev_error_bound(&c, p).compare(&ExactNum::from_u8(5, p)) == Some(0));
+        Ok(())
+    }
+
+    /// Dest widths that cannot reserve a mantissa must be Err(MemoryAllocation),
+    /// not typeless None (P20). n=0 / a bad interval are InvalidArgument.
+    #[test]
+    fn zf_chebyshev_coeffs_dest_unallocatable() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let a = ExactNum::from_i64(-1, 64);
+        let b = ExactNum::from_u8(1, 64);
+        let f = |x: &ExactNum, p: usize, rm: RoundingMode, c: &mut Consts| x.exp(p, rm, c);
+        for &p in &[
+            1usize << 59,
+            (1usize << 60) - 65,
+            (1usize << 60) - 128,
+            (1usize << 60) - 129,
+        ] {
+            let t0 = std::time::Instant::now();
+            let r = chebyshev_coeffs(f, 30, a.clone(), &b, p, RoundingMode::ToEven, &mut cc);
+            assert!(
+                t0.elapsed().as_secs() < 2,
+                "chebyshev_coeffs dest {p} took {:?}",
+                t0.elapsed()
+            );
+            assert_eq!(
+                r.as_ref().err(),
+                Some(&crate::Error::MemoryAllocation),
+                "chebyshev_coeffs dest {p} got {r:?}"
+            );
+        }
+        assert_eq!(
+            chebyshev_coeffs(f, 0, a.clone(), &b, 64, RoundingMode::ToEven, &mut cc).err(),
+            Some(crate::Error::InvalidArgument)
+        );
+        let bad = ExactNum::from_i64(-1, 64);
+        // a == b is not a strict interval
+        assert_eq!(
+            chebyshev_coeffs(f, 4, bad.clone(), &bad, 64, RoundingMode::ToEven, &mut cc).err(),
+            Some(crate::Error::InvalidArgument)
+        );
         Ok(())
     }
 }

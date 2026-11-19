@@ -6,6 +6,7 @@
 
 use crate::common::util::round_p;
 use crate::complex_special::nan_pair;
+use crate::complex_special::typed_nan_pair;
 use crate::complex_special::pi_c;
 use crate::complex_special::ziv_complex;
 use crate::defs::Exponent;
@@ -1350,7 +1351,7 @@ impl ExactComplex {
     /// Implementation of [`Self::elliptic_k`] on operands without inexact history.
     fn elliptic_k_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         let dest = round_p(p);
         if is_c_one(self, dest) {
@@ -1405,7 +1406,7 @@ impl ExactComplex {
     /// Implementation of [`Self::elliptic_e_complete`] on operands without inexact history.
     fn elliptic_e_complete_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         let dest = round_p(p);
         if self.im().is_zero() && self.re().is_inf() {
