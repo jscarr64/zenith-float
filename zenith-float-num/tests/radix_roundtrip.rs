@@ -1,8 +1,8 @@
 //! Structured stress tests for parse/format round-trip across radices 2–36.
 
 use zenith_float_num::{
-    Consts, DEFAULT_RANDOM_SEED, Error, ExactNum, Exponent, Radix, RoundingMode, Sign,
-    WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT, Word, seeded_random as random,
+    seeded_random as random, Consts, Error, ExactNum, Exponent, Radix, RoundingMode, Sign, Word,
+    DEFAULT_RANDOM_SEED, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT,
 };
 
 const LOOPS_PER_BASE: usize = 24;
@@ -235,6 +235,69 @@ fn zf_format_minpos_radix3_36_and_radix_conv_round_trip() -> Result<(), Box<dyn 
             !back.is_nan() && minpos.compare(&back) == Some(0) && minpos.sign() == back.sign(),
             "convert_to_radix min_positive({p}) radix 10 ToEven did not round-trip"
         );
+    }
+
+    // Negative inputs: official judge_format_string parse-back under every
+    // directed mode plus None, radices 3/10/36. On e8502fe, Y±1 compared a
+    // positive significand to signed x, so these fail parse-back by 1 ulp.
+    let directed_and_none = [
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::FromZero,
+        RoundingMode::None,
+    ];
+    let bases = [3u8, 10, 36];
+    let check = |label: &str,
+                 n: &ExactNum,
+                 p: usize,
+                 base: u8,
+                 rm: RoundingMode,
+                 cc: &mut Consts|
+     -> Result<(), Box<dyn std::error::Error>> {
+        let rdx = Radix::try_new(base)?;
+        let s = n.format(rdx, rm, cc)?;
+        assert!(
+            s != "Err" && !s.ends_with("Err") && !s.contains("Err"),
+            "{label} radix {base} {rm:?} gave {s:?}"
+        );
+        let back = ExactNum::parse(&s, rdx, p, rm, cc);
+        assert!(
+            !back.is_nan() && n.compare(&back) == Some(0) && n.sign() == back.sign(),
+            "{label} radix {base} {rm:?}: format {s:?} parsed back to {back:?}"
+        );
+        Ok(())
+    };
+    for p in [128usize, 256] {
+        let mut nmin = ExactNum::min_positive(p);
+        nmin.set_sign(Sign::Neg);
+        let mut nmax = ExactNum::max_value(p);
+        nmax.set_sign(Sign::Neg);
+        for &base in &bases {
+            for rm in directed_and_none {
+                check(&format!("-min_positive({p})"), &nmin, p, base, rm, &mut cc)?;
+                check(&format!("-max_value({p})"), &nmax, p, base, rm, &mut cc)?;
+            }
+        }
+        // Dense 256-bit (or 128-bit) mantissa, negative, exponent -1,
+        // like the official a..abp-(p+1) rows.
+        let nwords = p / WORD_BIT_SIZE;
+        let mut words = vec![0xaaaaaaaaaaaaaaaa as Word; nwords];
+        words[0] = 0xaaaaaaaaaaaaaaab as Word;
+        let dense = ExactNum::from_words(&words, Sign::Neg, -1);
+        assert!(!dense.is_nan(), "neg dense a..abp-{} construction", p + 1);
+        for &base in &bases {
+            for rm in directed_and_none {
+                check(
+                    &format!("-dense a..abp-{} p={p}", p + 1),
+                    &dense,
+                    p,
+                    base,
+                    rm,
+                    &mut cc,
+                )?;
+            }
+        }
     }
     Ok(())
 }

@@ -12,7 +12,7 @@ use crate::mantissa::Mantissa;
 #[cfg(test)]
 use crate::{Error, Word, WORD_BIT_SIZE};
 
-#[cfg(not(feature = "std"))]
+#[cfg(all(test, not(feature = "std")))]
 use alloc::vec::Vec;
 
 // Number of decimal digits per word.

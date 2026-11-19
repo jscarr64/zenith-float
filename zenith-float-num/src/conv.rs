@@ -332,8 +332,12 @@ impl ExactNumNumber {
         // Scale with the destination rounding at precision `p`. Forming
         // `base^exp_adj` first (or rounding the product in `None` at `p_wrk`
         // and then to `p`) can flush a minpos-scale product or double-round.
-        acc = acc.mul_base_pow(base, exp_adj, p, rm)?;
+        // Apply `sign` before `mul_base_pow` so directed Up/Down and overflow
+        // follow official judge_format_string (signed value, then `rm`).
+        // Rounding the unsigned magnitude first would flip Up/Down and turn a
+        // negative overflow in Up into +Inf.
         acc.set_sign(sign);
+        acc = acc.mul_base_pow(base, exp_adj, p, rm)?;
         Ok(acc)
     }
 
@@ -1164,7 +1168,14 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
     ) -> Result<bool, Error> {
-        match yint.mul_base_pow(base, scale, p, rm) {
+        // `yint` is the positive significand. Official judge_format_string
+        // parses the signed spelling, then rounds that value in `rm`. Apply
+        // `x`'s sign before `mul_base_pow` so directed Up/Down (toward ±∞)
+        // match that contract. Comparing a positive v to |x| with the same
+        // `rm` would flip Up and Down on negatives.
+        let mut y = yint.clone()?;
+        y.set_sign(x.sign());
+        match y.mul_base_pow(base, scale, p, rm) {
             Ok(v) => Ok(v.cmp(x) == 0 && v.sign() == x.sign()),
             // A near-overflow interval can exhaust retries or bump past
             // EXPONENT_MAX while checking Y±1; that spelling simply does not
