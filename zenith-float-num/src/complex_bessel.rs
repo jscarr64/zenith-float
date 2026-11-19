@@ -276,7 +276,19 @@ fn principal_neg_real_cut(z: &ExactComplex) -> Option<ExactComplex> {
 /// \(J_0(0)=I_0(0)=1\), \(J_n(0)=I_n(0)=0\) for integer \(n\ne 0\), and \(0\)
 /// when \(\operatorname{Re}\nu>0\). Non-integer \(\operatorname{Re}\nu<0\) is a
 /// pole (`InvalidArgument`). Other orders (pure imaginary, etc.) return `None`.
-fn bessel_ji_at_zero(nu: &ExactComplex) -> Option<ExactComplex> {
+fn is_half_odd_integer(x: &ExactNum) -> bool {
+    let p = x.precision().unwrap_or(crate::DEFAULT_P);
+    let twice = x.clone().ldexp(1, p, RoundingMode::None);
+    twice.is_int() && !twice.ldexp(-1, p, RoundingMode::None).is_int()
+}
+
+/// Exact \(J_\nu(0)\) / \(I_\nu(0)\) that need no dest-sized mantissa:
+/// \(J_0(0)=I_0(0)=1\), \(J_n(0)=I_n(0)=0\) for integer \(n\ne 0\), and \(0\)
+/// when \(\operatorname{Re}\nu>0\) (DLMF 10.7.3 / 10.30.1: \((z/2)^\nu/\Gamma(\nu+1)\)).
+/// For real \(\nu<0\), that leading term tends to \(+\infty\) as \(z\to 0+\)
+/// (arg \(0\pm 0i\) is 0). The compact imaginary zero of the infinity follows
+/// \(\operatorname{Im} z\). Other orders (pure imaginary, etc.) return `None`.
+fn bessel_ji_at_zero(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex> {
     if nu.im().is_zero() && nu.re().is_int() {
         if nu.re().is_zero() {
             return Some(crate::complex::compact_one());
@@ -287,18 +299,47 @@ fn bessel_ji_at_zero(nu: &ExactComplex) -> Option<ExactComplex> {
         return Some(crate::complex::compact_complex_zero(false, false));
     }
     if nu.im().is_zero() && nu.re().is_negative() && !nu.re().is_zero() {
-        return Some(nan_pair(Error::InvalidArgument));
+        return Some(crate::complex::compact_inf(false, z.im().is_negative()));
     }
     None
 }
 
-/// Integer-order \(Y_n(0)=-\infty\), \(K_n(0)=+\infty\) (DLMF 10.4.1 / 10.27.3).
-/// The compact imaginary zero follows \(\operatorname{Im} z\). Non-integer order stays NaN.
+/// Compact \(Y_\nu(0)\) / \(K_\nu(0)\) from the DLMF leading term, no dest-sized
+/// mantissa. The compact imaginary zero follows \(\operatorname{Im} z\).
+///
+/// - Integer \(Y_n(0)=-\infty\), \(K_n(0)=+\infty\) (DLMF 10.4.1 / 10.27.3).
+/// - Real \(\nu\): \(K_\nu(0)=+\infty\) (DLMF 10.30.2 / 10.30.3). For non-real
+///   \(\nu\), \((z/2)^{-\nu}\) has no unique direction at exact \(z=0\), so NaN.
+/// - Real \(\operatorname{Re}\nu>0\): \(Y_\nu(0)=-\infty\) (DLMF 10.7.4).
+/// - Real half-odd-integer \(\nu=-1/2,-3/2,\ldots\): the connection
+///   \(Y_\nu=(J_\nu\cos\nu\pi-J_{-\nu})/\sin\nu\pi\) has \(\cos\nu\pi=0\),
+///   so \(Y_\nu(0)=0\) (e.g. \(Y_{-1/2}(z)=J_{1/2}(z)\sim\sqrt{2/(\pi z)}\sin z\)).
 fn bessel_yk_at_zero(nu: &ExactComplex, y: bool, z: &ExactComplex) -> ExactComplex {
     if nu.im().is_zero() && nu.re().is_int() {
         return crate::complex::compact_inf(y, z.im().is_negative());
     }
+    if !y && nu.im().is_zero() {
+        return crate::complex::compact_inf(false, z.im().is_negative());
+    }
+    if y && nu.im().is_zero() && nu.re().is_positive() {
+        return crate::complex::compact_inf(true, z.im().is_negative());
+    }
+    if y && nu.im().is_zero() && is_half_odd_integer(nu.re()) {
+        return crate::complex::compact_complex_zero(false, z.im().is_negative());
+    }
     nan_pair(Error::InvalidArgument)
+}
+
+/// Compact 0 at \(z=+\infty\pm 0i\) for finite \(\nu\): \(J_\nu,Y_\nu\to 0\)
+/// (DLMF 10.7.8 / 10.17.3, amplitude \(O(z^{-1/2})\) in \(|\arg z|\le\pi-\delta\));
+/// \(K_\nu(z)\sim\sqrt{\pi/(2z)}e^{-z}\to 0\) (DLMF 10.25.3 / 10.40.2,
+/// \(|\arg z|<3\pi/2\)). Arg of \(+\infty\pm 0i\) is 0. Imaginary zero follows
+/// \(\operatorname{Im} z\). Do not allocate a dest-sized buffer.
+fn bessel_jyk_at_pos_inf(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex> {
+    if z.re().is_inf_pos() && z.im().is_zero() && !nu.re().is_inf() && !nu.im().is_inf() {
+        return Some(crate::complex::compact_complex_zero(false, z.im().is_negative()));
+    }
+    None
 }
 
 /// Exact integer in \([-64,64]\).
@@ -377,7 +418,9 @@ fn neg_rounding(rm: RoundingMode) -> RoundingMode {
 
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
-    /// \(z=0\) with non-integer \(\nu\) → NaN. On the cut \(\operatorname{Re} z<0\),
+    /// At \(z=0\): \(J_0(0)=1\), integer \(n\ne 0\) gives 0, \(\operatorname{Re}\nu>0\)
+    /// gives 0, and real \(\nu<0\) gives \(+\infty\) (DLMF 10.7.3). At
+    /// \(z=+\infty\pm 0i\), \(J_\nu=0\) (DLMF 10.7.8 / 10.17.3). On the cut \(\operatorname{Re} z<0\),
     /// \(\operatorname{Im} z=0\), both signs of a zero imaginary part take Arb's principal value (the limit from above, Arg = +π; Jeff 2026-11-18 10:37 CT). With real ν, that value is formed from the real kernels so algebraically zero parts stay zero.
     ///
     /// Accuracy: correctly-rounded
@@ -399,9 +442,12 @@ impl ExactComplex {
         // Exact z=0 values before any dest-sized allocation (incl. the dest-width
         // oddness test in the negative-integer reflection).
         if self.re().is_zero() && self.im().is_zero() {
-            if let Some(v) = bessel_ji_at_zero(nu) {
+            if let Some(v) = bessel_ji_at_zero(nu, self) {
                 return v;
             }
+        }
+        if let Some(v) = bessel_jyk_at_pos_inf(nu, self) {
+            return v;
         }
         if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
             return n;
@@ -423,7 +469,10 @@ impl ExactComplex {
         ziv_complex(dest, rm, |pw| self.bessel_j_at(nu, pw, dest, cc))
     }
 
-    /// \(Y_\nu(z)\). Cut on \((-\infty,0]\). For integer order, Y_n(0) = -Infinity (DLMF 10.4.1); otherwise z=0 is NaN. On the cut, both signs of a zero imaginary part take Arb's principal
+    /// \(Y_\nu(z)\). Cut on \((-\infty,0]\). At \(z=0\), integer \(Y_n(0)=-\infty\) (DLMF 10.4.1),
+    /// real \(\operatorname{Re}\nu>0\) gives \(-\infty\) (DLMF 10.7.4), and real half-odd-integer
+    /// \(\nu=-1/2,-3/2,\ldots\) gives 0. At \(z=+\infty\pm 0i\), \(Y_\nu=0\) (DLMF 10.7.8 / 10.17.3).
+    /// On the cut, both signs of a zero imaginary part take Arb's principal
     /// value, as for \(J_\nu\).
     ///
     /// # Precision
@@ -451,6 +500,9 @@ impl ExactComplex {
         }
         if let Some(z) = principal_neg_real_cut(self) {
             return z.bessel_y_word(nu, p, rm, cc);
+        }
+        if let Some(v) = bessel_jyk_at_pos_inf(nu, self) {
+            return v;
         }
         if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
             return n;
@@ -490,7 +542,7 @@ impl ExactComplex {
         }
         // Exact z=0 values before any dest-sized allocation.
         if self.re().is_zero() && self.im().is_zero() {
-            if let Some(v) = bessel_ji_at_zero(nu) {
+            if let Some(v) = bessel_ji_at_zero(nu, self) {
                 return v;
             }
         }
@@ -522,7 +574,10 @@ impl ExactComplex {
         ziv_complex(dest, rm, |pw| self.bessel_i_at(nu, pw, dest, cc))
     }
 
-    /// \(K_\nu(z)=(\pi/2)\,i^{\nu+1}H_\nu^{(1)}(iz)\). Cut on \((-\infty,0]\). For integer order, K_n(0) = +Infinity (DLMF 10.27.3); otherwise z=0 is NaN.
+    /// \(K_\nu(z)=(\pi/2)\,i^{\nu+1}H_\nu^{(1)}(iz)\). Cut on \((-\infty,0]\). For real \(\nu\),
+    /// \(K_\nu(0)=+\infty\) (DLMF 10.27.3 / 10.30.2 / 10.30.3). For non-real \(\nu\) the leading
+    /// term \((z/2)^{-\nu}\) has no unique direction at exact \(z=0\). At \(z=+\infty\pm 0i\),
+    /// \(K_\nu=0\) (DLMF 10.25.3 / 10.40.2).
     /// On the cut, both signs of a zero imaginary part take Arb's principal value, as for
     /// \(J_\nu\) and \(I_\nu\). Real \(z>0\) with real \(\nu\) gives an exact zero
     /// imaginary part (likewise [`Self::bessel_i`]). On the cut with real ν, both signs of a zero imag use the principal (from-above) formula.
@@ -556,6 +611,9 @@ impl ExactComplex {
         }
         if let Some(z) = principal_neg_real_cut(self) {
             return z.bessel_k_word(nu, p, rm, cc);
+        }
+        if let Some(v) = bessel_jyk_at_pos_inf(nu, self) {
+            return v;
         }
         if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
             return n;
@@ -2045,6 +2103,19 @@ mod tests {
         )
     }
 
+    fn compact_half(neg: bool) -> ExactComplex {
+        let h = ExactNum::from_u8(1, crate::DEFAULT_P).ldexp(-1, crate::DEFAULT_P, RoundingMode::None);
+        let re = if neg { h.neg() } else { h };
+        ExactComplex::new(re, compact_signed_zero(false))
+    }
+
+    fn compact_one_plus_i() -> ExactComplex {
+        ExactComplex::new(
+            ExactNum::from_u8(1, crate::DEFAULT_P),
+            ExactNum::from_u8(1, crate::DEFAULT_P),
+        )
+    }
+
     /// Integer-order J, I, Y, K at z = 0, and I at +∞, are exact values that
     /// must not allocate a dest-sized mantissa. Dest \(2^{59}\) must return
     /// immediately: J_(-2)(0)=I_(-2)(0)=0, J_0(0)=I_0(0)=1, Y_n(0)=−∞,
@@ -2188,6 +2259,130 @@ mod tests {
             Some(Error::MemoryAllocation),
             "{name} im err {:?}",
             z.im().err()
+        );
+    }
+
+    /// DLMF limits at z=0 and z=+∞ that used to return InvalidArgument, as
+    /// compact values with no dest-sized allocation (dest 2^59 must return
+    /// immediately). Paul call per the cited DLMF paragraphs; signed zeros
+    /// follow Im z, as for the existing integer-order and I(+∞) compact paths.
+    #[test]
+    fn zf_bessel_dlmf_limits_at_zero_and_pos_inf_dest_2_59_returns_immediately() {
+        let p = 1usize << 59;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().expect("Consts");
+        let z0 = ExactComplex::new(compact_signed_zero(false), compact_signed_zero(false));
+        let z0m = ExactComplex::new(compact_signed_zero(false), compact_signed_zero(true));
+        let zinf = ExactComplex::new(crate::INF_POS, compact_signed_zero(false));
+        let zinfm = ExactComplex::new(crate::INF_POS, compact_signed_zero(true));
+        let nmh = compact_half(true);
+        let ph = compact_half(false);
+        let n0 = compact_real(0);
+        let n1i = compact_one_plus_i();
+
+        // DLMF 10.7.3 / 10.30.1: J_-1/2(0)=I_-1/2(0)=+∞
+        let t0 = std::time::Instant::now();
+        let j = z0.bessel_j_nu(&nmh, p, rm, &mut cc);
+        assert!(t0.elapsed().as_secs() < 1, "J_-1/2(0) at dest 2^59 took {:?}", t0.elapsed());
+        assert!(
+            j.re().is_inf_pos() && j.im().is_zero() && !j.im().is_negative(),
+            "J_-1/2(0+0i) got {j:?}, want +Inf+0i"
+        );
+        let t0 = std::time::Instant::now();
+        let jm = z0m.bessel_j_nu(&nmh, p, rm, &mut cc);
+        assert!(t0.elapsed().as_secs() < 1, "J_-1/2(0-0i) took {:?}", t0.elapsed());
+        assert!(
+            jm.re().is_inf_pos() && jm.im().is_zero() && jm.im().is_negative(),
+            "J_-1/2(0-0i) got {jm:?}, want +Inf-0i"
+        );
+        let t0 = std::time::Instant::now();
+        let i = z0.bessel_i(&nmh, p, rm, &mut cc);
+        assert!(t0.elapsed().as_secs() < 1, "I_-1/2(0) took {:?}", t0.elapsed());
+        assert!(
+            i.re().is_inf_pos() && i.im().is_zero() && !i.im().is_negative(),
+            "I_-1/2(0+0i) got {i:?}, want +Inf+0i"
+        );
+
+        // Y_-1/2(z)=J_{1/2}(z) ~ sqrt(2/(πz)) sin z → 0 (not −∞)
+        let t0 = std::time::Instant::now();
+        let y = z0.bessel_y(&nmh, p, rm, &mut cc);
+        assert!(t0.elapsed().as_secs() < 1, "Y_-1/2(0) took {:?}", t0.elapsed());
+        assert!(
+            y.re().is_zero() && !y.re().is_negative() && y.im().is_zero() && !y.im().is_negative(),
+            "Y_-1/2(0+0i) got {y:?}, want +0+0i"
+        );
+        let t0 = std::time::Instant::now();
+        let ym = z0m.bessel_y(&nmh, p, rm, &mut cc);
+        assert!(t0.elapsed().as_secs() < 1, "Y_-1/2(0-0i) took {:?}", t0.elapsed());
+        assert!(
+            ym.re().is_zero() && !ym.re().is_negative() && ym.im().is_zero() && ym.im().is_negative(),
+            "Y_-1/2(0-0i) got {ym:?}, want +0-0i"
+        );
+
+        // DLMF 10.30.2: K_{±1/2}(0)=+∞ for real ν
+        let t0 = std::time::Instant::now();
+        let k = z0.bessel_k(&ph, p, rm, &mut cc);
+        assert!(t0.elapsed().as_secs() < 1, "K_1/2(0) took {:?}", t0.elapsed());
+        assert!(
+            k.re().is_inf_pos() && k.im().is_zero() && !k.im().is_negative(),
+            "K_1/2(0+0i) got {k:?}, want +Inf+0i"
+        );
+        let t0 = std::time::Instant::now();
+        let km = z0m.bessel_k(&nmh, p, rm, &mut cc);
+        assert!(t0.elapsed().as_secs() < 1, "K_-1/2(0-0i) took {:?}", t0.elapsed());
+        assert!(
+            km.re().is_inf_pos() && km.im().is_zero() && km.im().is_negative(),
+            "K_-1/2(0-0i) got {km:?}, want +Inf-0i"
+        );
+
+        // DLMF 10.30.2: (z/2)^{-ν} has no unique direction at exact 0 when Im ν ≠ 0.
+        let t0 = std::time::Instant::now();
+        let kc = z0.bessel_k(&n1i, p, rm, &mut cc);
+        assert!(t0.elapsed().as_secs() < 1, "K_1+i(0) took {:?}", t0.elapsed());
+        assert!(
+            kc.is_nan()
+                && kc.re().err() == Some(Error::InvalidArgument)
+                && kc.im().err() == Some(Error::InvalidArgument),
+            "K_1+i(0) got {kc:?}, want NaN(InvalidArgument)"
+        );
+
+        // DLMF 10.7.8 / 10.17.3 / 10.25.3: J,Y,K(+∞ ± 0i) = +0, imag zero follows Im z.
+        // Include a complex order (J_1+i(+∞)) and K_1+i(+∞).
+        for (label, zinf_arg, im_neg) in [
+            ("+∞+0i", &zinf, false),
+            ("+∞-0i", &zinfm, true),
+        ] {
+            let cases: [(&str, ExactComplex); 7] = [
+                ("J_0", zinf_arg.bessel_j_nu(&n0, p, rm, &mut cc)),
+                ("J_-1/2", zinf_arg.bessel_j_nu(&nmh, p, rm, &mut cc)),
+                ("J_1+i", zinf_arg.bessel_j_nu(&n1i, p, rm, &mut cc)),
+                ("Y_0", zinf_arg.bessel_y(&n0, p, rm, &mut cc)),
+                ("Y_1+i", zinf_arg.bessel_y(&n1i, p, rm, &mut cc)),
+                ("K_0", zinf_arg.bessel_k(&n0, p, rm, &mut cc)),
+                ("K_1+i", zinf_arg.bessel_k(&n1i, p, rm, &mut cc)),
+            ];
+            for (name, w) in cases {
+                assert!(
+                    w.re().is_zero()
+                        && !w.re().is_negative()
+                        && w.im().is_zero()
+                        && (w.im().is_negative() == im_neg),
+                    "{name}({label}) got {w:?}, want +0 with Im zero sign {im_neg}"
+                );
+            }
+        }
+        // Timing: compact +∞ must not allocate dest-sized buffers.
+        let t0 = std::time::Instant::now();
+        let _ = zinf.bessel_j_nu(&n1i, p, rm, &mut cc);
+        let _ = zinf.bessel_y(&n1i, p, rm, &mut cc);
+        let _ = zinf.bessel_k(&n1i, p, rm, &mut cc);
+        let _ = z0.bessel_j_nu(&nmh, p, rm, &mut cc);
+        let _ = z0.bessel_y(&nmh, p, rm, &mut cc);
+        let _ = z0.bessel_k(&ph, p, rm, &mut cc);
+        assert!(
+            t0.elapsed().as_secs() < 1,
+            "compact J/Y/K limits at dest 2^59 took {:?}",
+            t0.elapsed()
         );
     }
 
