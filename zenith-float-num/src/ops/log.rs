@@ -1005,4 +1005,58 @@ mod tests {
         }
         Ok(())
     }
+
+    /// Phase costs of Newton `ln` at dest p=`2^20` vs the `ln(2)` constant.
+    /// Run with `--ignored --release`. Progress to stderr from the first phase.
+    #[test]
+    #[ignore = "profiles ln at 2^20; run with --ignored --release"]
+    fn zf_ln_profile_phases_p2e20() -> Result<(), crate::Error> {
+        let p = 1usize << 20;
+        let rm = RoundingMode::ToEven;
+        eprintln!(
+            "LNPROF START p={p} rustc phase=setup {}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        );
+        let wall = std::time::Instant::now();
+        let mut cc = crate::Consts::new()?;
+        eprintln!("LNPROF phase=consts_new ms={}", wall.elapsed().as_millis());
+
+        let wall = std::time::Instant::now();
+        let _ln2_cold = cc.ln_2(p, rm);
+        let ln2_cold_ms = wall.elapsed().as_millis();
+        eprintln!("LNPROF phase=ln2_cold ms={ln2_cold_ms}");
+
+        let wall = std::time::Instant::now();
+        let _ln2_warm = cc.ln_2(p, rm);
+        eprintln!("LNPROF phase=ln2_warm ms={}", wall.elapsed().as_millis());
+
+        let two = crate::ExactNum::from_u8(2, p);
+        let wall = std::time::Instant::now();
+        let _ln2v = two.ln(p, rm, &mut cc);
+        eprintln!(
+            "LNPROF phase=ln2_public_after_warm_const ms={}",
+            wall.elapsed().as_millis()
+        );
+
+        let arg = crate::ExactNum::from_u32(10007, p);
+        let wall = std::time::Instant::now();
+        let _lnx = arg.ln(p, rm, &mut cc);
+        eprintln!(
+            "LNPROF phase=ln_10007_after_warm_ln2 ms={}",
+            wall.elapsed().as_millis()
+        );
+
+        // Fresh Consts: public ln(2) includes a cold ln2 constant fill.
+        let mut cc2 = crate::Consts::new()?;
+        let wall = std::time::Instant::now();
+        let _ = crate::ExactNum::from_u8(2, p).ln(p, rm, &mut cc2);
+        eprintln!(
+            "LNPROF phase=ln2_public_cold ms={}",
+            wall.elapsed().as_millis()
+        );
+        Ok(())
+    }
 }

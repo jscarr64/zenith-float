@@ -2136,6 +2136,16 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::riemann_zeta`].
     fn riemann_zeta_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let wrk = work_p(p);
+        // Odd positive integers: FLINT `arb_zeta_ui` (Borwein / Euler
+        // product), not Euler–Maclaurin. Even n in 2..=64 stay on
+        // `zeta_even` below; s = 0 and s = −1 keep their closed forms.
+        if self.is_int() && self.is_positive() {
+            if let Ok(n) = self.to_u64(RoundingMode::None) {
+                if n >= 3 && n % 2 == 1 {
+                    return finish(crate::ops::zeta_ui::zeta_ui(n, wrk, cc), p, rm);
+                }
+            }
+        }
         if let Some(s) = small_int(self, wrk, -1, 64) {
             if s == 0 {
                 let half = ExactNum::from_u8(1, wrk)

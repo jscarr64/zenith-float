@@ -32,7 +32,18 @@ const ODE_H_SHRINK_DEN: i64 = 5;
 /// it never meets the test with a large `N`. When `N` exceeds
 /// this bound at a stable `h`, a 5th-order explicit method is the
 /// wrong algorithm (more than `7 · 2^{14} ≈ 10^5` right-hand-side
-/// evaluations on a constant-C problem). The bound is a
+/// evaluations on a constant-C problem). Measured in release,
+/// rustc 1.99.1, 2026-11-19 16:54–16:55 CST America/Chicago, on
+/// `y' = cos(t)` over a unit span (log
+/// `$L/final/timeouts-11/rk45/bound-2e14.log`): `2^{14}` accepted
+/// Dormand–Prince steps cost 969 ms / 1,386 ms / 4,127 ms at
+/// wrk = 128 / 320 / 1088 (114,688 evaluations). One Bulirsch–Stoer
+/// sweep at the same wrk and the tols used by the probe, the p=256
+/// closed-form test, and Harper ZF-54 accepted in one `bs_try_step`
+/// and cost <1 ms / 1 ms / 46 ms (15 / 120 / 1,295 evaluations).
+/// Dormand–Prince at the bound is already ~90× (wrk = 1088) to
+/// ~1,000× (wrk = 128) more expensive than one BS sweep; a higher
+/// threshold would only widen that gap. The bound is a
 /// method-selection threshold, not a wall-clock and not a
 /// working-precision carve-out. Harper ZF-54 (`h ≲ 2^{-102}` on
 /// `[0, 1]`) holds `h` steady with `N ≈ 2^{102}` and switches
@@ -1618,6 +1629,88 @@ mod tests {
             "stiff-ish run must be quick; took {ms} ms, evals={evals}"
         );
         let _ = ts;
+        Ok(())
+    }
+
+    /// One-off cost of [`ODE_DP_MAX_CONST_C_STEPS`] Dormand–Prince
+    /// accepted steps versus one Bulirsch–Stoer sweep at the same
+    /// working precision. Run with `--ignored --release`.
+    #[test]
+    #[ignore = "measures the 2^14 switch bound; run with --ignored --release"]
+    fn zf_54_measure_const_c_bound_vs_bs() -> Result<(), crate::Error> {
+        let rm = RoundingMode::None;
+        let n_dp = super::ODE_DP_MAX_CONST_C_STEPS;
+        // wrk = dest p + 64, the values used by the probe, the p=256
+        // closed-form test, and Harper ZF-54.
+        let cases: [(usize, i64); 3] = [(128, -16), (320, -96), (1088, -512)];
+        for (wrk, atol_exp) in cases {
+            let mut cc = Consts::new()?;
+            let zero = ExactNum::new(wrk);
+            let one = ExactNum::from_u8(1, wrk);
+            let atol = one.clone().ldexp(atol_exp, wrk, rm);
+            let rtol = ExactNum::new(wrk);
+            let tab = super::Dp45::new(wrk, rm);
+            let h = one.clone().div(&ExactNum::from_u32(n_dp, wrk), wrk, rm);
+            let mut t = zero.clone();
+            let mut y = one.clone();
+            let wall = std::time::Instant::now();
+            let mut evals = 0u32;
+            for i in 0..n_dp {
+                if i == 0 || (i + 1) % 2048 == 0 {
+                    let done = i;
+                    let elapsed = wall.elapsed().as_secs_f64();
+                    let eta = if done == 0 {
+                        0.0
+                    } else {
+                        elapsed * (f64::from(n_dp - done) / f64::from(done))
+                    };
+                    eprintln!(
+                        "BOUND wrk={wrk} phase=dp45 step={}/{n_dp} evals={evals} elapsed={elapsed:.3}s eta={eta:.3}s",
+                        done
+                    );
+                }
+                let mut f =
+                    |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
+                        evals += 1;
+                        tt.cos(q, r, c)
+                    };
+                let (y5, _y4) = super::dp45_step(&tab, &mut f, &t, &y, &h, wrk, rm, &mut cc)
+                    .ok_or(crate::Error::InvalidArgument)?;
+                t = ExactNum::add_ref(&t, &h, wrk, rm);
+                y = y5;
+            }
+            let dp_ms = wall.elapsed().as_millis();
+            eprintln!("BOUND wrk={wrk} phase=dp45_done steps={n_dp} evals={evals} ms={dp_ms}");
+
+            // One BS sweep over the same unit span at the same atol.
+            let mut evals_bs = 0u32;
+            let wall_bs = std::time::Instant::now();
+            let mut f =
+                |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
+                    evals_bs += 1;
+                    tt.cos(q, r, c)
+                };
+            let got = super::bs_try_step(&mut f, &zero, &one, &one, &atol, &rtol, wrk, &mut cc);
+            let try_ms = wall_bs.elapsed().as_millis();
+            let try_ok = matches!(got, Ok(Some(_)));
+            eprintln!("BOUND wrk={wrk} phase=bs_try_step ok={try_ok} evals={evals_bs} ms={try_ms}");
+
+            // Full adaptive BS on [0, 1] (may shrink H and retry).
+            let mut evals_full = 0u32;
+            let wall_full = std::time::Instant::now();
+            let mut f =
+                |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
+                    evals_full += 1;
+                    tt.cos(q, r, c)
+                };
+            let full = super::bs_at_prec(&mut f, &zero, &one, &one, &atol, &rtol, wrk, &mut cc);
+            let full_ms = wall_full.elapsed().as_millis();
+            let full_ok = full.is_ok();
+            eprintln!(
+                "BOUND wrk={wrk} phase=bs_at_prec ok={full_ok} evals={evals_full} ms={full_ms}"
+            );
+            let _ = (dp_ms, try_ms, full_ms, y);
+        }
         Ok(())
     }
 }

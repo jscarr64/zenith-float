@@ -38,6 +38,7 @@ mod sqrt;
 mod tan;
 mod tanh;
 mod util;
+pub(crate) mod zeta_ui;
 
 #[cfg(test)]
 mod tests;
