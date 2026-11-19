@@ -8,11 +8,13 @@
 //! Riemann-zeta Euler–Maclaurin path.
 //!
 //! At `s = -1` and `a ∈ {1, 1/2}` the finite power-sum is sieved:
-//! `Σ k ln k = Σ_p ln(p) Σ_j p^j T(⌊n/p^j⌋)`. The prime logs come from
-//! FLINT 3.6 `arb_log_primes_vec_bsplit` (Machin atanh binary splitting,
-//! then `2 atanh(1/(2p^2-1))` for later primes). LogG(1/2) uses the closed
-//! form `ζ'(-1, 1/2) = -(ln 2)/24 - ζ'(-1)/2`, so G(±1/2) pays only the
-//! `a = 1` jet. Dest `p ≤ 2^14` finishes in a few seconds.
+//! `Σ k ln k = Σ_p ln(p) Σ_j p^j T(⌊n/p^j⌋)`. At general `s` and `a = 1`
+//! the same jet uses an `acb_dirichlet_powsum_sieved` equivalent: logs and
+//! powers only at primes, composites built by multiplication. The prime logs
+//! come from FLINT 3.6 `arb_log_primes_vec_bsplit` (Machin atanh binary
+//! splitting, then `2 atanh(1/(2p^2-1))` for later primes). LogG(1/2) uses
+//! the closed form `ζ'(-1, 1/2) = -(ln 2)/24 - ζ'(-1)/2`, so G(±1/2) pays
+//! only the `a = 1` jet. Dest `p ≤ 2^14` finishes in a few seconds.
 
 use crate::defs::WORD_BIT_SIZE;
 use crate::ops::special::with_even_bernoulli;
@@ -20,6 +22,7 @@ use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
 use core::ops::Neg;
+use alloc::vec;
 use alloc::vec::Vec;
 
 const NR: RoundingMode = RoundingMode::None;
@@ -276,6 +279,8 @@ fn em_sum(
     let one = ExactNum::from_u8(1, p);
     let mut sum = if let Some(fast) = powsum_s_minus_one(s, a, n, p, cc) {
         fast
+    } else if let Some(fast) = powsum_sieved(s, a, n, p, cc) {
+        fast
     } else {
         let mut sum = Jet::zero(p);
         for k in 0..n {
@@ -457,6 +462,153 @@ fn is_exact_neg_one(x: &ExactNum, p: usize) -> bool {
     matches!(x.compare(&ExactNum::from_i32(-1, p)), Some(0))
 }
 
+
+/// Memory cap for the dense `k^{-s}` tables (two arrays of `ExactNum`).
+/// Above this, composites are factored from a smallest-prime-factor table
+/// so the 2^20 sieve does not allocate tens of gigabytes.
+fn powsum_table_too_big(n: u64, p: usize) -> bool {
+    let bytes = (p / 8).saturating_add(64) as u64;
+    n.saturating_add(1)
+        .saturating_mul(bytes)
+        .saturating_mul(2)
+        > 1_500_000_000
+}
+
+/// `k^{-s}` at a prime, and its `s`-derivative `-ln(k) k^{-s}`.
+fn prime_invpow(s: &ExactNum, ln: &ExactNum, p: usize, cc: &mut Consts) -> Option<(ExactNum, ExactNum)> {
+    let inv = ExactNum::mul_ref(s, ln, p, NR).neg().exp(p, NR, cc);
+    if inv.is_nan() || inv.is_inf() {
+        return None;
+    }
+    let dinv = ExactNum::mul_ref(&inv, ln, p, NR).neg();
+    Some((inv, dinv))
+}
+
+/// Sieved Σ_{k=1}^{n} k^{-(s+x)} at `a = 1` (FLINT `acb_dirichlet_powsum_sieved`):
+/// logs and powers only at primes, composites by multiplication.
+/// The length-2 jet is `c0 = Σ k^{-s}`, `c1 = Σ -ln(k) k^{-s}`.
+fn powsum_sieved(
+    s: &ExactNum,
+    a: &ExactNum,
+    n: u64,
+    p: usize,
+    cc: &mut Consts,
+) -> Option<Jet> {
+    if n == 0 || !is_exact_one(a, p) {
+        return None;
+    }
+    let n_us = usize::try_from(n).ok()?;
+    let lns = crate::ops::log_primes::ln_primes_upto(n, p, cc);
+    if powsum_table_too_big(n, p) {
+        return powsum_sieved_factored(s, n_us, p, &lns, cc);
+    }
+
+    let mut pow0 = vec![ExactNum::new(p); n_us + 1];
+    let mut pow1 = vec![ExactNum::new(p); n_us + 1];
+    pow0[1] = ExactNum::from_u8(1, p);
+
+    let mut primes: Vec<u32> = Vec::with_capacity(lns.len());
+    for (pr, ln) in &lns {
+        let pu = *pr as usize;
+        if pu > n_us {
+            break;
+        }
+        let (inv, dinv) = prime_invpow(s, ln, p, cc)?;
+        pow0[pu] = inv;
+        pow1[pu] = dinv;
+        primes.push(*pr as u32);
+    }
+
+    for i in 2..=n_us {
+        for &pr in &primes {
+            let pu = pr as usize;
+            let v = match i.checked_mul(pu) {
+                Some(v) if v <= n_us => v,
+                _ => break,
+            };
+            pow0[v] = ExactNum::mul_ref(&pow0[i], &pow0[pu], p, NR);
+            pow1[v] = ExactNum::mul_ref(&pow1[i], &pow0[pu], p, NR)
+                .add(&ExactNum::mul_ref(&pow0[i], &pow1[pu], p, NR), p, NR);
+            if i.is_multiple_of(pu) {
+                break;
+            }
+        }
+    }
+
+    let mut c0 = ExactNum::new(p);
+    let mut c1 = ExactNum::new(p);
+    for k in 1..=n_us {
+        c0 = c0.add(&pow0[k], p, NR);
+        c1 = c1.add(&pow1[k], p, NR);
+    }
+    Some(Jet { c0, c1 })
+}
+
+/// Same sum as `powsum_sieved`, without a dense table of `k^{-s}`.
+fn powsum_sieved_factored(
+    s: &ExactNum,
+    n_us: usize,
+    p: usize,
+    lns: &[(u64, ExactNum)],
+    cc: &mut Consts,
+) -> Option<Jet> {
+    let mut prime_ln: Vec<ExactNum> = Vec::with_capacity(lns.len());
+    let mut prime_inv: Vec<ExactNum> = Vec::with_capacity(lns.len());
+    let mut idx = vec![u32::MAX; n_us + 1];
+    let mut primes: Vec<u32> = Vec::with_capacity(lns.len());
+    for (i, (pr, ln)) in lns.iter().enumerate() {
+        let pu = *pr as usize;
+        if pu > n_us {
+            break;
+        }
+        let (inv, _) = prime_invpow(s, ln, p, cc)?;
+        let i32u = u32::try_from(i).ok()?;
+        idx[pu] = i32u;
+        prime_ln.push(ln.clone());
+        prime_inv.push(inv);
+        primes.push(*pr as u32);
+    }
+
+    let mut spf = vec![0u32; n_us + 1];
+    for i in 2..=n_us {
+        if spf[i] == 0 {
+            spf[i] = i as u32;
+        }
+        for &pr in &primes {
+            let pu = pr as usize;
+            let v = match i.checked_mul(pu) {
+                Some(v) if v <= n_us => v,
+                _ => break,
+            };
+            spf[v] = pr;
+            if (i as u32).is_multiple_of(pr) {
+                break;
+            }
+        }
+    }
+
+    let mut c0 = ExactNum::from_u8(1, p);
+    let mut c1 = ExactNum::new(p);
+    for k in 2..=n_us {
+        let mut rem = k as u32;
+        let mut inv = ExactNum::from_u8(1, p);
+        let mut lnk = ExactNum::new(p);
+        while rem > 1 {
+            let pr = spf[rem as usize];
+            let i = idx[pr as usize] as usize;
+            if i == u32::MAX as usize {
+                return None;
+            }
+            inv = inv.mul(&prime_inv[i], p, NR);
+            lnk = lnk.add(&prime_ln[i], p, NR);
+            rem /= pr;
+        }
+        c0 = c0.add(&inv, p, NR);
+        c1 = c1.add(&ExactNum::mul_ref(&inv, &lnk, p, NR).neg(), p, NR);
+    }
+    Some(Jet { c0, c1 })
+}
+
 /// Finite EM power-sum jet at `s = -1` for `a = 1` or `a = 1/2`.
 /// `c0 = Σ (k+a)`, `c1 = -Σ (k+a) ln(k+a)`, `k = 0..n-1`.
 fn powsum_s_minus_one(
@@ -591,4 +743,104 @@ mod tests {
         }
         Ok(())
     }
+
+
+    fn parse_zeta_arg(arg: &str, p: usize, cc: &mut Consts) -> ExactNum {
+        if let Some((num, den)) = arg.split_once('/') {
+            let n = ExactNum::parse(num, crate::Radix::Dec, p, RoundingMode::ToEven, cc);
+            let d = ExactNum::parse(den, crate::Radix::Dec, p, RoundingMode::ToEven, cc);
+            ExactNum::div_ref(&n, &d, p, RoundingMode::ToEven)
+        } else {
+            ExactNum::parse(arg, crate::Radix::Dec, p, RoundingMode::ToEven, cc)
+        }
+    }
+
+    fn agree_bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
+        let d = ExactNum::sub_ref(got, want, p, RoundingMode::None).abs();
+        if d.is_zero() {
+            10_000
+        } else {
+            (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+        }
+    }
+
+    #[test]
+    fn zf_riemann_zeta_matches_flint_golds() -> Result<(), Error> {
+        // FLINT 3.6 arb.zeta midpoints at dest p = 64, 4096, 16384, 65536.
+        let mut cc = Consts::new()?;
+        let raw = include_str!("testdata/riemann_zeta_flint_golds.txt");
+        for line in raw.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.splitn(3, ' ');
+            let p: usize = parts.next().unwrap().parse().unwrap();
+            let arg = parts.next().unwrap();
+            let dec = parts.next().unwrap();
+            let t0 = std::time::Instant::now();
+            let x = parse_zeta_arg(arg, p, &mut cc);
+            let got = x.riemann_zeta(p, RoundingMode::ToEven, &mut cc);
+            let ms = t0.elapsed().as_millis();
+            let want = ExactNum::parse(
+                dec,
+                crate::Radix::Dec,
+                p.saturating_add(256),
+                RoundingMode::ToEven,
+                &mut cc,
+            );
+            let bits = agree_bits(&got, &want, p);
+            eprintln!("zeta({arg}) p={p}: {ms} ms, {bits} bits");
+            assert!(
+                !got.is_nan() && (bits >= (p as i32) - 16 || bits == 10_000),
+                "zeta({arg}) p={p} only {bits} bits after {ms} ms"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn zf_riemann_zeta_edge_cases() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let p = 256usize;
+        let half = ExactNum::from_u8(1, p).ldexp(-1, p, NR);
+
+        // ζ(0) = -1/2.
+        let z0 = ExactNum::new(p).riemann_zeta(p, RoundingMode::ToEven, &mut cc);
+        let d0 = ExactNum::sub_ref(&z0, &half.clone().neg(), p, NR).abs();
+        assert!(
+            d0.is_zero() || agree_bits(&z0, &half.clone().neg(), p) >= (p as i32) - 8,
+            "zeta(0) is not -1/2"
+        );
+
+        // Pole at s = 1.
+        let z1 = ExactNum::from_u8(1, p).riemann_zeta(p, RoundingMode::ToEven, &mut cc);
+        assert!(z1.is_nan(), "zeta(1) must refuse the pole");
+
+        // Trivial zeros: ζ(-2) = ζ(-4) = 0.
+        for n in [-2i32, -4] {
+            let z = ExactNum::from_i32(n, p).riemann_zeta(p, RoundingMode::ToEven, &mut cc);
+            assert!(z.is_zero(), "zeta({n}) must be the trivial zero");
+        }
+
+        // ζ(1/2) is finite and negative.
+        let zhalf = half.riemann_zeta(p, RoundingMode::ToEven, &mut cc);
+        assert!(!zhalf.is_nan() && zhalf.is_negative(), "zeta(1/2) is finite and negative");
+
+        // Large positive s: ζ(s) → 1. At s = 400, 2^{-400} is far below a 256-bit ulp.
+        let large = ExactNum::from_u32(400, p);
+        let zl = large.riemann_zeta(p, RoundingMode::ToEven, &mut cc);
+        let one = ExactNum::from_u8(1, p);
+        let bits = agree_bits(&zl, &one, p);
+        assert!(
+            bits >= (p as i32) - 16 || zl == one,
+            "zeta(400) vs 1 only {bits} bits"
+        );
+
+        // Large |s| on the negative side: ζ(-21) is a finite nonzero rational.
+        let zneg = ExactNum::from_i32(-21, p).riemann_zeta(p, RoundingMode::ToEven, &mut cc);
+        assert!(!zneg.is_nan() && !zneg.is_zero() && !zneg.is_inf(), "zeta(-21) is finite and nonzero");
+        Ok(())
+    }
+
 }

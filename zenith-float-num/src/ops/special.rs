@@ -656,76 +656,14 @@ impl ExactNumNumber {
                 .exp(p, RoundingMode::None, cc)?;
             return Self::from_word(1, p)?.add(&two_ms, p, RoundingMode::None);
         }
-        let s_int = self.int_as_usize()?;
-        let n_cut = p / 4 + 2 * s_int + 8;
-        let k_max = p / 8 + 8;
-        let one = Self::from_word(1, p)?;
-
-        // n^-s is completely multiplicative: only primes need exp(-s·ln n).
-        let mut pows: Vec<Self> = Vec::with_capacity(n_cut);
-        pows.push(Self::new(p)?);
-        pows.push(Self::from_word(1, p)?);
-        let mut sum = Self::from_word(1, p)?;
-        for n in 2..n_cut {
-            let d = (2..n).take_while(|d| d * d <= n).find(|d| n % d == 0);
-            let t = match (
-                d,
-                d.and_then(|d| pows.get(d)),
-                d.and_then(|d| pows.get(n / d)),
-            ) {
-                (Some(_), Some(a), Some(b)) => a.mul(b, p, RoundingMode::None)?,
-                _ => Self::from_usize(n)?
-                    .ln(p, RoundingMode::None, cc)?
-                    .mul(self, p, RoundingMode::None)?
-                    .neg()?
-                    .exp(p, RoundingMode::None, cc)?,
-            };
-            sum = sum.add(&t, p, RoundingMode::None)?;
-            pows.push(t);
+        // FLINT 3.6 path: choose_param / hurwitz_em_jet (value component), with a
+        // sieved power sum at a = 1. Replaces the old n_cut = p/4 cut.
+        let s = ExactNum::from(self.clone()?);
+        let a = ExactNum::from_u8(1, p);
+        match crate::hurwitz_jet::hurwitz_em_jet(&s, &a, p, cc) {
+            Some((z, _)) => z.try_to_number(),
+            None => Err(Error::PrecisionRetryExhausted),
         }
-
-        let n_f = Self::from_usize(n_cut)?;
-        let n_ms = n_f
-            .ln(p, RoundingMode::None, cc)?
-            .mul(self, p, RoundingMode::None)?
-            .neg()?
-            .exp(p, RoundingMode::None, cc)?;
-        let sm1 = self.sub(&one, p, RoundingMode::None)?;
-        let lead = n_f
-            .mul(&n_ms, p, RoundingMode::None)?
-            .div(&sm1, p, RoundingMode::None)?;
-        // n^(-s) / 2, exact: the product by one half keeps every bit
-        let mut half = Self::from_word(1, p)?;
-        half.set_exponent(0);
-        let half_term = n_ms.mul(&half, p, RoundingMode::None)?;
-        sum = sum
-            .add(&lead, p, RoundingMode::None)?
-            .add(&half_term, p, RoundingMode::None)?;
-
-        let n2 = n_f.mul(&n_f, p, RoundingMode::None)?;
-        let mut q = self
-            .mul(&n_ms, p, RoundingMode::None)?
-            .div(&n_f, p, RoundingMode::None)?;
-        q.div_by_2(RoundingMode::None);
-        let p_exp = Exponent::try_from(p).map_err(|_| Error::InvalidArgument)?;
-        let bern = even_bernoulli(k_max, p)?;
-        for (i, b) in bern.iter().enumerate() {
-            let t = b.mul(&q, p, RoundingMode::None)?;
-            sum = sum.add(&t, p, RoundingMode::None)?;
-            if t.is_zero() || t.exponent() < -(p_exp + 16) {
-                return Ok(sum);
-            }
-            let k = i + 1;
-            let a = self.add(&Self::from_usize(2 * k - 1)?, p, RoundingMode::None)?;
-            let c = self.add(&Self::from_usize(2 * k)?, p, RoundingMode::None)?;
-            let d = Self::from_usize((2 * k + 1) * (2 * k + 2))?;
-            q = q
-                .mul(&a, p, RoundingMode::None)?
-                .mul(&c, p, RoundingMode::None)?
-                .div(&n2, p, RoundingMode::None)?
-                .div(&d, p, RoundingMode::None)?;
-        }
-        Err(Error::PrecisionRetryExhausted)
     }
 
     /// `ln Γ(self)` for positive `self` at working precision `p`.

@@ -2034,6 +2034,16 @@ impl ExactNum {
         }
     }
 
+    /// Finite inner value; Inf and NaN become errors.
+    pub(crate) fn try_to_number(&self) -> Result<crate::num::ExactNumNumber, Error> {
+        match &self.inner {
+            Flavor::Value(v) => v.clone(),
+            Flavor::Inf(s) => Err(Error::ExponentOverflow(*s)),
+            Flavor::NaN(Some(e)) => Err(*e),
+            Flavor::NaN(None) => Err(Error::InvalidArgument),
+        }
+    }
+
     /// Borrows the raw representation of `self` without copying; see [`RawParts`] for the
     /// contract. `ExactNum::from_raw_parts(&x.as_raw_parts())` rebuilds `x` bit for bit (a NaN
     /// comes back as a NaN without its error kind).
