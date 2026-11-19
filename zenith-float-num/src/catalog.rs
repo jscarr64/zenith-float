@@ -1557,6 +1557,8 @@ fn kelvin_positive(
 
 impl ExactNum {
     /// Scorer \(\mathrm{Gi}(\mathrm{self})\). Entire; NaN in → NaN out.
+    /// \(\mathrm{Gi}(+\infty)=+0\) (DLMF 9.12.25). \(\mathrm{Gi}(-\infty)=+0\)
+    /// (9.12.11, 9.12.27, 9.7.9–11: the \(x^{-1/4}\) oscillation tends to 0).
     ///
     /// # Precision
     ///
@@ -1577,8 +1579,13 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::scorer_gi`].
     fn scorer_gi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) {
-            return if self.is_nan() { self.clone() } else { cat_nan() };
+        if self.is_nan() {
+            return self.clone();
+        }
+        // DLMF 9.12.25: Gi(+∞)=+0. DLMF 9.12.11 + 9.12.27 + 9.7.9–11:
+        // Gi(−∞)=+0 (the x^{-1/4} oscillation tends to 0; no eventual sign).
+        if self.is_inf() {
+            return plus_zero(p);
         }
         let x = self.clone();
         ziv_round(p, rm, |wp| {
@@ -1604,6 +1611,8 @@ impl ExactNum {
     }
 
     /// Scorer \(\mathrm{Hi}(\mathrm{self})=\mathrm{Bi}(\mathrm{self})-\mathrm{Gi}(\mathrm{self})\).
+    /// \(\mathrm{Hi}(+\infty)=+\infty\) (DLMF 9.12.29). \(\mathrm{Hi}(-\infty)=+0\)
+    /// (9.12.27, leading term \(1/(\pi x)\)).
     ///
     /// # Precision
     ///
@@ -1623,8 +1632,15 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::scorer_hi`].
     fn scorer_hi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) {
-            return if self.is_nan() { self.clone() } else { cat_nan() };
+        if self.is_nan() {
+            return self.clone();
+        }
+        // DLMF 9.12.29: Hi(+∞)=+∞. DLMF 9.12.27: Hi(−∞)=+0 (∼1/(πx)).
+        if self.is_inf_pos() {
+            return signed_inf(false);
+        }
+        if self.is_inf_neg() {
+            return plus_zero(p);
         }
         if self.is_positive() {
             // Hi = Bi - Gi with 0 < Gi < 1/(pi x): when Bi overflows, so does Hi.
@@ -2886,6 +2902,93 @@ mod tests {
         let sn = u.jacobi_sn(&mpar, p, rm, &mut cc);
         let back = sn.jacobi_arcsn(&mpar, p, rm, &mut cc);
         assert!(near(&back, &u, p));
+        Ok(())
+    }
+
+    /// Compact limits of the real Scorer functions at exact ±∞.
+    /// Gi(+∞)=+0 (DLMF 9.12.25); Hi(+∞)=+∞ (9.12.29);
+    /// Hi(−∞)=+0 (9.12.27); Gi(−∞)=+0 (9.12.11 + 9.12.27 + 9.7.9–11).
+    /// The via-`finite` path used to return InvalidArgument at every infinity.
+    #[test]
+    fn zf_scorer_gi_hi_at_infinity() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ];
+        for p in [64usize, 256, 2048, 4096] {
+            let pos = crate::INF_POS.clone();
+            let neg = crate::INF_NEG.clone();
+            for rm in modes {
+                let gi_pos = pos.scorer_gi(p, rm, &mut cc);
+                assert!(
+                    gi_pos.is_zero() && !gi_pos.is_negative(),
+                    "Gi(+∞) p={p} {rm:?} {:?}",
+                    gi_pos
+                );
+                let gi_neg = neg.scorer_gi(p, rm, &mut cc);
+                assert!(
+                    gi_neg.is_zero() && !gi_neg.is_negative(),
+                    "Gi(−∞) p={p} {rm:?} {:?}",
+                    gi_neg
+                );
+                let hi_pos = pos.scorer_hi(p, rm, &mut cc);
+                assert!(
+                    hi_pos.is_inf_pos(),
+                    "Hi(+∞) p={p} {rm:?} {:?}",
+                    hi_pos
+                );
+                let hi_neg = neg.scorer_hi(p, rm, &mut cc);
+                assert!(
+                    hi_neg.is_zero() && !hi_neg.is_negative(),
+                    "Hi(−∞) p={p} {rm:?} {:?}",
+                    hi_neg
+                );
+            }
+            // neighbors stay finite and are not the compact limit (modest p only)
+            if p > 256 {
+                continue;
+            }
+            let big = ExactNum::from_u32(100, p);
+            let gi_big = big.scorer_gi(p, RoundingMode::ToEven, &mut cc);
+            assert!(
+                !gi_big.is_nan() && gi_big.is_positive() && !gi_big.is_zero(),
+                "Gi(100) should be a tiny positive, got {:?}",
+                gi_big
+            );
+            let hi_big = big.scorer_hi(p, RoundingMode::ToEven, &mut cc);
+            assert!(
+                !hi_big.is_nan() && (hi_big.is_positive() || hi_big.is_inf_pos()),
+                "Hi(100) should be a huge positive or +∞, got {:?}",
+                hi_big
+            );
+            let gi_mbig = big.clone().neg().scorer_gi(p, RoundingMode::ToEven, &mut cc);
+            assert!(
+                !gi_mbig.is_nan() && !gi_mbig.is_inf() && !gi_mbig.is_zero(),
+                "Gi(−100) should be a finite oscillation, got {:?}",
+                gi_mbig
+            );
+            let hi_mbig = big.clone().neg().scorer_hi(p, RoundingMode::ToEven, &mut cc);
+            assert!(
+                !hi_mbig.is_nan() && hi_mbig.is_positive() && !hi_mbig.is_zero(),
+                "Hi(−100) should be a tiny positive, got {:?}",
+                hi_mbig
+            );
+            let nan = ExactNum::nan(None);
+            assert!(
+                nan.scorer_gi(p, RoundingMode::ToEven, &mut cc).is_nan(),
+                "Gi(NaN)"
+            );
+            assert!(
+                nan.scorer_hi(p, RoundingMode::ToEven, &mut cc).is_nan(),
+                "Hi(NaN)"
+            );
+        }
         Ok(())
     }
 
