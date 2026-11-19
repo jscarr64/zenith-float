@@ -454,6 +454,7 @@ fn limbs_of(x: &ExactInt) -> Vec<u64> {
     }
 }
 
+#[cfg(test)]
 fn exact_from_limbs(limbs: &[u64]) -> ExactInt {
     ExactInt::from_unsigned_limbs(limbs.to_vec())
 }

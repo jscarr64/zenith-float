@@ -55,6 +55,7 @@ impl ExactInt {
     }
 
     /// Little-endian unsigned limbs; leading zeros are stripped.
+    #[cfg(test)]
     pub(crate) fn from_unsigned_limbs(limbs: Vec<Word>) -> Self {
         Self::from_limbs(Sign::Pos, limbs)
     }
