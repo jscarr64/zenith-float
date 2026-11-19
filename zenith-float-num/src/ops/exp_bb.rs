@@ -22,35 +22,16 @@ use crate::WORD_BIT_SIZE;
 /// rectangular-split path).
 pub(crate) const ARB_EXP_BB_MIN_PREC: usize = 10000;
 
-/// Dest widths through 2^17: bit-burst is a clear win on every argument
-/// tried (7 ms vs ~100 ms at 65536). At dest p=2^20 a full-width payload
-/// still pays a first burst that is slower than the existing series
-/// (~33 s vs ~20 s); a short payload (an integer, a dyadic, or a Newton
-/// seed of only a few 10^5 bits) stays on the bit-burst path.
+/// Dest widths at or above [`ARB_EXP_BB_MIN_PREC`]: bit-burst is used for
+/// every finite payload. A previous carve-out left full-width arguments
+/// at dest p=2^20 on the series path because the first burst was slower
+/// (~33 s vs ~20 s) when `int_to_num` still accumulated one limb at a
+/// time. After the linear pack, bit-burst is the right path at that
+/// width too.
 pub(crate) fn use_exp_arf_bb(x: &ExactNumNumber, p: usize) -> bool {
-    if p < ARB_EXP_BB_MIN_PREC {
-        return false;
-    }
-    if p <= 131072 {
-        return true;
-    }
-    4 * significant_mantissa_bits(x) < p
+    let _ = x;
+    p >= ARB_EXP_BB_MIN_PREC
 }
-
-fn significant_mantissa_bits(x: &ExactNumNumber) -> usize {
-    let digits = x.mantissa().digits();
-    let mut tz = 0usize;
-    for &w in digits {
-        if w == 0 {
-            tz += WORD_BIT_SIZE;
-        } else {
-            tz += w.trailing_zeros() as usize;
-            break;
-        }
-    }
-    x.mantissa_max_bit_len().saturating_sub(tz)
-}
-
 
 const ARGRED_BITS: i64 = 16;
 const START_BITS: i64 = 32;
@@ -169,29 +150,7 @@ fn exp_sum_bs_simple(x: &ExactInt, r: i64, n: i64) -> Result<(ExactInt, ExactInt
 }
 
 fn int_to_num(i: &ExactInt, p: usize) -> Result<ExactNumNumber, Error> {
-    if i.is_zero() {
-        return ExactNumNumber::from_word(0, p);
-    }
-    let work = p.max(i.bit_length()).saturating_add(WORD_BIT_SIZE);
-    let mut acc = ExactNumNumber::from_word(0, work)?;
-    for &limb in i.as_limbs().iter().rev() {
-        if !acc.is_zero() {
-            let e = acc
-                .exponent()
-                .checked_add(WORD_BIT_SIZE as i64)
-                .ok_or(Error::ExponentOverflow(Sign::Pos))?;
-            acc.set_exponent(e);
-        }
-        if limb != 0 {
-            let w = ExactNumNumber::from_word(limb, work)?;
-            acc = acc.add(&w, work, RoundingMode::None)?;
-        }
-    }
-    if i.is_negative() {
-        acc.set_sign(Sign::Neg);
-    }
-    acc.set_precision(p, RoundingMode::None)?;
-    Ok(acc)
+    i.to_exact_num_number(p, RoundingMode::None)
 }
 
 fn int_mul(a: &ExactInt, b: &ExactInt) -> Result<ExactInt, Error> {

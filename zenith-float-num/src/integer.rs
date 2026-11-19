@@ -418,7 +418,38 @@ impl ExactInt {
     }
 
     /// Convert to an `ExactNum` at `(p, rm)`.
+    ///
+    /// Packs the little-endian limbs into a mantissa in linear time. The
+    /// previous limb-by-limb `ldexp`/`add` walk was quadratic in the limb
+    /// count and dominated bit-burst `exp` at dest widths past ~2^16.
     pub fn to_exact_num(&self, p: usize, rm: RoundingMode) -> ExactNum {
+        match self.to_exact_num_number(p, rm) {
+            Ok(n) => ExactNum::from(n),
+            Err(_) => self.to_exact_num_accum(p, rm),
+        }
+    }
+
+    /// Same conversion, as an `ExactNumNumber`.
+    pub(crate) fn to_exact_num_number(
+        &self,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<crate::num::ExactNumNumber, Error> {
+        if self.is_zero() {
+            return crate::num::ExactNumNumber::from_word(0, p);
+        }
+        // `from_words` takes a little-endian (LSW-first) full-width mantissa.
+        // Passing exponent = work (the unnormalized bit width) makes the
+        // post-normalization exponent equal `bit_length()`, i.e. `|x| < 2^{bit_len}`.
+        let work = self.limbs.len().saturating_mul(WORD_BIT_SIZE);
+        let mut x =
+            crate::num::ExactNumNumber::from_words(&self.limbs, self.sign, work as Exponent)?;
+        x.set_precision(p, rm)?;
+        Ok(x)
+    }
+
+    /// Slow limb-by-limb walk; fallback if the packed conversion cannot allocate.
+    fn to_exact_num_accum(&self, p: usize, rm: RoundingMode) -> ExactNum {
         if self.is_zero() {
             return ExactNum::from_u8(0, p);
         }
@@ -608,6 +639,46 @@ mod tests {
         assert_eq!(ExactInt::from_i64(-32).shr_towards_zero(2), ExactInt::from_i64(-8));
         assert_eq!(a.shl(0), a);
         assert!(a.shr_towards_zero(10_000).is_zero());
+    }
+
+    #[test]
+    fn to_exact_num_matches_limb_accum() {
+        let p = 256;
+        let cases = [
+            ExactInt::zero(),
+            ExactInt::from_u64(1),
+            ExactInt::from_u64(3),
+            ExactInt::from_u64(u64::MAX),
+            ExactInt::from_u128(1u128 << 64),
+            ExactInt::from_u128(u128::MAX),
+            ExactInt::from_u64(5).shl(200),
+            ExactInt::from_u64(0x1234_5678_9abc_def0)
+                .shl(70)
+                .mul(&ExactInt::from_u64(3)),
+        ];
+        for n in cases {
+            for neg in [false, true] {
+                let x = if neg && !n.is_zero() { n.neg() } else { n.clone() };
+                let fast = x.to_exact_num(p, RoundingMode::ToEven);
+                let slow = x.to_exact_num_accum(p, RoundingMode::ToEven);
+                assert_eq!(fast, slow, "n={x:?} neg={neg}");
+            }
+        }
+    }
+
+    #[test]
+    fn to_exact_num_wide_is_linear() {
+        // A ~2^18-bit integer. The accum walk is thousands of wide adds;
+        // the packed conversion should finish in a few milliseconds.
+        let n = ExactInt::from_u64(0xdead_beef_cafebabe).shl(1 << 18);
+        let t0 = std::time::Instant::now();
+        let y = n.to_exact_num(1 << 18, RoundingMode::ToEven);
+        let ms = t0.elapsed().as_millis();
+        assert!(!y.is_nan() && !y.is_zero(), "wide conversion failed");
+        assert!(ms < 200, "to_exact_num of a 2^18-bit integer took {ms} ms");
+        let slow = n.to_exact_num_accum(256, RoundingMode::ToEven);
+        let fast = n.to_exact_num(256, RoundingMode::ToEven);
+        assert_eq!(fast, slow);
     }
 
     #[test]
