@@ -17,6 +17,49 @@ const ODE_FAC_DEN: i64 = 10;
 const ODE_H_GROW: i64 = 5;
 /// Maximum step shrink is `1/ODE_H_SHRINK_DEN`.
 const ODE_H_SHRINK_DEN: i64 = 5;
+/// If Dormand–Prince has not accepted a single step after this many
+/// attempts at a modest working precision, and that precision already
+/// supports the tolerance, `rk45_adaptive` switches to Bulirsch–Stoer.
+/// A finishable transient
+/// (see `zf_54_probe_must_not_refuse_a_finishable_transient`, wrk ≈ 128)
+/// accepts well before this cap. At a wider working precision each
+/// Dormand–Prince attempt is expensive (seven right-hand-side evaluations
+/// at that width), so [`dp_switch_no_accept`] lowers the cap: a smooth
+/// problem whose order-5 step would have to be ~2^{-102} still never
+/// accepts, and takes the BS path after a short documented prefix.
+const ODE_DP_SWITCH_NO_ACCEPT_LO: u32 = 512;
+const ODE_DP_SWITCH_NO_ACCEPT_HI: u32 = 8;
+
+fn dp_switch_no_accept(wrk: usize) -> u32 {
+    // wrk ≈ 128 for the finishable-transient probe (p = 64). That
+    // run accepts after a short shrink-through-the-layer and must
+    // stay on Dormand–Prince.
+    if wrk <= 192 {
+        ODE_DP_SWITCH_NO_ACCEPT_LO
+    } else {
+        ODE_DP_SWITCH_NO_ACCEPT_HI
+    }
+}
+
+/// Total Dormand–Prince attempts (accepted or rejected) before the
+/// switch at a wide working precision. A tight tolerance on a smooth
+/// problem can start accepting micro-steps of size ~tol^{1/5} and
+/// crawl across the span (hundreds of thousands of evaluations)
+/// without ever hitting the no-accept cap. At modest wrk the probe
+/// is allowed to finish on Dormand–Prince (`u32::MAX` here); the
+/// no-accept cap still catches a low-width smooth problem that
+/// never accepts.
+fn dp_switch_total_attempts(wrk: usize) -> u32 {
+    if wrk <= 192 {
+        u32::MAX
+    } else {
+        ODE_DP_SWITCH_NO_ACCEPT_HI
+    }
+}
+/// Maximum extrapolation rows in one Bulirsch–Stoer step (even sequence
+/// `n = 2,4,...,2 K_MAX`, order `2 K_MAX`). Tighter remaining error
+/// shrinks `H` and retries.
+const ODE_BS_K_MAX: usize = 64;
 
 fn work_p(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE)
@@ -590,7 +633,16 @@ where
     let mut ts = Vec::new();
     let mut ys = Vec::new();
     push_pair(&mut ts, &mut ys, t.clone(), y.clone());
+    let mut attempts: u32 = 0;
     while t.compare(t1) == Some(-1) {
+        attempts = attempts.saturating_add(1);
+        // Only the initial point is in `ys` until the first accept.
+        if ts.len() == 1 && attempts > dp_switch_no_accept(wrk) {
+            return Err(OdeError::ToleranceUnreachable);
+        }
+        if attempts > dp_switch_total_attempts(wrk) {
+            return Err(OdeError::ToleranceUnreachable);
+        }
         let remain = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
         if h.compare(&remain) == Some(1) {
             h = remain.clone();
@@ -670,6 +722,181 @@ where
     Ok((ts, ys))
 }
 
+
+/// Modified midpoint (Gragg) over one span `H` with `n` substeps.
+fn modified_midpoint<F>(
+    f: &mut F,
+    t: &ExactNum,
+    y: &ExactNum,
+    span: &ExactNum,
+    n: u64,
+    wrk: usize,
+    cc: &mut Consts,
+) -> Result<ExactNum, OdeError>
+where
+    F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    if n == 0 {
+        return Err(OdeError::InvalidArgument);
+    }
+    let rm = RoundingMode::None;
+    let h = ExactNum::div_ref(span, &ExactNum::from_u64(n, wrk), wrk, rm);
+    if !finite(&h) || h.is_zero() {
+        return Err(OdeError::InvalidArgument);
+    }
+    let two_h = h.clone().ldexp(1, wrk, rm);
+    let yp = f(t, y, wrk, rm, cc);
+    if !finite(&yp) {
+        return Err(OdeError::InvalidArgument);
+    }
+    let mut z_prev = y.clone();
+    let mut z = ExactNum::add_ref(y, &ExactNum::mul_ref(&h, &yp, wrk, rm), wrk, rm);
+    if !finite(&z) {
+        return Err(OdeError::InvalidArgument);
+    }
+    for i in 1..n {
+        let ti = ExactNum::add_ref(t, &ExactNum::mul_ref(&h, &ExactNum::from_u64(i, wrk), wrk, rm), wrk, rm);
+        let fi = f(&ti, &z, wrk, rm, cc);
+        if !finite(&fi) {
+            return Err(OdeError::InvalidArgument);
+        }
+        let z_next = ExactNum::add_ref(&z_prev, &ExactNum::mul_ref(&two_h, &fi, wrk, rm), wrk, rm);
+        if !finite(&z_next) {
+            return Err(OdeError::InvalidArgument);
+        }
+        z_prev = z;
+        z = z_next;
+    }
+    let t_end = ExactNum::add_ref(t, span, wrk, rm);
+    let f_end = f(&t_end, &z, wrk, rm, cc);
+    if !finite(&f_end) {
+        return Err(OdeError::InvalidArgument);
+    }
+    // (z_prev + z + h f(t+H, z)) / 2
+    let sum = ExactNum::add_ref(&z_prev, &z, wrk, rm).add(&ExactNum::mul_ref(&h, &f_end, wrk, rm), wrk, rm);
+    Ok(sum.ldexp(-1, wrk, rm))
+}
+
+/// One Bulirsch–Stoer attempt over `H`: modified midpoint with
+/// `n = 2,4,...,2 K` and a Neville tableau in `H²`. Returns `Ok(Some(y))`
+/// when the last-column increment is within `atol + rtol max(|y0|,|y|)`.
+/// Returns `Ok(None)` if the tableau is exhausted without meeting the
+/// tolerance (caller shrinks `H`).
+fn bs_try_step<F>(
+    f: &mut F,
+    t: &ExactNum,
+    y: &ExactNum,
+    span: &ExactNum,
+    atol: &ExactNum,
+    rtol: &ExactNum,
+    wrk: usize,
+    cc: &mut Consts,
+) -> Result<Option<ExactNum>, OdeError>
+where
+    F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    let rm = RoundingMode::None;
+    let mut row: Vec<ExactNum> = Vec::with_capacity(ODE_BS_K_MAX);
+    let mut y_last = y.clone();
+    for k in 0..ODE_BS_K_MAX {
+        let n = 2 * (k as u64 + 1);
+        let t0k = modified_midpoint(f, t, y, span, n, wrk, cc)?;
+        let mut cur = Vec::with_capacity(k + 1);
+        cur.push(t0k);
+        for j in 1..=k {
+            let n_k = 2 * (k as u64 + 1);
+            let n_kj = 2 * ((k - j) as u64 + 1);
+            // den = (n_k / n_{k-j})² - 1
+            let ratio = ExactNum::div_ref(&ExactNum::from_u64(n_k, wrk), &ExactNum::from_u64(n_kj, wrk), wrk, rm);
+            let den = ExactNum::mul_ref(&ratio, &ratio, wrk, rm).sub(&ExactNum::from_u8(1, wrk), wrk, rm);
+            if den.is_zero() || !finite(&den) {
+                return Err(OdeError::InvalidArgument);
+            }
+            let diff = ExactNum::sub_ref(&cur[j - 1], &row[j - 1], wrk, rm);
+            let nxt = ExactNum::add_ref(&cur[j - 1], &ExactNum::div_ref(&diff, &den, wrk, rm), wrk, rm);
+            if !finite(&nxt) {
+                return Err(OdeError::InvalidArgument);
+            }
+            cur.push(nxt);
+        }
+        y_last = cur[k].clone();
+        if k >= 1 {
+            let err = ExactNum::sub_ref(&cur[k], &cur[k - 1], wrk, rm).abs();
+            let scale = step_scale(atol, rtol, y, &y_last, wrk);
+            if step_ok(&err, &scale) {
+                return Ok(Some(y_last));
+            }
+            // If the column error has grown twice in a row, this H will
+            // not meet the tolerance: shrink it rather than filling the
+            // remaining rows.
+            if k >= 3 {
+                let err_prev = ExactNum::sub_ref(&cur[k - 1], &cur[k - 2], wrk, rm).abs();
+                let err_prev2 = ExactNum::sub_ref(&row[k - 2], &row[k - 3], wrk, rm).abs();
+                if err.compare(&err_prev) != Some(-1) && err_prev.compare(&err_prev2) != Some(-1) {
+                    return Ok(None);
+                }
+            }
+        }
+        row = cur;
+    }
+    let _ = y_last;
+    Ok(None)
+}
+
+/// Adaptive Bulirsch–Stoer from `t0` to `t1` at working precision `wrk`.
+fn bs_at_prec<F>(
+    f: &mut F,
+    t0: &ExactNum,
+    y0: &ExactNum,
+    t1: &ExactNum,
+    atol: &ExactNum,
+    rtol: &ExactNum,
+    wrk: usize,
+    cc: &mut Consts,
+) -> Result<(Vec<ExactNum>, Vec<ExactNum>), OdeError>
+where
+    F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    let rm = RoundingMode::None;
+    let hmin = ode_min_step(wrk, rm);
+    let mut t = t0.clone();
+    let mut y = y0.clone();
+    let _ = t.set_precision(wrk, rm);
+    let _ = y.set_precision(wrk, rm);
+    let mut h = ExactNum::sub_ref(t1, t0, wrk, rm);
+    let mut ts = Vec::new();
+    let mut ys = Vec::new();
+    push_pair(&mut ts, &mut ys, t.clone(), y.clone());
+    while t.compare(t1) == Some(-1) {
+        let remain = ExactNum::sub_ref(t1, &t, wrk, rm);
+        if h.compare(&remain) == Some(1) {
+            h = remain.clone();
+        }
+        if !finite(&h) || h.is_zero() || h.is_negative() || h.compare(&hmin) == Some(-1) {
+            return Err(OdeError::ToleranceUnreachable);
+        }
+        match bs_try_step(f, &t, &y, &h, atol, rtol, wrk, cc)? {
+            Some(yn) => {
+                t = ExactNum::add_ref(&t, &h, wrk, rm);
+                if t.compare(t1) == Some(1) {
+                    t = t1.clone();
+                }
+                if !finite(&t) || !finite(&yn) {
+                    return Err(OdeError::InvalidArgument);
+                }
+                y = yn;
+                push_pair(&mut ts, &mut ys, t.clone(), y.clone());
+                // Grow cautiously after an accepted step.
+                h = h.ldexp(1, wrk, rm);
+            }
+            None => {
+                h = h.ldexp(-1, wrk, rm);
+            }
+        }
+    }
+    Ok((ts, ys))
+}
+
 /// Dormand–Prince RK5(4) with absolute / relative step control.
 ///
 /// Accepts a step when `|y₅−y₄| ≤ atol + rtol max(|y|,|y₅|)`. Step size is
@@ -679,14 +906,29 @@ where
 /// Returns [`OdeError::InvalidArgument`] if `t1 ≤ t0`, a value is non-finite,
 /// a tolerance is negative, or the output arrays cannot be allocated.
 /// Returns [`OdeError::ToleranceUnreachable`] when the step falls below
-/// [`ode_min_step`] (what the working precision can represent), when the
-/// error estimate cannot decrease at the current precision, or when an
-/// a priori order-5 bound from the opening step shows that the needed
-/// trajectory cannot be allocated or represented (ZF-54). The bound is
-/// computed up front from the inputs and is not a step counter; it does
-/// not fire when a run would finish. When the tolerance is finer than
-/// the current working precision can support, the working precision is
-/// raised and the integration is retried.
+/// [`ode_min_step`] (what the working precision can represent) or when
+/// the error estimate cannot decrease at the current precision, and
+/// Bulirsch–Stoer extrapolation cannot reach the tolerance either; or
+/// when both tolerances are zero (Dormand–Prince's truncation term is
+/// nonzero). When the tolerance is finer than the current working
+/// precision can support, the working precision is raised and the
+/// integration is retried.
+///
+/// Switch (Jeff, 2026-11-19 11:50 AM CT): "rk45 switches to
+/// Bulirsch–Stoer extrapolation for tolerances Dormand–Prince can't
+/// reach, documented". If Dormand–Prince returns
+/// [`OdeError::ToleranceUnreachable`] at a working precision that
+/// already supports the tolerance — including the case of
+/// [`dp_switch_no_accept`] attempts with no accepted step, or
+/// [`dp_switch_total_attempts`] attempts at a wide working
+/// precision (so a crawl of micro-steps cannot delay the switch) — the
+/// same call continues with a modified-midpoint / polynomial
+/// extrapolation (Gragg–Bulirsch–Stoer, even sequence
+/// `n = 2, 4, …, 2 K`) rather than refusing. The switch is
+/// deterministic: it depends only on the inputs and those documented
+/// constants, not on a wall clock or a step-counter of a finishable
+/// run. A finishable transient still completes on the Dormand–Prince
+/// path (`zf_54_probe_must_not_refuse_a_finishable_transient`).
 pub fn rk45_adaptive<F>(
     mut f: F,
     t0: &ExactNum,
@@ -721,7 +963,14 @@ where
             Err(OdeError::InvalidArgument) => return Err(OdeError::InvalidArgument),
             Err(OdeError::ToleranceUnreachable) => {
                 if wrk_supports_tol(atol, rtol, y0, wrk) {
-                    return Err(OdeError::ToleranceUnreachable);
+                    match bs_at_prec(&mut f, t0, y0, t1, atol, rtol, wrk, cc) {
+                        Ok((ts, ys)) => {
+                            let ts = to_row(p, rm, &ts).ok_or(OdeError::InvalidArgument)?;
+                            let ys = to_row(p, rm, &ys).ok_or(OdeError::InvalidArgument)?;
+                            return Ok((ts, ys));
+                        }
+                        Err(e) => return Err(e),
+                    }
                 }
                 let bump = crate::defs::WORD_BIT_SIZE.max(32);
                 let next = wrk.saturating_add(bump);
@@ -1043,6 +1292,78 @@ mod tests {
             "y'=-y at the same tight tol must return e^{{-1}}; evals={evals_e}"
         );
         Ok(())
+    }
+
+    fn cos_closed_form_bits(
+        p: usize,
+        tol_exp: i64,
+        min_bits: i32,
+        max_ms: u128,
+        label: &str,
+    ) -> Result<(), crate::Error> {
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let tol = one.clone().ldexp(tol_exp, p, RoundingMode::None);
+        let t0 = std::time::Instant::now();
+        let mut evals = 0u32;
+        let got = rk45_adaptive(
+            |t, _y, q, r, cc| {
+                evals = evals.saturating_add(1);
+                t.cos(q, r, cc)
+            },
+            &zero,
+            &one,
+            &one,
+            &tol,
+            &tol,
+            p,
+            rm,
+            &mut cc,
+        );
+        let ms = t0.elapsed().as_millis();
+        let (ts, ys) = match got {
+            Ok(v) => v,
+            Err(e) => panic!("{label} must integrate, not {e:?} after {ms} ms"),
+        };
+        let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(tend.compare(&one), Some(0), "{label} must land on t=1; {ms} ms");
+        let expect = one.clone().add(&one.sin(p, rm, &mut cc), p, rm);
+        let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
+        let bits = if err.is_zero() {
+            10_000
+        } else {
+            (expect.exponent().unwrap_or(0) - err.exponent().unwrap_or(0)) as i32
+        };
+        eprintln!("{label}: {ms} ms, {bits} bits, {evals} f-evals");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+        assert!(
+            bits >= min_bits || err.is_zero(),
+            "{label}: y(1) vs 1+sin(1) only {bits} bits after {ms} ms"
+        );
+        assert!(ms < max_ms, "{label} must finish under {max_ms} ms; took {ms} ms");
+        let _ = ts;
+        Ok(())
+    }
+
+    /// Same closed form as Harper ZF-54, at a width where a BS tableau
+    /// is cheap. atol = 2^{-96} is already out of reach for Dormand–Prince
+    /// on [0, 1] (order-5 h ≲ 2^{-19}, tens of millions of steps).
+    #[test]
+    fn zf_54_bs_cos_matches_closed_form_p256() -> Result<(), crate::Error> {
+        cos_closed_form_bits(256, -96, 80, 10_000, "y'=cos(t) p=256 atol=2^{-96}")
+    }
+
+    /// Harper ZF-54 / official d0229592: y' = cos(t), y(0) = 1, [0, 1],
+    /// atol = rtol = 2^{-512}, dest p = 1024. Closed form y(1) = 1 + sin(1),
+    /// never a synthetic reference. Dormand–Prince cannot reach this
+    /// tolerance in a feasible number of order-5 steps; the documented
+    /// switch takes Bulirsch–Stoer and must return the closed form.
+    #[test]
+    fn zf_54_d0229592_matches_closed_form() -> Result<(), crate::Error> {
+        cos_closed_form_bits(1024, -512, 500, 90_000, "d0229592 y'=cos(t) p=1024 atol=2^{-512}")
     }
 
     /// A caller-requested RK4 / Euler length above the old 65536 cap is a
