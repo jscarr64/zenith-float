@@ -3020,8 +3020,8 @@ mod tests {
     }
 
     /// FLINT 3.6 golds for G(±1/2) at p=4096 and 16384 (dest widths below
-    /// the six remaining-28 TIMEOUT rows at p=65536, which live in the
-    /// ignored `zf_barnes_g_half_matches_flint_golds_p65536` test).
+    /// the six official rows at p=65536, which live in
+    /// `zf_barnes_g_half_matches_flint_golds_p65536`).
     #[test]
     fn zf_barnes_g_half_matches_flint_golds_high_p() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
@@ -3066,10 +3066,9 @@ mod tests {
     }
 
 
-    /// FLINT golds for G(±1/2) at dest p=2^16. Ignored in the default suite:
-    /// the sieved EM jet is correct (~330 s, full width) but over `ZFS_WALL`.
+    /// FLINT golds for G(±1/2) at dest p=2^16. Fresh-process first fills are
+    /// about 46 s, under `ZFS_WALL=120`.
     #[test]
-    #[ignore = "G(±1/2) at p=65536 is ~330 s; over ZFS_WALL because of ln cost"]
     fn zf_barnes_g_half_matches_flint_golds_p65536() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
         let raw = include_str!("testdata/barnes_g_half_flint_golds.txt");
