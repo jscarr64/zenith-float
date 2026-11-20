@@ -72,6 +72,15 @@ impl Jet {
             c1: ExactNum::div_ref(&self.c1, c, p, NR),
         }
     }
+
+    /// Length-2 product `(a0 + a1 x)(b0 + b1 x)` truncated after `x` (FLINT `_acb_poly_mullow`).
+    fn mullow(&self, other: &Self, p: usize) -> Self {
+        Self {
+            c0: ExactNum::mul_ref(&self.c0, &other.c0, p, NR),
+            c1: ExactNum::mul_ref(&self.c1, &other.c0, p, NR)
+                .add(&ExactNum::mul_ref(&self.c0, &other.c1, p, NR), p, NR),
+        }
+    }
 }
 
 /// `(N+a)^{-(s+x)} = (N+a)^{-s} (1 − x ln(N+a) + O(x²))`.
@@ -277,6 +286,8 @@ fn em_sum(
     let p = p
         .saturating_add(2 * (bit_count(n) as usize + 2));
     let one = ExactNum::from_u8(1, p);
+    #[cfg(all(test, feature = "std"))]
+    let t_powsum = std::time::Instant::now();
     let mut sum = if let Some(fast) = powsum_s_minus_one(s, a, n, p, cc) {
         fast
     } else if let Some(fast) = powsum_sieved(s, a, n, p, cc) {
@@ -310,7 +321,11 @@ fn em_sum(
     let half = ExactNum::from_u8(1, p).ldexp(-1, p, NR);
     sum = sum.add(&tjet.scale(&half, p), p);
 
+    #[cfg(all(test, feature = "std"))]
+    let ms_powsum = t_powsum.elapsed().as_millis();
     // Bernoulli tail, `_acb_poly_zeta_em_tail_naive`.
+    #[cfg(all(test, feature = "std"))]
+    let t_tail = std::time::Instant::now();
     let bs = bernoulli_even(m as usize, p)?;
     // u = 1/2 t; term = u * (s+x) / (N+a)
     let mut term = tjet.scale(&half, p).mul_cpx(s, p).div_const(&na, p);
@@ -334,6 +349,13 @@ fn em_sum(
             NR,
         );
         term = term.div_const(&den, p);
+    }
+    #[cfg(all(test, feature = "std"))]
+    {
+        eprintln!(
+            "EM_SUM profile n={n} m={m} p={p} ms_powsum={ms_powsum} ms_tail={}",
+            t_tail.elapsed().as_millis()
+        );
     }
     Some(sum)
 }
@@ -476,14 +498,47 @@ fn powsum_table_too_big(n: u64, p: usize) -> bool {
         > 1_500_000_000
 }
 
-/// `k^{-s}` at a prime, and its `s`-derivative `-ln(k) k^{-s}`.
-fn prime_invpow(s: &ExactNum, ln: &ExactNum, p: usize, cc: &mut Consts) -> Option<(ExactNum, ExactNum)> {
-    let inv = ExactNum::mul_ref(s, ln, p, NR).neg().exp(p, NR, cc);
+/// `k^{-s}` and its `s`-derivative `-ln(k) k^{-s}`.
+/// On the critical line `s = 1/2`, this is FLINT `arb_rsqrt_ui(k)` rather
+/// than `exp(-s log k)` (`acb_dirichlet_powsum_term`). Integer `s` uses
+/// `pow`. The log of `k` is supplied by the caller (prime-log vec).
+fn powsum_term_from_ln(
+    s: &ExactNum,
+    k: u64,
+    ln: &ExactNum,
+    p: usize,
+    cc: &mut Consts,
+) -> Option<Jet> {
+    let inv = if k <= 1 {
+        ExactNum::from_u8(1, p)
+    } else if is_exact_half(s, p) {
+        ExactNum::from_u64(k, p).sqrt(p, NR).reciprocal(p, NR)
+    } else if s.is_int() {
+        ExactNum::from_u64(k, p).pow(&s.clone().neg(), p, NR, cc)
+    } else {
+        ExactNum::mul_ref(s, ln, p, NR).neg().exp(p, NR, cc)
+    };
     if inv.is_nan() || inv.is_inf() {
         return None;
     }
-    let dinv = ExactNum::mul_ref(&inv, ln, p, NR).neg();
-    Some((inv, dinv))
+    let dinv = if k <= 1 {
+        ExactNum::new(p)
+    } else {
+        ExactNum::mul_ref(&inv, ln, p, NR).neg()
+    };
+    Some(Jet { c0: inv, c1: dinv })
+}
+
+/// `k^{-s}` at a prime `k` identified by its log, and the `s`-derivative.
+fn prime_invpow(
+    s: &ExactNum,
+    k: u64,
+    ln: &ExactNum,
+    p: usize,
+    cc: &mut Consts,
+) -> Option<(ExactNum, ExactNum)> {
+    let j = powsum_term_from_ln(s, k, ln, p, cc)?;
+    Some((j.c0, j.c1))
 }
 
 /// Sieved Σ_{k=1}^{n} k^{-(s+x)} at `a = 1` (FLINT `acb_dirichlet_powsum_sieved`):
@@ -504,46 +559,135 @@ fn powsum_sieved(
     if powsum_table_too_big(n, p) {
         return powsum_sieved_factored(s, n_us, p, &lns, cc);
     }
-
-    let mut pow0 = vec![ExactNum::new(p); n_us + 1];
-    let mut pow1 = vec![ExactNum::new(p); n_us + 1];
-    pow0[1] = ExactNum::from_u8(1, p);
-
-    let mut primes: Vec<u32> = Vec::with_capacity(lns.len());
-    for (pr, ln) in &lns {
-        let pu = *pr as usize;
-        if pu > n_us {
-            break;
-        }
-        let (inv, dinv) = prime_invpow(s, ln, p, cc)?;
-        pow0[pu] = inv;
-        pow1[pu] = dinv;
-        primes.push(*pr as u32);
+    if n == 1 {
+        return Some(Jet {
+            c0: ExactNum::from_u8(1, p),
+            c1: ExactNum::new(p),
+        });
     }
 
-    for i in 2..=n_us {
-        for &pr in &primes {
-            let pu = pr as usize;
-            let v = match i.checked_mul(pu) {
-                Some(v) if v <= n_us => v,
-                _ => break,
-            };
-            pow0[v] = ExactNum::mul_ref(&pow0[i], &pow0[pu], p, NR);
-            pow1[v] = ExactNum::mul_ref(&pow1[i], &pow0[pu], p, NR)
-                .add(&ExactNum::mul_ref(&pow0[i], &pow1[pu], p, NR), p, NR);
-            if i.is_multiple_of(pu) {
-                break;
+    // FLINT `acb_dirichlet_powsum_sieved`: only odd k in the table,
+    // composites by multiplication of stored odd factors, evens by Horner
+    // in `2^{-s}`. Hard `k^{-s}` only at 2 and at odd primes (`powsum_term`).
+    let mut divisors = vec![0u32; n_us / 2 + 1];
+    let ibound = n_us.isqrt();
+    let mut i = 3usize;
+    while i <= ibound {
+        if divisors[(i - 1) / 2] == 0 {
+            let mut j = i * i;
+            while j <= n_us {
+                divisors[(j - 1) / 2] = i as u32;
+                j += 2 * i;
             }
         }
+        i += 2;
     }
 
-    let mut c0 = ExactNum::new(p);
-    let mut c1 = ExactNum::new(p);
-    for k in 1..=n_us {
-        c0 = c0.add(&pow0[k], p, NR);
-        c1 = c1.add(&pow1[k], p, NR);
+    let ln_of = |k: u64| -> Option<&ExactNum> {
+        let i = lns.binary_search_by_key(&k, |(pr, _)| *pr).ok()?;
+        Some(&lns[i].1)
+    };
+
+    #[cfg(all(test, feature = "std"))]
+    let t_term = std::time::Instant::now();
+    #[cfg(all(test, feature = "std"))]
+    let mut n_term = 0u64;
+    let x = powsum_term_from_ln(s, 2, ln_of(2)?, p, cc)?;
+    #[cfg(all(test, feature = "std"))]
+    {
+        n_term += 1;
     }
-    Some(Jet { c0, c1 })
+
+    // Stored odd powers for k <= n/3, indexed by (k-1)/2 (FLINT `POWER`).
+    let n_store = n_us / 6 + 1;
+    let mut powers = vec![Jet::zero(p); n_store];
+    let mut z = Jet::zero(p);
+    let mut u = Jet::zero(p);
+
+    let mut power_of_two = 1u64;
+    while power_of_two.saturating_mul(2) <= n {
+        power_of_two *= 2;
+    }
+    let mut horner_point = n / power_of_two;
+
+    #[cfg(all(test, feature = "std"))]
+    let mut n_comp = 0u64;
+    #[cfg(all(test, feature = "std"))]
+    let mut ms_term = 0u128;
+    #[cfg(all(test, feature = "std"))]
+    let mut ms_comp = 0u128;
+    #[cfg(all(test, feature = "std"))]
+    let mut ms_horner = 0u128;
+
+    let mut k = 1u64;
+    while k <= n {
+        let ku = k as usize;
+        let t = if k == 1 {
+            Jet {
+                c0: ExactNum::from_u8(1, p),
+                c1: ExactNum::new(p),
+            }
+        } else if divisors[(ku - 1) / 2] == 0 {
+            #[cfg(all(test, feature = "std"))]
+            let t0 = std::time::Instant::now();
+            let term = powsum_term_from_ln(s, k, ln_of(k)?, p, cc)?;
+            #[cfg(all(test, feature = "std"))]
+            {
+                n_term += 1;
+                ms_term += t0.elapsed().as_millis();
+            }
+            term
+        } else {
+            let d = divisors[(ku - 1) / 2] as usize;
+            let cof = ku / d;
+            let p1 = &powers[(d - 1) / 2];
+            let p2 = &powers[(cof - 1) / 2];
+            #[cfg(all(test, feature = "std"))]
+            let t0 = std::time::Instant::now();
+            let term = p1.mullow(p2, p);
+            #[cfg(all(test, feature = "std"))]
+            {
+                n_comp += 1;
+                ms_comp += t0.elapsed().as_millis();
+            }
+            term
+        };
+        if k.saturating_mul(3) <= n {
+            let idx = (ku - 1) / 2;
+            if idx < powers.len() {
+                powers[idx] = t.clone();
+            }
+        }
+        u = u.add(&t, p);
+
+        while k == horner_point && power_of_two != 1 {
+            #[cfg(all(test, feature = "std"))]
+            let t0 = std::time::Instant::now();
+            z = z.mullow(&x, p).add(&u, p);
+            #[cfg(all(test, feature = "std"))]
+            {
+                ms_horner += t0.elapsed().as_millis();
+            }
+            power_of_two /= 2;
+            horner_point = n / power_of_two;
+            if horner_point.is_multiple_of(2) {
+                horner_point -= 1;
+            }
+        }
+        k += 2;
+    }
+    z = z.mullow(&x, p).add(&u, p);
+    #[cfg(all(test, feature = "std"))]
+    {
+        eprintln!(
+            "POWSUM profile n={n} p={p} n_term={n_term} ms_term={} n_comp={n_comp} ms_comp={} ms_horner={} ms_setup={}",
+            ms_term,
+            ms_comp,
+            ms_horner,
+            t_term.elapsed().as_millis()
+        );
+    }
+    Some(z)
 }
 
 /// Same sum as `powsum_sieved`, without a dense table of `k^{-s}`.
@@ -563,7 +707,7 @@ fn powsum_sieved_factored(
         if pu > n_us {
             break;
         }
-        let (inv, _) = prime_invpow(s, ln, p, cc)?;
+        let (inv, _) = prime_invpow(s, *pr, ln, p, cc)?;
         let i32u = u32::try_from(i).ok()?;
         idx[pu] = i32u;
         prime_ln.push(ln.clone());
@@ -899,6 +1043,171 @@ mod tests {
         eprintln!(
             "ZETA profile phase=cached_done arg=1/2 p={p} ms={} (FLINT ~5 s)",
             t1.elapsed().as_millis()
+        );
+        Ok(())
+    }
+
+    fn powsum_direct(s: &ExactNum, n: u64, p: usize, cc: &mut Consts) -> Jet {
+        let mut sum = Jet::zero(p);
+        for k in 1..=n {
+            let t = ExactNum::from_u64(k, p);
+            sum = sum.add(&invpow_jet(&t, s, p, cc), p);
+        }
+        sum
+    }
+
+    fn jets_agree(a: &Jet, b: &Jet, p: usize, min_bits: i32) {
+        let b0 = agree_bits(&a.c0, &b.c0, p);
+        let b1 = agree_bits(&a.c1, &b.c1, p);
+        assert!(
+            b0 >= min_bits && b1 >= min_bits,
+            "powsum jet bits c0={b0} c1={b1} want >={min_bits}"
+        );
+    }
+
+    #[test]
+    fn powsum_sieved_matches_direct_sum_at_modest_n() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let p = 256usize;
+        let n = 80u64;
+        let a = ExactNum::from_u8(1, p);
+        for (label, s) in [
+            ("1/2", ExactNum::from_u8(1, p).ldexp(-1, p, NR)),
+            ("-1/2", ExactNum::from_u8(1, p).ldexp(-1, p, NR).neg()),
+            ("3/2", ExactNum::from_u8(3, p).ldexp(-1, p, NR)),
+            ("2", ExactNum::from_u8(2, p)),
+            ("3", ExactNum::from_u8(3, p)),
+        ] {
+            let got = powsum_sieved(&s, &a, n, p, &mut cc)
+                .unwrap_or_else(|| panic!("sieved failed for s={label}"));
+            let want = powsum_direct(&s, n, p, &mut cc);
+            jets_agree(&got, &want, p, (p as i32) - 16);
+        }
+        // N just below/above a power of two, where Horner changes scale.
+        for n in [31u64, 32, 33, 63, 64, 65] {
+            let s = ExactNum::from_u8(1, p).ldexp(-1, p, NR);
+            let got = powsum_sieved(&s, &a, n, p, &mut cc).expect("sieved");
+            let want = powsum_direct(&s, n, p, &mut cc);
+            jets_agree(&got, &want, p, (p as i32) - 16);
+        }
+        Ok(())
+    }
+
+    fn time_ns(iters: u32, warmup: u32, mut body: impl FnMut()) -> f64 {
+        for _ in 0..warmup {
+            body();
+        }
+        let t0 = std::time::Instant::now();
+        for _ in 0..iters {
+            body();
+        }
+        t0.elapsed().as_secs_f64() / f64::from(iters) * 1e9
+    }
+
+    /// Elementary kernels used by powsum, side by side with
+    /// `$L/final/timeouts-11/zeta/bench-arb-elem.py`.
+    #[cfg(feature = "std")]
+    #[test]
+    #[ignore]
+    fn time_powsum_elem_vs_flint() -> Result<(), Error> {
+        use std::hint::black_box;
+        let mut cc = Consts::new()?;
+        let rm = RoundingMode::ToEven;
+        let cases: &[(usize, u32)] = &[(4096, 40), (16384, 10), (65536, 4)];
+        for &(prec, n) in cases {
+            let k = ExactNum::from_u64(10007, prec);
+            let two = ExactNum::from_u8(2, prec);
+            let tenth = ExactNum::from_u8(1, prec).div(&ExactNum::from_u8(10, prec), prec, rm);
+            let s_half = ExactNum::from_u8(1, prec).ldexp(-1, prec, rm);
+            let s_mhalf = s_half.clone().neg();
+            let s_3h = ExactNum::from_u8(3, prec).ldexp(-1, prec, rm);
+            eprintln!("==== ZF elem prec={prec} ====");
+            let ns = time_ns(n, n.min(2), || {
+                black_box(k.ln(prec, rm, &mut cc));
+            });
+            eprintln!(
+                "ZF  ln(10007) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+            let ns = time_ns(n, n.min(2), || {
+                black_box(two.ln(prec, rm, &mut cc));
+            });
+            eprintln!(
+                "ZF  ln(2) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+            let ns = time_ns(n, n.min(2), || {
+                black_box(tenth.exp(prec, rm, &mut cc));
+            });
+            eprintln!(
+                "ZF  exp(1/10) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+            let ns = time_ns(n, n.min(2), || {
+                black_box(k.sqrt(prec, rm));
+            });
+            eprintln!(
+                "ZF  sqrt(10007) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+            let ns = time_ns(n, n.min(2), || {
+                black_box(k.sqrt(prec, rm).reciprocal(prec, rm));
+            });
+            eprintln!(
+                "ZF  1/sqrt(10007) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+            for (label, sarg) in [
+                ("s=1/2", &s_half),
+                ("s=-1/2", &s_mhalf),
+                ("s=3/2", &s_3h),
+            ] {
+                let ns = time_ns(n, n.min(2), || {
+                    let ln = k.ln(prec, rm, &mut cc);
+                    black_box(
+                        ExactNum::mul_ref(sarg, &ln, prec, rm)
+                            .neg()
+                            .exp(prec, rm, &mut cc),
+                    );
+                });
+                eprintln!(
+                    "ZF  exp(-s ln k) {label} p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
+                    ns / 1e6
+                );
+            }
+        }
+        // Dest-p powsum + EM tail at choose_param N,M, to split the 34 s leftover.
+        let pdest = 65536usize;
+        let s = ExactNum::from_u8(1, pdest).ldexp(-1, pdest, rm);
+        let a = ExactNum::from_u8(1, pdest);
+        let t0 = std::time::Instant::now();
+        let Some((n, m)) = choose_param(&s, &a, pdest, &mut cc) else {
+            panic!("choose_param failed");
+        };
+        eprintln!(
+            "ZF  choose_param s=1/2 a=1 p={pdest}: N={n} M={m} ms={}",
+            t0.elapsed().as_millis()
+        );
+        let t1 = std::time::Instant::now();
+        let _ = crate::ops::log_primes::ln_primes_upto(n, pdest, &mut cc);
+        eprintln!(
+            "ZF  ln_primes_upto n={n} p={pdest} ms={}",
+            t1.elapsed().as_millis()
+        );
+        let wrk = pdest.saturating_add(2 * (bit_count(n) as usize + 2));
+        let t2 = std::time::Instant::now();
+        let jet = powsum_sieved(&s, &a, n, wrk, &mut cc);
+        eprintln!(
+            "ZF  powsum_sieved n={n} wrk={wrk} ms={} ok={}",
+            t2.elapsed().as_millis(),
+            jet.is_some()
+        );
+        let t3 = std::time::Instant::now();
+        let em = em_sum(&s, &a, n, m, pdest, &mut cc);
+        eprintln!(
+            "ZF  em_sum n={n} m={m} p={pdest} ms={} ok={}",
+            t3.elapsed().as_millis(),
+            em.is_some()
         );
         Ok(())
     }

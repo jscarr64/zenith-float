@@ -130,4 +130,173 @@ mod tests {
         }
         s1
     }
+
+
+    fn algo_for_limbs(limbs: usize) -> &'static str {
+        if limbs <= 32 {
+            "schoolbook"
+        } else if limbs <= 220 {
+            "toom2"
+        } else if limbs <= 5400 {
+            "toom3"
+        } else {
+            "fft"
+        }
+    }
+
+    fn fill_odd(buf: &mut [Word], seed: u64) {
+        let mut x = seed;
+        for w in buf.iter_mut() {
+            x = x.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
+            *w = x;
+        }
+        if let Some(top) = buf.last_mut() {
+            *top |= 1u64 << 63;
+        }
+    }
+
+    fn add_limb_slice(a: &[Word], b: &[Word], out: &mut [Word]) {
+        let mut carry: crate::defs::DoubleWord = 0;
+        for i in 0..a.len() {
+            let s = a[i] as crate::defs::DoubleWord
+                + b[i] as crate::defs::DoubleWord
+                + carry;
+            out[i] = s as Word;
+            carry = s >> crate::defs::WORD_BIT_SIZE;
+        }
+        if out.len() > a.len() {
+            out[a.len()] = carry as Word;
+        }
+    }
+
+    fn time_ns(iters: u32, warmup: u32, mut body: impl FnMut()) -> f64 {
+        for _ in 0..warmup {
+            body();
+        }
+        let t0 = std::time::Instant::now();
+        for _ in 0..iters {
+            body();
+        }
+        t0.elapsed().as_secs_f64() / f64::from(iters) * 1e9
+    }
+
+    /// Microbench of one full-width multiply, a squaring, a mul-by-one-word,
+    /// and an add, at the EM dest width and nearby / algorithm-boundary limb
+    /// counts. Paired with `$L/final/timeouts-11/zeta/bench-arb-kernel.py`.
+    #[cfg(feature = "std")]
+    #[test]
+    #[ignore]
+    fn time_mul_kernel_vs_flint_widths() -> Result<(), crate::Error> {
+        use crate::{ExactNum, RoundingMode};
+        use std::hint::black_box;
+
+        let rm = RoundingMode::ToEven;
+        let word: u64 = 1234567890123456789;
+
+        // Bit widths matching the python-flint arb script, plus the algorithm
+        // thresholds (32 / 220 / 5400 limbs).
+        let cases: &[(usize, u32, u32, u32)] = &[
+            (64, 20000, 50000, 20000),
+            (2048, 4000, 12000, 8000),   // 32 limbs, schoolbook top
+            (2112, 4000, 12000, 8000),   // 33 limbs, toom2 bottom
+            (4096, 2000, 8000, 4000),
+            (14080, 400, 2000, 800),     // 220 limbs, toom2 top
+            (14144, 400, 2000, 800),     // 221 limbs, toom3 bottom
+            (16384, 400, 2000, 800),
+            (65536, 80, 400, 200),
+            (262144, 10, 80, 40),
+            (345600, 2, 20, 8),          // 5400 limbs, toom3 top
+            (345664, 2, 20, 8),          // 5401 limbs, fft bottom
+        ];
+
+        for &(prec, n_mul, n_add, n_ui) in cases {
+            let limbs = prec.div_ceil(crate::defs::WORD_BIT_SIZE);
+            eprintln!(
+                "==== ZF prec={prec} bits limbs={limbs} algo={} ====",
+                algo_for_limbs(limbs)
+            );
+
+            let mut ma = WordBuf::new(limbs)?;
+            let mut mb = WordBuf::new(limbs)?;
+            let mut mc = WordBuf::new(2 * limbs)?;
+            let mut md = WordBuf::new(limbs + 1)?;
+            let mut me = WordBuf::new(limbs + 1)?;
+            fill_odd(&mut ma, 0x2222);
+            fill_odd(&mut mb, 0x3333);
+
+            let ns = time_ns(n_mul, n_mul.min(8), || {
+                Mantissa::mul_unbalanced(&ma, &mb, &mut mc).unwrap();
+                black_box(&mc[0]);
+            });
+            eprintln!(
+                "ZF  mant-mul  p={prec}: n={n_mul}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+
+            let ns = time_ns(n_mul, n_mul.min(8), || {
+                Mantissa::mul_unbalanced(&ma, &ma, &mut mc).unwrap();
+                black_box(&mc[0]);
+            });
+            eprintln!(
+                "ZF  mant-sqr  p={prec}: n={n_mul}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+
+            let ns = time_ns(n_ui, n_ui.min(8), || {
+                Mantissa::mul_by_word(&ma, word as crate::defs::DoubleWord, &mut md);
+                black_box(&md[0]);
+            });
+            eprintln!(
+                "ZF  mant-mul_ui p={prec}: n={n_ui}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+
+            let ns = time_ns(n_add, n_add.min(8), || {
+                add_limb_slice(&ma, &mb, &mut me);
+                black_box(&me[0]);
+            });
+            eprintln!(
+                "ZF  mant-add  p={prec}: n={n_add}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+
+            let a = ExactNum::from_u8(2, prec).sqrt(prec, rm);
+            let b = ExactNum::from_u8(3, prec).sqrt(prec, rm);
+            assert!(!a.is_nan() && !b.is_nan() && !a.is_zero() && !b.is_zero());
+            let w = ExactNum::from_u64(word, crate::defs::WORD_BIT_SIZE);
+
+            let ns = time_ns(n_mul, n_mul.min(8), || {
+                black_box(ExactNum::mul_ref(&a, &b, prec, rm));
+            });
+            eprintln!(
+                "ZF  ExactNum-mul  p={prec}: n={n_mul}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+
+            let ns = time_ns(n_mul, n_mul.min(8), || {
+                black_box(ExactNum::mul_ref(&a, &a, prec, rm));
+            });
+            eprintln!(
+                "ZF  ExactNum-sqr  p={prec}: n={n_mul}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+
+            let ns = time_ns(n_ui, n_ui.min(8), || {
+                black_box(ExactNum::mul_ref(&a, &w, prec, rm));
+            });
+            eprintln!(
+                "ZF  ExactNum-mul_ui p={prec}: n={n_ui}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+
+            let ns = time_ns(n_add, n_add.min(8), || {
+                black_box(ExactNum::add_ref(&a, &b, prec, rm));
+            });
+            eprintln!(
+                "ZF  ExactNum-add  p={prec}: n={n_add}  {ns:.0} ns/op  {:.4} ms/op",
+                ns / 1e6
+            );
+        }
+        Ok(())
+    }
 }
