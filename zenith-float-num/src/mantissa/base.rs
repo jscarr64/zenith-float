@@ -1348,7 +1348,6 @@ impl Mantissa {
         Ok((e_shift, m3))
     }
 
-    #[cfg(test)]
     pub fn from_word_buf(m: WordBuf) -> Self {
         let n = Self::find_bit_len(&m);
         Mantissa { m, n }

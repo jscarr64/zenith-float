@@ -6,6 +6,7 @@ use crate::Consts;
 use crate::EXPONENT_MAX;
 use crate::EXPONENT_MIN;
 use crate::common::buf::WordBuf;
+use crate::common::consts::TEN;
 use crate::common::util::MAX_PREC_RETRY;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::log2_ceil;
@@ -31,9 +32,8 @@ use crate::num::ExactNumNumber;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-#[cfg(test)]
-#[allow(dead_code)]
 const TEN_PWR_MAX_FROM_DEC: usize = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as usize;
+
 impl ExactNumNumber {
     /// Converts an array of digits in radix `rdx` to ExactNumNumber with precision `p`.
     /// `digits` represents mantissa and is interpreted as a number smaller than 1 and greater or equal to 1/`rdx`.
@@ -343,8 +343,6 @@ impl ExactNumNumber {
 
     /// The integer formed by the decimal digits (no leading zeroes, non-empty), as a normalised number
     /// with the given sign.
-    #[cfg(test)]
-    #[allow(dead_code)]
     fn dec_mantissa_number(
         sign: Sign,
         digits: &[u8],
@@ -374,8 +372,133 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let _ = cc;
-        Self::conv_from_general(sign, digits, e, 10, p, rm)
+        // Park-and-place decimal parse (ZF-05 / ZF-44). e8502fe routed radix-10
+        // *format* through conv_to_general (kept). Routing parse the same way
+        // flushed numerals below the least subnormal to a signed zero in
+        // away-from-zero modes, and mis-rounded ordinary decimal golds under
+        // directed modes by 1 ULP.
+        let leadzeroes = digits.iter().take_while(|&&x| x == 0).count();
+
+        if digits.len() - leadzeroes == 0 {
+            return Self::zero_with_sign(sign, if p < usize::MAX { p } else { DEFAULT_P });
+        }
+
+        let k = log2_ceil(digits.len() - leadzeroes);
+        let x = Self::dec_mantissa_number(sign, &digits[leadzeroes..], cc.tenpowers(k)?)?;
+        // the first pass consumes `x`; a retry rebuilds the operand from the digits (rule R2).
+        let mut pending = Some(x);
+
+        // exponent part
+        let n = e - digits.len() as i64;
+
+        let p = if p < usize::MAX {
+            p
+        } else {
+            // determine from the input
+            let p = round_p((digits.len() as u64 * 3321928095 / 1000000000) as usize + 1);
+            Self::p_assertion(p)?;
+            p
+        };
+
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p + p_inc;
+
+        // error estimation
+        let mut err = 0;
+        // |n| in u64: a 32-bit `usize` would saturate an i64 decimal exponent. The remainder is below the
+        // chunk, which is a `usize`, so its conversion back cannot fail.
+        let n_abs = n.unsigned_abs();
+        let chunk = u64::try_from(TEN_PWR_MAX_FROM_DEC).map_err(|_| Error::InvalidArgument)?;
+        let npowmax = n_abs / chunk;
+        let tenpowrem = usize::try_from(n_abs % chunk).map_err(|_| Error::InvalidArgument)?;
+        if npowmax != 0 {
+            err += usize::try_from(npowmax)
+                .ok()
+                .and_then(|q| q.checked_mul(3))
+                .ok_or(Error::ExponentOverflow(sign))?;
+        }
+        if tenpowrem != 0 {
+            err += 3;
+        }
+
+        let mut retries = 0usize;
+        loop {
+            let p_f = p_wrk + err;
+
+            let mut f = match pending.take() {
+                Some(x) => x,
+                None => Self::dec_mantissa_number(sign, &digits[leadzeroes..], cc.tenpowers(k)?)?,
+            };
+            // The power-of-ten steps keep `f` near 1 and carry its binary exponent in `shift` (i128), so no
+            // intermediate under- or overflows: a numeral below the subnormals is placed and rounded once by
+            // `rm` at the end (ZF-05), instead of an intermediate quotient flushing to +0. Dividing, `f` sits at
+            // 2^2 (quotient exponent >= 2 - EXPONENT_MAX); multiplying, at 2^-2 (product <= EXPONENT_MAX - 1).
+            let park: Exponent = if n < 0 { 2 } else { -2 };
+            let mut shift = i128::from(f.exponent()) - i128::from(park);
+            f.set_exponent(park);
+
+            if npowmax != 0 {
+                let fpnmax = TEN.powi(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::None)?;
+
+                for _ in 0..npowmax {
+                    if n < 0 {
+                        f = f.div(&fpnmax, p_f, RoundingMode::None)?
+                    } else {
+                        f = f.mul(&fpnmax, p_f, RoundingMode::None)?
+                    }
+                    shift += i128::from(f.exponent()) - i128::from(park);
+                    f.set_exponent(park);
+                }
+            };
+
+            if tenpowrem != 0 {
+                let fpn = TEN.powi(tenpowrem, p_f, RoundingMode::None)?;
+                if n < 0 {
+                    f = f.div(&fpn, p_f, RoundingMode::None)?
+                } else {
+                    f = f.mul(&fpn, p_f, RoundingMode::None)?
+                }
+            }
+
+            f.set_sign(sign);
+            let at = shift + i128::from(f.exponent());
+            if at > i128::from(EXPONENT_MAX) {
+                return Err(Error::ExponentOverflow(sign));
+            }
+            let below = at < i128::from(EXPONENT_MIN);
+            if !below {
+                // In range: the exponent fits, so this is the value itself.
+                f.set_exponent(Exponent::try_from(at).map_err(|_| Error::ExponentOverflow(sign))?);
+            }
+            // Below the range the significand is truncated (toward zero, `p + 2` bits) and placed on the
+            // subnormal grid by `place_scaled`, which rounds once by `rm`.
+            let (q, qrm) = if below { (p + 2, RoundingMode::ToZero) } else { (p, rm) };
+
+            if f.try_set_precision(q, qrm, p_wrk)? {
+                return if below {
+                    let dropped = f.inexact();
+                    f.place_scaled(at, dropped, p, rm)
+                } else {
+                    Ok(f)
+                };
+            }
+
+            retries += 1;
+            if retries > MAX_PREC_RETRY {
+                f.set_precision(q, qrm)?;
+                return if below {
+                    let dropped = f.inexact();
+                    f.place_scaled(at, dropped, p, rm)
+                } else {
+                    Ok(f)
+                };
+            }
+
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            if p_wrk > EXPONENT_MAX as usize {
+                return Err(Error::InvalidArgument);
+            }
+        }
     }
 
     /// Converts `self` to radix `rdx` using rounding mode `rm`.

@@ -8,7 +8,6 @@ mod pi;
 
 use crate::common::buf::WordBuf;
 use crate::common::util::round_p;
-#[cfg(test)]
 use crate::mantissa::Mantissa;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::e::ECache;
@@ -135,7 +134,6 @@ pub struct Consts {
     sqrt2: ExtraCache,
     phi: ExtraCache,
     euler: ExtraCache,
-    #[allow(dead_code)]
     tenpowers: Vec<(WordBuf, WordBuf, usize)>,
 }
 
@@ -250,8 +248,6 @@ impl Consts {
     }
 
     /// Return powers of 10: 100, 10000, 100000000, ...
-    #[cfg(test)]
-    #[allow(dead_code)]
     pub(crate) fn tenpowers(&mut self, p: usize) -> Result<&[(WordBuf, WordBuf, usize)], Error> {
         if p >= self.tenpowers.len() {
             Mantissa::compute_tenpowers(&mut self.tenpowers, p)?;
