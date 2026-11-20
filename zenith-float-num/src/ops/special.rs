@@ -10,6 +10,7 @@ use crate::defs::EXPONENT_MIN;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
+use crate::integer::ExactInt;
 use crate::ExactNum;
 use crate::Sign;
 use crate::Word;
@@ -7037,15 +7038,23 @@ fn one_half(p: usize) -> Result<ExactNumNumber, Error> {
 }
 
 fn factorial(n: usize, p: usize) -> Result<ExactNumNumber, Error> {
-    let mut acc = ExactNumNumber::from_word(1, p)?;
-    for i in 2..=n {
-        acc = acc.mul(
-            &ExactNumNumber::from_word(i as Word, p)?,
-            p,
-            RoundingMode::None,
-        )?;
+    // Product in ExactInt (one-word factors), then a single rounding to `p`.
+    // Multiplying by `from_word(i, p)` used to inflate each factor to `p` bits
+    // and made n! at 2*10^5 bits take tens of thousands of full-width muls.
+    if n <= 1 {
+        return ExactNumNumber::from_word(1, p);
     }
-    Ok(acc)
+    let mut acc = ExactInt::one();
+    for i in 2..=n {
+        acc.mul_u64_assign(i as u64);
+    }
+    let limbs = acc.as_limbs();
+    let e = Exponent::try_from(limbs.len().saturating_mul(WORD_BIT_SIZE))
+        .map_err(|_| Error::InvalidArgument)?;
+    let sign = if acc.is_negative() { Sign::Neg } else { Sign::Pos };
+    let mut f = ExactNumNumber::from_words(limbs, sign, e)?;
+    let _ = f.set_precision(p, RoundingMode::ToEven);
+    Ok(f)
 }
 
 /// Even Bernoulli number B_{2k} via Akiyama–Tanigawa.
@@ -7096,15 +7105,18 @@ pub(crate) fn even_bernoulli(n: usize, p: usize) -> Result<Vec<ExactNumNumber>, 
     Ok(out)
 }
 
-/// Largest `k` (`B_{2k}`) filled from the exact boustrophedon. Larger indices
-/// use the zeta series, as in Arb's `arb_bernoulli_ui_zeta`.
-///
-/// 4096 covers the improved Stirling head at dest p=65536 (`M ≈ 3316`).
-/// The zeta mid-`k` gap at that precision hits `euler_product_limit` `e ≥ 24`
-/// and falls back to singleton factorials (~146 s for `k=1025..=3316`),
-/// while the exact table of 3316 numbers is ~29 s.
-const BERNOULLI_EXACT_K: usize = 4096;
+/// FLINT `bernoulli_cache_compute` growth, in even-`k` units (`k` so `B_{2k}`).
+/// FLINT sizes by the index `n`: `+32` when `n≤128`, else `+128`. That is
+/// `+16` / `+64` in the even-`k` count.
+fn flint_even_k_len(have: usize, need: usize) -> usize {
+    if need <= 64 {
+        have.saturating_add(16).max(need)
+    } else {
+        have.saturating_add(64).max(need)
+    }
+}
 
+#[cfg(test)]
 fn bitlen_usize(n: usize) -> usize {
     (usize::BITS - n.leading_zeros()) as usize
 }
@@ -7112,6 +7124,7 @@ fn bitlen_usize(n: usize) -> usize {
 /// Proven upper bound on `log2(|B_n|)` for even `n ≥ 2`: `|B_n| < 4 n!/(2π)^n`
 /// because `ζ(n) < 2`. `log2(n!)` is bounded by `Σ_{i=2}^n ⌈log2 i⌉`, and
 /// `log2(2π) > 53/20`.
+#[cfg(test)]
 fn bernoulli_abs_log2_ub(n: usize) -> usize {
     let mut log2_fact = 0usize;
     for i in 2..=n {
@@ -7163,6 +7176,7 @@ fn primes_upto(max: usize) -> Vec<u32> {
 }
 
 /// Primes `P` so the Euler-product tail `P^{1-s}/(s-1) < 2^{-(wp+8)}`.
+#[cfg(test)]
 fn euler_product_limit(s: usize, wp: usize) -> Result<usize, Error> {
     let num = wp.saturating_add(8).saturating_add(bitlen_usize(s));
     let den = s.saturating_sub(1).max(1);
@@ -7216,6 +7230,7 @@ fn zeta_ui_asymp(s: usize, wp: usize) -> Result<ExactNumNumber, Error> {
 /// bound on the magnitude, not a significant-bit count. When |B_{2k}| has more
 /// than `p` bits, work at p+64. When it is a short exact rational, work at
 /// enough bits to recover it (von Staudt–Clausen: `log2(d_n) < n`).
+#[cfg(test)]
 fn even_bernoulli_zeta_wp(k: usize, p: usize) -> Result<usize, Error> {
     let n = k.checked_mul(2).ok_or(Error::InvalidArgument)?;
     let bits = bernoulli_abs_log2_ub(n);
@@ -7282,6 +7297,7 @@ fn even_bernoulli_via_zeta(k: usize, p: usize) -> Result<ExactNumNumber, Error> 
 /// (`e=12`, `J=4098`) in one extra band instead of hundreds of singleton
 /// factorials, which is what kept `digamma_half_at_high_p_from_error_bound`
 /// from finishing.
+#[cfg(test)]
 const BERNOULLI_ZETA_BAND_J_MAX: usize = 8192;
 
 /// Fill `B_{2k}` for `k0..=k1` by walking `F(n)=2 n!/(2π)^n` down from
@@ -7290,6 +7306,7 @@ const BERNOULLI_ZETA_BAND_J_MAX: usize = 8192;
 /// only, as in Arb `arb_bernoulli_ui_zeta`); otherwise the short zeta
 /// tail over every `j`. A `PrecisionRetryExhausted` from
 /// [`euler_product_limit`] ends the band rather than failing the fill.
+#[cfg(test)]
 fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<ExactNumNumber>, Error> {
     if k0 == 0 || k0 > k1 {
         return Err(Error::InvalidArgument);
@@ -7459,7 +7476,7 @@ struct BernoulliCache {
     row: Vec<ExactNumNumber>,
     row_n: usize,
     /// `exact[k-1] = (num, den)` with `B_2k = num / den`, both exact.
-    exact: Vec<(ExactNumNumber, ExactNumNumber)>,
+    exact: Vec<(ExactInt, ExactInt)>,
     /// `(p, [B_2 .. B_2n] rounded to p bits ToEven)`, at most `BERNOULLI_P_SLOTS` entries.
     rounded: Vec<(usize, Vec<ExactNumNumber>)>,
 }
@@ -7502,16 +7519,25 @@ impl BernoulliCache {
         Ok(())
     }
 
-    /// Grows the exact table to at least `n` entries.
+    /// Grows the exact table to at least `n` entries, with FLINT cache sizing.
+    /// A request that only extends a filled table walks the new high end
+    /// (`exact_even_bernoulli_rev_range`) instead of recomputing the prefix.
     fn grow_exact(&mut self, n: usize) -> Result<(), Error> {
         if self.exact.len() >= n {
             return Ok(());
         }
-        if n > 15 {
-            self.exact = bernoulli_rev::exact_even_bernoulli_rev(n)?;
+        let n = flint_even_k_len(self.exact.len(), n);
+        if n <= 15 {
+            return self.grow_exact_boustrophedon(n);
+        }
+        if self.exact.len() > 15 {
+            let k_lo = self.exact.len() + 1;
+            let extra = bernoulli_rev::exact_even_bernoulli_rev_range(k_lo, n)?;
+            self.exact.extend(extra);
             return Ok(());
         }
-        self.grow_exact_boustrophedon(n)
+        self.exact = bernoulli_rev::exact_even_bernoulli_rev(n)?;
+        Ok(())
     }
 
     /// Seidel–Entringer triangle for small `n` (and tests).
@@ -7537,19 +7563,18 @@ impl BernoulliCache {
             let den = pow
                 .sub(&one, pd, RoundingMode::None)?
                 .mul(&pow, pd, RoundingMode::None)?;
-            self.exact.push((num, den));
+            self.exact.push((
+                bernoulli_rev::num_to_int(&num)?,
+                bernoulli_rev::num_to_int(&den)?,
+            ));
         }
         Ok(())
     }
 
-    /// Grows the p-bit roundings to at least `n` entries.
-    ///
-    /// Indices `k ≤ BERNOULLI_EXACT_K` come from the exact boustrophedon.
-    /// Larger `k` use the zeta series (`even_bernoulli_zeta_range`), so a high-p
-    /// Stirling plan is not capped by the O(K²) exact triangle.
+    /// Grows the p-bit roundings to at least `n` entries from the exact
+    /// `fmpq`-style cache (FLINT `arb_set_round_fmpz` / `arb_div_fmpz`).
     fn grow_rounded(&mut self, n: usize, p: usize) -> Result<(), Error> {
-        let exact_n = n.min(BERNOULLI_EXACT_K);
-        self.grow_exact(exact_n)?;
+        self.grow_exact(n)?;
         if !self.rounded.iter().any(|(q, _)| *q == p) {
             if self.rounded.len() >= BERNOULLI_P_SLOTS {
                 self.rounded.remove(0);
@@ -7562,14 +7587,15 @@ impl BernoulliCache {
             .iter_mut()
             .find(|(q, _)| *q == p)
             .ok_or(Error::InvalidArgument)?;
-        while slot.1.len() < exact_n {
+        while slot.1.len() < n {
             let (num, den) = exact.get(slot.1.len()).ok_or(Error::InvalidArgument)?;
-            slot.1.push(num.div(den, p, RoundingMode::ToEven)?);
-        }
-        if slot.1.len() < n {
-            let k0 = slot.1.len() + 1;
-            let rest = even_bernoulli_zeta_range(k0, n, p)?;
-            slot.1.extend(rest);
+            // Convert the exact integers at full bit length, then divide at
+            // dest `p` (FLINT `arb_set_round_fmpz` / `arb_div_fmpz`).
+            let pn = round_p(num.bit_length().max(64).saturating_add(WORD_BIT_SIZE));
+            let pd = round_p(den.bit_length().max(64).saturating_add(WORD_BIT_SIZE));
+            let nf = num.to_exact_num_number(pn, RoundingMode::None)?;
+            let df = den.to_exact_num_number(pd, RoundingMode::None)?;
+            slot.1.push(nf.div(&df, p, RoundingMode::ToEven)?);
         }
         Ok(())
     }
@@ -7589,17 +7615,17 @@ static BERNOULLI: std::sync::RwLock<BernoulliCache> = std::sync::RwLock::new(Ber
 /// boustrophedon (used for the tiny table `n ≤ 15` and as a test oracle).
 pub(super) fn exact_even_bernoulli_boustrophedon(
     n: usize,
-) -> Result<Vec<(ExactNumNumber, ExactNumNumber)>, Error> {
+) -> Result<Vec<(ExactInt, ExactInt)>, Error> {
     let mut c = BernoulliCache::new();
     c.grow_exact_boustrophedon(n)?;
     Ok(c.exact)
 }
 
-/// Exact even Bernoulli numbers `B_2 .. B_2n` as `(num, den)` pairs, borrowed for `f`.
+/// Exact even Bernoulli numbers `B_2 .. B_2n` as `(num, den)` `ExactInt` pairs.
 #[cfg(test)]
 pub(crate) fn with_exact_bernoulli<R>(
     n: usize,
-    f: impl FnOnce(&[(ExactNumNumber, ExactNumNumber)]) -> Result<R, Error>,
+    f: impl FnOnce(&[(ExactInt, ExactInt)]) -> Result<R, Error>,
 ) -> Result<R, Error> {
     #[cfg(feature = "std")]
     {
@@ -8023,26 +8049,6 @@ fn lambert_w_bracketed(
 mod tests {
     use super::*;
 
-    /// Builds the exact integer with decimal digits `s` (leading `-` allowed).
-    fn dec_int(s: &str) -> Result<ExactNumNumber, crate::Error> {
-        let p = round_p(4 * s.len() + 2 * WORD_BIT_SIZE);
-        let ten = ExactNumNumber::from_word(10, p)?;
-        let mut acc = ExactNumNumber::new(p)?;
-        for c in s.trim_start_matches('-').chars() {
-            let d = c.to_digit(10).ok_or(crate::Error::InvalidArgument)?;
-            acc = acc.mul(&ten, p, RoundingMode::None)?;
-            acc = acc.add(
-                &ExactNumNumber::from_word(Word::from(d), p)?,
-                p,
-                RoundingMode::None,
-            )?;
-        }
-        if s.starts_with('-') {
-            acc = acc.neg()?;
-        }
-        Ok(acc)
-    }
-
     /// `x` as an exact number at `p` bits: `2^e` (`e` may be negative).
     fn pow2(e: Exponent, p: usize) -> Result<ExactNumNumber, crate::Error> {
         let mut x = ExactNumNumber::from_word(1, p)?;
@@ -8309,16 +8315,10 @@ mod tests {
                     for k in 1..=n {
                         let (rn, rd) = &rev[k - 1];
                         let (bn, bd) = &bou[k - 1];
-                        let pl = crate::common::util::round_p(
-                            rn.mantissa_max_bit_len() + bd.mantissa_max_bit_len(),
-                        );
-                        let pr = crate::common::util::round_p(
-                            rd.mantissa_max_bit_len() + bn.mantissa_max_bit_len(),
-                        );
-                        let lhs = rn.mul(bd, pl, RoundingMode::None)?;
-                        let rhs = rd.mul(bn, pr, RoundingMode::None)?;
+                        let lhs = rn.mul(bd);
+                        let rhs = rd.mul(bn);
                         assert!(
-                            lhs.cmp(&rhs) == 0,
+                            lhs.soft_cmp(&rhs) == core::cmp::Ordering::Equal,
                             "k={k} n={n}: rev differs from boustrophedon"
                         );
                     }
@@ -8344,13 +8344,14 @@ mod tests {
         with_exact_bernoulli(100, |rats| {
             for (k, num_s, den_s) in rows {
                 let (num, den) = rats.get(k - 1).ok_or(crate::Error::InvalidArgument)?;
-                let (sn, sd) = (dec_int(num_s)?, dec_int(den_s)?);
-                let pl = round_p(num.mantissa_max_bit_len() + sd.mantissa_max_bit_len());
-                let pr = round_p(den.mantissa_max_bit_len() + sn.mantissa_max_bit_len());
-                let lhs = num.mul(&sd, pl, RoundingMode::None)?;
-                let rhs = den.mul(&sn, pr, RoundingMode::None)?;
-                assert!(!lhs.inexact() && !rhs.inexact(), "k={k}: inexact product");
-                assert!(lhs.cmp(&rhs) == 0, "k={k}: B_2k differs from sympy");
+                let sn = ExactInt::from_dec_string(num_s).ok_or(crate::Error::InvalidArgument)?;
+                let sd = ExactInt::from_dec_string(den_s).ok_or(crate::Error::InvalidArgument)?;
+                let lhs = num.mul(&sd);
+                let rhs = den.mul(&sn);
+                assert!(
+                    lhs.soft_cmp(&rhs) == core::cmp::Ordering::Equal,
+                    "k={k}: B_2k differs from sympy"
+                );
             }
             Ok(())
         })
@@ -8371,11 +8372,32 @@ mod tests {
         })
     }
 
+    /// Rounded values past the old `BERNOULLI_EXACT_K = 4096` cap come from
+    /// the exact cache, not the working-precision zeta walker, and still
+    /// match the zeta-series midpoint at modest precision.
+    #[test]
+    fn zf_even_bernoulli_past_old_exact_cap_matches_zeta() -> Result<(), crate::Error> {
+        let p = 256;
+        let k = 4112;
+        with_even_bernoulli(k, p, |v| {
+            assert_eq!(v.len(), k);
+            let z = even_bernoulli_via_zeta(k, p)?;
+            assert!(
+                v[k - 1].cmp(&z) == 0,
+                "B_{} at p={p} from exact cache differs from zeta path",
+                2 * k
+            );
+            Ok(())
+        })
+    }
+
     /// FLINT 3.6 exact `B_n` (num/den, including B_0, B_1, B_2 and odd n)
     /// plus working-precision midpoints at dest p = 64, 256, and 4096.
     #[test]
     fn zf_bernoulli_matches_flint_golds() -> Result<(), crate::Error> {
-        bernoulli_flint_golds_at(&[64, 256, 4096])
+        // Cap at B_4096 so debug unit tests do not fill exact B_21192.
+        // Larger indices are checked in the p=65536 gold test (release).
+        bernoulli_flint_golds_at_capped(&[64, 256, 4096], 4096)
     }
 
     /// FLINT 3.6 working-precision midpoints at dest p = 65536, including
@@ -8410,6 +8432,12 @@ mod tests {
     }
 
     fn bernoulli_flint_golds_at(precs: &[usize]) -> Result<(), crate::Error> {
+        bernoulli_flint_golds_at_capped(precs, usize::MAX)
+    }
+
+    /// `max_n` caps the arb `B_n` rows so the default (debug) gold test does
+    /// not first-fill the exact cache through `B_21192`.
+    fn bernoulli_flint_golds_at_capped(precs: &[usize], max_n: usize) -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
         let raw = include_str!("../testdata/bernoulli_flint_golds.txt");
         for line in raw.lines() {
@@ -8441,6 +8469,9 @@ mod tests {
                     .ok_or(crate::Error::InvalidArgument)?
                     .parse()
                     .map_err(|_| crate::Error::InvalidArgument)?;
+                if n > max_n {
+                    continue;
+                }
                 let dec = parts.next().ok_or(crate::Error::InvalidArgument)?;
                 let got = bernoulli_ui(n, p)?;
                 let want = ExactNumNumber::parse(
@@ -8479,21 +8510,19 @@ mod tests {
             assert!(b.is_zero(), "exact B_{n} odd");
             return Ok(());
         }
-        let (num_s, den_s) = if let Some((a, b)) = frac.split_once('/') {
-            (a, b)
-        } else {
-            (frac, "1")
-        };
+        let (num_s, den_s) =
+            if let Some((a, b)) = frac.split_once('/') { (a, b) } else { (frac, "1") };
         let k = n / 2;
         with_exact_bernoulli(k, |rats| {
             let (num, den) = rats.get(k - 1).ok_or(crate::Error::InvalidArgument)?;
-            let (sn, sd) = (dec_int(num_s)?, dec_int(den_s)?);
-            let pl = round_p(num.mantissa_max_bit_len() + sd.mantissa_max_bit_len());
-            let pr = round_p(den.mantissa_max_bit_len() + sn.mantissa_max_bit_len());
-            let lhs = num.mul(&sd, pl, RoundingMode::None)?;
-            let rhs = den.mul(&sn, pr, RoundingMode::None)?;
-            assert!(!lhs.inexact() && !rhs.inexact(), "exact B_{n}: inexact product");
-            assert!(lhs.cmp(&rhs) == 0, "exact B_{n} differs from FLINT");
+            let sn = ExactInt::from_dec_string(num_s).ok_or(crate::Error::InvalidArgument)?;
+            let sd = ExactInt::from_dec_string(den_s).ok_or(crate::Error::InvalidArgument)?;
+            let lhs = num.mul(&sd);
+            let rhs = den.mul(&sn);
+            assert!(
+                lhs.soft_cmp(&rhs) == core::cmp::Ordering::Equal,
+                "exact B_{n} differs from FLINT"
+            );
             Ok(())
         })
     }
@@ -8526,13 +8555,49 @@ mod tests {
         with_exact_bernoulli(3316, |rats| {
             assert_eq!(rats.len(), 3316);
             let (n, d) = &rats[3315];
-            assert!(!n.inexact() && !d.inexact(), "B_6632 inexact");
+            assert!(!n.is_zero() && !d.is_zero(), "B_6632 zero");
             Ok(())
         })?;
-        eprintln!("exact_even_bernoulli_rev(3316) first fill {:?}", t0.elapsed());
+        eprintln!(
+            "exact_even_bernoulli_rev(3316) first fill {:?}",
+            t0.elapsed()
+        );
         let t1 = std::time::Instant::now();
         with_exact_bernoulli(3316, |_| Ok(()))?;
-        eprintln!("exact_even_bernoulli_rev(3316) cache hit {:?}", t1.elapsed());
+        eprintln!(
+            "exact_even_bernoulli_rev(3316) cache hit {:?}",
+            t1.elapsed()
+        );
+        Ok(())
+    }
+
+    /// Profile the exact cache fill at the EM size for dest p=65536
+    /// (`M ≈ 10596`, `B_2..B_21192`) and a subsequent rounded lookup.
+    /// Ignored: long run; has a progress log from `bernoulli_rev`.
+    #[test]
+    #[ignore]
+    fn time_exact_bernoulli_cache_em_size() -> Result<(), crate::Error> {
+        let k = 10596;
+        let p = 65536;
+        eprintln!("BERN profile phase=exact_fill k={k} p={p} counter=0/1 ETA=unknown");
+        let t0 = std::time::Instant::now();
+        with_exact_bernoulli(k, |rats| {
+            assert!(rats.len() >= k);
+            Ok(())
+        })?;
+        let fill_ms = t0.elapsed().as_millis();
+        eprintln!(
+            "BERN profile phase=exact_fill_done k={k} ms={fill_ms} (FLINT B_0..B_21192 exact was 3.81 s)"
+        );
+        let t1 = std::time::Instant::now();
+        with_even_bernoulli(k, p, |v| {
+            assert_eq!(v.len(), k);
+            Ok(())
+        })?;
+        let rnd_ms = t1.elapsed().as_millis();
+        eprintln!(
+            "BERN profile phase=round_done k={k} p={p} ms={rnd_ms} (FLINT arb_bernoulli_ui through 21192 at 65536 bits was 16.0 s standalone)"
+        );
         Ok(())
     }
 

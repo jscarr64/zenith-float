@@ -221,6 +221,31 @@ impl ExactInt {
         }
     }
 
+    /// In-place `self += rhs`. Same-sign adds reuse `self`'s limb buffer
+    /// (the Bernoulli reverse walk sums hundreds of odd powers every step).
+    pub fn add_assign(&mut self, rhs: &Self) {
+        if rhs.is_zero() {
+            return;
+        }
+        if self.is_zero() {
+            *self = rhs.clone();
+            return;
+        }
+        if self.sign != rhs.sign {
+            *self = self.add(rhs);
+            return;
+        }
+        let n = self.limbs.len().max(rhs.limbs.len());
+        self.limbs.resize(n + 1, 0);
+        let mut c = 0;
+        for i in 0..n {
+            let y = rhs.limbs.get(i).copied().unwrap_or(0);
+            c = add_carry(self.limbs[i], y, c, &mut self.limbs[i]);
+        }
+        self.limbs[n] = c;
+        self.normalize();
+    }
+
     /// `self - rhs`.
     pub fn sub(&self, rhs: &Self) -> Self {
         self.add(&rhs.neg())
@@ -234,6 +259,52 @@ impl ExactInt {
         Self {
             sign: self.sign.invert(),
             limbs: self.limbs.clone(),
+        }
+    }
+
+    /// `self * rhs` for a `u64` factor (FLINT `fmpz_mul_ui`). The even-Bernoulli
+    /// reverse walk multiplies each odd power by `j²` every step; those factors
+    /// fit in a word for all `j` we store.
+    pub fn mul_u64(&self, rhs: u64) -> Self {
+        if self.is_zero() || rhs == 0 {
+            return Self::zero();
+        }
+        if rhs == 1 {
+            return self.clone();
+        }
+        let r = rhs as DoubleWord;
+        let mut out = vec![0; self.limbs.len() + 1];
+        let mut k: DoubleWord = 0;
+        for (i, &d) in self.limbs.iter().enumerate() {
+            let m = (d as DoubleWord) * r + k;
+            out[i] = m as Word;
+            k = m >> WORD_BIT_SIZE;
+        }
+        out[self.limbs.len()] = k as Word;
+        Self::from_limbs(self.sign, out)
+    }
+
+    /// In-place `self *= rhs` for a `u64` factor.
+    pub fn mul_u64_assign(&mut self, rhs: u64) {
+        if self.is_zero() {
+            return;
+        }
+        if rhs == 0 {
+            *self = Self::zero();
+            return;
+        }
+        if rhs == 1 {
+            return;
+        }
+        let r = rhs as DoubleWord;
+        let mut k: DoubleWord = 0;
+        for d in self.limbs.iter_mut() {
+            let m = (*d as DoubleWord) * r + k;
+            *d = m as Word;
+            k = m >> WORD_BIT_SIZE;
+        }
+        if k != 0 {
+            self.limbs.push(k as Word);
         }
     }
 

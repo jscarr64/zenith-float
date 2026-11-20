@@ -284,7 +284,7 @@ fn em_sum(
     } else {
         let mut sum = Jet::zero(p);
         for k in 0..n {
-            let t = ExactNum::from_u64(k, p).add(a, p, NR);
+            let t = ExactNum::from_u64(k, WORD_BIT_SIZE).add(a, p, NR);
             if !t.is_positive() {
                 return None;
             }
@@ -292,7 +292,7 @@ fn em_sum(
         }
         sum
     };
-    let na = ExactNum::from_u64(n, p).add(a, p, NR);
+    let na = ExactNum::from_u64(n, WORD_BIT_SIZE).add(a, p, NR);
     // t = (N+a)^{-(s+x)}
     let tjet = invpow_jet(&na, s, p, cc);
     // u = (N+a)^{1-(s+x)} / ((s-1)+x)
@@ -322,12 +322,14 @@ fn em_sum(
         }
         sum = sum.add(&term.scale(b, p), p);
         // term *= ((s+x)+2r-1)((s+x)+2r) / ((N+a)^2 (2r+1)(2r+2))
-        let splus0 = s.clone().add(&ExactNum::from_u64((2 * r - 1) as u64, p), p, NR);
+        // Integer factors as one-word values (FLINT fmpz / arb_mul_ui). Building
+        // them at dest `p` made each of the ~10^4 tail steps a full-width mul.
+        let splus0 = s.clone().add(&ExactNum::from_u64((2 * r - 1) as u64, WORD_BIT_SIZE), p, NR);
         term = term.mul_cpx(&splus0, p);
-        let splus1 = s.clone().add(&ExactNum::from_u64((2 * r) as u64, p), p, NR);
+        let splus1 = s.clone().add(&ExactNum::from_u64((2 * r) as u64, WORD_BIT_SIZE), p, NR);
         term = term.mul_cpx(&splus1, p);
         let den = na2.clone().mul(
-            &ExactNum::from_u64((2 * r + 1) as u64 * (2 * r + 2) as u64, p),
+            &ExactNum::from_u64((2 * r + 1) as u64 * (2 * r + 2) as u64, WORD_BIT_SIZE),
             p,
             NR,
         );
@@ -840,6 +842,64 @@ mod tests {
         // Large |s| on the negative side: ζ(-21) is a finite nonzero rational.
         let zneg = ExactNum::from_i32(-21, p).riemann_zeta(p, RoundingMode::ToEven, &mut cc);
         assert!(!zneg.is_nan() && !zneg.is_zero() && !zneg.is_inf(), "zeta(-21) is finite and nonzero");
+        Ok(())
+    }
+
+    #[test]
+    #[ignore]
+    fn time_riemann_zeta_half_p65536() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let p = 65536usize;
+        let raw = include_str!("testdata/riemann_zeta_flint_golds.txt");
+        let wanted = ["1/2", "-1/2", "3/2"];
+        let mut golds = Vec::new();
+        for line in raw.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with("#") {
+                continue;
+            }
+            let mut parts = line.splitn(3, " ");
+            let gp: usize = parts.next().unwrap().parse().unwrap();
+            let arg = parts.next().unwrap();
+            let dec = parts.next().unwrap();
+            if gp == p && wanted.contains(&arg) {
+                golds.push((arg, dec));
+            }
+        }
+        assert_eq!(golds.len(), 3, "expected 1/2, -1/2, 3/2 golds at p=65536");
+        eprintln!("ZETA profile phase=start p={p} (FLINT ~5 s each)");
+        for (i, (arg, dec)) in golds.iter().enumerate() {
+            eprintln!(
+                "ZETA profile phase=first arg={arg} p={p} counter={}/3",
+                i + 1
+            );
+            let t0 = std::time::Instant::now();
+            let x = parse_zeta_arg(arg, p, &mut cc);
+            let got = x.riemann_zeta(p, RoundingMode::ToEven, &mut cc);
+            let ms = t0.elapsed().as_millis();
+            let want = ExactNum::parse(
+                dec,
+                crate::Radix::Dec,
+                p.saturating_add(256),
+                RoundingMode::ToEven,
+                &mut cc,
+            );
+            let bits = agree_bits(&got, &want, p);
+            eprintln!(
+                "ZETA profile phase=first_done arg={arg} p={p} ms={ms} bits={bits} (FLINT ~5 s)"
+            );
+            assert!(
+                !got.is_nan() && (bits >= (p as i32) - 16 || bits == 10_000),
+                "zeta({arg}) p={p} only {bits} bits after {ms} ms"
+            );
+        }
+        let t1 = std::time::Instant::now();
+        let x = parse_zeta_arg("1/2", p, &mut cc);
+        let _ = x.riemann_zeta(p, RoundingMode::ToEven, &mut cc);
+        eprintln!(
+            "ZETA profile phase=cached_done arg=1/2 p={p} ms={} (FLINT ~5 s)",
+            t1.elapsed().as_millis()
+        );
         Ok(())
     }
 
