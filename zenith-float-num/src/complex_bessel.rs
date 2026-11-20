@@ -285,10 +285,12 @@ fn is_half_odd_integer(x: &ExactNum) -> bool {
 /// Exact \(J_\nu(0)\) / \(I_\nu(0)\) that need no dest-sized mantissa:
 /// \(J_0(0)=I_0(0)=1\), \(J_n(0)=I_n(0)=0\) for integer \(n\ne 0\), and \(0\)
 /// when \(\operatorname{Re}\nu>0\) (DLMF 10.7.3 / 10.30.1: \((z/2)^\nu/\Gamma(\nu+1)\)).
-/// For real non-integer \(\nu<0\), \((z/2)^\nu\) is a pole at exact \(z=0\)
-/// (FLINT 3.6 `acb_bessel_j` / `acb_bessel_i` return indeterminate; ZF-65).
-/// The one-sided limit as \(z\to 0+\) is \(+\infty\), but the exact origin
-/// is not that limit. Other orders (pure imaginary, etc.) return `None`.
+/// For real non-integer \(\nu<0\), \((z/2)^\nu\) is a pole at exact \(z=0\).
+/// There is no direction-independent limit in \(\mathbb{C}\) (DLMF 10.2 /
+/// 10.25); FLINT 3.6 `acb_bessel_j` / `acb_bessel_i` return indeterminate,
+/// and ZF-65 requires a refusal. The one-sided limit as \(z\to 0+\) is
+/// \(+\infty\) (DLMF 10.7.3 / 10.30.1), but the exact origin is not that
+/// limit. Other orders (pure imaginary, etc.) return `None`.
 fn bessel_ji_at_zero(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex> {
     let _ = z;
     if nu.im().is_zero() && nu.re().is_int() {
@@ -421,7 +423,7 @@ fn neg_rounding(rm: RoundingMode) -> RoundingMode {
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
     /// At \(z=0\): \(J_0(0)=1\), integer \(n\ne 0\) gives 0, \(\operatorname{Re}\nu>0\)
-    /// gives 0, and real non-integer \(\nu<0\) is a pole (`InvalidArgument`; FLINT, ZF-65). At
+    /// gives 0, and real non-integer \(\nu<0\) is a pole (`InvalidArgument`; FLINT 3.6, DLMF 10.2 / 10.25, ZF-65). At
     /// \(z=+\infty\pm 0i\), \(J_\nu=0\) (DLMF 10.7.8 / 10.17.3). On the cut \(\operatorname{Re} z<0\),
     /// \(\operatorname{Im} z=0\), both signs of a zero imaginary part take Arb's principal value (the limit from above, Arg = +π; Jeff 2026-11-18 10:37 CT). With real ν, that value is formed from the real kernels so algebraically zero parts stay zero.
     ///
@@ -2283,7 +2285,8 @@ mod tests {
         let n1i = compact_one_plus_i();
 
         // Exact z=0 with real non-integer ν<0 is a pole: FLINT 3.6 returns
-        // indeterminate, and ZF-65 requires a refusal. Compact InvalidArgument
+        // indeterminate, DLMF 10.2 / 10.25 give no direction-independent
+        // limit in C, and ZF-65 requires a refusal. Compact InvalidArgument
         // (no dest-sized allocation); dest 2^59 must still return immediately.
         let t0 = std::time::Instant::now();
         let j = z0.bessel_j_nu(&nmh, p, rm, &mut cc);
