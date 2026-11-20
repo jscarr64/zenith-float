@@ -5283,3 +5283,46 @@ fn zf_kelvin_kei_just_below_old_1067_threshold() {
         }
     }
 }
+
+/// a050bc5 stopped Carlson \(R_F\)/\(R_D\)/\(R_J\) duplication when
+/// \((\mathrm{dmax}/\max(|A|,1))^{\mathrm{order}}<2^{-p}\). FLINT
+/// `acb_elliptic_rf` uses \(\mathrm{rel}=\mathrm{dmax}/|A|\). When \(|A|<1\)
+/// the floor of 1 stops too early. At \(m=1+2^{-60}i\), dest \(p=8192\),
+/// that left about 492 trailing bits wrong (first error near bit 7700).
+/// Golds are FLINT 3.6 midpoints (python-flint 0.9.0, `ctx.prec=8448`,
+/// `rel_accuracy_bits` 8442 for \(K\) and 8435 for \(E\), radius
+/// \(\sim 10^{-2541}\)), uniquely correctly rounded to dest \(p\).
+#[test]
+fn zf_elliptic_k_e_complete_near_one_p8192_matches_flint() {
+    let mut cc = Consts::new().expect("Consts");
+    let m = parse_complex("1p0,1p-60").expect("m");
+    let p = 8192usize;
+    let want = |s: &str| -> ExactNum {
+        let k: Vec<&str> = s.split(':').collect();
+        let e: i64 = k[2].parse().expect("exp");
+        parse_real(&format!("{}{}p{}", k[1], k[3], e - 4 * k[3].len() as i64)).expect("want")
+    };
+    let same = |v: &ExactNum, w: &ExactNum| v.compare(w) == Some(0);
+    for line in include_str!("tier1/zf_ellip_k_e_m1_p8192.tsv").lines() {
+        if line.is_empty() || line.starts_with('#') || line.starts_with("func") {
+            continue;
+        }
+        let t: Vec<&str> = line.split('\t').collect();
+        let (func, rm) = (t[0], mode(t[1]).expect("mode"));
+        let wr = want(t[2]);
+        let wi = want(t[3]);
+        let v = match func {
+            "c.elliptic_k" => m.elliptic_k(p, rm, &mut cc),
+            "c.elliptic_e_complete" => m.elliptic_e_complete(p, rm, &mut cc),
+            other => panic!("unexpected {other}"),
+        };
+        assert!(
+            same(v.re(), &wr),
+            "{func} {rm:?} re differs from the FLINT dest-p gold"
+        );
+        assert!(
+            same(v.im(), &wi),
+            "{func} {rm:?} im differs from the FLINT dest-p gold"
+        );
+    }
+}

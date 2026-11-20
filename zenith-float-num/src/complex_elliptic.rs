@@ -213,7 +213,10 @@ fn carlson_rf(
             .add(&z, p, rm())
             .div(&three, p, rm());
         let dmax = max_dev3(&an, &x, &y, &z, p);
-        let scale = max_abs(&c_abs(&an, p), &ExactNum::from_u8(1, p), p);
+        // Arb acb_elliptic_rf stops when (dmax/|A|)^order < 2^{-p}
+        // (rf.c: rel = max(|x-y|,|x-z|)/|x|). A floor of 1 on the
+        // denominator stops too early when |A|<1 and drops trailing bits.
+        let scale = c_abs(&an, p);
         let no_improve = k > 2
             && prev_d
                 .as_ref()
@@ -275,7 +278,10 @@ fn carlson_rd(
             .add(&three.mul(&z, p, rm()), p, rm())
             .div(&five, p, rm());
         let dmax = max_dev3(&an, &x, &y, &z, p);
-        let scale = max_abs(&c_abs(&an, p), &ExactNum::from_u8(1, p), p);
+        // Arb acb_elliptic_rf stops when (dmax/|A|)^order < 2^{-p}
+        // (rf.c: rel = max(|x-y|,|x-z|)/|x|). A floor of 1 on the
+        // denominator stops too early when |A|<1 and drops trailing bits.
+        let scale = c_abs(&an, p);
         let no_improve = k > 2
             && prev_d
                 .as_ref()
@@ -999,7 +1005,10 @@ fn carlson_rj_dupe(
             &c_abs(&ExactComplex::sub_ref(&am, &pv, p, rm()), p),
             p,
         );
-        let scale = max_abs(&c_abs(&am, p), &ExactNum::from_u8(1, p), p);
+        // Arb acb_elliptic_rf stops when (dmax/|A|)^order < 2^{-p}
+        // (rf.c: rel = max(|x-y|,|x-z|)/|x|). A floor of 1 on the
+        // denominator stops too early when |A|<1 and drops trailing bits.
+        let scale = c_abs(&am, p);
         let no_improve = k > 2
             && prev_d
                 .as_ref()
