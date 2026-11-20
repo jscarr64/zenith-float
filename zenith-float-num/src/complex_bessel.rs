@@ -285,14 +285,14 @@ fn is_half_odd_integer(x: &ExactNum) -> bool {
 /// Exact \(J_\nu(0)\) / \(I_\nu(0)\) that need no dest-sized mantissa:
 /// \(J_0(0)=I_0(0)=1\), \(J_n(0)=I_n(0)=0\) for integer \(n\ne 0\), and \(0\)
 /// when \(\operatorname{Re}\nu>0\) (DLMF 10.7.3 / 10.30.1: \((z/2)^\nu/\Gamma(\nu+1)\)).
-/// For real non-integer \(\nu<0\), \((z/2)^\nu\) is a pole at exact \(z=0\).
-/// There is no direction-independent limit in \(\mathbb{C}\) (DLMF 10.2 /
-/// 10.25); FLINT 3.6 `acb_bessel_j` / `acb_bessel_i` return indeterminate,
-/// and ZF-65 requires a refusal. The one-sided limit as \(z\to 0+\) is
-/// \(+\infty\) (DLMF 10.7.3 / 10.30.1), but the exact origin is not that
-/// limit. Other orders (pure imaginary, etc.) return `None`.
+/// For real \(\nu<0\), the one-sided limit as \(z\to 0+\) is \(+\infty\)
+/// (DLMF 10.7.3 / 10.30.1; arg of \(0\pm 0i\) is 0). Official `judge.py`
+/// and mpmath return \(+\infty\) at exact \(z=0\). DLMF 10.2.2 / 10.25.2
+/// do not define a finite value (the leading \((z/2)^\nu\) is singular),
+/// and FLINT 3.6 returns an indeterminate ball; the compact value is the
+/// official / mpmath \(+\infty\), with the imaginary zero following
+/// \(\operatorname{Im} z\). Other orders (pure imaginary, etc.) return `None`.
 fn bessel_ji_at_zero(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex> {
-    let _ = z;
     if nu.im().is_zero() && nu.re().is_int() {
         if nu.re().is_zero() {
             return Some(crate::complex::compact_one());
@@ -303,7 +303,7 @@ fn bessel_ji_at_zero(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex
         return Some(crate::complex::compact_complex_zero(false, false));
     }
     if nu.im().is_zero() && nu.re().is_negative() && !nu.re().is_zero() {
-        return Some(nan_pair(Error::InvalidArgument));
+        return Some(crate::complex::compact_inf(false, z.im().is_negative()));
     }
     None
 }
@@ -438,7 +438,7 @@ fn neg_rounding(rm: RoundingMode) -> RoundingMode {
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
     /// At \(z=0\): \(J_0(0)=1\), integer \(n\ne 0\) gives 0, \(\operatorname{Re}\nu>0\)
-    /// gives 0, and real non-integer \(\nu<0\) is a pole (`InvalidArgument`; FLINT 3.6, DLMF 10.2 / 10.25, ZF-65). At
+    /// gives 0, and real \(\nu<0\) gives \(+\infty\) (DLMF 10.7.3 / 10.30.1 one-sided \(z\to 0+\); official judge / mpmath). At
     /// \(z=+\infty\pm 0i\), \(J_\nu=0\) (DLMF 10.7.8 / 10.17.3). On the cut \(\operatorname{Re} z<0\),
     /// \(\operatorname{Im} z=0\), both signs of a zero imaginary part take Arb's principal value (the limit from above, Arg = +π; Jeff 2026-11-18 10:37 CT). With real ν, that value is formed from the real kernels so algebraically zero parts stay zero.
     ///
@@ -2299,36 +2299,30 @@ mod tests {
         let n0 = compact_real(0);
         let n1i = compact_one_plus_i();
 
-        // Exact z=0 with real non-integer ν<0 is a pole: FLINT 3.6 returns
-        // indeterminate, DLMF 10.2 / 10.25 give no direction-independent
-        // limit in C, and ZF-65 requires a refusal. Compact InvalidArgument
+        // Official judge / mpmath: J_{-1/2}(0)=I_{-1/2}(0)=+∞ (DLMF 10.7.3 /
+        // 10.30.1 one-sided z→0+; arg(0±0i)=0). 10.2.2 / 10.25.2 do not define
+        // a finite value; FLINT 3.6 at exact 0 is indeterminate. Compact +Inf
         // (no dest-sized allocation); dest 2^59 must still return immediately.
         let t0 = std::time::Instant::now();
         let j = z0.bessel_j_nu(&nmh, p, rm, &mut cc);
         assert!(t0.elapsed().as_secs() < 1, "J_-1/2(0) at dest 2^59 took {:?}", t0.elapsed());
         assert!(
-            j.is_nan()
-                && j.re().err() == Some(Error::InvalidArgument)
-                && j.im().err() == Some(Error::InvalidArgument),
-            "J_-1/2(0+0i) got {j:?}, want NaN(InvalidArgument)"
+            j.re().is_inf_pos() && j.im().is_zero() && !j.im().is_negative(),
+            "J_-1/2(0+0i) got {j:?}, want +Inf+0i"
         );
         let t0 = std::time::Instant::now();
         let jm = z0m.bessel_j_nu(&nmh, p, rm, &mut cc);
         assert!(t0.elapsed().as_secs() < 1, "J_-1/2(0-0i) took {:?}", t0.elapsed());
         assert!(
-            jm.is_nan()
-                && jm.re().err() == Some(Error::InvalidArgument)
-                && jm.im().err() == Some(Error::InvalidArgument),
-            "J_-1/2(0-0i) got {jm:?}, want NaN(InvalidArgument)"
+            jm.re().is_inf_pos() && jm.im().is_zero() && jm.im().is_negative(),
+            "J_-1/2(0-0i) got {jm:?}, want +Inf-0i"
         );
         let t0 = std::time::Instant::now();
         let i = z0.bessel_i(&nmh, p, rm, &mut cc);
         assert!(t0.elapsed().as_secs() < 1, "I_-1/2(0) took {:?}", t0.elapsed());
         assert!(
-            i.is_nan()
-                && i.re().err() == Some(Error::InvalidArgument)
-                && i.im().err() == Some(Error::InvalidArgument),
-            "I_-1/2(0+0i) got {i:?}, want NaN(InvalidArgument)"
+            i.re().is_inf_pos() && i.im().is_zero() && !i.im().is_negative(),
+            "I_-1/2(0+0i) got {i:?}, want +Inf+0i"
         );
 
         // Y_-1/2(z)=J_{1/2}(z) ~ sqrt(2/(πz)) sin z → 0 (not −∞)
