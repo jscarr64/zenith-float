@@ -3267,8 +3267,11 @@ fn zf_i100_z1000_toeven_128_matches_flint() {
 /// \(|\nu|^2\gtrsim|z|\), and `hankel_pq` used to stop at the first growing term and return
 /// that truncation (errors up to \(2^{148}\) relative). \(K\) past the switch also went through
 /// a \({}_2F_0\) Lentz step good to about 13 bits. Expected values are FLINT-certified
-/// (land39/zf58: all 224 ZF-58 rows, the 60-row complex probe, and the 25 sample rows that
-/// changed, 24 of them wrong before).
+/// Expected values are FLINT 3.6 correctly-rounded (python-flint 0.9.0, dest-p
+/// directed rounding; mpmath cross-check of complex midpoints). 7ca563a copied
+/// implementation output (`land39/zf58/cx-new.tsv`, `out-new.tsv`) and accepted
+/// it with a 2-ULP mpmath relative check (`land39/run/mpcx.py`); 17 of those
+/// golds were 1–2 ULP stale or held an algebraically-zero leaked part.
 #[test]
 fn zf_58_kelvin_and_complex_bessel_large_order() {
     let mut cc = Consts::new().expect("Consts");
