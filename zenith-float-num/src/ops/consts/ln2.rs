@@ -73,78 +73,23 @@ fn bsplit(a: usize, b: usize, cont: bool) -> (ExactInt, ExactInt, ExactInt) {
     (p, q, t)
 }
 
-/// FLINT `flint_parallel_binary_splitting` basecase length (exact fmpz
-/// interval, then truncated `arb` merges at dest precision).
-const BSPLIT_BASECASE: usize = 4;
-
-/// Convert a basecase integer at its natural width, capped at `wp`.
-/// FLINT's `arb_set_fmpz` keeps the short midpoint; forcing dest `wp`
-/// here would inflate every later merge to a full-width multiply.
-fn int_to_wp(x: &ExactInt, wp: usize) -> Result<ExactNumNumber, Error> {
-    let bits = x.bit_length().max(1).min(wp);
-    x.to_exact_num_number(bits, RoundingMode::None)
-}
-
-fn cap_wp(mut x: ExactNumNumber, wp: usize) -> Result<ExactNumNumber, Error> {
-    if x.mantissa_max_bit_len() > wp {
-        x.set_precision(wp, RoundingMode::None)?;
-    }
-    Ok(x)
-}
-
-/// Exact product, then cap at `wp` (FLINT `arb_mul(..., prec)` on short midpoints).
-fn mul_cap(a: &ExactNumNumber, b: &ExactNumNumber, wp: usize) -> Result<ExactNumNumber, Error> {
-    cap_wp(a.mul_full_prec(b)?, wp)
-}
-
-fn add_cap(a: &ExactNumNumber, b: &ExactNumNumber, wp: usize) -> Result<ExactNumNumber, Error> {
-    let p = a
-        .mantissa_max_bit_len()
-        .max(b.mantissa_max_bit_len())
-        .saturating_add(2)
-        .min(wp);
-    cap_wp(a.add(b, p, RoundingMode::None)?, wp)
-}
-
-/// Hybrid bsplit: exact `ExactInt` on short intervals, then merges at the
-/// natural operand width, capped at `wp`.
-fn bsplit_num(
-    a: usize,
-    b: usize,
-    cont: bool,
-    wp: usize,
-) -> Result<(ExactNumNumber, ExactNumNumber, ExactNumNumber), Error> {
-    if b - a < BSPLIT_BASECASE {
-        let (p, q, t) = bsplit(a, b, cont);
-        return Ok((int_to_wp(&p, wp)?, int_to_wp(&q, wp)?, int_to_wp(&t, wp)?));
-    }
-    let m = a + (b - a) / 2;
-    let (p1, q1, t1) = bsplit_num(a, m, true, wp)?;
-    let (p2, q2, t2) = bsplit_num(m, b, true, wp)?;
-    // T = T1 Q2 + P1 T2
-    let t = add_cap(&mul_cap(&t1, &q2, wp)?, &mul_cap(&p1, &t2, wp)?, wp)?;
-    let q = mul_cap(&q1, &q2, wp)?;
-    let p = if cont {
-        mul_cap(&p1, &p2, wp)?
-    } else {
-        ExactNumNumber::from_word(0, WORD_BIT_SIZE)?
-    };
-    Ok((p, q, t))
-}
-
 fn eval_log2(k: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
-    // Working precision: FLINT uses `prec += CLOG2(prec)`; we add
-    // eight words so O(log n) truncated merges still correctly round
-    // to `k` (the 3200-bit ToEven gold is the check).
+    // Exact ExactInt bsplit of the hypgeom series, then one division at
+    // `wp = k + extra_bits(k) + 2 words`. Truncating intermediate merges at
+    // dest precision (FLINT can, because `arb` carries a radius) dropped
+    // low bits of the ExactNum midpoint from p=4096 upward: a fresh 4096-bit
+    // ToEven agreed with FLINT in only 2495 bits, and cache reuse of an
+    // 8192-bit fill produced a different 4096-bit value.
     let wp = k
         .saturating_add(extra_bits(k))
-        .saturating_add(8 * WORD_BIT_SIZE);
+        .saturating_add(2 * WORD_BIT_SIZE);
     let n = hypgeom_term_count(wp);
-    let (_p, q, t) = bsplit_num(0, n, false, wp)?;
+    let (_p, q, t) = bsplit(0, n, false);
     // ln2 = T / (Q * 2160)
-    let c2160 = ExactNumNumber::from_word(2160, WORD_BIT_SIZE)?;
-    let q2160 = mul_cap(&q, &c2160, wp)?;
-    let mut val = t.div(&q2160, wp, RoundingMode::None)?;
+    let q2160 = q.mul_u64(2160);
+    let t_num = t.to_exact_num_number(wp, RoundingMode::None)?;
+    let q_num = q2160.to_exact_num_number(wp, RoundingMode::None)?;
+    let mut val = t_num.div(&q_num, wp, RoundingMode::None)?;
     val.set_precision(k, rm)?;
     Ok(val)
 }
@@ -339,6 +284,124 @@ mod tests {
         assert!(
             bits >= (p as i32) - 4 || d.is_zero(),
             "public ln(2) vs cache only {bits} bits"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_ln2_matches_flint_at_row_working_precisions() -> Result<(), crate::Error> {
+        // FLINT 3.6 / python-flint 0.9.0 `arb.const_log2` ToEven midpoints.
+        // At 07d6ee8 a fresh p=4096 cache agreed with FLINT in only 2495 of 4096
+        // bits; p=8192 in 3909 of 8192. p=2048 and the 3200-bit gold still matched.
+        // Filling at 8192 and then reading 4096 produced a different 4096 midpoint.
+        const LN2_2048: [u64; 32] = [
+            6868188547772629387, 544780923660251931, 12551880549572046001,
+            10762848267602590621, 884968683061185836, 526276848443620003,
+            7682155296647843458, 2695012071269245751, 5483728532390938973,
+            14757256277160841548, 14502689430025391411, 1677036114017882341,
+            9020186540394984342, 17174087324730849813, 6993299640500441506,
+            573305231163259792, 15721388746840462790, 7304734722601575330,
+            17717062790720533064, 8272698762445801674, 2697551639276418891,
+            13396691306361020475, 1930876632637913214, 4510014273271556293,
+            2834799538024855589, 17090789181815791940, 6166926504001936144,
+            16697225500131306648, 9947632833883994667, 4680158270178506285,
+            14547668686819489455, 12786308645202655659,
+        ];
+        {
+            let mut ln2 = Ln2Cache::new()?;
+            let c = ln2.for_prec(2048, RoundingMode::ToEven)?;
+            let r = ExactNumNumber::from_raw_parts(&LN2_2048, 2048, Sign::Pos, 0, false)?;
+            assert!(c.cmp(&r) == 0, "ln2 ToEven p=2048 disagrees with FLINT arb.const_log2");
+        }
+        const LN2_4096: [u64; 64] = [
+            1683981977765195225, 17328443938231695182, 10333551285590722846,
+            14901130174119031709, 6876852507673314734, 7802240711941756352,
+            10893311997856554306, 770416509291317028, 5131894646154344633,
+            7044027212584627901, 1544185093073130979, 10743412093895996551,
+            15520009427689038954, 17235008467383040344, 3082069754683924604,
+            6283537028398873861, 27272943683312140, 7067101201094214402,
+            414657537012126457, 3954207892741588665, 845294622150838770,
+            4765234938047111433, 6814547362189857733, 7039123212900017103,
+            2777133410944596354, 10191454057530328917, 11633523313888349945,
+            4944993435491556494, 10868565595481147547, 6156621654544259124,
+            8473700360670835694, 5554677440240256317, 6868188547772629387,
+            544780923660251931, 12551880549572046001, 10762848267602590621,
+            884968683061185836, 526276848443620003, 7682155296647843458,
+            2695012071269245751, 5483728532390938973, 14757256277160841548,
+            14502689430025391411, 1677036114017882341, 9020186540394984342,
+            17174087324730849813, 6993299640500441506, 573305231163259792,
+            15721388746840462790, 7304734722601575330, 17717062790720533064,
+            8272698762445801674, 2697551639276418891, 13396691306361020475,
+            1930876632637913214, 4510014273271556293, 2834799538024855589,
+            17090789181815791940, 6166926504001936144, 16697225500131306648,
+            9947632833883994667, 4680158270178506285, 14547668686819489455,
+            12786308645202655659,
+        ];
+        {
+            let mut ln2 = Ln2Cache::new()?;
+            let c = ln2.for_prec(4096, RoundingMode::ToEven)?;
+            let r = ExactNumNumber::from_raw_parts(&LN2_4096, 4096, Sign::Pos, 0, false)?;
+            assert!(c.cmp(&r) == 0, "ln2 ToEven p=4096 disagrees with FLINT arb.const_log2");
+        }
+        const LN2_8192: [u64; 128] = [
+            15380334151373072787, 4853205709837468559, 15180201254144669436,
+            17191618767403771779, 13472633007291745206, 10988803879252100845,
+            9982350292508439189, 16357665146209626244, 2126312375026411415,
+            9596014020852838733, 6526060948148440112, 3782886268850496926,
+            4616937463712423083, 16094152992545075298, 12767136170006353273,
+            9276362124443397780, 12640865662083758843, 1888533448826022573,
+            17947010181381825034, 14510358373783844601, 18009594371835691210,
+            7908467908886976714, 7496286798650120630, 7083903438220296811,
+            8351280926043609319, 13918765735208938155, 3122446419593954965,
+            10365386762090731137, 17498909157122127143, 2006951244055174130,
+            1919935605167611636, 15477994348553254657, 12399739463684142264,
+            1348239583426777193, 11804095110535545172, 15087814138645664243,
+            9540087343598882522, 13220844354109900748, 12504881928627991056,
+            8062879900679745266, 9859934660139290250, 2363745270234817426,
+            1508931925449069755, 5123958331046668426, 1081491877773245656,
+            17372500941954464729, 3732979913381928924, 1534707341129152403,
+            6042401607091599235, 15801603969349931038, 13704111861162178889,
+            912248912980489244, 6146010341962107392, 18089963405297836044,
+            17180678772125609222, 3913447253483908143, 9906293889306082463,
+            5956911102215554104, 444478003528123916, 4514934080037916381,
+            7216354388686325020, 14259934078564861152, 13885076065611555834,
+            9645420332068748557, 1683981977765195224, 17328443938231695182,
+            10333551285590722846, 14901130174119031709, 6876852507673314734,
+            7802240711941756352, 10893311997856554306, 770416509291317028,
+            5131894646154344633, 7044027212584627901, 1544185093073130979,
+            10743412093895996551, 15520009427689038954, 17235008467383040344,
+            3082069754683924604, 6283537028398873861, 27272943683312140,
+            7067101201094214402, 414657537012126457, 3954207892741588665,
+            845294622150838770, 4765234938047111433, 6814547362189857733,
+            7039123212900017103, 2777133410944596354, 10191454057530328917,
+            11633523313888349945, 4944993435491556494, 10868565595481147547,
+            6156621654544259124, 8473700360670835694, 5554677440240256317,
+            6868188547772629387, 544780923660251931, 12551880549572046001,
+            10762848267602590621, 884968683061185836, 526276848443620003,
+            7682155296647843458, 2695012071269245751, 5483728532390938973,
+            14757256277160841548, 14502689430025391411, 1677036114017882341,
+            9020186540394984342, 17174087324730849813, 6993299640500441506,
+            573305231163259792, 15721388746840462790, 7304734722601575330,
+            17717062790720533064, 8272698762445801674, 2697551639276418891,
+            13396691306361020475, 1930876632637913214, 4510014273271556293,
+            2834799538024855589, 17090789181815791940, 6166926504001936144,
+            16697225500131306648, 9947632833883994667, 4680158270178506285,
+            14547668686819489455, 12786308645202655659,
+        ];
+        {
+            let mut ln2 = Ln2Cache::new()?;
+            let c = ln2.for_prec(8192, RoundingMode::ToEven)?;
+            let r = ExactNumNumber::from_raw_parts(&LN2_8192, 8192, Sign::Pos, 0, false)?;
+            assert!(c.cmp(&r) == 0, "ln2 ToEven p=8192 disagrees with FLINT arb.const_log2");
+        }
+        // Cache reuse must not change a lower ToEven request.
+        let mut reuse = Ln2Cache::new()?;
+        let _ = reuse.for_prec(8192, RoundingMode::ToEven)?;
+        let c = reuse.for_prec(4096, RoundingMode::ToEven)?;
+        let r = ExactNumNumber::from_raw_parts(&LN2_4096, 4096, Sign::Pos, 0, false)?;
+        assert!(
+            c.cmp(&r) == 0,
+            "ln2 ToEven p=4096 after an 8192 fill disagrees with FLINT"
         );
         Ok(())
     }
