@@ -1,137 +1,191 @@
-// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Derived from FLINT 3.6 `arb_const_log2` (Fredrik Johansson, LGPL-3.0-or-later)
+// and, for the cache wrapper, astro-float (https://github.com/stencillogic/astro-float),
 // Copyright (c) 2022 stencillogic, MIT License.
-//! ln(2)
+//! ln(2) by the FLINT 3.6 `arb_const_log2` hypergeometric series, cached.
 
-use crate::common::consts::ONE;
-use crate::common::consts::THREE;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
 use crate::defs::Error;
+use crate::integer::ExactInt;
 use crate::num::ExactNumNumber;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 
-fn pqr(a: usize, b: usize) -> Result<(ExactNumNumber, ExactNumNumber, ExactNumNumber), Error> {
-    if a == b - 1 {
-        let p = ExactNumNumber::from_word(1, 1)?;
-        let q = ExactNumNumber::from_usize((2 * b + 1) * 9)?;
-        let r = ExactNumNumber::from_usize(2 * b + 1)?;
-
-        Ok((p, q, r))
+/// `log2(3888) > 11.92`. Using 11 over-estimates the term count.
+fn extra_bits(prec: usize) -> usize {
+    if prec >= 2 {
+        prec.ilog2() as usize + 1
     } else {
-        let m = (a + b) / 2;
-
-        let (pa, qa, ra) = pqr(a, m)?;
-        let (pb, qb, rb) = pqr(m, b)?;
-
-        let pq = pa.mul_full_prec(&qb)?;
-        let pr = pb.mul_full_prec(&ra)?;
-
-        let p = pq.add_full_prec(&pr)?;
-        let q = qa.mul_full_prec(&qb)?;
-        let r = ra.mul_full_prec(&rb)?;
-
-        Ok((p, q, r))
+        1
     }
 }
 
-fn pqr_inc(
-    pa: &ExactNumNumber,
-    qa: &ExactNumNumber,
-    ra: &ExactNumNumber,
-    m: usize,
-) -> Result<(ExactNumNumber, ExactNumNumber, ExactNumNumber, usize), Error> {
-    let b = m * 2;
-
-    let (pb, qb, rb) = pqr(m, b)?;
-
-    let pq = pa.mul_full_prec(&qb)?;
-    let pr = pb.mul_full_prec(ra)?;
-
-    let p_ret = pq.add_full_prec(&pr)?;
-    let q_ret = qa.mul_full_prec(&qb)?;
-    let r_ret = ra.mul_full_prec(&rb)?;
-
-    Ok((p_ret, q_ret, r_ret, b))
+fn hypgeom_term_count(prec: usize) -> usize {
+    let wp = prec.saturating_add(extra_bits(prec)).saturating_add(64);
+    wp.div_ceil(11).saturating_add(16)
 }
 
-/// Holds value of currently computed ln(2).
+fn eval_a(n: u64) -> ExactInt {
+    // A(n) = 1497 + 1794 n
+    ExactInt::from_u64(1497).add(&ExactInt::from_u64(1794).mul_u64(n))
+}
+
+fn eval_p(n: u64) -> ExactInt {
+    // P(n) = n (2n - 1)  (FLINT "3  0 -1 2")
+    let nn = ExactInt::from_u64(n);
+    nn.mul(&nn.mul_u64(2).sub(&ExactInt::one()))
+}
+
+fn eval_q(n: u64) -> ExactInt {
+    // Q(n) = 7776 n^2 + 7776 n + 1080  (FLINT "3  1080 7776 7776")
+    let nn = ExactInt::from_u64(n);
+    let n2 = nn.mul(&nn);
+    n2.mul_u64(7776).add(&nn.mul_u64(7776)).add(&ExactInt::from_u64(1080))
+}
+
+/// Binary split of the FLINT `arb_const_log2_hypgeom` series on raw `ExactInt`.
+/// `B = 1` identically, so it is omitted. Returns `(P, Q, T)`.
+fn bsplit(a: usize, b: usize, cont: bool) -> (ExactInt, ExactInt, ExactInt) {
+    if b - a == 1 {
+        if a == 0 {
+            let p = ExactInt::one();
+            let q = ExactInt::one();
+            let t = eval_a(0); // T = A(0) * P(0) = 1497
+            return (p, q, t);
+        }
+        let n = a as u64;
+        let p = eval_p(n);
+        let q = eval_q(n);
+        let t = eval_a(n).mul(&p);
+        return (p, q, t);
+    }
+    let m = a + (b - a) / 2;
+    let (p1, q1, t1) = bsplit(a, m, true);
+    let (p2, q2, t2) = bsplit(m, b, true);
+    // T = T1 Q2 + P1 T2
+    let t = t1.mul(&q2).add(&p1.mul(&t2));
+    let q = q1.mul(&q2);
+    let p = if cont {
+        p1.mul(&p2)
+    } else {
+        ExactInt::zero()
+    };
+    (p, q, t)
+}
+
+/// FLINT `flint_parallel_binary_splitting` basecase length (exact fmpz
+/// interval, then truncated `arb` merges at dest precision).
+const BSPLIT_BASECASE: usize = 4;
+
+/// Convert a basecase integer at its natural width, capped at `wp`.
+/// FLINT's `arb_set_fmpz` keeps the short midpoint; forcing dest `wp`
+/// here would inflate every later merge to a full-width multiply.
+fn int_to_wp(x: &ExactInt, wp: usize) -> Result<ExactNumNumber, Error> {
+    let bits = x.bit_length().max(1).min(wp);
+    x.to_exact_num_number(bits, RoundingMode::None)
+}
+
+fn cap_wp(mut x: ExactNumNumber, wp: usize) -> Result<ExactNumNumber, Error> {
+    if x.mantissa_max_bit_len() > wp {
+        x.set_precision(wp, RoundingMode::None)?;
+    }
+    Ok(x)
+}
+
+/// Exact product, then cap at `wp` (FLINT `arb_mul(..., prec)` on short midpoints).
+fn mul_cap(a: &ExactNumNumber, b: &ExactNumNumber, wp: usize) -> Result<ExactNumNumber, Error> {
+    cap_wp(a.mul_full_prec(b)?, wp)
+}
+
+fn add_cap(a: &ExactNumNumber, b: &ExactNumNumber, wp: usize) -> Result<ExactNumNumber, Error> {
+    let p = a
+        .mantissa_max_bit_len()
+        .max(b.mantissa_max_bit_len())
+        .saturating_add(2)
+        .min(wp);
+    cap_wp(a.add(b, p, RoundingMode::None)?, wp)
+}
+
+/// Hybrid bsplit: exact `ExactInt` on short intervals, then merges at the
+/// natural operand width, capped at `wp`.
+fn bsplit_num(
+    a: usize,
+    b: usize,
+    cont: bool,
+    wp: usize,
+) -> Result<(ExactNumNumber, ExactNumNumber, ExactNumNumber), Error> {
+    if b - a < BSPLIT_BASECASE {
+        let (p, q, t) = bsplit(a, b, cont);
+        return Ok((int_to_wp(&p, wp)?, int_to_wp(&q, wp)?, int_to_wp(&t, wp)?));
+    }
+    let m = a + (b - a) / 2;
+    let (p1, q1, t1) = bsplit_num(a, m, true, wp)?;
+    let (p2, q2, t2) = bsplit_num(m, b, true, wp)?;
+    // T = T1 Q2 + P1 T2
+    let t = add_cap(&mul_cap(&t1, &q2, wp)?, &mul_cap(&p1, &t2, wp)?, wp)?;
+    let q = mul_cap(&q1, &q2, wp)?;
+    let p = if cont {
+        mul_cap(&p1, &p2, wp)?
+    } else {
+        ExactNumNumber::from_word(0, WORD_BIT_SIZE)?
+    };
+    Ok((p, q, t))
+}
+
+fn eval_log2(k: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
+    // Working precision: FLINT uses `prec += CLOG2(prec)`; we add
+    // eight words so O(log n) truncated merges still correctly round
+    // to `k` (the 3200-bit ToEven gold is the check).
+    let wp = k
+        .saturating_add(extra_bits(k))
+        .saturating_add(8 * WORD_BIT_SIZE);
+    let n = hypgeom_term_count(wp);
+    let (_p, q, t) = bsplit_num(0, n, false, wp)?;
+    // ln2 = T / (Q * 2160)
+    let c2160 = ExactNumNumber::from_word(2160, WORD_BIT_SIZE)?;
+    let q2160 = mul_cap(&q, &c2160, wp)?;
+    let mut val = t.div(&q2160, wp, RoundingMode::None)?;
+    val.set_precision(k, rm)?;
+    Ok(val)
+}
+
+/// Holds the currently computed ln(2).
 #[derive(Debug)]
 pub struct Ln2Cache {
-    b: usize,
-    pk: ExactNumNumber,
-    qk: ExactNumNumber,
-    rk: ExactNumNumber,
     val: ExactNumNumber,
 }
 
 impl Ln2Cache {
     pub fn new() -> Result<Self, Error> {
-        let (p01, q01, r01) = pqr(0, 1)?;
-
-        // 2 * (1 + p / q) / 3
-        let prec = p01.mantissa_max_bit_len().max(q01.mantissa_max_bit_len());
-        let mut val = p01.div(&q01, prec, crate::RoundingMode::None)?;
-        val = val.add(&ONE, prec, crate::RoundingMode::None)?;
-        val = val.div(&THREE, prec, crate::RoundingMode::None)?;
-        val.set_exponent(val.exponent() + 1);
-
         Ok(Ln2Cache {
-            b: 1,
-            pk: p01,
-            qk: q01,
-            rk: r01,
-            val,
+            val: eval_log2(WORD_BIT_SIZE, RoundingMode::ToEven)?,
         })
     }
 
-    /// Bits currently stored in the series cache.
+    /// Bits currently stored in the cache.
     pub(crate) fn cached_bit_len(&self) -> usize {
         self.val.mantissa_max_bit_len()
     }
 
-    /// Return value of ln(2) with precision k (calculate if needed).
+    /// Return ln(2) with precision `k` (compute if the cache is short).
     pub(crate) fn for_prec(&mut self, k: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = round_p(k) + p_inc;
 
         loop {
-            let kext = k / 2 + 4;
-
-            if self.b > kext {
+            if self.val.mantissa_max_bit_len() >= p_wrk {
                 let mut ret = self.val.clone()?;
-
                 if ret.try_set_precision(k, rm, p_wrk)? {
                     return Ok(ret);
                 }
-
-                bump_prec_retry(&mut p_wrk, &mut p_inc, k)?;
+            } else {
+                self.val = eval_log2(p_wrk, RoundingMode::None)?;
+                let mut ret = self.val.clone()?;
+                if ret.try_set_precision(k, rm, p_wrk)? {
+                    return Ok(ret);
+                }
             }
-
-            let mut pk;
-            let mut qk;
-            let mut rk;
-            let mut bb;
-
-            (pk, qk, rk, bb) = pqr_inc(&self.pk, &self.qk, &self.rk, self.b)?;
-
-            while bb <= kext {
-                (pk, qk, rk, bb) = pqr_inc(&pk, &qk, &rk, bb)?;
-            }
-
-            // 2 * (1 + p / q) / 3
-            let prec = pk.mantissa_max_bit_len().max(qk.mantissa_max_bit_len());
-            let mut ret = pk.div(&qk, prec, crate::RoundingMode::None)?;
-            ret = ret.add(&ONE, prec, crate::RoundingMode::None)?;
-            ret = ret.div(&THREE, prec, crate::RoundingMode::None)?;
-            ret.set_exponent(ret.exponent() + 1);
-
-            self.val = ret;
-
-            self.pk = pk;
-            self.qk = qk;
-            self.rk = rk;
-            self.b = bb;
+            bump_prec_retry(&mut p_wrk, &mut p_inc, k)?;
         }
     }
 }
@@ -241,6 +295,87 @@ mod tests {
             false,
         )?;
         assert!(c.cmp(&r) == 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_ln2_hypgeom_matches_published_digits() -> Result<(), crate::Error> {
+        // OEIS A002162 prefix of ln(2), well past dest p = 3200 bits (~964 decimal digits
+        // would be needed; 120 digits here cover p <= 384). The existing 3200-bit
+        // from_raw_parts gold remains the high-precision check.
+        const DEC: &str = "0.693147180559945309417232121458176568075500134360255254120680009493393621969694715605863326996418687542001481020917637245";
+        let mut cache = Ln2Cache::new()?;
+        let mut cc = crate::Consts::new()?;
+        for p in [64usize, 128, 256] {
+            let got: crate::ExactNum = cache.for_prec(p, RoundingMode::ToEven)?.into();
+            let want = crate::ExactNum::parse(
+                DEC,
+                crate::Radix::Dec,
+                p.saturating_add(64),
+                RoundingMode::ToEven,
+                &mut cc,
+            );
+            let d = crate::ExactNum::sub_ref(&got, &want, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
+            assert!(
+                bits >= (p as i32) - 4 || d.is_zero(),
+                "ln2 cache p={p} only {bits} bits vs published digits"
+            );
+        }
+        // Public ln(2) must hit the power-of-two path and match the cache.
+        let p = 256usize;
+        let public = crate::ExactNum::from_u8(2, p).ln(p, RoundingMode::ToEven, &mut cc);
+        let cached: crate::ExactNum = cache.for_prec(p, RoundingMode::ToEven)?.into();
+        let d = crate::ExactNum::sub_ref(&public, &cached, p, RoundingMode::None).abs();
+        let bits = if d.is_zero() {
+            10_000
+        } else {
+            (cached.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+        };
+        assert!(
+            bits >= (p as i32) - 4 || d.is_zero(),
+            "public ln(2) vs cache only {bits} bits"
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "profiles ln2 vs FLINT; run with --ignored --release"]
+    fn time_ln2_hypgeom_vs_flint() -> Result<(), crate::Error> {
+        use std::hint::black_box;
+        use std::time::Instant;
+        let rm = RoundingMode::ToEven;
+        for prec in [4096usize, 16384, 65536] {
+            let t0 = Instant::now();
+            let mut cache = Ln2Cache::new()?;
+            let _ = cache.for_prec(prec, rm)?;
+            let cold_ms = t0.elapsed().as_secs_f64() * 1e3;
+            let t0 = Instant::now();
+            let n = 8u32;
+            for _ in 0..n {
+                black_box(cache.for_prec(prec, rm)?);
+            }
+            let warm_ms = t0.elapsed().as_secs_f64() * 1e3 / f64::from(n);
+            let mut cc = crate::Consts::new()?;
+            let _ = cc.ln_2(prec, rm); // warm the Consts cache
+            let two = crate::ExactNum::from_u8(2, prec);
+            let t0 = Instant::now();
+            for _ in 0..n {
+                black_box(two.ln(prec, rm, &mut cc));
+            }
+            let pub_ms = t0.elapsed().as_secs_f64() * 1e3 / f64::from(n);
+            let t0 = Instant::now();
+            let mut cc2 = crate::Consts::new()?;
+            let _ = crate::ExactNum::from_u8(2, prec).ln(prec, rm, &mut cc2);
+            let pub_cold_ms = t0.elapsed().as_secs_f64() * 1e3;
+            eprintln!(
+                "ZF  ln2 p={prec}: cold_cache={cold_ms:.4} ms  warm_cache={warm_ms:.4} ms  public_warm={pub_ms:.4} ms  public_cold={pub_cold_ms:.4} ms"
+            );
+        }
         Ok(())
     }
 }

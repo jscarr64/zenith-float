@@ -149,6 +149,38 @@ impl ExactNumNumber {
             return Self::new2(p, Sign::Pos, self.inexact());
         }
 
+        // Powers of two: ln(2^{e-1}) = (e-1) ln 2. FLINT returns the
+        // cached `arb_const_log2` for log(2) and a multiple for other
+        // dyadic powers, instead of a full Newton/series pass on the
+        // mantissa (which for 2 is 0.5 after the exponent is cleared).
+        let set_bits: u32 = m.mantissa().digits().iter().map(|w| w.count_ones()).sum();
+        if set_bits == 1 {
+            if e == 1 {
+                return Self::new2(p, Sign::Pos, self.inexact());
+            }
+            // e == 2 is exactly the cached constant, already ziv-rounded.
+            if e == 2 {
+                let mut ret = cc.ln_2_num(p, rm)?;
+                ret.set_inexact(ret.inexact() | self.inexact());
+                return Ok(ret);
+            }
+            let mut p_inc = WORD_BIT_SIZE;
+            let mut p_wrk = p + p_inc;
+            loop {
+                let ln2 = cc.ln_2_num(p_wrk, RoundingMode::None)?;
+                let mut n = Self::exp_magnitude(e - 1)?;
+                if e < 1 {
+                    n.set_sign(Sign::Neg);
+                }
+                let mut ret = ln2.mul(&n, p_wrk, RoundingMode::None)?;
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(ret.inexact() | self.inexact());
+                    return Ok(ret);
+                }
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            }
+        }
+
         // FLINT arb_log_newton near-1 short series: |x-1| < 2^{-p/16}.
         if self.ln_is_near_one(p)? {
             let mut p_inc = WORD_BIT_SIZE;
