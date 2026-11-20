@@ -1,12 +1,16 @@
 //! Arb/Flint variable-order Carlson Taylor sums for complex \(R_F\) and \(R_J\).
 //!
 //! Faithful port of `acb_elliptic_rf_taylor_sum` and
-//! `acb_elliptic_rj_taylor_sum` (FLINT 3.6.0). Used so the duplication
+//! `acb_elliptic_rj_taylor_sum` (FLINT 3.6.0), except that the unused
+//! trailing `d` update in the R_F `x`-loop is skipped: that step is not
+//! exact, and FLINT's `fmpz_divexact_ui` ignores the remainder. Used so the duplication
 //! loops can stop when \((\mathrm{rel})^{order} < 2^{-p}\) with
 //! \(order \sim p^{1/3}\) to \(p^{2/5}\), instead of waiting for a
 //! deviation of \(2^{-(p/3+16)}\) that forces \(\sim p/6\) iterations.
 
 use super::*;
+use crate::complex_special::nan_pair;
+use crate::Error;
 use crate::ExactInt;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -85,10 +89,19 @@ fn int_from_u(n: u64) -> ExactInt {
     ExactInt::from_u64(n)
 }
 
-fn divexact_u(a: &ExactInt, d: u64) -> ExactInt {
+/// Exact `a / d`. `None` if `d` does not divide `a`.
+/// Never returns a truncated (wrong) quotient. FLINT's
+/// `fmpz_divexact_ui` ignores a nonzero remainder (truncating `idiv`
+/// for small fmpz; `mpz_divexact_ui` is undefined). A failed exact
+/// division is a checked error: the Taylor sum returns a typed NaN
+/// (`InvalidArgument`) instead of a wrong coefficient.
+fn try_divexact_u(a: &ExactInt, d: u64) -> Option<ExactInt> {
     let (q, r) = a.div_rem(&int_from_u(d)).expect("nonzero divisor");
-    debug_assert!(r.is_zero(), "divexact remainder");
-    q
+    if r.is_zero() {
+        Some(q)
+    } else {
+        None
+    }
 }
 
 fn mul_u(a: &ExactInt, d: u64) -> ExactInt {
@@ -198,6 +211,11 @@ pub(super) fn rel_pow_below_prec(
 
 /// Arb `acb_elliptic_rf_taylor_sum`. Returns the series without the final \(A^{-1/2}\).
 pub(super) fn rf_taylor_sum(e2: &ExactComplex, e3: &ExactComplex, nterms: usize, p: usize) -> ExactComplex {
+    rf_taylor_sum_checked(e2, e3, nterms, p)
+        .unwrap_or_else(|| nan_pair(Error::InvalidArgument))
+}
+
+fn rf_taylor_sum_checked(e2: &ExactComplex, e3: &ExactComplex, nterms: usize, p: usize) -> Option<ExactComplex> {
     let nterms = nterms.clamp(1, 500);
     let nmax = nterms - 1;
     let ymax = nmax / 3;
@@ -215,34 +233,45 @@ pub(super) fn rf_taylor_sum(e2: &ExactComplex, e3: &ExactComplex, nterms: usize,
     let mut c = den.clone();
     for y in 0..ymax {
         c = mul_u(&c, (2 * y + 1) as u64);
-        c = divexact_u(&c, (2 * y + 2) as u64);
+        c = try_divexact_u(&c, (2 * y + 2) as u64)?;
     }
     let mut res = ExactComplex::zero(p);
     for y in (0..=ymax).rev() {
         if y != ymax {
             c = mul_u(&c, (2 * y + 2) as u64);
-            c = divexact_u(&c, (2 * y + 1) as u64);
+            c = try_divexact_u(&c, (2 * y + 1) as u64)?;
         }
         let mut d = c.clone();
         let mut s = ExactComplex::zero(p);
         for x in 0..=xmax {
             let n = 2 * x + 3 * y;
             if n <= nmax {
-                let mut e = divexact_u(&d, (2 * n + 1) as u64);
+                let mut e = try_divexact_u(&d, (2 * n + 1) as u64)?;
                 if x % 2 == 1 {
                     e = e.neg();
                 }
                 if x != 0 || y != 0 {
                     s = addmul_int(s, &e2pow[x], &e, p);
                 }
-                d = mul_u(&d, (2 * x + 2 * y + 1) as u64);
-                d = divexact_u(&d, (2 * x + 2) as u64);
+                // FLINT always updates `d` here, including after the last
+                // used `x` for this `y`. That trailing step is unused and
+                // is not exact (nmax=21: 317246823152966183226750 / 20
+                // remainder 10). FLINT's `fmpz_divexact_ui` ignores the
+                // remainder. The R_J port already skips the matching
+                // trailing `c2`/`c3` updates (`m2 < m2start`). Skip the
+                // unused step so every remaining `divexact` is exact for
+                // nmax in 0..=499 (the clamp).
+                let next_n = 2 * (x + 1) + 3 * y;
+                if next_n <= nmax {
+                    d = mul_u(&d, (2 * x + 2 * y + 1) as u64);
+                    d = try_divexact_u(&d, (2 * x + 2) as u64)?;
+                }
             }
         }
         res = res.mul(e3, p, rm()).add(&s, p, rm());
     }
     let den_c = ExactComplex::from_real(den.to_exact_num(p, rm()), p);
-    res.div(&den_c, p, rm()).add(&c_u32(1, p), p, rm())
+    Some(res.div(&den_c, p, rm()).add(&c_u32(1, p), p, rm()))
 }
 
 fn rj_fdiv(x: i32, y: i32) -> i32 {
@@ -262,6 +291,18 @@ pub(super) fn rj_taylor_sum(
     nterms: usize,
     p: usize,
 ) -> ExactComplex {
+    rj_taylor_sum_checked(e2, e3, e4, e5, nterms, p)
+        .unwrap_or_else(|| nan_pair(Error::InvalidArgument))
+}
+
+fn rj_taylor_sum_checked(
+    e2: &ExactComplex,
+    e3: &ExactComplex,
+    e4: &ExactComplex,
+    e5: &ExactComplex,
+    nterms: usize,
+    p: usize,
+) -> Option<ExactComplex> {
     let nterms = nterms.clamp(1, 500);
     let nmax = nterms as i32 - 1;
     let m2dim = (nmax / 2 + 1) as usize;
@@ -295,20 +336,20 @@ pub(super) fn rj_taylor_sum(
     let m5start = (nmax / 5) as usize;
     for m5 in 0..m5start {
         c5 = mul_u(&c5, (2 * m5 + 1) as u64);
-        c5 = divexact_u(&c5, (2 * m5 + 2) as u64);
+        c5 = try_divexact_u(&c5, (2 * m5 + 2) as u64)?;
     }
     let mut s5 = ExactComplex::zero(p);
     for m5 in (0..=m5start).rev() {
         let m4start = rj_fdiv(nmax - 5 * m5 as i32, 4);
         if m5 != m5start {
             c5 = mul_u(&c5, (2 * m5 + 2) as u64);
-            c5 = divexact_u(&c5, (2 * m5 + 1) as u64);
+            c5 = try_divexact_u(&c5, (2 * m5 + 1) as u64)?;
         }
         let mut c4 = c5.clone();
         if m4start > 0 {
             for m4 in 0..m4start as usize {
                 c4 = mul_u(&c4, (2 * m5 + 2 * m4 + 1) as u64);
-                c4 = divexact_u(&c4, (2 * m4 + 2) as u64);
+                c4 = try_divexact_u(&c4, (2 * m4 + 2) as u64)?;
             }
         }
         let mut s4 = ExactComplex::zero(p);
@@ -319,7 +360,7 @@ pub(super) fn rj_taylor_sum(
                 let m3start = rj_fdiv(nmax - 5 * m5 as i32 - 4 * m4 as i32, 3);
                 if m4 != m4_hi {
                     c4 = mul_u(&c4, (2 * m4 + 2) as u64);
-                    c4 = divexact_u(&c4, (2 * m5 + 2 * m4 + 1) as u64);
+                    c4 = try_divexact_u(&c4, (2 * m5 + 2 * m4 + 1) as u64)?;
                 }
                 let mut c3 = c4.clone();
                 let mut s3 = ExactComplex::zero(p);
@@ -334,20 +375,20 @@ pub(super) fn rj_taylor_sum(
                             for m2 in 0..=m2start as usize {
                                 let mm = (m5 + m4 + m3 + m2) as i32;
                                 let nn = 5 * m5 as i32 + 4 * m4 as i32 + 3 * m3 as i32 + 2 * m2 as i32;
-                                let mut t = divexact_u(&c2, (2 * nn + 3) as u64);
+                                let mut t = try_divexact_u(&c2, (2 * nn + 3) as u64)?;
                                 if (mm + nn) % 2 != 0 {
                                     t = t.neg();
                                 }
                                 s3 = addmul_int(s3, &powtab[m3 * m2dim + m2], &t, p);
                                 if (m2 as i32) < m2start {
                                     c2 = mul_u(&c2, (2 * m5 + 2 * m4 + 2 * m3 + 2 * m2 + 1) as u64);
-                                    c2 = divexact_u(&c2, (2 * m2 + 2) as u64);
+                                    c2 = try_divexact_u(&c2, (2 * m2 + 2) as u64)?;
                                 }
                             }
                         }
                         if (m3 as i32) < m3start {
                             c3 = mul_u(&c3, (2 * m5 + 2 * m4 + 2 * m3 + 1) as u64);
-                            c3 = divexact_u(&c3, (2 * m3 + 2) as u64);
+                            c3 = try_divexact_u(&c3, (2 * m3 + 2) as u64)?;
                         }
                     }
                 }
@@ -357,5 +398,50 @@ pub(super) fn rj_taylor_sum(
         s5 = s5.mul(e5, p, rm()).add(&s4, p, rm());
     }
     let den_c = ExactComplex::from_real(den.to_exact_num(p, rm()), p);
-    s5.div(&den_c, p, rm())
+    Some(s5.div(&den_c, p, rm()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// nterms=22 (nmax=21) is the first order that traps in ZF-78 / ZF-66:
+    /// after the last used x at y=1, FLINT still does
+    /// `d *= (2x+2y+1); d /= (2x+2)` with dividend
+    /// 317246823152966183226750 and divisor 20 (remainder 10). That
+    /// trailing update is unused. The coefficient divisions are exact.
+    #[test]
+    fn rf_taylor_sum_at_nterms_22_does_not_trap() {
+        let p = 64;
+        let e2 = c_u32(1, p);
+        let e3 = c_u32(1, p);
+        let _ = rf_taylor_sum(&e2, &e3, 22, p);
+    }
+
+    /// Clamped RF orders must keep every used `divexact` exact.
+    /// E2=E3=0: exactness of the integer recurrence does not depend on
+    /// the deviations. 1..=40 covers nmax=21; larger values are sampled
+    /// through the 500 clamp.
+    #[test]
+    fn rf_taylor_sum_all_clamped_orders_do_not_trap() {
+        let p = 64;
+        let e2 = ExactComplex::zero(p);
+        let e3 = ExactComplex::zero(p);
+        let orders = (1..=40).chain([50, 80, 100, 150, 200, 300, 400, 499, 500]);
+        for nterms in orders {
+            let _ = rf_taylor_sum(&e2, &e3, nterms, p);
+        }
+    }
+
+    /// An inexact dividend must not become a truncated quotient.
+    /// 15/4 is the trailing unused RF update at nmax=2.
+    #[test]
+    fn divexact_u_rejects_inexact_dividend() {
+        let a = int_from_u(15);
+        assert!(
+            try_divexact_u(&a, 4).is_none(),
+            "15/4 must be refused, not truncated to 3"
+        );
+        assert_eq!(try_divexact_u(&int_from_u(20), 4).unwrap(), int_from_u(5));
+    }
 }
