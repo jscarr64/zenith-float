@@ -993,9 +993,18 @@ impl ExactComplex {
             if is_one(self) {
                 return None;
             }
-            // Exact 1 + 0i at any dest; do not allocate a dest-width 1.
-            let _ = (p, rm);
-            return Some(crate::complex::compact_one());
+            // Exact 1 + 0i. At an unallocatable dest (2^59), keep a compact 1
+            // so this path does not try to reserve dest-width limbs. Otherwise
+            // return dest-width 1 (ZF-18/68); compact DEFAULT_P=128 was a
+            // precision-contract miss at every allocatable dest.
+            if crate::complex_special::nan_if_dest_unallocatable(p).is_some() {
+                return Some(crate::complex::compact_one());
+            }
+            let mut re = ExactNum::from_u8(1, round_p(p));
+            if let Err(e) = re.set_precision(p, rm) {
+                return Some(Self::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e))));
+            }
+            return Some(Self::new(re, ExactNum::new(round_p(p))));
         }
         let pos_real = |z: &Self| z.im.is_zero() && z.re.is_positive() && !z.re.is_zero();
         if pos_real(self) && pos_real(base) {
