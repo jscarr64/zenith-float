@@ -291,7 +291,10 @@ fn is_half_odd_integer(x: &ExactNum) -> bool {
 /// do not define a finite value (the leading \((z/2)^\nu\) is singular),
 /// and FLINT 3.6 returns an indeterminate ball; the compact value is the
 /// official / mpmath \(+\infty\), with the imaginary zero following
-/// \(\operatorname{Im} z\). Other orders (pure imaginary, etc.) return `None`.
+/// \(\operatorname{Im} z\). Returning compact \(+\infty\) (a pole) at
+/// exact \(z=0\), the way it worked before c3dfd98, is a Paul call per
+/// DLMF 10.7.3 / 10.30.1. It is not a Jeff ruling. Other orders (pure
+/// imaginary, etc.) return `None`.
 fn bessel_ji_at_zero(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex> {
     if nu.im().is_zero() && nu.re().is_int() {
         if nu.re().is_zero() {
@@ -438,7 +441,7 @@ fn neg_rounding(rm: RoundingMode) -> RoundingMode {
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
     /// At \(z=0\): \(J_0(0)=1\), integer \(n\ne 0\) gives 0, \(\operatorname{Re}\nu>0\)
-    /// gives 0, and real \(\nu<0\) gives \(+\infty\) (DLMF 10.7.3 / 10.30.1 one-sided \(z\to 0+\); official judge / mpmath). At
+    /// gives 0, and real \(\nu<0\) gives \(+\infty\) (DLMF 10.7.3 / 10.30.1 one-sided \(z\to 0+\); official judge / mpmath; Paul call, not a Jeff ruling). At
     /// \(z=+\infty\pm 0i\), \(J_\nu=0\) (DLMF 10.7.8 / 10.17.3). On the cut \(\operatorname{Re} z<0\),
     /// \(\operatorname{Im} z=0\), both signs of a zero imaginary part take Arb's principal value (the limit from above, Arg = +π; Jeff 2026-11-18 10:37 CT). With real ν, that value is formed from the real kernels so algebraically zero parts stay zero.
     ///
@@ -2302,6 +2305,7 @@ mod tests {
         // Official judge / mpmath: J_{-1/2}(0)=I_{-1/2}(0)=+∞ (DLMF 10.7.3 /
         // 10.30.1 one-sided z→0+; arg(0±0i)=0). 10.2.2 / 10.25.2 do not define
         // a finite value; FLINT 3.6 at exact 0 is indeterminate. Compact +Inf
+        // is a Paul call per those limit formulas, not a Jeff ruling.
         // (no dest-sized allocation); dest 2^59 must still return immediately.
         let t0 = std::time::Instant::now();
         let j = z0.bessel_j_nu(&nmh, p, rm, &mut cc);

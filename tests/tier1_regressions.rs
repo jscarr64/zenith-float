@@ -3124,7 +3124,9 @@ fn zf_65_complex_bessel_negative_order_and_zero_argument() {
 
 /// J_{-1/2}(0) and I_{-1/2}(0) are compact +∞: official judge / mpmath
 /// `besselj(-0.5,0)=besseli(-0.5,0)=+inf`, DLMF 10.7.3 / 10.30.1 one-sided
-/// z→0+ (arg(0±0i)=0). DLMF 10.2.2 / 10.25.2 and the closed forms 10.16.1 /
+/// z→0+ (arg(0±0i)=0). This compact +Inf (a pole), the way it worked
+/// before c3dfd98, is a Paul call per those DLMF limits. It is not a
+/// Jeff ruling. DLMF 10.2.2 / 10.25.2 and the closed forms 10.16.1 /
 /// 10.39.2 are singular at exact 0; FLINT 3.6 `acb_bessel_j` / `acb_bessel_i`
 /// return an indeterminate ball, so the exact-zero gold is not a FLINT
 /// midpoint. Neighbors at z=2^{-16} and 2^{-8} are FLINT 3.6 midpoints
