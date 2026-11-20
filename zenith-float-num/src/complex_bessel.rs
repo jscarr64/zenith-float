@@ -387,6 +387,14 @@ fn real_part_only(v: ExactComplex, p: usize) -> ExactComplex {
 
 /// \(e^{\nu\pi i}\) when `upper`, else \(e^{-\nu\pi i}\).
 fn reflect_phase(nu: &ExactComplex, upper: bool, p: usize, cc: &mut Consts) -> ExactComplex {
+    // Integer nu: e^{± n π i} = (-1)^n exactly, either sign.
+    if let Some(n) = integer_nu(nu, p) {
+        return if n % 2 == 0 {
+            ExactComplex::one(p)
+        } else {
+            neg_c(ExactComplex::one(p))
+        };
+    }
     let pi_i = ExactComplex::new(ExactNum::new(p), cc.pi(p, RoundingMode::None));
     let a = nu.mul(&pi_i, p, RoundingMode::None);
     let a = if upper { a } else { neg_c(a) };
@@ -396,6 +404,13 @@ fn reflect_phase(nu: &ExactComplex, upper: bool, p: usize, cc: &mut Consts) -> E
 /// \(e^{\pm\nu\pi i/2}\) (upper sign when `upper`). The product \(\nu\pi/2\) is formed with
 /// `exponent(ν)` extra bits so its absolute error stays near \(2^{-p}\) for large \(|\nu|\).
 fn quarter_turn_phase(nu: &ExactComplex, upper: bool, p: usize, cc: &mut Consts) -> ExactComplex {
+    // Integer nu: e^{± n π i/2} is an exact power of i (i^n or i^{-n}).
+    // A general exp leaves a tiny phase error that, times a huge I_n, becomes
+    // a large absolute imag (J_100(1000i) leaked ~1e316 against a 1e430 real).
+    if let Some(n) = integer_nu(nu, p) {
+        let k = if upper { n as i64 } else { -(n as i64) };
+        return ExactComplex::i_pow_u32(k.rem_euclid(4) as u32, p);
+    }
     let e = nu
         .abs(64, RoundingMode::None)
         .exponent()
@@ -744,6 +759,13 @@ impl ExactComplex {
         if use_bessel_series(self, dest_p) {
             return self.bessel_j_series(nu, work_p + series_guard_bits(self), cc);
         }
+        // Pure imaginary z: DLMF 10.27.6, J_ν(iy)=e^{±νπi/2} I_ν(±y). The I series
+        // on a real positive argument keeps algebraically zero parts at exact 0.
+        // Hankel on the axis leaves a tiny phase error that becomes a huge leak
+        // once |I_ν(y)| is large (J_5(1000i) real part ~1e337).
+        if self.re().is_zero() && !self.im().is_zero() {
+            return self.bessel_j_via_i(nu, work_p, dest_p, cc);
+        }
         let hankel = if self.re().is_negative() && !self.re().is_zero() {
             // The Hankel expansion holds only for |arg z| < π; for Re z < 0 continue from −z
             // (DLMF 10.11.1): J_ν(z) = e^{±νπi} J_ν(−z), upper sign from above
@@ -840,15 +862,8 @@ impl ExactComplex {
         let rot = if upper { ExactComplex::i(work_p) } else { neg_c(ExactComplex::i(work_p)) };
         let w = rot.mul(self, work_p, RoundingMode::None);
         let j = w.bessel_j_at(nu, work_p, dest_p, cc);
-        let half_pi_i = ExactComplex::new(
-            ExactNum::new(work_p),
-            cc.pi(work_p, RoundingMode::None)
-                .ldexp(-1, work_p, RoundingMode::None),
-        );
-        let arg = nu.mul(&half_pi_i, work_p, RoundingMode::None);
-        let arg = if upper { neg_c(arg) } else { arg };
-        arg.exp(work_p, RoundingMode::None, cc)
-            .mul(&j, work_p, RoundingMode::None)
+        // DLMF upper sign on the rotation uses e^{-νπi/2} = quarter_turn_phase(_, false).
+        quarter_turn_phase(nu, !upper, work_p, cc).mul(&j, work_p, RoundingMode::None)
     }
 
     /// \(I_\nu(z)=(z/2)^\nu/\Gamma(\nu+1)\,{}_0F_1(;\nu+1;z^2/4)\) for \(\mathrm{Re}\,z>0\).

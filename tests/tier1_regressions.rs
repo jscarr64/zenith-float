@@ -3208,6 +3208,60 @@ fn zf_28_airy_large_negative_argument() {
     }
 }
 
+/// Dest-128 ToEven \(I_{100}(1000)=J_{100}(1000i)\). Gold is the FLINT 3.6
+/// (python-flint 0.9.0) midpoint at prec 1024 (rel_accuracy_bits 1012),
+/// cross-checked with mpmath at prec 1024, then rounded ToEven at 128 bits:
+/// `F:+:1430:908ee542bcfc5f9d74534a3955e4f135`. The fractional part of the
+/// high-prec mid is about 0.79, so ToEven rounds up. Analytically
+/// \(J_{100}(1000i)=i^{100}I_{100}(1000)=I_{100}(1000)\) is real, so the
+/// imaginary parts are +0. The 0F1 bsplit / prefix path
+/// (`sum_bessel_i_series`, `hypgeom_0f1`) already produces this value; the
+/// harness token `64p0` is 0x64 = 100, not decimal 64.
+#[test]
+fn zf_i100_z1000_toeven_128_matches_flint() {
+    let mut cc = Consts::new().expect("Consts");
+    let p = 128;
+    let rm = RoundingMode::ToEven;
+    let z = ExactComplex::new(parse_real("3e8p0").expect("1000"), parse_real("0").expect("0"));
+    let zi = ExactComplex::new(parse_real("0").expect("0"), parse_real("3e8p0").expect("1000i"));
+    let nu = ExactComplex::new(parse_real("64p0").expect("100"), parse_real("0").expect("0"));
+    let gold_re = "F:+:1430:908ee542bcfc5f9d74534a3955e4f135";
+    let gold_im = "Z:+";
+    let want = |s: &str| -> ExactNum {
+        let k: Vec<&str> = s.split(':').collect();
+        if k[0] == "Z" {
+            let z = ExactNum::new(64);
+            return if k[1] == "-" { std::ops::Neg::neg(z) } else { z };
+        }
+        let e: i64 = k[2].parse().expect("exp");
+        parse_real(&format!("{}{}p{}", k[1], k[3], e - 4 * k[3].len() as i64)).expect("want")
+    };
+    let same = |v: &ExactNum, w: &ExactNum| {
+        v.compare(w) == Some(0) && (!v.is_zero() || v.is_negative() == w.is_negative())
+    };
+    let i = z.bessel_i(&nu, p, rm, &mut cc);
+    assert!(same(i.re(), &want(gold_re)), "I_100(1000) re {} want {gold_re}", i.re());
+    assert!(same(i.im(), &want(gold_im)), "I_100(1000) im {} want {gold_im}", i.im());
+    let j = zi.bessel_j_nu(&nu, p, rm, &mut cc);
+    assert!(same(j.re(), &want(gold_re)), "J_100(1000i) re {} want {gold_re}", j.re());
+    assert!(same(j.im(), &want(gold_im)), "J_100(1000i) im {} want {gold_im}", j.im());
+
+    // J_5(1000i) = i I_5(1000): real +0, imag = I_5(1000).
+    let nu5 = ExactComplex::new(parse_real("5p0").expect("5"), parse_real("0").expect("0"));
+    let i5 = z.bessel_i(&nu5, p, rm, &mut cc);
+    let j5 = zi.bessel_j_nu(&nu5, p, rm, &mut cc);
+    assert!(same(i5.im(), &want(gold_im)), "I_5(1000) im {} want {gold_im}", i5.im());
+    assert!(same(j5.re(), &want(gold_im)), "J_5(1000i) re {} want {gold_im}", j5.re());
+    assert!(same(j5.im(), i5.re()), "J_5(1000i) im {} want I_5(1000) {}", j5.im(), i5.re());
+
+    // I_100(1000i) = i^{100} J_100(1000) = J_100(1000), imag +0.
+    let i_on_i = zi.bessel_i(&nu, p, rm, &mut cc);
+    let j_on_r = z.bessel_j_nu(&nu, p, rm, &mut cc);
+    assert!(same(i_on_i.im(), &want(gold_im)), "I_100(1000i) im {} want {gold_im}", i_on_i.im());
+    assert!(same(j_on_r.im(), &want(gold_im)), "J_100(1000) im {} want {gold_im}", j_on_r.im());
+    assert!(same(i_on_i.re(), j_on_r.re()), "I_100(1000i) re {} want J_100(1000) {}", i_on_i.re(), j_on_r.re());
+}
+
 /// ZF-58: Kelvin functions at large order (ν = 100, 498.5 at x = 1000) and the complex
 /// \(J_\nu, I_\nu, K_\nu\) under them. The Hankel expansion diverges from its first term when
 /// \(|\nu|^2\gtrsim|z|\), and `hankel_pq` used to stop at the first growing term and return
