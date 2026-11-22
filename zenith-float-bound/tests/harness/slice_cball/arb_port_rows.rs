@@ -233,3 +233,32 @@ fn want_point_part(what: &str, b: &Ball, v: i64) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[test]
+fn cball_div_wide_straddling_numerator_both_divisor_signs() -> Result<(), String> {
+    // Arb `arb_div_wide`'s straddling branch (16.CB.7): x = m ± r with r > |m| over a divisor of relative accuracy
+    // <= 20 bits. [-a, b] / [t, u] = [-a/t, b/t]; over a negative divisor the ends swap: [-a, b] / -[t, u] = [-b/t, a/t].
+    // Rows: (1 ± 3) / (∓2 ± 1) and (-1 ± 3) / (±2 ± 1), b.im exactly 0. True images: [-4, 2] or [-2, 4], ends attained.
+    let three = || ok("Mag", Mag::finite(0xC000_0000_0000_0000, 2));
+    let one = || ok("Mag", Mag::finite(0x8000_0000_0000_0000, 1));
+    for (xm, ym, lo, hi) in [
+        (1, -2, -4, 2),
+        (1, 2, -2, 4),
+        (-1, 2, -4, 2),
+        (-1, -2, -2, 4),
+    ] {
+        let x = ok("x", Ball::from_mid_rad(num(xm), three()?, 64))?;
+        let y = ok("y", Ball::from_mid_rad(num(ym), one()?, 64))?;
+        let a = ok("a", CBall::new(x, pt(0, 64)?))?;
+        let b = ok("b", CBall::new(y, pt(0, 64)?))?;
+        let q = ok("div", a.div(&b, 64))?;
+        let what = format!("({} ± 3) / ({} ± 1)", xm, ym);
+        if !q.re().is_informative() {
+            return Err(format!("{}: want a finite re part, got {:?}", what, q));
+        }
+        want_contains(&format!("{} re lo", what), q.re(), &num(lo))?;
+        want_contains(&format!("{} re hi", what), q.re(), &num(hi))?;
+        want_point_part(&format!("{} im", what), q.im(), 0)?;
+    }
+    Ok(())
+}

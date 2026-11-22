@@ -1,4 +1,4 @@
 # Slice CB share of the mutant floor (added to ../floor.txt by tools/mutate.sh). Raise it with the slice's mutants.
-# Measured: pop-logs cassie/2026-10-25/0711-cb-mut-cball-ce84c7c (13 killed of 13); 14 with 1522-SQRREWIDE (16.CB.10 widening probe, 0817-cb10-widen-probe); 15 with 1523-SQRREFNOIM (0826-cb10-mut-cball-f75dfe5, 15/15); 16 with 1524-SQRREFNOXY (sqr_ref im second-order term, cball follow-up).
-killed	16
-killed+equivalent	16
+# Measured: pop-logs cassie/2026-10-25/0711-cb-mut-cball-ce84c7c (13 killed of 13); 14 with 1522-SQRREWIDE (16.CB.10 widening probe, 0817-cb10-widen-probe); 15 with 1523-SQRREFNOIM (0826-cb10-mut-cball-f75dfe5, 15/15); 16 with 1524-SQRREFNOXY (sqr_ref im second-order term, cball follow-up); 25 with the Arb-port mul/div mutants 1506-1512, 1515, 1516 and the rewritten sqr mutants (paul 2026-11-22, manual run final/t2-cball-port/green/manual-mutants.log: tools/mutate.sh cannot fetch in the workspace layout; 1516 survived until cball_div_wide_straddling_numerator_both_divisor_signs).
+killed	25
+killed+equivalent	25
