@@ -1226,7 +1226,13 @@ impl ExactComplex {
     pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy();
         let inputs = self.inexact_accumulated();
-        Self::per_op(inputs, this.nth_root_word(n, p, rm, cc))
+        // Per-component flags: an exact real half (cbrt(-1-0i) = 1/2 − i√3/2)
+        // must stay exact even when the imaginary part is inexact. `per_op`
+        // would broadcast the OR of both parts onto each (T2-exact-result-directed).
+        let mut r = this.nth_root_word(n, p, rm, cc);
+        r.re.finish_part(r.re.inexact_accumulated(), inputs);
+        r.im.finish_part(r.im.inexact_accumulated(), inputs);
+        r
     }
 
     /// Implementation of [`Self::nth_root`] on operands without inexact history.
@@ -1274,13 +1280,7 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn cbrt(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let this = self.exact_copy();
-        let inputs = self.inexact_accumulated();
-        Self::per_op(inputs, this.cbrt_word(p, rm, cc))
-    }
-
-    /// Implementation of [`Self::cbrt`] on operands without inexact history.
-    fn cbrt_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        // Same branch and per-component flags as `nth_root(..., 3)`.
         self.nth_root(3, p, rm, cc)
     }
 
@@ -1598,7 +1598,7 @@ impl ExactComplex {
             let mag = if x.is_zero() { y.clone().abs() } else { x.clone().abs() };
             let cos_x2 = trig_exact_x2(num, den);
             let sin_x2 = trig_exact_x2(den - 2 * num, 2 * den);
-            return Some(crate::complex_special::ziv_complex(p, rm, |pw| {
+            let mut z = crate::complex_special::ziv_complex(p, rm, |pw| {
                 let nr = RoundingMode::None;
                 let m = mag.nth_root(n, pw, nr);
                 let pi_q = cc.pi(pw, nr).mul(&ExactNum::from_i64(num, pw), pw, nr).div(
@@ -1618,7 +1618,31 @@ impl ExactComplex {
                 let re = part(cos_x2, cc, false);
                 let im = part(sin_x2, cc, true);
                 Self::new(re, im)
-            }));
+            });
+            // Exact trig factors 0, ±1/2, ±1 times an exact |z|^{1/n} are exact
+            // dest values; ziv_complex must not leave them flagged inexact.
+            if let Some(m) = exact_abs_nth_root(&mag, n) {
+                let exact_part = |part: ExactNum, fac: Option<i64>| -> ExactNum {
+                    let Some(c) = fac else {
+                        return part;
+                    };
+                    let wp = p.max(64).saturating_add(64);
+                    let nr = RoundingMode::None;
+                    let mut want =
+                        ExactNum::mul_ref(&m, &ExactNum::from_i64(c, wp), wp, nr).ldexp(-1, wp, nr);
+                    if want.set_precision(p, rm).is_err() {
+                        return part;
+                    }
+                    want.set_inexact(false);
+                    if part.compare(&want) == Some(0) {
+                        want
+                    } else {
+                        part
+                    }
+                };
+                z = Self::new(exact_part(z.re, cos_x2), exact_part(z.im, sin_x2));
+            }
+            return Some(z);
         }
         let nr = RoundingMode::None;
         let n_u32 = u32::try_from(n).ok()?;
@@ -2729,6 +2753,23 @@ fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
 }
 
 /// `2 cos(π num/den)` when it is an integer (`den ∈ {1, 2, 3}` after reduction), else `None`.
+/// `|z|^{1/n}` when it is an exact dyadic (so 1^{1/3}=1, 8^{1/3}=2).
+fn exact_abs_nth_root(mag: &ExactNum, n: usize) -> Option<ExactNum> {
+    let p = mag.precision().unwrap_or(64).max(64);
+    let cand = mag.nth_root(n, p, RoundingMode::ToEven);
+    if cand.is_nan() {
+        return None;
+    }
+    let w = p.saturating_mul(n.saturating_add(1)).saturating_add(64);
+    let recon = cand.powsi(i64::try_from(n).ok()?, w, RoundingMode::None);
+    if recon.compare(mag) != Some(0) {
+        return None;
+    }
+    let mut c = cand;
+    c.set_inexact(false);
+    Some(c)
+}
+
 fn trig_exact_x2(num: i64, den: i64) -> Option<i64> {
     let g = gcd_i64(num.abs(), den.abs());
     let (num, den) = (num / g, den / g);
@@ -3091,9 +3132,17 @@ mod tests {
                         want_re
                     );
                     if im_pos {
-                        assert!(got.im().is_inf_pos(), "asin({lab}) p={p} {rm:?} im {:?}", got.im());
+                        assert!(
+                            got.im().is_inf_pos(),
+                            "asin({lab}) p={p} {rm:?} im {:?}",
+                            got.im()
+                        );
                     } else {
-                        assert!(got.im().is_inf_neg(), "asin({lab}) p={p} {rm:?} im {:?}", got.im());
+                        assert!(
+                            got.im().is_inf_neg(),
+                            "asin({lab}) p={p} {rm:?} im {:?}",
+                            got.im()
+                        );
                     }
                 }
                 // Finite cut must stay consistent with the infinity signs (DLMF 4.23.20).
@@ -3110,6 +3159,65 @@ mod tests {
                     !two_m.is_nan() && two_m.im().is_negative(),
                     "asin(2-0i) p={p} {rm:?} should have −Im, got {:?}",
                     two_m
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// cbrt(-1-0i) = 1/2 − i√3/2 (C99 G.5.1: carg(-1-0i)=−π). The real half is
+    /// exact and must not be flagged inexact; official judge reports
+    /// `op_inexact=True but result is exact` when the flag is set on Re while Im
+    /// is the (inexact) unique CR of −√3/2. Same for cuberoot(-8-0i) = 1 − i√3.
+    /// FLINT golds: unique CR of −√3/2 and −√3 (see $L/final/t2-close-ee9c487/T2-12-PROOF.md).
+    #[test]
+    fn cbrt_minus_one_minus_zero_has_exact_half_real() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let mz = compact_signed_zero(true);
+        let z1 = ExactComplex::new(-ExactNum::from_u8(1, 64), mz.clone());
+        let z8 = ExactComplex::new(-ExactNum::from_u8(8, 64), mz);
+        let modes = [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ];
+        for p in [64usize, 128, 256, 1024, 2048] {
+            let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::ToEven);
+            let one = ExactNum::from_u8(1, p);
+            for rm in modes {
+                let w = z1.cbrt(p, rm, &mut cc);
+                assert!(
+                    !w.is_nan() && w.re().compare(&half) == Some(0),
+                    "cbrt(-1-0i) p={p} {rm:?} re {:?}",
+                    w.re()
+                );
+                assert!(
+                    !w.re().inexact(),
+                    "cbrt(-1-0i) p={p} {rm:?} Re is exact 1/2 but flagged inexact"
+                );
+                assert!(
+                    w.im().is_negative() && w.im().inexact(),
+                    "cbrt(-1-0i) p={p} {rm:?} Im should be inexact −√3/2, got {:?}",
+                    w.im()
+                );
+                let w8 = z8.nth_root(3, p, rm, &mut cc);
+                assert!(
+                    !w8.is_nan() && w8.re().compare(&one) == Some(0),
+                    "nth_root(-8-0i,3) p={p} {rm:?} re {:?}",
+                    w8.re()
+                );
+                assert!(
+                    !w8.re().inexact(),
+                    "nth_root(-8-0i,3) p={p} {rm:?} Re is exact 1 but flagged inexact"
+                );
+                assert!(
+                    w8.im().is_negative() && w8.im().inexact(),
+                    "nth_root(-8-0i,3) p={p} {rm:?} Im should be inexact −√3, got {:?}",
+                    w8.im()
                 );
             }
         }
