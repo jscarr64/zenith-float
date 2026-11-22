@@ -1,13 +1,12 @@
 diff --git a/src/cball.rs b/src/cball.rs
-index 8f1c022..1485ecf 100644
 --- a/src/cball.rs
 +++ b/src/cball.rs
-@@ -101,7 +101,7 @@ impl CBall {
-     pub fn sqr(self, prec: Precision) -> BoundResult<CBall> {
-         let rr = self.re.sqr(prec)?;
-         let ii = self.im.sqr(prec)?;
--        let re = rr.sub(&ii, prec)?;
-+        let re = rr.sub(&ii, prec)?.add(&ii, prec)?.sub(&ii, prec)?;
-         let im = self.re.mul(&self.im, prec)?.mul_2exp(1, prec)?;
-         CBall::new(re, im)
+@@ -198,7 +198,7 @@
+         let ab = a.mid().mul_full_prec(b.mid());
+         let lost_re = aa.inexact() || bb.inexact();
+         let lost_im = ab.inexact();
+-        let re = finish(aa.sub(&bb, prec, MID_RM), &er, prec, prec, lost_re)?;
++        let re = finish(aa.sub(&bb, prec, MID_RM), &er.add_up(&er).add_up(&er), prec, prec, lost_re)?;
+         let im = finish(ab.ldexp(1, prec, MID_RM), &fr, prec, prec, lost_im)?;
+         Ok((re, im))
      }

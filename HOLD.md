@@ -23,7 +23,8 @@ CONTRACT text in `zenith-float-bound/docs/` is unchanged.
 H11 (`CBall::mul` / `CBall::div`, 16.CB.4 / 16.CB.7) was taken live: the ops are in the public API,
 the gold_eval arms are restored, and `tests/harness/slice_cball/held_mul_div_reds.rs` runs green.
 Parts are reused via the public mid/rad constructors because `Ball` binary ops still take the first
-operand by value (O9/R9 not landed on Ball). The filename is kept.
+operand by value (O9/R9 not landed on Ball). The filename is kept. Since paul/t2-cball-mul-div (2026-11-22) the two ops are the Arb
+`acb_mul` / `acb_div` port (CONTRACT 16.CB.4 / 16.CB.7).
 
 | id | path(s) | origin | why held | decides use or delete | held data |
 |----|---------|--------|----------|-----------------------|-----------|

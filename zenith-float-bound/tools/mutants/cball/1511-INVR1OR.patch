@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -654,7 +654,7 @@
+         return Ok((re, im));
+     }
+     let (am, bm) = (mag_lower_ball(c), mag_lower_ball(d));
+-    if am.is_zero() && bm.is_zero() {
++    if am.is_zero() || bm.is_zero() {
+         return all();
+     }
+     let (x, y) = (c.rad(), d.rad());
