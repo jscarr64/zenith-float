@@ -808,7 +808,12 @@ impl ExactComplex {
     pub fn sqrt(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy();
         let inputs = self.inexact_accumulated();
-        Self::per_op(inputs, this.sqrt_word(p, rm, cc))
+        // Per-component flags: csqrt(x−0i) has exact real +0 even when Im
+        // is the inexact unique CR of −√|x|. `per_op` would broadcast.
+        let mut r = this.sqrt_word(p, rm, cc);
+        r.re.finish_part(r.re.inexact_accumulated(), inputs);
+        r.im.finish_part(r.im.inexact_accumulated(), inputs);
+        r
     }
 
     /// Implementation of [`Self::sqrt`] on operands without inexact history.
@@ -3219,6 +3224,86 @@ mod tests {
                     "nth_root(-8-0i,3) p={p} {rm:?} Im should be inexact −√3, got {:?}",
                     w8.im()
                 );
+            }
+        }
+        Ok(())
+    }
+
+    /// csqrt(x−0i) for x<0 is +0 − i√|x| (C99 G.6.4.2). The real zero is exact
+    /// and must not be flagged inexact when Im is the (possibly inexact) unique
+    /// CR of −√|x|. Same for nth_root(..., 2). Covers the T2-complex-exact-zero
+    /// flag side of the per_op broadcast (c.sqrt still used per_op after the
+    /// nth_root/cbrt fix).
+    #[test]
+    fn sqrt_negative_real_minus_zero_has_exact_zero_real() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let mz = compact_signed_zero(true);
+        let z1 = ExactComplex::new(-ExactNum::from_u8(1, 64), mz.clone());
+        let z4 = ExactComplex::new(-ExactNum::from_u8(4, 64), mz.clone());
+        let z2 = ExactComplex::new(-ExactNum::from_u8(2, 64), mz);
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::Down,
+            RoundingMode::Up,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ];
+        let zero = ExactNum::from_u8(0, 64);
+        for p in [64usize, 128, 256, 1024, 2048] {
+            let neg_two = -ExactNum::from_u8(2, p);
+            let neg_one = -ExactNum::from_u8(1, p);
+            for rm in modes {
+                for (z, name, exact_im) in [
+                    (z1.clone(), "sqrt(-1-0i)", Some(&neg_one)),
+                    (z4.clone(), "sqrt(-4-0i)", Some(&neg_two)),
+                    (z2.clone(), "sqrt(-2-0i)", None),
+                ] {
+                    let w = z.sqrt(p, rm, &mut cc);
+                    assert!(
+                        !w.is_nan() && w.re().compare(&zero) == Some(0) && !w.re().is_negative(),
+                        "{name} p={p} {rm:?} re {:?}",
+                        w.re()
+                    );
+                    assert!(
+                        !w.re().inexact(),
+                        "{name} p={p} {rm:?} Re is exact +0 but flagged inexact"
+                    );
+                    assert!(
+                        w.im().is_negative(),
+                        "{name} p={p} {rm:?} Im should be negative, got {:?}",
+                        w.im()
+                    );
+                    if let Some(want) = exact_im {
+                        assert!(
+                            w.im().compare(want) == Some(0) && !w.im().inexact(),
+                            "{name} p={p} {rm:?} Im should be exact {:?}, got {:?}",
+                            want,
+                            w.im()
+                        );
+                    } else {
+                        assert!(
+                            w.im().inexact(),
+                            "{name} p={p} {rm:?} Im should be inexact −√2, got {:?}",
+                            w.im()
+                        );
+                    }
+                    let wr = z.nth_root(2, p, rm, &mut cc);
+                    assert!(
+                        !wr.is_nan()
+                            && wr.re().compare(&zero) == Some(0)
+                            && !wr.re().is_negative()
+                            && !wr.re().inexact(),
+                        "nth_root {name} p={p} {rm:?} Re {:?}",
+                        wr.re()
+                    );
+                    assert!(
+                        wr.im().is_negative(),
+                        "nth_root {name} p={p} {rm:?} Im {:?}",
+                        wr.im()
+                    );
+                }
             }
         }
         Ok(())
