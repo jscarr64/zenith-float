@@ -31,3 +31,7 @@
   was marked tried before the Euler step, so the inner call ran the plain series at |z| = 1 − 1e-7 (~10^9 terms) and
   c2f1_log_mpmath never finished (>10 min; 0.43 s at be63db9). Now 0.30 s, all 54 mpmath rows pass. New test
   log_case_negative_m_near_one_returns (60 s budget; red: timed out).
+- special_audit_mpmath: the two `c.ln_gamma` rows (3−4i at p = 128, 20+20i at p = 512) still held the 1.0.5 principal
+  ln(Γ(z)) imaginary parts (1.5405…, −0.6726…). Complex ln Γ is Arb's continuous log-gamma since Jeff's 2026-11-18
+  12:14 CT ruling; the code matches FLINT 0.9.0 `acb_lgamma` (−4.7427…, 62.1593…; mpmath `loggamma` agrees), 2πk from
+  the old values, so "−2 / −1 correct bits" was a stale reference, not a 1–2 bit error. Test-only change.
