@@ -410,13 +410,22 @@ mod tests {
             );
         }
         assert_eq!(
-            chebyshev_coeffs(f, 0, a.clone(), &b, 64, RoundingMode::ToEven, &mut cc).err(),
+            chebyshev_coeffs(f, 0, a, &b, 64, RoundingMode::ToEven, &mut cc).err(),
             Some(crate::Error::InvalidArgument)
         );
         let bad = ExactNum::from_i64(-1, 64);
         // a == b is not a strict interval
         assert_eq!(
-            chebyshev_coeffs(f, 4, bad.clone(), &bad, 64, RoundingMode::ToEven, &mut cc).err(),
+            chebyshev_coeffs(
+                f,
+                4,
+                ExactNum::from_i64(-1, 64),
+                &bad,
+                64,
+                RoundingMode::ToEven,
+                &mut cc
+            )
+            .err(),
             Some(crate::Error::InvalidArgument)
         );
         Ok(())

@@ -800,7 +800,13 @@ mod tests {
         ];
         for n in cases {
             for neg in [false, true] {
-                let x = if neg && !n.is_zero() { n.neg() } else { n.clone() };
+                let x_neg;
+                let x: &ExactInt = if neg && !n.is_zero() {
+                    x_neg = n.neg();
+                    &x_neg
+                } else {
+                    &n
+                };
                 let fast = x.to_exact_num(p, RoundingMode::ToEven);
                 let slow = x.to_exact_num_accum(p, RoundingMode::ToEven);
                 assert_eq!(fast, slow, "n={x:?} neg={neg}");

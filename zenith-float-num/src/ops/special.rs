@@ -1267,8 +1267,10 @@ impl ExactNumNumber {
                     let limit = pe + WORD_BIT_SIZE;
                     let gap = usize::try_from((g.exponent() - lo.exponent()).max(0))
                         .unwrap_or(usize::MAX);
+                    // g is read only for its exponent after v is formed.
+                    let g_exp = g.exponent();
                     let v = if lo.is_zero() {
-                        g.clone()?
+                        g
                     } else if gap > limit {
                         let mut t = Self::from_word(1, WORD_BIT_SIZE)?;
                         t.set_exponent(g.exponent() - limit as Exponent + 1);
@@ -1285,7 +1287,7 @@ impl ExactNumNumber {
                             RoundingMode::None,
                         )?
                     };
-                    let top = g.exponent().max(lo.exponent());
+                    let top = g_exp.max(lo.exponent());
                     let lost = if v.is_zero() {
                         pe
                     } else {
@@ -6503,7 +6505,7 @@ fn bessel_ji_scaled(
                 hh = hh.neg()?;
             }
             let mut t = N::from_word(1, ws)?;
-            let mut s = t.clone()?;
+            let mut s = N::from_word(1, ws)?;
             let mut k = 0usize;
             let stop = -(ws as i64) - 4;
             loop {
@@ -7143,17 +7145,20 @@ fn pow_ui(base: &ExactNumNumber, exp: usize, p: usize) -> Result<ExactNumNumber,
     if exp == 0 {
         return Ok(acc);
     }
-    let mut b = base.clone()?;
+    // base^(2^j); `None` while j = 0 (base read in place).
+    let mut b_slot: Option<ExactNumNumber> = None;
     let mut e = exp;
     loop {
+        let b = b_slot.as_ref().unwrap_or(base);
         if e & 1 == 1 {
-            acc = acc.mul(&b, p, RoundingMode::None)?;
+            acc = acc.mul(b, p, RoundingMode::None)?;
         }
         e >>= 1;
         if e == 0 {
             return Ok(acc);
         }
-        b = b.mul(&b, p, RoundingMode::None)?;
+        let sq = b.mul(b, p, RoundingMode::None)?;
+        b_slot = Some(sq);
     }
 }
 
@@ -9820,12 +9825,12 @@ mod tests {
         cc: &mut Consts,
         label: &str,
     ) -> Result<(), crate::Error> {
-        let a = nu.clone()?;
-        let n_est = super::estimate_log2_leading_ji(x, &a, cc)?;
+        let a = nu;
+        let n_est = super::estimate_log2_leading_ji(x, a, cc)?;
         let q = (16 * WORD_BIT_SIZE)
             .max(a.mantissa_max_bit_len() + 4 * WORD_BIT_SIZE)
             .max(x.mantissa_max_bit_len() + 4 * WORD_BIT_SIZE);
-        let n_true = n_at(x, &a, q, cc)?;
+        let n_true = n_at(x, a, q, cc)?;
         let lo = EXPONENT_MIN as i128 + 2 * p as i128 + 256;
         let hi = EXPONENT_MAX as i128 - 256;
         let margin = 1i128 << 20;

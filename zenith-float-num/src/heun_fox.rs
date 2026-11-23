@@ -1153,20 +1153,22 @@ fn meijer_removable_limit(
         return cat_nan();
     }
     let one = ExactNum::from_u8(1, p);
-    let w = if r.compare(&one) == Some(0) {
-        z.clone()
+    let w_pow;
+    let w: &ExactNum = if r.compare(&one) == Some(0) {
+        z
     } else {
-        pow_real(
+        w_pow = pow_real(
             z,
             &ExactNum::from_u8(1, p).div(r, p, RoundingMode::None),
             p,
             cc,
-        )
+        );
+        &w_pow
     };
-    if !finite(&w) {
+    if !finite(w) {
         return cat_nan();
     }
-    if choose_series(an.len(), ap.len(), bm.len(), bq.len(), &w, p) == 1 {
+    if choose_series(an.len(), ap.len(), bm.len(), bq.len(), w, p) == 1 {
         return meijer_jet_limit(z, r, false, an, ap, bm, bq, p, cc);
     }
     let refl = |xs: &[ExactNum]| -> Vec<ExactNum> {
@@ -3014,8 +3016,9 @@ fn taylor_step(
             p,
             nr,
         );
-        let (coef_k, coef_km1) = if k == 0 {
-            (ode.c0.clone(), ExactNum::new(prec))
+        let coef_k_owned;
+        let (coef_k, coef_km1): (&ExactNum, ExactNum) = if k == 0 {
+            (&ode.c0, ExactNum::new(prec))
         } else {
             let km1 = ku - 1;
             let km2 = ku.saturating_sub(2);
@@ -3053,10 +3056,11 @@ fn taylor_step(
                 p,
                 nr,
             );
-            (coef_k, coef_km1)
+            coef_k_owned = coef_k;
+            (&coef_k_owned, coef_km1)
         };
         let t_kp1 = ExactNum::mul_ref(&coef_kp1, &c_kp1, prec, nr);
-        let t_k = ExactNum::mul_ref(&coef_k, &c_k, prec, nr);
+        let t_k = ExactNum::mul_ref(coef_k, &c_k, prec, nr);
         let t_km1 = ExactNum::mul_ref(&coef_km1, &c_km1, prec, nr);
         let rhs = ExactNum::add_ref(&ExactNum::add_ref(&t_kp1, &t_k, prec, nr), &t_km1, prec, nr);
         let c_kp2 = ExactNum::div_ref(&rhs.neg_ref(), &left, prec, nr);
@@ -3160,19 +3164,19 @@ fn taylor_step(
             );
             let den_h = ExactNum::mul_ref(&rho, &geo, 64, dn);
             let my = ub_rel(&m_bound);
-            let myp = if den_h.is_positive() {
-                ExactNum::div_ref(&my, &den_h, 64, up)
+            // Without a positive den_h both derivative bounds fall back to my itself.
+            let (myp_div, mypp_div);
+            let (myp, mypp): (&ExactNum, &ExactNum) = if den_h.is_positive() {
+                myp_div = ExactNum::div_ref(&my, &den_h, 64, up);
+                mypp_div =
+                    my.ldexp_ref(1, 64, up)
+                        .div(&ExactNum::mul_ref(&den_h, &den_h, 64, dn), 64, up);
+                (&myp_div, &mypp_div)
             } else {
-                my.clone()
+                (&my, &my)
             };
-            let mypp = if den_h.is_positive() {
-                my.ldexp_ref(1, 64, up)
-                    .div(&ExactNum::mul_ref(&den_h, &den_h, 64, dn), 64, up)
-            } else {
-                my.clone()
-            };
-            def = def.add(&da.mul(&mypp, 64, up), 64, up);
-            def = def.add(&db.mul(&myp, 64, up), 64, up);
+            def = def.add(&da.mul(mypp, 64, up), 64, up);
+            def = def.add(&db.mul(myp, 64, up), 64, up);
             def = def.add(&dc.mul(&my, 64, up), 64, up);
             let nterm = ExactNum::from_u64((k as u64).saturating_add(4), 64);
             let sum_rnd = ExactNum::mul_ref(&unit, &nterm, 64, up).mul(

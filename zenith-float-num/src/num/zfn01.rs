@@ -195,15 +195,20 @@ fn zfn01_public_mul_signs_to_even() -> Result<(), Error> {
         (false, true, true),
         (true, true, false),
     ] {
-        let mut x = a.clone();
-        let mut y = b.clone();
-        if sa {
-            x = -x;
-        }
-        if sb {
-            y = -y;
-        }
-        let got = x.mul(&y, p, RoundingMode::ToEven);
+        let (xn, yn);
+        let x: &ExactNum = if sa {
+            xn = a.neg_ref();
+            &xn
+        } else {
+            &a
+        };
+        let y: &ExactNum = if sb {
+            yn = b.neg_ref();
+            &yn
+        } else {
+            &b
+        };
+        let got = ExactNum::mul_ref(x, y, p, RoundingMode::ToEven);
         let mut w = want.clone();
         if neg {
             w = -w;

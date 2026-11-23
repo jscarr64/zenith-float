@@ -253,15 +253,18 @@ mod tests {
             let n = choose_n_0f1(&two, &w, p).ok_or(Error::PrecisionRetryExhausted)?;
             let fwd = sum_forward(&two, &w, n.max(1), p).0;
             // force the bsplit path even at p=64 by calling bsplit+close for p>=4
-            let bs = if n >= 4 {
+            let bs_split;
+            let bs: &ExactComplex = if n >= 4 {
                 let (u, v, ww) = bsplit(&two, &w, 0, n - 1, p);
-                u.add(&v, p, RoundingMode::None)
-                    .div(&ww, p, RoundingMode::None)
+                bs_split = u
+                    .add(&v, p, RoundingMode::None)
+                    .div(&ww, p, RoundingMode::None);
+                &bs_split
             } else {
-                fwd.clone()
+                &fwd
             };
             assert!(!bs.is_nan() && !fwd.is_nan(), "p={p} nan");
-            assert!(near(&bs, &fwd, p, 8), "p={p} bsplit vs forward");
+            assert!(near(bs, &fwd, p, 8), "p={p} bsplit vs forward");
         }
         let _ = Consts::new()?;
         Ok(())

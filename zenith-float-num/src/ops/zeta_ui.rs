@@ -134,17 +134,20 @@ fn pow_ui(base: &ExactNum, exp: u64, p: usize) -> ExactNum {
         return ExactNum::from_u8(1, p);
     }
     let mut acc = ExactNum::from_u8(1, p);
-    let mut b = base.clone();
+    // base^(2^j); `None` while j = 0 (base read in place).
+    let mut b_slot: Option<ExactNum> = None;
     let mut e = exp;
     loop {
+        let b = b_slot.as_ref().unwrap_or(base);
         if e & 1 == 1 {
-            acc = acc.mul(&b, p, NR);
+            acc = acc.mul(b, p, NR);
         }
         e >>= 1;
         if e == 0 {
             return acc;
         }
-        b = ExactNum::mul_ref(&b, &b, p, NR);
+        let sq = ExactNum::mul_ref(b, b, p, NR);
+        b_slot = Some(sq);
     }
 }
 

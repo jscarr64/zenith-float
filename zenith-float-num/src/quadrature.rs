@@ -521,12 +521,14 @@ where
         let err = ExactNum::sub_ref(&s, &prev, wde, RoundingMode::None).abs();
         // Agreement to 2^-(p-8) relative to max(|s|, 1).
         let sa = s.abs_ref();
-        let lim = if sa.compare(&ExactNum::from_u8(1, wde)) == Some(1) {
-            ExactNum::mul_ref(&guard, &sa, wde, RoundingMode::None)
+        let lim_scaled;
+        let lim: &ExactNum = if sa.compare(&ExactNum::from_u8(1, wde)) == Some(1) {
+            lim_scaled = ExactNum::mul_ref(&guard, &sa, wde, RoundingMode::None);
+            &lim_scaled
         } else {
-            guard.clone()
+            &guard
         };
-        if below(&err, &lim) {
+        if below(&err, lim) {
             let mut out = s;
             let _ = out.set_precision(p, rm);
             return Some(out);

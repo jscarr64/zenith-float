@@ -172,10 +172,8 @@ where
     let two = ExactNum::from_u8(2, wrk);
     let six = ExactNum::from_u8(6, wrk);
     let half_h = ExactNum::div_ref(&h, &two, wrk, RoundingMode::None);
-    let mut t = t0.clone();
-    let mut y = y0.clone();
-    let _ = t.set_precision(wrk, RoundingMode::None);
-    let _ = y.set_precision(wrk, RoundingMode::None);
+    let mut t = t0.rounded_to(wrk, RoundingMode::None);
+    let mut y = y0.rounded_to(wrk, RoundingMode::None);
     let mut ts = Vec::with_capacity(n_steps + 1);
     let mut ys = Vec::with_capacity(n_steps + 1);
     ts.push(t.clone());
@@ -259,10 +257,8 @@ where
     let wrk = work_p(p);
     let n_f = ExactNum::from_u64(n_steps as u64, wrk);
     let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
-    let mut t = t0.clone();
-    let mut y = y0.clone();
-    let _ = t.set_precision(wrk, RoundingMode::None);
-    let _ = y.set_precision(wrk, RoundingMode::None);
+    let mut t = t0.rounded_to(wrk, RoundingMode::None);
+    let mut y = y0.rounded_to(wrk, RoundingMode::None);
     let mut ts = Vec::with_capacity(n_steps + 1);
     let mut ys = Vec::with_capacity(n_steps + 1);
     ts.push(t.clone());
@@ -636,10 +632,8 @@ where
     let fac = frac(ODE_FAC_NUM, ODE_FAC_DEN, wrk, RoundingMode::None);
     let grow = ExactNum::from_i64(ODE_H_GROW, wrk);
     let shrink = frac(1, ODE_H_SHRINK_DEN, wrk, RoundingMode::None);
-    let mut t = t0.clone();
-    let mut y = y0.clone();
-    let _ = t.set_precision(wrk, RoundingMode::None);
-    let _ = y.set_precision(wrk, RoundingMode::None);
+    let mut t = t0.rounded_to(wrk, RoundingMode::None);
+    let mut y = y0.rounded_to(wrk, RoundingMode::None);
     let span = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None);
     let mut h = span.ldexp_ref(-4, wrk, RoundingMode::None);
     let mut ts = Vec::new();
@@ -914,10 +908,8 @@ where
 {
     let rm = RoundingMode::None;
     let hmin = ode_min_step(wrk, rm);
-    let mut t = t0.clone();
-    let mut y = y0.clone();
-    let _ = t.set_precision(wrk, rm);
-    let _ = y.set_precision(wrk, rm);
+    let mut t = t0.rounded_to(wrk, rm);
+    let mut y = y0.rounded_to(wrk, rm);
     let mut h = ExactNum::sub_ref(t1, t0, wrk, rm);
     let mut ts = Vec::new();
     let mut ys = Vec::new();

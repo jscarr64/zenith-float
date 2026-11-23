@@ -898,31 +898,19 @@ impl ExactNumNumber {
             // That is a can_round endpoint of "overflow", not a failure of
             // the scale: if only one end overflows, the integer/dest value
             // is not yet unique and Ziv must grow `p_wrk`.
-            let hi_ovf_add;
-            let (y_lo, y_hi) = if sy.exp_a + f <= ulp_exp - 2 {
+            // `y_hi` is `None` when y + ulp (or y + eps) overflows: that end is "overflow".
+            let (y_lo, y_hi): (Self, Option<Self>) = if sy.exp_a + f <= ulp_exp - 2 {
                 let ulp = Self::pow2_i128(ulp_exp, q)?;
                 match y.add(&ulp, q, RoundingMode::None) {
-                    Ok(hi) => {
-                        hi_ovf_add = false;
-                        (y, hi)
-                    }
-                    Err(Error::ExponentOverflow(_)) => {
-                        hi_ovf_add = true;
-                        (y.clone()?, y.clone()?)
-                    }
+                    Ok(hi) => (y, Some(hi)),
+                    Err(Error::ExponentOverflow(_)) => (y, None),
                     Err(err) => return Err(err),
                 }
             } else {
                 let eps = Self::pow2_i128(sy.exp_a + f, q)?;
                 match y.add(&eps, q, RoundingMode::None) {
-                    Ok(hi) => {
-                        hi_ovf_add = false;
-                        (y, hi)
-                    }
-                    Err(Error::ExponentOverflow(_)) => {
-                        hi_ovf_add = true;
-                        (y.clone()?, y.clone()?)
-                    }
+                    Ok(hi) => (y, Some(hi)),
+                    Err(Error::ExponentOverflow(_)) => (y, None),
                     Err(err) => return Err(err),
                 }
             };
@@ -933,20 +921,21 @@ impl ExactNumNumber {
                 Err(err) => return Err(err),
             };
             let mut rhi = y_hi;
-            let hi_ovf = if hi_ovf_add {
-                true
-            } else {
-                match rhi.set_precision(p, rm) {
+            let hi_ovf = match rhi.as_mut() {
+                None => true,
+                Some(h) => match h.set_precision(p, rm) {
                     Ok(()) => false,
                     Err(Error::ExponentOverflow(_)) => true,
                     Err(err) => return Err(err),
-                }
+                },
             };
             if lo_ovf && hi_ovf {
                 return Err(Error::ExponentOverflow(self.sign()));
             }
-            if !lo_ovf && !hi_ovf && rlo.cmp(&rhi) == 0 && rlo.sign() == rhi.sign() {
-                return Ok(rlo);
+            if let (false, false, Some(h)) = (lo_ovf, hi_ovf, rhi.as_ref()) {
+                if rlo.cmp(h) == 0 && rlo.sign() == h.sign() {
+                    return Ok(rlo);
+                }
             }
             retries += 1;
             if retries > MAX_PREC_RETRY {

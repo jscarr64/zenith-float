@@ -522,8 +522,12 @@ fn int_primitive(mut v: Vec<ExactInt>) -> Vec<ExactInt> {
     if last.is_negative() {
         g = g.neg();
     }
-    v.iter()
-        .map(|c| c.div_rem(&g).map_or_else(|| c.clone(), |(q, _)| q))
+    // v is owned: an entry g does not divide moves through unchanged.
+    v.into_iter()
+        .map(|c| match c.div_rem(&g) {
+            Some((q, _)) => q,
+            None => c,
+        })
         .collect()
 }
 
