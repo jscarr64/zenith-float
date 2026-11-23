@@ -70,6 +70,8 @@ mod random_dist;
 mod rational;
 mod roots;
 mod strop;
+#[cfg(test)]
+mod test_time;
 
 #[cfg(feature = "std")]
 mod for_3rd;

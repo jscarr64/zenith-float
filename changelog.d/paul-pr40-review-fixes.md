@@ -41,3 +41,7 @@
   decreased 2^-(prec+4) (no cap; NaN PrecisionRetryExhausted only past u32::MAX terms), as the "Caps" rulings require.
   Values match FLINT 0.9.0 `bessel_i` / `bessel_k` and the mpmath refs. New unit test zf_0f1_large_z_runs_to_convergence
   (0F1(;3/2;10^8) = sinh(20000)/20000; red: got 1).
+- Unit-test wall-clock budgets scale with `ZF_TIME_FACTOR` (new `#[cfg(test)] mod test_time`, same grammar and [1, 8]
+  range as s9_specials_golds): zf_ln_gamma_modest_z_at_p8192_finishes (30 s native) and zf_53_pollard_rho_proof_path
+  (2^255−19 in 1 s native) failed only under qemu-aarch64 (5066 ms for the 1 s bound). Native budgets are unchanged;
+  under the 6.50 pin they are 195 s and 6.5 s. Green on qemu-aarch64 with ZF_TIME_FACTOR=6.50.

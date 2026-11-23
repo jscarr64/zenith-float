@@ -2670,12 +2670,16 @@ mod tests {
             ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
             ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(10, p)),
         ];
+        // 30 s native; times ZF_TIME_FACTOR on an emulated runner (crate::test_time).
+        let limit = crate::test_time::budget(std::time::Duration::from_secs(30));
+        assert!(limit.is_ok(), "{limit:?}");
+        let limit = limit.unwrap_or_default();
         for z in &zs {
             let t0 = std::time::Instant::now();
             let lg = z.ln_gamma(p, rm, &mut cc);
             assert!(
-                t0.elapsed().as_secs() < 30,
-                "ln_gamma({z:?}) at p=8192 took {:?}",
+                t0.elapsed() < limit,
+                "ln_gamma({z:?}) at p=8192 took {:?} (budget {limit:?})",
                 t0.elapsed()
             );
             assert!(!lg.is_nan(), "ln_gamma NaN: {lg:?}");

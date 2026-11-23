@@ -411,12 +411,16 @@ mod tests {
 
         // Curve25519 prime, d0225257: APRCL, not an ECM/ρ search of n−1.
         let p255 = ExactInt::from_u64(2).pow(255).sub(&ExactInt::from_u64(19));
+        // 1 s native; times ZF_TIME_FACTOR on an emulated runner (crate::test_time).
+        let limit = crate::test_time::budget(std::time::Duration::from_secs(1));
+        assert!(limit.is_ok(), "{limit:?}");
+        let limit = limit.unwrap_or_default();
         let t0 = std::time::Instant::now();
         assert_proved_prime(&p255);
-        let ms = t0.elapsed().as_millis();
+        let took = t0.elapsed();
         assert!(
-            ms < 1_000,
-            "2^255-19 must finish well under 1 s; took {ms} ms"
+            took < limit,
+            "2^255-19 must finish well under 1 s native ({limit:?} here); took {took:?}"
         );
 
         // ZF-53 Mersennes (d0225248, d0225251).
