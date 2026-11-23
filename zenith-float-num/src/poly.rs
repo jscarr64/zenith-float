@@ -327,7 +327,7 @@ impl ExactNumPoly {
                     return Some(ExactInt::zero());
                 }
                 let w = c.mantissa_max_bit_len()?;
-                let x = c.clone().ldexp(k, w, RoundingMode::None);
+                let x = c.ldexp_ref(k, w, RoundingMode::None);
                 if !x.is_int() {
                     return None;
                 }

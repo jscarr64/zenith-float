@@ -523,7 +523,7 @@ where
         let s = estimate(&acc, &h);
         let err = ExactNum::sub_ref(&s, &prev, wde, RoundingMode::None).abs();
         // Agreement to 2^-(p-8) relative to max(|s|, 1).
-        let sa = s.clone().abs();
+        let sa = s.abs_ref();
         let lim = if sa.compare(&ExactNum::from_u8(1, wde)) == Some(1) {
             ExactNum::mul_ref(&guard, &sa, wde, RoundingMode::None)
         } else {

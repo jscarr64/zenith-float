@@ -1425,7 +1425,7 @@ impl ExactNumNumber {
         if y.is_negative() {
             return Err(Error::InvalidArgument);
         }
-        let fl = y.clone()?.floor()?;
+        let fl = y.floor_ref()?;
         if y.is_int() && !y.inexact() {
             return Ok(Some(fl));
         }

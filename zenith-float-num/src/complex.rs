@@ -634,7 +634,7 @@ impl ExactComplex {
             // tan(x+iy) = -i tanh(-y + ix): with tanh(-y+ix) = A + iB, tan = B - iA.
             let (x, y) = (&self.re, &self.im);
             return crate::complex_special::ziv_complex(p, rm, |pw| {
-                let (a, b) = Self::tanh_parts(&y.clone().neg(), x, pw, cc);
+                let (a, b) = Self::tanh_parts(&y.neg_ref(), x, pw, cc);
                 Self::new(b, a.neg())
             });
         }
@@ -732,16 +732,16 @@ impl ExactComplex {
     /// overflowing cosh 2x, while retaining the sign of the distance from ±1.
     fn tanh_parts(x: &ExactNum, y: &ExactNum, pw: usize, cc: &mut Consts) -> (ExactNum, ExactNum) {
         let n = RoundingMode::None;
-        let x2 = x.clone().ldexp(1, pw, n);
-        let y2 = y.clone().ldexp(1, pw, n);
+        let x2 = x.ldexp_ref(1, pw, n);
+        let y2 = y.ldexp_ref(1, pw, n);
         let (s2y, c2y) = y2.sin_cos(pw, n, cc);
         let big = matches!(
             x.abs_cmp(&ExactNum::from_u32(u32::try_from(pw).unwrap_or(u32::MAX), WORD_BIT_SIZE)),
             Some(o) if o > 0
         );
         if big {
-            let e = x2.clone().abs().neg().exp(pw, n, cc);
-            let two_e = e.clone().ldexp(1, pw, n);
+            let e = x2.abs_ref().neg().exp(pw, n, cc);
+            let two_e = e.ldexp_ref(1, pw, n);
             let e2 = e.sqr(pw, n);
             let den = ExactNum::from_u8(1, pw)
                 .add(&ExactNum::mul_ref(&c2y, &two_e, pw, n), pw, n)
@@ -856,11 +856,11 @@ impl ExactComplex {
     fn sqrt_kahan(&self, pw: usize) -> Self {
         let n = RoundingMode::None;
         let a = self.re.hypot(&self.im, pw, n);
-        let ax = self.re.clone().abs();
+        let ax = self.re.abs_ref();
         let h = a.add(&ax, pw, n).ldexp(-1, pw, n);
         let t = h.sqrt(pw, n);
         let t2 = ExactNum::mul_ref(&t, &ExactNum::from_u8(2, WORD_BIT_SIZE), pw, n);
-        let ay = self.im.clone().abs();
+        let ay = self.im.abs_ref();
         let u = ay.div(&t2, pw, n);
         let neg_im = self.im.is_negative();
         if self.re.is_negative() {
@@ -1175,7 +1175,7 @@ impl ExactComplex {
             return crate::complex_special::ziv_complex(p, rm, |pw| {
                 let n = RoundingMode::None;
                 let em1 = x.expm1(pw, n, cc);
-                let half_y = y.clone().ldexp(-1, pw, n);
+                let half_y = y.ldexp_ref(-1, pw, n);
                 let s2 = half_y.sin(pw, n, cc);
                 let re =
                     em1.mul(&y.cos(pw, n, cc), pw, n)
@@ -1470,7 +1470,7 @@ impl ExactComplex {
             6 => (0, -1),
             _ => (1, -1),
         };
-        let r = x.clone().abs();
+        let r = x.abs_ref();
         let shift = k.div_euclid(2);
         let mut part = |sg: i8| -> Option<ExactNum> {
             if sg == 0 {
@@ -1600,7 +1600,7 @@ impl ExactComplex {
             let den0 = i64::try_from(n).ok()?.checked_mul(2)?;
             let g = gcd_i64(k.abs(), den0);
             let (num, den) = (k / g, den0 / g);
-            let mag = if x.is_zero() { y.clone().abs() } else { x.clone().abs() };
+            let mag = if x.is_zero() { y.abs_ref() } else { x.abs_ref() };
             let cos_x2 = trig_exact_x2(num, den);
             let sin_x2 = trig_exact_x2(den - 2 * num, 2 * den);
             let mut z = crate::complex_special::ziv_complex(p, rm, |pw| {
@@ -1782,7 +1782,7 @@ impl ExactComplex {
     fn cos_sin_pi_times(yu: &ExactNum, p: usize, cc: &mut Consts) -> Option<(ExactNum, ExactNum)> {
         let n = RoundingMode::None;
         let t = yu.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
-        let two_t = t.clone().ldexp(1, p.max(t.precision().unwrap_or(p)) + 2, n);
+        let two_t = t.ldexp_ref(1, p.max(t.precision().unwrap_or(p)) + 2, n);
         if two_t.is_int() {
             let k = two_t.to_i64(RoundingMode::ToZero).ok()?.rem_euclid(4);
             let (one, zero) = (ExactNum::from_u8(1, p), ExactNum::new(p));
@@ -1809,7 +1809,7 @@ impl ExactComplex {
         let b = &rhs.im;
         let m = self.axis_half_turns()?;
         let imag_axis = self.re.is_zero() && !self.im.is_zero();
-        let r = if imag_axis { self.im.clone().abs() } else { self.re.clone().abs() };
+        let r = if imag_axis { self.im.abs_ref() } else { self.re.abs_ref() };
         let one = ExactNum::from_u8(1, p);
         let r_is_one = r.compare(&one) == Some(0);
         let ra = r.pow(a, p, n, cc);
@@ -1839,8 +1839,8 @@ impl ExactComplex {
                 0 => return Some(Self::new(mag, ExactNum::new(p))),
                 2 => a.clone(),
                 -2 => -a.clone(),
-                1 => a.clone().ldexp(-1, a.precision().unwrap_or(p) + 2, n),
-                _ => -a.clone().ldexp(-1, a.precision().unwrap_or(p) + 2, n),
+                1 => a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n),
+                _ => -a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n),
             };
             let (sn, cs) = Self::cos_sin_pi_times(&yu, p, cc)?;
             let below = self.im.is_negative();
@@ -1877,7 +1877,7 @@ impl ExactComplex {
         let b = &rhs.im;
         let m = self.axis_half_turns()?;
         let imag_axis = self.re.is_zero() && !self.im.is_zero();
-        let r = if imag_axis { self.im.clone().abs() } else { self.re.clone().abs() };
+        let r = if imag_axis { self.im.abs_ref() } else { self.re.abs_ref() };
         let one = ExactNum::from_u8(1, p);
         let r_is_one = r.compare(&one) == Some(0);
         // Enclose π (and ln r) in a ball so exp(-b m π/2) and the angle
@@ -1912,8 +1912,8 @@ impl ExactComplex {
                 }
                 2 => a.clone(),
                 -2 => -a.clone(),
-                1 => a.clone().ldexp(-1, a.precision().unwrap_or(p) + 2, n),
-                _ => -a.clone().ldexp(-1, a.precision().unwrap_or(p) + 2, n),
+                1 => a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n),
+                _ => -a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n),
             };
             let (sn, cs) = Self::cos_sin_pi_times(&yu, p, cc)?;
             let below = self.im.is_negative();
@@ -1961,7 +1961,7 @@ impl ExactComplex {
             return None;
         }
         let below = self.im.is_negative();
-        let r = if imag_axis { self.im.clone().abs() } else { self.re.clone().abs() };
+        let r = if imag_axis { self.im.abs_ref() } else { self.re.abs_ref() };
         let mag = r.pow(y, p, n, cc);
         if !finite_val(&mag) {
             return None;
@@ -1975,7 +1975,7 @@ impl ExactComplex {
         // Arg/π: ±1/2 on the imaginary axis, 1 on the negative real axis (the sign of the
         // side is applied to sin below).
         let yu = if imag_axis {
-            let h = y.clone().ldexp(-1, y.precision().unwrap_or(p) + 2, n);
+            let h = y.ldexp_ref(-1, y.precision().unwrap_or(p) + 2, n);
             if below {
                 -h
             } else {
@@ -1985,7 +1985,7 @@ impl ExactComplex {
             y.clone()
         };
         let t = yu.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
-        let two_t = t.clone().ldexp(1, p.max(t.precision().unwrap_or(p)) + 2, n);
+        let two_t = t.ldexp_ref(1, p.max(t.precision().unwrap_or(p)) + 2, n);
         let (sn, cs) = if two_t.is_int() {
             // t ∈ {0, ±1/2, ±1, ±3/2}: exact cos πt and sin πt.
             let k = two_t.to_i64(RoundingMode::ToZero).ok()?.rem_euclid(4);
@@ -2039,7 +2039,7 @@ impl ExactComplex {
             return None;
         }
         let below = self.im.is_negative();
-        let r = if imag_axis { self.im.clone().abs() } else { self.re.clone().abs() };
+        let r = if imag_axis { self.im.abs_ref() } else { self.re.abs_ref() };
         let mag = RB::rounded(r.pow(y, p, n, cc), p)?;
         if !imag_axis && self.re.is_positive() {
             // Arg = ±0: the imaginary part is a zero signed as sin(y·(±0)).
@@ -2050,7 +2050,7 @@ impl ExactComplex {
         // Arg/π: ±1/2 on the imaginary axis, 1 on the negative real axis (the sign of the
         // side is applied to sin below).
         let yu = if imag_axis {
-            let h = y.clone().ldexp(-1, y.precision().unwrap_or(p) + 2, n);
+            let h = y.ldexp_ref(-1, y.precision().unwrap_or(p) + 2, n);
             if below {
                 -h
             } else {
@@ -2060,7 +2060,7 @@ impl ExactComplex {
             y.clone()
         };
         let t = yu.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
-        let two_t = t.clone().ldexp(1, p.max(t.precision().unwrap_or(p)) + 2, n);
+        let two_t = t.ldexp_ref(1, p.max(t.precision().unwrap_or(p)) + 2, n);
         let (sn, cs) = if two_t.is_int() {
             // t ∈ {0, ±1/2, ±1, ±3/2}: exact cos πt and sin πt.
             let k = two_t.to_i64(RoundingMode::ToZero).ok()?.rem_euclid(4);
@@ -2254,7 +2254,7 @@ impl ExactComplex {
         if y.is_zero() {
             let neg = y.is_negative();
             let xneg = x.is_negative();
-            let ax = x.clone().abs();
+            let ax = x.abs_ref();
             return match f {
                 InvFn::Asin if le1(x, false) => Some(Self::new(x.asin(p, rm, cc), zero(neg))),
                 InvFn::Acos if le1(x, false) => Some(Self::new(x.acos(p, rm, cc), zero(!neg))),
@@ -2280,7 +2280,7 @@ impl ExactComplex {
         }
         let neg = x.is_negative();
         let yneg = y.is_negative();
-        let ay = y.clone().abs();
+        let ay = y.abs_ref();
         match f {
             InvFn::Asin => Some(Self::new(zero(neg), y.asinh(p, rm, cc))),
             InvFn::Asinh if le1(y, false) => Some(Self::new(zero(neg), y.asin(p, rm, cc))),
@@ -2523,7 +2523,7 @@ impl ExactComplex {
             // On the cut |x| > 1 (|x| ≤ 1 is in `inv_axis`): catanh(x ± i0) =
             // sgn(x)·½ ln((|x|+1)/(|x|−1)) ± iπ/2 (C99 Annex G). The log formula's zero
             // imaginary parts cancel to +0 and lose the side.
-            let a = RB::exact(self.re.clone().abs());
+            let a = RB::exact(self.re.abs_ref());
             let xneg = self.re.is_negative();
             let ineg = self.im.is_negative();
             return crate::complex_ball::ziv_complex_ball(p, rm, |q| {

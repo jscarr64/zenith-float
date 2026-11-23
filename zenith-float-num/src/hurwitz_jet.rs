@@ -89,7 +89,7 @@ impl Jet {
 /// `(N+a)^{-(s+x)} = (N+a)^{-s} (1 − x ln(N+a) + O(x²))`.
 fn invpow_jet(base: &ExactNum, s: &ExactNum, p: usize, cc: &mut Consts) -> Jet {
     let ln = base.ln(p, NR, cc);
-    let c0 = base.pow(&s.clone().neg(), p, NR, cc);
+    let c0 = base.pow(&s.neg_ref(), p, NR, cc);
     let c1 = ExactNum::mul_ref(&c0, &ln, p, NR).neg();
     Jet { c0, c1 }
 }
@@ -150,7 +150,7 @@ fn em_bound1(s: &ExactNum, a: &ExactNum, n: u64, m: u64, cc: &mut Consts) -> Opt
 
     // F0 = (|s|)_{2M}, H = Σ 1/(|s|+i), F1 = F0 H.
     let sabs = {
-        let mut t = s.clone().abs();
+        let mut t = s.abs_ref();
         let _ = t.set_precision(wp, UP);
         t
     };
@@ -420,7 +420,7 @@ pub(crate) fn log_barnes_g_zeta(z: &ExactNum, p: usize, cc: &mut Consts) -> Exac
         let ln2 = cc.ln_2(p, NR);
         ln2.div(&ExactNum::from_u32(24, p), p, NR)
             .neg()
-            .sub(&c.clone().ldexp(-1, p, NR), p, NR)
+            .sub(&c.ldexp_ref(-1, p, NR), p, NR)
     } else {
         let s = ExactNum::from_i32(-1, p);
         let Some((_, zp)) = hurwitz_em_jet(&s, z, p, cc) else {
@@ -463,7 +463,7 @@ fn is_exact_one(x: &ExactNum, p: usize) -> bool {
 }
 
 fn is_exact_half(x: &ExactNum, p: usize) -> bool {
-    let two_x = x.clone().ldexp(1, p, NR);
+    let two_x = x.ldexp_ref(1, p, NR);
     is_exact_one(&two_x, p)
 }
 
@@ -495,7 +495,7 @@ fn powsum_term_from_ln(
     } else if is_exact_half(s, p) {
         ExactNum::from_u64(k, p).sqrt(p, NR).reciprocal(p, NR)
     } else if s.is_int() {
-        ExactNum::from_u64(k, p).pow(&s.clone().neg(), p, NR, cc)
+        ExactNum::from_u64(k, p).pow(&s.neg_ref(), p, NR, cc)
     } else {
         ExactNum::mul_ref(s, ln, p, NR).neg().exp(p, NR, cc)
     };
@@ -1094,7 +1094,7 @@ mod tests {
             let two = ExactNum::from_u8(2, prec);
             let tenth = ExactNum::from_u8(1, prec).div(&ExactNum::from_u8(10, prec), prec, rm);
             let s_half = ExactNum::from_u8(1, prec).ldexp(-1, prec, rm);
-            let s_mhalf = s_half.clone().neg();
+            let s_mhalf = s_half.neg_ref();
             let s_3h = ExactNum::from_u8(3, prec).ldexp(-1, prec, rm);
             eprintln!("==== ZF elem prec={prec} ====");
             let ns = time_ns(n, n.min(2), || {

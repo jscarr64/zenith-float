@@ -401,7 +401,7 @@ fn polish_root(
         if !finite(&step) {
             break;
         }
-        let sa = step.clone().abs();
+        let sa = step.abs_ref();
         let next = ExactNum::sub_ref(&x, &step, p, rm);
         if !finite(&next) {
             break;

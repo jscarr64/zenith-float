@@ -1201,7 +1201,7 @@ fn zf_21_c_atan_imaginary_cuts_follow_c99() -> Result<(), String> {
                         fmt_real(w.re())
                     );
                     assert!(
-                        quad_near(&w.re().clone().abs(), half_pi, p, 2, &mut cc),
+                        quad_near(&w.re().abs_ref(), half_pi, p, 2, &mut cc),
                         "{tag}: |Re| {}",
                         fmt_real(w.re())
                     );
@@ -1212,7 +1212,7 @@ fn zf_21_c_atan_imaginary_cuts_follow_c99() -> Result<(), String> {
                         fmt_real(w.im())
                     );
                     assert!(
-                        quad_near(&w.im().clone().abs(), at, p, 2, &mut cc),
+                        quad_near(&w.im().abs_ref(), at, p, 2, &mut cc),
                         "{tag}: |Im| {}",
                         fmt_real(w.im())
                     );
@@ -1699,7 +1699,7 @@ fn zf_11_two_sum_wide_exact_sum() {
         assert_eq!(lo.compare(&one), Some(0), "lo {rm:?}: {lo}");
         assert!(lo.inexact(), "lo inexact {rm:?}");
     }
-    let nmax = -max.clone();
+    let nmax = max.neg_ref();
     let (hi, lo) = nmax.clone().two_sum(&one, p, RoundingMode::Up);
     let want_hi = nmax.next_after(&INF_POS, p, RoundingMode::None);
     assert_eq!(hi.compare(&want_hi), Some(0), "hi -MAX+1 Up: {hi}");
@@ -1728,7 +1728,7 @@ fn zf_11_bessel_j_at_min_exponent() -> Result<(), String> {
         let mp = ExactNum::min_positive(p);
         let mn = ExactNum::min_positive_normal(p);
         let two_mp = ExactNum::add_ref(&mp, &mp, p, RoundingMode::None);
-        let half_mn = mn.clone().ldexp(-1, p, RoundingMode::None);
+        let half_mn = mn.ldexp_ref(-1, p, RoundingMode::None);
         assert!(
             !half_mn.is_zero() && !half_mn.inexact(),
             "minnorm/2 on grid p={p}"
@@ -1756,8 +1756,8 @@ fn zf_11_bessel_j_at_min_exponent() -> Result<(), String> {
             );
             // -minpos: odd function; Down is away from zero for a negative result.
             let away_n = matches!(rm, RoundingMode::Down | RoundingMode::FromZero);
-            let want = if away_n { -mp.clone() } else { -zero.clone() };
-            let j = (-mp.clone()).bessel_j(1, p, rm, &mut cc);
+            let want = if away_n { mp.neg_ref() } else { zero.neg_ref() };
+            let j = mp.neg_ref().bessel_j(1, p, rm, &mut cc);
             assert_eq!(j.compare(&want), Some(0), "J1(-minpos) p={p} {rm:?}: {j}");
             assert!(j.is_negative(), "J1(-minpos) sign p={p} {rm:?}: {j}");
             // 2·minpos and minnorm: x/2 is on the grid.
@@ -5230,7 +5230,7 @@ fn zf_kelvin_domain_inventory() -> Result<(), String> {
             }
 
             let xpos = ExactNum::from_u8(1, p);
-            let xneg = -xpos.clone();
+            let xneg = xpos.neg_ref();
             invalid(
                 &xneg.kelvin_ker(p, rm, &mut cc),
                 &format!("ker(-1) p={p} {rm:?}"),
@@ -5258,7 +5258,7 @@ fn zf_kelvin_domain_inventory() -> Result<(), String> {
             let ber1_pos = xpos.kelvin_ber_nu(&nu1, p, rm, &mut cc);
             let ber1_neg = xneg.kelvin_ber_nu(&nu1, p, rm, &mut cc);
             assert!(
-                (-ber1_pos.clone()).compare(&ber1_neg) == Some(0),
+                ber1_pos.neg_ref().compare(&ber1_neg) == Some(0),
                 "ber_1(-1)=-ber_1(1) p={p} {rm:?}: {ber1_neg} vs -{ber1_pos}"
             );
 

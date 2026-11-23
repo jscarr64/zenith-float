@@ -74,7 +74,7 @@ fn const_c_step_count_exceeds(remain: &ExactNum, h: &ExactNum, wrk: usize) -> bo
     let n = remain
         .clone()
         .abs()
-        .div(&h.clone().abs(), wrk, RoundingMode::None);
+        .div(&h.abs_ref(), wrk, RoundingMode::None);
     if !finite(&n) {
         return true;
     }
@@ -625,7 +625,7 @@ where
     if !finite(&max_span) {
         return Ok(false);
     }
-    Ok(span.clone().abs().compare(&max_span) == Some(1))
+    Ok(span.abs_ref().compare(&max_span) == Some(1))
 }
 
 fn rk45_at_prec<F>(
@@ -651,7 +651,7 @@ where
     let _ = t.set_precision(wrk, RoundingMode::None);
     let _ = y.set_precision(wrk, RoundingMode::None);
     let span = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None);
-    let mut h = span.clone().ldexp(-4, wrk, RoundingMode::None);
+    let mut h = span.ldexp_ref(-4, wrk, RoundingMode::None);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
     let mut stable_n: u32 = 0;
@@ -703,7 +703,7 @@ where
         } else {
             // Error stuck at the rounding floor cannot be driven down at this wrk.
             let floor = ode_min_step(wrk, RoundingMode::None).mul(
-                &ExactNum::from_u8(1, wrk).add(&y.clone().abs(), wrk, RoundingMode::None),
+                &ExactNum::from_u8(1, wrk).add(&y.abs_ref(), wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );
@@ -791,7 +791,7 @@ where
     if !finite(&h) || h.is_zero() {
         return Err(OdeError::InvalidArgument);
     }
-    let two_h = h.clone().ldexp(1, wrk, rm);
+    let two_h = h.ldexp_ref(1, wrk, rm);
     let yp = f(t, y, wrk, rm, cc);
     if !finite(&yp) {
         return Err(OdeError::InvalidArgument);
@@ -1234,7 +1234,7 @@ mod tests {
         let wrk = super::work_p(p);
         let tab = super::Dp45::new(wrk, RoundingMode::None);
         let span = ExactNum::sub_ref(&t1, &zero, wrk, RoundingMode::None);
-        let h0 = span.clone().ldexp(-4, wrk, RoundingMode::None);
+        let h0 = span.ldexp_ref(-4, wrk, RoundingMode::None);
         let mut y0 = ExactNum::new(p);
         let _ = y0.set_precision(wrk, RoundingMode::None);
         let mut t0 = ExactNum::new(p);

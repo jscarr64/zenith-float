@@ -809,7 +809,7 @@ fn k_tail(
         return None;
     }
     // Upper bound of |2 μ t / (1+t^2)| on [T, ∞) for the decaying estimate.
-    let two_mu_abs = two(wp).mul(&mu.clone().abs(), wp, UP);
+    let two_mu_abs = two(wp).mul(&mu.abs_ref(), wp, UP);
     let frac_up = if ExactNum::from_u8(1, wp).abs_cmp(t) != Some(1) {
         // T >= 1: t/(1+t^2) <= T/(1+T^2)
         two_mu_abs
@@ -926,7 +926,7 @@ fn k_panel_width(wp: usize) -> ExactNum {
     let need = (wp as i64).saturating_add(16);
     let bits = (need + n as i64) / (n as i64 + 1);
     let rho = ExactNum::from_u8(9, wp).div(&ExactNum::from_u8(10, wp), wp, DN);
-    let h = rho.clone().ldexp(-bits, wp, DN);
+    let h = rho.ldexp_ref(-bits, wp, DN);
     let half_rho = rho.ldexp(-1, wp, DN);
     if finite(&h) && h.is_positive() && h.abs_cmp(&half_rho) == Some(-1) {
         h
@@ -968,29 +968,30 @@ fn inc_exp_moments(
         }
         let kp1 = ExactNum::from_u64((k as u64).saturating_add(1), wp);
         let expo = ExactNum::mul_ref(&kp1, ln_h, wp, N).sub(zh, wp, N);
-        let mut term = expo.exp(wp, N, cc).div(&kp1, wp, N);
-        if !finite(&term) {
+        let mut sum = expo.exp(wp, N, cc).div(&kp1, wp, N);
+        if !finite(&sum) {
             return None;
         }
-        let mut sum = term.clone();
+        // The first term is `sum` itself: the next one is read from it (`mul_ref` is
+        // bit-identical to `mul`), each later one from the term before.
+        let mut term = ExactNum::mul_ref(&sum, zh, wp, N);
         let mut j = 0usize;
         loop {
             let den = ExactNum::from_u64((k as u64).saturating_add(2).saturating_add(j as u64), wp);
-            term = term.mul(zh, wp, N).div(&den, wp, N);
+            if j > 0 {
+                term = term.mul(zh, wp, N);
+            }
+            term = term.div(&den, wp, N);
             if !finite(&term) {
                 return None;
             }
             sum = sum.add(&term, wp, N);
             let small = term.is_zero()
-                || term
-                    .clone()
-                    .abs()
-                    .abs_cmp(&one(wp).ldexp(-((wp as i64) + 16), wp, N).mul(
-                        &sum.clone().abs(),
-                        wp,
-                        UP,
-                    ))
-                    != Some(1);
+                || term.abs_cmp(&one(wp).ldexp(-((wp as i64) + 16), wp, N).mul(
+                    &sum.abs_ref(),
+                    wp,
+                    UP,
+                )) != Some(1);
             if small && j >= 2 {
                 break;
             }
@@ -1080,7 +1081,7 @@ fn k_panel(
     if !one_minus_rho2.is_positive() {
         return None;
     }
-    let xmax = if b.abs_cmp(a) == Some(-1) { a.clone().abs() } else { b.clone().abs() };
+    let xmax = if b.abs_cmp(a) == Some(-1) { a.abs_ref() } else { b.abs_ref() };
     let max_abs = one(wp).add(&xmax.add(&rho, wp, UP).sqr(wp, UP), wp, UP);
     let m = if mu.is_negative() {
         let ln = one_minus_rho2.ln(wp, DN, cc);
@@ -1327,7 +1328,7 @@ fn struve_h_positive(
     // 11.2.1 when it is cheap, or when |ν| is comparable to |z| (11.6.1
     // is gated at |ν| >= z/2) and the term count is not a hang.
     let nu_ge_half_z = {
-        let halfz = zc.clone().ldexp(-1, 64, N);
+        let halfz = zc.ldexp_ref(-1, 64, N);
         nuc.abs_cmp(&halfz) != Some(-1)
     };
     let k_safe = maclaurin_k_est(&zc).is_some_and(|k| k <= 16_384);
@@ -1383,7 +1384,7 @@ pub(super) fn struve_h_word(
         if !nu.is_int() {
             return cat_nan();
         }
-        let x = z.clone().abs();
+        let x = z.abs_ref();
         // H_n(-x) = (-1)^{n+1} H_n(x): flip the sign if n is even. The inner
         // call must use the negated mode so the final rounding direction is
         // the one the caller asked for (Up/Down swap under a sign flip).
@@ -1728,7 +1729,7 @@ fn panel_integral(
 ) -> Option<(ExactNum, ExactNum)> {
     let mid = ExactNum::add_ref(a, b, wp, N).ldexp(-1, wp, N);
     let h = ExactNum::sub_ref(b, a, wp, N);
-    let half_h = h.clone().ldexp(-1, wp, N);
+    let half_h = h.ldexp_ref(-1, wp, N);
     let (f0, sh0, ch0, _) = f_and_gprime(&mid, nu, z, wp, cc)?;
     // Jet u_n = f^{(n)}(mid) via Leibniz: u_n = Σ_{j=0}^{n-1} C(n-1,j) a_{n-j} u_j
     // a_1 = -ν - z cosh(mid); a_k = -z sinh(mid) (k even ≥2); -z cosh(mid) (k odd ≥3).
@@ -1781,7 +1782,7 @@ fn panel_integral(
     if !finite(&ch_max) {
         return None;
     }
-    let a1u = ExactNum::mul_ref(z, &ch_max, wp, UP).add(&nu.clone().abs(), wp, UP);
+    let a1u = ExactNum::mul_ref(z, &ch_max, wp, UP).add(&nu.abs_ref(), wp, UP);
     let aku = ExactNum::mul_ref(z, &ch_max, wp, UP);
     // U_0 = max f on the panel. f is decreasing, so max is f(a), upper rounded.
     let (fa, _, _, _) = f_and_gprime(a, nu, z, wp, cc)?;
@@ -2023,7 +2024,7 @@ fn h_real_tail(
     }
     // ν<0: |h(u)| ≤ (1+2u)^{-ν} ≤ exp(-2ν u), so the tail is at most
     // e^{-(z+2ν)τ}/(z+2ν) provided z+2ν>0 (true when |ν|<z/2).
-    let two_nu = nu.clone().ldexp(1, wp, DN); // more negative if ν<0
+    let two_nu = nu.ldexp_ref(1, wp, DN); // more negative if ν<0
     let den = ExactNum::add_ref(z, &two_nu, wp, DN);
     if !den.is_positive() {
         return None;
@@ -2314,11 +2315,7 @@ fn exp_uk_jk_tight(j_lo: &ExactNum, j_hi: &ExactNum, wp: usize) -> bool {
     if !finite(&wid) || wid.is_negative() {
         return false;
     }
-    let mag = if j_hi.abs_cmp(j_lo) == Some(1) {
-        j_hi.clone().abs()
-    } else {
-        j_lo.clone().abs()
-    };
+    let mag = if j_hi.abs_cmp(j_lo) == Some(1) { j_hi.abs_ref() } else { j_lo.abs_ref() };
     let scale = if mag.is_zero() || mag.exponent().is_some_and(|e| e < -(wp as i64)) {
         one(wp).ldexp(-(wp as i64), wp, N)
     } else {
@@ -2358,8 +2355,8 @@ fn exp_uk_0_tau(
     if !ztau_dn.is_positive() {
         return None;
     }
-    let exp_dn = ztau_up.clone().neg().exp(wp, DN, cc);
-    let exp_up = ztau_dn.clone().neg().exp(wp, UP, cc);
+    let exp_dn = ztau_up.neg_ref().exp(wp, DN, cc);
+    let exp_up = ztau_dn.neg_ref().exp(wp, UP, cc);
     if !finite(&exp_dn) || !finite(&exp_up) {
         return None;
     }
@@ -2466,16 +2463,22 @@ fn anger_a_u_head(
             let even = ExactNum::from_u64((p as u64).saturating_mul(2), wp);
             g = g.mul(&ExactNum::sub_ref(&nu2, &even.sqr(wp, N), wp, N), wp, N);
         }
-        let ak_num = if n.is_multiple_of(2) { f.clone() } else { nu.clone().neg().mul(&g, wp, N) };
-        if !finite(&ak_num) || fac.is_zero() {
+        let odd_num;
+        let ak_num: &ExactNum = if n.is_multiple_of(2) {
+            &f
+        } else {
+            odd_num = nu.neg_ref().mul(&g, wp, N);
+            &odd_num
+        };
+        if !finite(ak_num) || fac.is_zero() {
             return None;
         }
-        let term = ExactNum::div_ref(&ak_num, &fac, wp, N).mul(&jk[n], wp, N);
+        let term = ExactNum::div_ref(ak_num, &fac, wp, N).mul(&jk[n], wp, N);
         if !finite(&term) {
             return None;
         }
         sum = sum.add(&term, wp, N);
-        let wterm = ak_num.abs().div(&fac, wp, UP).mul(&jw[n], wp, UP);
+        let wterm = ak_num.abs_ref().div(&fac, wp, UP).mul(&jw[n], wp, UP);
         jrem = jrem.add(&wterm, wp, UP);
         if n >= 2 && n.is_multiple_of(2) {
             // F_{p} and G_{p} already stepped at the start of this even n=2p.
@@ -2544,7 +2547,7 @@ fn h_disk_majorant(
     let m = if nu.is_zero() {
         one(wp).div(&s_lo, wp, UP)
     } else if nu.is_negative() {
-        let nabs = nu.clone().abs();
+        let nabs = nu.abs_ref();
         su_hi.pow(&nabs, wp, UP, cc).div(&s_lo, wp, UP)
     } else {
         let den = su_lo.pow(nu, wp, DN, cc).mul(&s_lo, wp, DN);
@@ -2669,7 +2672,7 @@ fn h_taylor_coeffs(
     }
     ld.push(lp);
     for n in 2..=nmax {
-        let term_s = nu.clone().neg().mul(&w_half[n - 1], wp, N);
+        let term_s = nu.neg_ref().mul(&w_half[n - 1], wp, N);
         let n1 = ExactNum::from_u64(n as u64 - 1, wp);
         let term_u =
             mid.clone()
@@ -2764,7 +2767,7 @@ fn exp_uk_panel(
     let mut b_pow = one(wp);
     let mut out = Vec::with_capacity(kmax + 1);
     out.push(ExactNum::mul_ref(&e_a, &l, wp, N));
-    let mut peak = out[0].clone().abs();
+    let mut peak = out[0].abs_ref();
     for k in 1..=kmax {
         a_pow = a_pow.mul(&alpha, wp, N);
         b_pow = b_pow.mul(&beta, wp, N);
@@ -2785,7 +2788,7 @@ fn exp_uk_panel(
             return None;
         }
         if ik.abs_cmp(&peak) == Some(1) {
-            peak = ik.clone().abs();
+            peak = ik.abs_ref();
         }
         out.push(ik);
     }
@@ -3076,21 +3079,23 @@ fn anger_weber_connection(
         }
         let (ap, gp) = anger_a(nu, z, wp, cc)?;
         // A_{-ν} = A_ν at ν=0, so do not run the large-|z| u-path twice.
-        let (am, gm) = if nu.is_zero() {
-            (ap.clone(), gp)
+        let am_neg;
+        let (am, gm): (&ExactNum, _) = if nu.is_zero() {
+            (&ap, gp)
         } else {
-            anger_a(&nu.clone().neg(), z, wp, cc)?
+            let (a, g) = anger_a(&nu.neg_ref(), z, wp, cc)?;
+            am_neg = a;
+            (&am_neg, g)
         };
         // E = -Y - cos(πν) A_ν - A_{-ν}
         let v = y
-            .clone()
-            .neg()
+            .neg_ref()
             .sub(&ExactNum::mul_ref(&c_pi, &ap, wp, N), wp, N)
-            .sub(&am, wp, N);
+            .sub(am, wp, N);
         if !finite(&v) {
             return None;
         }
-        let peak = exp_of(&y).max(exp_of(&ap)).max(exp_of(&am));
+        let peak = exp_of(&y).max(exp_of(&ap)).max(exp_of(am));
         let good = bits_good(wp, peak, exp_of(&v), 8, i64::MIN / 4)
             .min(gp)
             .min(gm);
@@ -3232,8 +3237,8 @@ fn anger_weber_word(
     }
     if z.is_negative() {
         // 11.10.12: J_ν(-z) = J_{-ν}(z),  E_ν(-z) = -E_{-ν}(z).
-        let x = z.clone().abs();
-        let nneg = nu.clone().neg();
+        let x = z.abs_ref();
+        let nneg = nu.neg_ref();
         // 11.10.12: J_ν(-z) = J_{-ν}(z) (no sign flip), E_ν(-z) = -E_{-ν}(z).
         let inner_rm = if weber { mode_for_neg(rm) } else { rm };
         let v = anger_weber_positive(weber, &x, &nneg, p, inner_rm, cc);
@@ -3288,10 +3293,10 @@ mod aws_bounds {
             return true;
         }
         let diff = ExactNum::sub_ref(a, b, wp, N).abs();
-        let scale = if b.clone().abs().abs_cmp(&a.clone().abs()) == Some(1) {
-            b.clone().abs()
+        let scale = if b.abs_ref().abs_cmp(&a.abs_ref()) == Some(1) {
+            b.abs_ref()
         } else {
-            a.clone().abs()
+            a.abs_ref()
         };
         if scale.is_zero() {
             return diff.is_zero();

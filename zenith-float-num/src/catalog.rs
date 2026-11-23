@@ -96,7 +96,7 @@ fn nonpositive_int(x: &ExactNum) -> bool {
 
 /// Upper bound (64-bit, rounded up) on `|x|`.
 fn abs_up(x: &ExactNum) -> ExactNum {
-    let mut y = x.clone().abs();
+    let mut y = x.abs_ref();
     let _ = y.set_precision(64, RoundingMode::Up);
     y
 }
@@ -201,7 +201,7 @@ fn pfq_continued(
         .iter()
         .map(|x| ExactNum::sub_ref(&one, x, wrk, n))
         .collect();
-    let mz = z.clone().neg();
+    let mz = z.neg_ref();
     let g = mz.meijer_g(&an, &[], &[ExactNum::new(wrk)], &bq, wrk, n, cc);
     if !finite(&g) {
         return cat_nan();
@@ -1056,7 +1056,7 @@ fn is_odd_integer(n: &ExactNum) -> bool {
         return false;
     }
     let two = ExactNum::from_u8(2, 64);
-    !n.clone().abs().rem(&two).is_zero()
+    !n.abs_ref().rem(&two).is_zero()
 }
 
 /// `|n| mod 8` for an integer `n`.
@@ -1216,7 +1216,7 @@ fn kelvin_k_at_zero(
         (c, s)
     } else {
         // ν = −μ: ker ~ cos(μπ/4), kei ~ sin(μπ/4)
-        let mu = nu.clone().abs();
+        let mu = nu.abs_ref();
         let theta = mu
             .mul(&pi, wrk, RoundingMode::None)
             .ldexp(-2, wrk, RoundingMode::None);
@@ -1393,7 +1393,7 @@ fn kelvin_asymp_trig_neg(
     };
     // |t| > 2^{-16}: a reduction error cannot flip a clearly nonzero sign.
     let bound = ExactNum::from_u8(1, wrk).ldexp(-16, wrk, RoundingMode::None);
-    let at = t.clone().abs();
+    let at = t.abs_ref();
     if !matches!(at.compare(&bound), Some(ord) if ord > 0) {
         return None;
     }
@@ -1602,7 +1602,7 @@ impl ExactNum {
                 }
                 return scorer_taylor(&x, false, wp, cc);
             }
-            let y = x.clone().neg();
+            let y = x.neg_ref();
             match scorer_watson(&y, true, wp, cc) {
                 Some((h, gh)) => {
                     let bi = x.bi(wp, RoundingMode::None, cc);
@@ -1658,7 +1658,7 @@ impl ExactNum {
         ziv_round(p, rm, |wp| {
             if !x.is_positive() {
                 if !x.is_zero() {
-                    if let Some(r) = scorer_watson(&x.clone().neg(), true, wp, cc) {
+                    if let Some(r) = scorer_watson(&x.neg_ref(), true, wp, cc) {
                         return Some(r);
                     }
                 }
@@ -1712,7 +1712,7 @@ impl ExactNum {
             return v;
         }
         let (arg, flip) = if self.is_negative() {
-            (self.clone().abs(), is_odd_integer(nu))
+            (self.abs_ref(), is_odd_integer(nu))
         } else {
             (self.clone(), false)
         };
@@ -1754,7 +1754,7 @@ impl ExactNum {
             return v;
         }
         let (arg, flip) = if self.is_negative() {
-            (self.clone().abs(), is_odd_integer(nu))
+            (self.abs_ref(), is_odd_integer(nu))
         } else {
             (self.clone(), false)
         };

@@ -579,7 +579,7 @@ impl CB {
         if x.is_exact() && y.is_exact() && x.v.is_zero() && y.v.is_zero() {
             // C99 csqrt(±0 ± 0i) = +0 ± 0i.
             return Some(CB {
-                re: RB::exact(x.v.clone().abs()),
+                re: RB::exact(x.v.abs_ref()),
                 im: RB::exact(y.v.clone()),
             });
         }

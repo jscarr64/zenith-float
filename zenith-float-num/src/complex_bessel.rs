@@ -277,7 +277,7 @@ fn principal_neg_real_cut(z: &ExactComplex) -> Option<ExactComplex> {
 /// pole (`InvalidArgument`). Other orders (pure imaginary, etc.) return `None`.
 fn is_half_odd_integer(x: &ExactNum) -> bool {
     let p = x.precision().unwrap_or(crate::DEFAULT_P);
-    let twice = x.clone().ldexp(1, p, RoundingMode::None);
+    let twice = x.ldexp_ref(1, p, RoundingMode::None);
     twice.is_int() && !twice.ldexp(-1, p, RoundingMode::None).is_int()
 }
 
@@ -532,7 +532,7 @@ impl ExactComplex {
         if nu.im().is_zero() && nu.re().is_int() && nu.re().is_negative() && !nu.re().is_zero() {
             let pos = neg_c(nu.clone());
             let w = nu.re().precision().unwrap_or(dest).max(dest) + 64;
-            let odd = !nu.re().clone().ldexp(-1, w, RoundingMode::None).is_int();
+            let odd = !nu.re().ldexp_ref(-1, w, RoundingMode::None).is_int();
             let r = if odd { neg_rounding(rm) } else { rm };
             let v = self.bessel_j_nu_word(&pos, dest, r, cc);
             return if odd { neg_c(v) } else { v };

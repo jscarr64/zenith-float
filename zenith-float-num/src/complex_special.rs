@@ -1073,7 +1073,7 @@ impl ExactComplex {
             RoundingMode::Down => RoundingMode::Up,
             other => other,
         };
-        let im = w.erfc_word(dest, mirrored, cc).im().clone().neg();
+        let im = w.erfc_word(dest, mirrored, cc).im().neg_ref();
         Some(ExactComplex::new(re, im))
     }
 
@@ -1105,7 +1105,7 @@ impl ExactComplex {
         // Real axis: the real erfc (correctly rounded, including 2 − δ). The imaginary part
         // is a zero signed by the limit Im erfc(x + iε) = −ε·(2/√π)e^{−x²}: opposite to Im z.
         if self.im().is_zero() {
-            return ExactComplex::new(self.re().erfc(dest, rm, cc), self.im().clone().neg());
+            return ExactComplex::new(self.re().erfc(dest, rm, cc), self.im().neg_ref());
         }
         if let Some(v) = self.erfc_near_two(dest, rm, cc) {
             return v;
@@ -1840,7 +1840,7 @@ impl ExactComplex {
                 }
             } else {
                 // ψ(n+½) = −γ − 2 ln 2 + Σ_{k=1}^{n} 2/(2k−1) (DLMF 5.4.13–14).
-                let twice = self.re().clone().ldexp(1, p, RoundingMode::None);
+                let twice = self.re().ldexp_ref(1, p, RoundingMode::None);
                 if twice.is_int() {
                     if let Ok(m) = twice.to_u32(RoundingMode::ToZero) {
                         if m % 2 == 1 {

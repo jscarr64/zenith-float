@@ -498,7 +498,7 @@ fn rj_cut_work(dest: usize, pw: usize) -> usize {
 fn flush_cut_bias(z: ExactComplex, dest: usize) -> ExactComplex {
     let thresh = ExactNum::from_u8(1, dest).ldexp(-((dest as Exponent) + 8), dest, rm());
     let flush = |c: ExactNum| {
-        if matches!(c.clone().abs().compare(&thresh), Some(o) if o < 0) {
+        if matches!(c.abs_ref().compare(&thresh), Some(o) if o < 0) {
             ExactNum::new(dest)
         } else {
             c
@@ -524,7 +524,7 @@ fn dist_to_neg_ray(w: &ExactComplex, p: usize) -> ExactNum {
     if w.re().is_positive() {
         c_abs(w, p)
     } else {
-        w.im().clone().abs()
+        w.im().abs_ref()
     }
 }
 
@@ -965,7 +965,7 @@ fn rj_u2_segment(
         }
         prev_abs = Some(rem_abs.clone());
         let rho = rj_u2_rho(&u, &lam, aa, bb, cc_p, p, cc);
-        let half_rho = rho.clone().ldexp(-1, p, rm());
+        let half_rho = rho.ldexp_ref(-1, p, rm());
         let h = if rho.is_zero() || rho.is_negative() || rem_abs.is_zero() {
             return nan_pair(Error::InvalidArgument);
         } else if matches!(rem_abs.compare(&half_rho), Some(c) if c <= 0) {
@@ -1026,7 +1026,7 @@ fn rj_line_integral(
         // singularity (t ≈ −y when y ≈ −1). |h| ≤ ρ(a)/2 keeps the
         // expansion disk inside the region of analyticity.
         let rho = rj_sing_dist(&a, x, y, z, pv, p);
-        let half_rho = rho.clone().ldexp(-1, p, rm());
+        let half_rho = rho.ldexp_ref(-1, p, rm());
         let h = if rho.is_zero() || rho.is_negative() || rem_abs.is_zero() {
             return nan_pair(Error::InvalidArgument);
         } else if matches!(rem_abs.compare(&half_rho), Some(c) if c <= 0) {
@@ -2273,9 +2273,9 @@ mod tests {
         let offs = [
             ExactNum::from_u8(0, p),
             qtr.clone(),
-            qtr.clone().neg(),
+            qtr.neg_ref(),
             half.clone(),
-            half.clone().neg(),
+            half.neg_ref(),
         ];
         let mut checked = 0usize;
         for (n0, m0, lab) in &centers {

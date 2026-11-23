@@ -6307,7 +6307,7 @@ fn estimate_log2_leading_ji(
         let n = if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 };
         return Ok(Some(n));
     }
-    let fl = lam.clone()?.floor()?;
+    let fl = lam.floor_ref()?;
     let nf = if fl.is_zero() {
         0
     } else {
@@ -6325,7 +6325,7 @@ fn gamma_arg_too_close_to_nonpos_int(z: &ExactNumNumber, q: usize) -> Result<boo
     if z.is_zero() {
         return Ok(true);
     }
-    let fl = z.clone()?.floor()?;
+    let fl = z.floor_ref()?;
     let one = N::from_word(1, q)?;
     let ceil = if z.is_int() { fl.clone()? } else { fl.add(&one, q, RoundingMode::None)? };
     let d_fl = z.sub(&fl, q, RoundingMode::None)?.abs()?;
@@ -6366,7 +6366,7 @@ fn bessel_ji_scaled(
     let (mut m, ex) = x.abs()?.frexp()?;
     m.set_inexact(false);
     let b = if a.is_negative() {
-        let f = a.sub(&a.clone()?.floor()?, pa, RoundingMode::None)?;
+        let f = a.sub(&a.floor_ref()?, pa, RoundingMode::None)?;
         let g = one.sub(&f, pa, RoundingMode::None)?;
         if f.cmp(&g) < 0 {
             f
@@ -6456,7 +6456,7 @@ fn bessel_ji_scaled(
                 let n = if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 };
                 (one.clone()?, n, false)
             } else {
-                let fl = lam.clone()?.floor()?;
+                let fl = lam.floor_ref()?;
                 let fr = lam.sub(&fl, q, RoundingMode::None)?;
                 let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
                 let nf = if fl.is_negative() { -nf } else { nf };
@@ -6711,7 +6711,7 @@ fn bessel_yk_scaled(
                 let n = if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 };
                 (one.clone()?, n, false)
             } else {
-                let fl = lam.clone()?.floor()?;
+                let fl = lam.floor_ref()?;
                 let fr = lam.sub(&fl, q, RoundingMode::None)?;
                 let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
                 let nf = if fl.is_negative() { -nf } else { nf };
@@ -9805,7 +9805,7 @@ mod tests {
         if lam.exponent() > 62 {
             return Ok(if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 });
         }
-        let fl = lam.clone()?.floor()?;
+        let fl = lam.floor_ref()?;
         let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
         Ok(if fl.is_negative() { -nf } else { nf })
     }

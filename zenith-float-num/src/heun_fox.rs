@@ -523,7 +523,7 @@ impl JetW {
     /// elsewhere \(\Gamma(x)\exp\sum_{j\ge1}\psi^{(j-1)}(x)(c\varepsilon)^j/j!\) (DLMF 5.7.3 / 5.15).
     fn gamma(&self, x: &ExactNum, c: i32, cc: &mut Consts) -> Option<Jet> {
         if gamma_pole(x) {
-            let n = x.clone().neg().to_u32(RoundingMode::None).ok()?;
+            let n = x.neg_ref().to_u32(RoundingMode::None).ok()?;
             if n > 4096 {
                 return None;
             }
@@ -563,14 +563,14 @@ impl JetW {
 
 /// `|x|` rounded up to 64 bits.
 fn up64(x: &ExactNum) -> ExactNum {
-    let mut y = x.clone().abs();
+    let mut y = x.abs_ref();
     let _ = y.set_precision(64, RoundingMode::Up);
     y
 }
 
 /// `|x|` rounded down to 64 bits.
 fn dn64(x: &ExactNum) -> ExactNum {
-    let mut y = x.clone().abs();
+    let mut y = x.abs_ref();
     let _ = y.set_precision(64, RoundingMode::Down);
     y
 }
@@ -601,7 +601,7 @@ fn min_shift_gap(b: &ExactNum, wp: usize) -> ExactNum {
     if !b.is_negative() {
         return if b.is_zero() { one } else { dn64(b) };
     }
-    let f = ExactNum::sub_ref(b, &b.clone().floor(), wp, RoundingMode::None);
+    let f = ExactNum::sub_ref(b, &b.floor_ref(), wp, RoundingMode::None);
     if f.is_zero() {
         return one;
     }
@@ -796,7 +796,7 @@ fn meijer_jet_limit(
             return cat_nan();
         }
         let x = if odd_i(a.len() as i32 - m as i32 - n as i32) {
-            w.clone().neg()
+            w.neg_ref()
         } else {
             w.clone()
         };
@@ -997,13 +997,13 @@ fn meijer_zero_limit(
     let fact = |k: &ExactNum, cc: &mut Consts| {
         ExactNum::add_ref(k, &one, wp, RoundingMode::None).gamma(wp, RoundingMode::None, cc)
     };
-    let even = |k: &ExactNum| k.clone().ldexp(-1, wp, RoundingMode::None).is_int();
+    let even = |k: &ExactNum| k.ldexp_ref(-1, wp, RoundingMode::None).is_int();
     let mut c = ExactNum::from_u8(1, wp);
     for bj in bm {
         // Γ(b - s) near s*: argument -k gives -(-1)^k/k! per unit of (s - s*).
         let v = ExactNum::sub_ref(bj, &s, wp, RoundingMode::None);
         let t = if gamma_pole(&v) {
-            let k = v.clone().neg();
+            let k = v.neg_ref();
             let q = ExactNum::div_ref(&one, &fact(&k, cc), wp, RoundingMode::None);
             if even(&k) {
                 q.neg()
@@ -1026,7 +1026,7 @@ fn meijer_zero_limit(
         // 1/Γ(a - s): argument -k gives -(-1)^k k!.
         let v = ExactNum::sub_ref(aj, &s, wp, RoundingMode::None);
         let t = if gamma_pole(&v) {
-            let k = v.clone().neg();
+            let k = v.neg_ref();
             let q = fact(&k, cc);
             if even(&k) {
                 q.neg()
@@ -1046,7 +1046,7 @@ fn meijer_zero_limit(
         // 1/Γ(1 - b + s): argument -k gives (-1)^k k!.
         let v = ExactNum::sub_ref(&one, bj, wp, RoundingMode::None).add(&s, wp, RoundingMode::None);
         let t = if gamma_pole(&v) {
-            let k = v.clone().neg();
+            let k = v.neg_ref();
             let q = fact(&k, cc);
             if even(&k) {
                 q
@@ -1714,7 +1714,7 @@ struct RecTail {
 /// `|x|` as a 64-bit upper bound with slack for the rounding of `x` itself.
 fn ub64(x: &ExactNum) -> ExactNum {
     let up = RoundingMode::Up;
-    let mut y = x.clone().abs();
+    let mut y = x.abs_ref();
     let _ = y.set_precision(64, up);
     let slack = y
         .clone()
@@ -1727,9 +1727,9 @@ fn ub64(x: &ExactNum) -> ExactNum {
 /// pad only, so a 2^{-wp} bound is not inflated to 2^{-60}.
 fn ub_rel(x: &ExactNum) -> ExactNum {
     let up = RoundingMode::Up;
-    let mut y = x.clone().abs();
+    let mut y = x.abs_ref();
     let _ = y.set_precision(64, up);
-    let slack = y.clone().ldexp(-60, 64, up);
+    let slack = y.ldexp_ref(-60, 64, up);
     y.add(&slack, 64, up)
 }
 
@@ -1837,7 +1837,7 @@ where
     let nr = RoundingMode::None;
     let one64 = ExactNum::from_u8(1, 64);
     let az = ub64(z);
-    let mut az_dn = z.clone().abs();
+    let mut az_dn = z.abs_ref();
     let _ = az_dn.set_precision(64, dn);
     let slack = ExactNum::add_ref(&az_dn, &one64, 64, up).ldexp(-60, 64, up);
     az_dn = az_dn.sub(&slack, 64, dn);
@@ -2072,7 +2072,7 @@ fn heun_g_series(
         };
         // n1 j + n0 = Q_j + q - (1+a)(j+1)(j+γ); m1 j + m0 = P_j - (j+1)(j+γ).
         let n1 = ExactNum::mul_ref(a, delta, wp, nr).add(&eps, wp, nr).sub(
-            &opa.clone().ldexp(1, wp, nr),
+            &opa.ldexp_ref(1, wp, nr),
             wp,
             nr,
         );
@@ -2085,7 +2085,7 @@ fn heun_g_series(
             .sub(gamma, wp, nr);
         let k1 = ExactNum::mul_ref(&lam_s, &n1, wp, nr).sub(&m1, wp, nr);
         let k0 = ExactNum::mul_ref(&lam_s, &n0, wp, nr).sub(&m0, wp, nr);
-        let mut s = a.clone().abs();
+        let mut s = a.abs_ref();
         let _ = s.set_precision(64, RoundingMode::Down);
         let tail = RecTail {
             lam_d: ub64(&lam_d),
@@ -2223,7 +2223,7 @@ fn heun_g_jet(
             (inv_a, ExactNum::from_u8(1, wp))
         };
         let n1 = ExactNum::mul_ref(a, delta, wp, nr).add(&eps, wp, nr).sub(
-            &opa.clone().ldexp(1, wp, nr),
+            &opa.ldexp_ref(1, wp, nr),
             wp,
             nr,
         );
@@ -2236,7 +2236,7 @@ fn heun_g_jet(
             .sub(gamma, wp, nr);
         let k1 = ExactNum::mul_ref(&lam_s, &n1, wp, nr).sub(&m1, wp, nr);
         let k0 = ExactNum::mul_ref(&lam_s, &n0, wp, nr).sub(&m0, wp, nr);
-        let mut s = a.clone().abs();
+        let mut s = a.abs_ref();
         let _ = s.set_precision(64, RoundingMode::Down);
         let tail = RecTail {
             lam_d: ub64(&lam_d),
@@ -2905,7 +2905,7 @@ fn taylor_step(
     let up = RoundingMode::Up;
     let dn = RoundingMode::Down;
     let nr = RoundingMode::None;
-    let mut ah = h.clone().abs();
+    let mut ah = h.abs_ref();
     let _ = ah.set_precision(64, up);
     let mut radius = min_dist(zc, sings, 64);
     let _ = radius.set_precision(64, dn);
@@ -2918,7 +2918,7 @@ fn taylor_step(
     {
         rho = ExactNum::add_ref(&ah, &radius, 64, dn)
             .ldexp(-1, 64, dn)
-            .add(&radius.clone().ldexp(-4, 64, dn), 64, up);
+            .add(&radius.ldexp_ref(-4, 64, dn), 64, up);
         if !matches!(ah.compare(&rho), Some(c) if c < 0)
             || !matches!(rho.compare(&radius), Some(c) if c < 0)
         {
@@ -3029,7 +3029,7 @@ fn taylor_step(
         let t_k = ExactNum::mul_ref(&coef_k, &c_k, prec, nr);
         let t_km1 = ExactNum::mul_ref(&coef_km1, &c_km1, prec, nr);
         let rhs = ExactNum::add_ref(&ExactNum::add_ref(&t_kp1, &t_k, prec, nr), &t_km1, prec, nr);
-        let c_kp2 = ExactNum::div_ref(&rhs.clone().neg(), &left, prec, nr);
+        let c_kp2 = ExactNum::div_ref(&rhs.neg_ref(), &left, prec, nr);
         if !finite(&c_kp2) {
             return None;
         }
@@ -3692,7 +3692,7 @@ fn fox_h_residue(
                 for (ai, ai_s) in an {
                     gn.push(lin_scale(
                         &ExactNum::sub_ref(&one, ai, p, RoundingMode::None),
-                        &ai_s.clone().neg(),
+                        &ai_s.neg_ref(),
                         &s,
                         p,
                     ));
@@ -3703,7 +3703,7 @@ fn fox_h_residue(
                 for (bj, bj_s) in bq {
                     gd.push(lin_scale(
                         &ExactNum::sub_ref(&one, bj, p, RoundingMode::None),
-                        &bj_s.clone().neg(),
+                        &bj_s.neg_ref(),
                         &s,
                         p,
                     ));
@@ -3722,7 +3722,7 @@ fn fox_h_residue(
                         let te = term.abs().exponent();
                         if k >= 4 {
                             if let Some(e) = te {
-                                let se = sum.clone().abs().exponent().unwrap_or(0);
+                                let se = sum.abs_ref().exponent().unwrap_or(0);
                                 if e - se < cutoff {
                                     break;
                                 }
@@ -3791,7 +3791,7 @@ fn fox_h_residue(
                     }
                     gn.push(lin_scale(
                         &ExactNum::sub_ref(&one, ai, p, RoundingMode::None),
-                        &ai_s.clone().neg(),
+                        &ai_s.neg_ref(),
                         &s,
                         p,
                     ));
@@ -3802,7 +3802,7 @@ fn fox_h_residue(
                 for (bj, bj_s) in bq {
                     gd.push(lin_scale(
                         &ExactNum::sub_ref(&one, bj, p, RoundingMode::None),
-                        &bj_s.clone().neg(),
+                        &bj_s.neg_ref(),
                         &s,
                         p,
                     ));
@@ -3824,7 +3824,7 @@ fn fox_h_residue(
                         let te = term.abs().exponent();
                         if ell >= 4 {
                             if let Some(e) = te {
-                                let se = sum.clone().abs().exponent().unwrap_or(0);
+                                let se = sum.abs_ref().exponent().unwrap_or(0);
                                 if e - se < cutoff {
                                     break;
                                 }

@@ -2012,7 +2012,7 @@ fn svd_decomp_tall(
         }
         let off = e
             .iter()
-            .filter_map(|x| x.clone().abs().exponent())
+            .filter_map(|x| x.abs_ref().exponent())
             .max()
             .unwrap_or(Exponent::MIN);
         if off >= prev_exp {
@@ -2219,7 +2219,7 @@ fn eigen_decomp_sym(
         }
         let off = e
             .iter()
-            .filter_map(|x| x.clone().abs().exponent())
+            .filter_map(|x| x.abs_ref().exponent())
             .max()
             .unwrap_or(Exponent::MIN);
         if off >= prev_exp {

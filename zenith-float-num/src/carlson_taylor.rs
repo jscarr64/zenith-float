@@ -188,7 +188,7 @@ pub(super) fn rel_pow_below_prec(
     }
     let order = order.max(1);
     let shift = prec.div_ceil(order) as Exponent;
-    let thresh = scale.clone().ldexp(-shift, p, rm());
+    let thresh = scale.ldexp_ref(-shift, p, rm());
     matches!(dmax.compare(&thresh), Some(c) if c < 0)
 }
 
