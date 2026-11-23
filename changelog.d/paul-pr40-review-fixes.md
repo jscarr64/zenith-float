@@ -17,3 +17,6 @@
   row with a non-agent name) is DETECTED.
 - M1: changelog.d/paul-tier1-fixes.md no longer calls Γ at p ≥ 2048, ZF-16 and ZF-60 BROKEN (Tier 1 closed, 0 wrong).
 - fmt: `cargo fmt --all` over the 16 zenith-float-num files that failed `cargo fmt --all -- --check` at e6f439f (gate step `fmt`); formatting only (Jeff 2026-11-22 ~11:58 PM CT).
+- nan_error_kinds: the nine `ln_gamma` pins now follow the P20 contract of f0d0b47 (a NaN in either part of a complex
+  log-Gamma input gives a typed NaN in both parts: real part's kind, else imaginary part's, else InvalidArgument). The
+  test was stale (it still pinned per-part kinds and typeless `None`); the code is right. Test-only change.

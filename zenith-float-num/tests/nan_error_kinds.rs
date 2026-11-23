@@ -11,8 +11,11 @@
 //! parts of different kinds its imaginary part now reports the kind of `rad` (which is the kind of the
 //! real part of `z`) instead of the kind of `z.im`. That is pinned here as the new behaviour. Every
 //! other reordered library site adds a constant (`n`, `1`, `pi`, ...) or a value derived from the other
-//! operand, so it cannot meet two NaNs of different kinds; `ln_gamma` (which contains one) is pinned
-//! below as unchanged.
+//! operand, so it cannot meet two NaNs of different kinds. `ln_gamma` is pinned below to the P20 contract
+//! of f0d0b47 (CHANGELOG: a NaN in either part of a complex Gamma / log-Gamma / digamma / ... input returns a
+//! typed NaN in BOTH parts, `err()` being the input kind if present, otherwise InvalidArgument): the real
+//! part's kind wins, then the imaginary part's, then InvalidArgument. The older per-part pins (e.g. `AB` =>
+//! im DivisionByZero, `NN` => None) predate that ruling; NaN results always carry `err()` (P20).
 
 use zenith_float_num::{Consts, Error, ExactComplex, ExactNum, ExactNumArray, RoundingMode};
 
@@ -299,21 +302,21 @@ N-inf => None
 asinh AA => re=Some(InvalidArgument) im=Some(InvalidArgument)
 ln_gamma AA => re=Some(InvalidArgument) im=Some(InvalidArgument)
 asinh AB => re=Some(InvalidArgument) im=Some(InvalidArgument)
-ln_gamma AB => re=Some(InvalidArgument) im=Some(DivisionByZero)
+ln_gamma AB => re=Some(InvalidArgument) im=Some(InvalidArgument)
 asinh AN => re=Some(InvalidArgument) im=Some(InvalidArgument)
-ln_gamma AN => re=Some(InvalidArgument) im=None
+ln_gamma AN => re=Some(InvalidArgument) im=Some(InvalidArgument)
 asinh BA => re=Some(DivisionByZero) im=Some(DivisionByZero)
-ln_gamma BA => re=Some(DivisionByZero) im=Some(InvalidArgument)
+ln_gamma BA => re=Some(DivisionByZero) im=Some(DivisionByZero)
 asinh BB => re=Some(DivisionByZero) im=Some(DivisionByZero)
 ln_gamma BB => re=Some(DivisionByZero) im=Some(DivisionByZero)
 asinh BN => re=Some(DivisionByZero) im=Some(DivisionByZero)
-ln_gamma BN => re=Some(DivisionByZero) im=None
+ln_gamma BN => re=Some(DivisionByZero) im=Some(DivisionByZero)
 asinh NA => re=None im=None
-ln_gamma NA => re=None im=Some(InvalidArgument)
+ln_gamma NA => re=Some(InvalidArgument) im=Some(InvalidArgument)
 asinh NB => re=None im=None
-ln_gamma NB => re=None im=Some(DivisionByZero)
+ln_gamma NB => re=Some(DivisionByZero) im=Some(DivisionByZero)
 asinh NN => re=None im=None
-ln_gamma NN => re=None im=None
+ln_gamma NN => re=Some(InvalidArgument) im=Some(InvalidArgument)
 cexp AA => re=Some(InvalidArgument) im=Some(InvalidArgument)
 csqrt AA => re=Some(InvalidArgument) im=Some(InvalidArgument)
 qr col AA => q=[Some(InvalidArgument),Some(InvalidArgument),Some(InvalidArgument),Some(InvalidArgument)] r=[Some(InvalidArgument),Some(InvalidArgument),not-nan,Some(InvalidArgument)]
