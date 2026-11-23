@@ -65,3 +65,7 @@
   (`rules_scan: checks: clone=.. borrow=..`). The scanner names itself first (zenith-float LIBRARY scanner). New
   `--count-only --no-rise REV` (pre-commit cleanup mode): a count above its baseline passes only when it does not rise
   against REV, and the run says NOT at baseline; no baseline is written. Selftest red at ed094e7, green after.
+- The bound layer's scanner is renamed `zenith-float-bound/tools/bound_layer_scan.{py,sh}` (selftest
+  `bound_layer_scan_selftest.sh`, bound gate step `bound-layer-scan`) and prints first that it is NOT the library scan, so
+  the two can't be confused again (ROOT-CAUSE.md: only the bound scanner ran for a week). New
+  `tools/test_rules_enforcement.sh` checks it: red at ed094e7, green after.

@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""rules_scan: scan the ADDED lines of a diff for banned constructs in ALL Rust code of zenith-float-bound.
+"""bound_layer_scan: scan the ADDED lines of a diff for banned constructs in ALL Rust code of zenith-float-bound.
 
-Derived from zenith-float tools/rules_scan.py (commit d12a156), adapted for zenith-float-bound. Run on EVERY
-model-written diff before review, and in tools/full_gate.sh (step `rules-scan`).
+Derived from zenith-float tools/bound_layer_scan.py (commit d12a156), adapted for zenith-float-bound. Run on EVERY
+model-written diff before review, and in tools/full_gate.sh (step `bound-layer-scan`).
 
 Usage:
-  tools/rules_scan.sh                      # origin/main..HEAD, plus the count-baseline checks and the alias/rename tree check
-  tools/rules_scan.sh A..B                 # any range (a bare rev means REV..HEAD)
-  tools/rules_scan.sh --staged             # git diff --cached
-  tools/rules_scan.sh --working            # git diff HEAD (staged + unstaged; new files must be staged)
-  tools/rules_scan.sh --diff-file F        # a saved unified diff (used by the self-test)
-  tools/rules_scan.sh --count-only         # only the clone-count, *_ref-count, hidden-copy-count and sanctioned-rebuild-count baseline checks
-  tools/rules_scan.sh --hidden-copies      # list the hidden-copy sites of src/ tests/ benches/ examples/ (no baseline needed; RULES_SCAN_ROOT picks the tree)
-  tools/rules_scan.sh --sanctioned-rebuilds # list the sanctioned-rebuild sites of src/ (O18-C; no baseline needed)
-  tools/rules_scan.sh --update-baseline    # lower the baselines to the current counts (never raises them)
+  tools/bound_layer_scan.sh                      # origin/main..HEAD, plus the count-baseline checks and the alias/rename tree check
+  tools/bound_layer_scan.sh A..B                 # any range (a bare rev means REV..HEAD)
+  tools/bound_layer_scan.sh --staged             # git diff --cached
+  tools/bound_layer_scan.sh --working            # git diff HEAD (staged + unstaged; new files must be staged)
+  tools/bound_layer_scan.sh --diff-file F        # a saved unified diff (used by the self-test)
+  tools/bound_layer_scan.sh --count-only         # only the clone-count, *_ref-count, hidden-copy-count and sanctioned-rebuild-count baseline checks
+  tools/bound_layer_scan.sh --hidden-copies      # list the hidden-copy sites of src/ tests/ benches/ examples/ (no baseline needed; RULES_SCAN_ROOT picks the tree)
+  tools/bound_layer_scan.sh --sanctioned-rebuilds # list the sanctioned-rebuild sites of src/ (O18-C; no baseline needed)
+  tools/bound_layer_scan.sh --update-baseline    # lower the baselines to the current counts (never raises them)
 
 SCANNED PATHS: every .rs file under src/ tests/ benches/ examples/ (any depth) and build.rs. There is NO
 test-code exemption: #[cfg(test)] items, tests/, benches/, examples/ and test helpers are scanned exactly
@@ -541,19 +541,19 @@ def read_baseline():
 def count_check(update=False):
     cur, base = clone_count(), read_baseline()
     if base is None:
-        print("rules_scan: missing or unreadable tools/clone_count_baseline.txt")
+        print("bound_layer_scan: missing or unreadable tools/clone_count_baseline.txt")
         return 1
     if cur > base:
-        print("rules_scan: clone count %d is ABOVE the baseline %d (it may only go down)" % (cur, base))
+        print("bound_layer_scan: clone count %d is ABOVE the baseline %d (it may only go down)" % (cur, base))
         return 1
     if cur < base:
         if update:
             open(baseline_path(), "w").write("%d\n" % cur)
-            print("rules_scan: baseline lowered %d -> %d" % (base, cur))
+            print("bound_layer_scan: baseline lowered %d -> %d" % (base, cur))
         else:
-            print("rules_scan: clone count %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (cur, base))
+            print("bound_layer_scan: clone count %d is below baseline %d: lower the baseline (bound_layer_scan.sh --update-baseline)" % (cur, base))
         return 0
-    print("rules_scan: clone count %d == baseline" % cur)
+    print("bound_layer_scan: clone count %d == baseline" % cur)
     return 0
 
 
@@ -562,19 +562,19 @@ def ref_count_check(update=False):
     try:
         base = int(open(ref_baseline_path()).read().split()[0])
     except (OSError, ValueError, IndexError):
-        print("rules_scan: missing or unreadable tools/ref_sum_count_baseline.txt")
+        print("bound_layer_scan: missing or unreadable tools/ref_sum_count_baseline.txt")
         return 1
     if cur > base:
-        print("rules_scan: add_ref/sub_ref/mul_ref/div_ref use count %d is ABOVE the baseline %d (it may only go down)" % (cur, base))
+        print("bound_layer_scan: add_ref/sub_ref/mul_ref/div_ref use count %d is ABOVE the baseline %d (it may only go down)" % (cur, base))
         return 1
     if cur < base:
         if update:
             open(ref_baseline_path(), "w").write("%d\n" % cur)
-            print("rules_scan: ref-sum baseline lowered %d -> %d" % (base, cur))
+            print("bound_layer_scan: ref-sum baseline lowered %d -> %d" % (base, cur))
         else:
-            print("rules_scan: add_ref/sub_ref/mul_ref/div_ref use count %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (cur, base))
+            print("bound_layer_scan: add_ref/sub_ref/mul_ref/div_ref use count %d is below baseline %d: lower the baseline (bound_layer_scan.sh --update-baseline)" % (cur, base))
         return 0
-    print("rules_scan: add_ref/sub_ref/mul_ref/div_ref use count %d == baseline" % cur)
+    print("bound_layer_scan: add_ref/sub_ref/mul_ref/div_ref use count %d == baseline" % cur)
     return 0
 
 
@@ -583,21 +583,21 @@ def hidden_count_check(update=False):
     try:
         base = int(open(hidden_baseline_path()).read().split()[0])
     except (OSError, ValueError, IndexError):
-        print("rules_scan: missing or unreadable tools/hidden_copy_count_baseline.txt")
+        print("bound_layer_scan: missing or unreadable tools/hidden_copy_count_baseline.txt")
         return 1
     if cur > base:
-        print("rules_scan: hidden-copy count %d is ABOVE the baseline %d (it may only go down)" % (cur, base))
+        print("bound_layer_scan: hidden-copy count %d is ABOVE the baseline %d (it may only go down)" % (cur, base))
         for rel, line, name, reason in hidden_copy_sites():
             print("  %s:%d fn %s: %s" % (rel, line, name, reason))
         return 1
     if cur < base:
         if update:
             open(hidden_baseline_path(), "w").write("%d\n" % cur)
-            print("rules_scan: hidden-copy baseline lowered %d -> %d" % (base, cur))
+            print("bound_layer_scan: hidden-copy baseline lowered %d -> %d" % (base, cur))
         else:
-            print("rules_scan: hidden-copy count %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (cur, base))
+            print("bound_layer_scan: hidden-copy count %d is below baseline %d: lower the baseline (bound_layer_scan.sh --update-baseline)" % (cur, base))
         return 0
-    print("rules_scan: hidden-copy count %d == baseline" % cur)
+    print("bound_layer_scan: hidden-copy count %d == baseline" % cur)
     return 0
 
 
@@ -606,21 +606,21 @@ def rebuild_count_check(update=False):
     try:
         base = int(open(rebuild_baseline_path()).read().split()[0])
     except (OSError, ValueError, IndexError):
-        print("rules_scan: missing or unreadable tools/sanctioned_rebuild_count_baseline.txt")
+        print("bound_layer_scan: missing or unreadable tools/sanctioned_rebuild_count_baseline.txt")
         return 1
     if cur > base:
-        print("rules_scan: sanctioned-rebuild count %d is ABOVE the baseline %d (it may only go down; a raise needs Jeff, O18-C)" % (cur, base))
+        print("bound_layer_scan: sanctioned-rebuild count %d is ABOVE the baseline %d (it may only go down; a raise needs Jeff, O18-C)" % (cur, base))
         for rel, line, args in sanctioned_rebuild_sites():
             print("  %s:%d Mag::from_canonical(%s)" % (rel, line, args))
         return 1
     if cur < base:
         if update:
             open(rebuild_baseline_path(), "w").write("%d\n" % cur)
-            print("rules_scan: sanctioned-rebuild baseline lowered %d -> %d" % (base, cur))
+            print("bound_layer_scan: sanctioned-rebuild baseline lowered %d -> %d" % (base, cur))
         else:
-            print("rules_scan: sanctioned-rebuild count %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (cur, base))
+            print("bound_layer_scan: sanctioned-rebuild count %d is below baseline %d: lower the baseline (bound_layer_scan.sh --update-baseline)" % (cur, base))
         return 0
-    print("rules_scan: sanctioned-rebuild count %d == baseline" % cur)
+    print("bound_layer_scan: sanctioned-rebuild count %d == baseline" % cur)
     return 0
 
 
@@ -647,7 +647,7 @@ def alias_tree_check():
     sites = alias_tree_sites()
     for rel, line, label, snippet in sites:
         print("%s:%d [%s] %s" % (rel, line, label, snippet[:120]))
-    print("rules_scan: alias/rename of Mag, MagV or Dy: %d (no baseline, any hit fails)" % len(sites))
+    print("bound_layer_scan: alias/rename of Mag, MagV or Dy: %d (no baseline, any hit fails)" % len(sites))
     return 1 if sites else 0
 
 
@@ -686,7 +686,7 @@ def narrow_exponent_check():
     sites = narrow_exponent_sites()
     for rel, line, snippet in sites:
         print("%s:%d [pub_sig_narrow_exponent] %s" % (rel, line, snippet[:120]))
-    print("rules_scan: public signatures naming Exponent or i32: %d (no baseline, any hit fails; zb uses i64)" % len(sites))
+    print("bound_layer_scan: public signatures naming Exponent or i32: %d (no baseline, any hit fails; zb uses i64)" % len(sites))
     return 1 if sites else 0
 
 
@@ -720,7 +720,7 @@ def prec_width_check():
     sites = prec_width_sites()
     for rel, line, snippet in sites:
         print("%s:%d [prec_concrete_width] %s" % (rel, line, snippet[:120]))
-    print("rules_scan: prec typed with a concrete integer width: %d (no baseline, any hit fails; use Precision)" % len(sites))
+    print("bound_layer_scan: prec typed with a concrete integer width: %d (no baseline, any hit fails; use Precision)" % len(sites))
     return 1 if sites else 0
 
 
@@ -733,14 +733,17 @@ def main(argv):
         sites = hidden_copy_sites()
         for rel, line, name, reason in sites:
             print("%s:%d fn %s: %s" % (rel, line, name, reason))
-        print("rules_scan: hidden_copy_count %d" % len(sites))
+        print("bound_layer_scan: hidden_copy_count %d" % len(sites))
         return 1 if sites else 0
     if "--sanctioned-rebuilds" in argv:
         sites = sanctioned_rebuild_sites()
         for rel, line, args in sites:
             print("%s:%d Mag::from_canonical(%s)" % (rel, line, args))
-        print("rules_scan: sanctioned_rebuild_count %d" % len(sites))
+        print("bound_layer_scan: sanctioned_rebuild_count %d" % len(sites))
         return 0
+    # Jeff 2026-11-23 07:43 CT (ROOT-CAUSE.md): this scanner was mistaken for the library's; it names itself first.
+    print("bound_layer_scan: zenith-float-bound LAYER scanner (zenith-float-bound/tools/bound_layer_scan.py) -- NOT the "
+          "library scan; the library's counts come only from tools/rules_scan.sh at the repo root")
     if "--count-only" in argv:
         return both_count_checks()
     if "--update-baseline" in argv:
@@ -752,7 +755,7 @@ def main(argv):
         what = ["--cached"] if "--staged" in argv else ["HEAD"]
         r = git("diff", *what, "--no-color", "--no-ext-diff", "-U0")
         if r.returncode != 0:  # never a vacuous "0 flagged" when git cannot diff
-            print("rules_scan: git diff %s failed: %s" % (what[0], r.stderr.strip()))
+            print("bound_layer_scan: git diff %s failed: %s" % (what[0], r.stderr.strip()))
             return 2
         text = r.stdout
     else:
@@ -762,14 +765,14 @@ def main(argv):
             rng += "..HEAD"
         r = git("diff", rng, "--no-color", "--no-ext-diff", "-U0")
         if r.returncode != 0:
-            print("rules_scan: git diff %s failed: %s" % (rng, r.stderr.strip()))
+            print("bound_layer_scan: git diff %s failed: %s" % (rng, r.stderr.strip()))
             return 2
         text, with_count = r.stdout, True
     hits = scan_diff(text)
     for path, n, label, content, key in hits:
         print("%s:%d [%s] %s  allow-key=%s" % (path, n, label, content[:120], key))
     by = collections.Counter(h[2] for h in hits)
-    print("rules_scan: %d flagged %s" % (len(hits), dict(by)))
+    print("bound_layer_scan: %d flagged %s" % (len(hits), dict(by)))
     rc = 1 if hits else 0
     if with_count and not os.environ.get("RULES_SCAN_SKIP_COUNT"):
         rc = max(rc, both_count_checks())

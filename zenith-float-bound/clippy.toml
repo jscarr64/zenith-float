@@ -12,7 +12,7 @@ disallowed-macros = [
     { path = "std::arch::global_asm", reason = "no global assembly" },
 ]
 
-# Zero-clone rule (the .to_vec() form is covered by tools/rules_scan.py, clippy cannot name it).
+# Zero-clone rule (the .to_vec() form is covered by tools/bound_layer_scan.py, clippy cannot name it).
 disallowed-methods = [
     { path = "core::clone::Clone::clone", reason = "zero-clone rule (Jeff)" },
     { path = "core::clone::Clone::clone_from", reason = "zero-clone rule (Jeff)" },

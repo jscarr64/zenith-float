@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Self-test for tools/rules_scan.sh (zenith-float-bound): every banned pattern is flagged on ADDED lines in src/, tests/, benches/ and examples/ alike (there is no test-code exemption), removed/context lines, comments, strings and non-Rust paths are not flagged, the allowlist works, git modes work, and both count baselines only go down.
+# Self-test for tools/bound_layer_scan.sh (zenith-float-bound): every banned pattern is flagged on ADDED lines in src/, tests/, benches/ and examples/ alike (there is no test-code exemption), removed/context lines, comments, strings and non-Rust paths are not flagged, the allowlist works, git modes work, and both count baselines only go down.
 # shellcheck source=tools/runlog.sh
-. "${BASH_SOURCE[0]%/*}/runlog.sh"; runlog_wrap rules_scan_selftest "$@"   # run log (tools/runlog.sh)
+. "${BASH_SOURCE[0]%/*}/runlog.sh"; runlog_wrap bound_layer_scan_selftest "$@"   # run log (tools/runlog.sh)
 runlog_detach_children
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; runlog_on_exit "rm -rf \"$t\""; . "${BASH_SOURCE[0]%/*}/selftest_cases.sh"; st_init "$t"
-scan() { "$here/rules_scan.sh" "$@"; }
+scan() { "$here/bound_layer_scan.sh" "$@"; }
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 mkdiff() { # mkdiff <path> <added line...>  -> fixture diff on stdout
   local p="$1"; shift
@@ -140,7 +140,7 @@ ck; scan --diff-file "$t/d.diff" >/dev/null || fail "allowlisted site still flag
 
 # hidden-copy count: fn bodies under src/ that rebuild a value from the fields of another value of its type
 hc="$t/hc"; mkdir -p "$hc/src" "$hc/tools"
-hidden() { RULES_SCAN_ROOT="$hc" "$here/rules_scan.sh" --hidden-copies; }
+hidden() { RULES_SCAN_ROOT="$hc" "$here/bound_layer_scan.sh" --hidden-copies; }
 flagged_hc() { # flagged_hc <label> <rust source>: exactly one site expected
   printf '%s\n' "$2" > "$hc/src/x.rs"
   ck; out="$(hidden)" && fail "hidden copy not flagged: $1"
@@ -327,7 +327,7 @@ ck; scan --count-only >/dev/null && fail "hidden copy in tests/ passed a 0 basel
 ck; rm -f tools/hidden_copy_count_baseline.txt; scan --count-only >/dev/null && fail "missing hidden-copy baseline passed"
 
 # sanctioned-rebuild baseline (O18-C): counts Mag::from_canonical(..) calls in src/ fed by a part of another value; may only go down
-rb() { RULES_SCAN_ROOT="$g" "$here/rules_scan.sh" --sanctioned-rebuilds; }
+rb() { RULES_SCAN_ROOT="$g" "$here/bound_layer_scan.sh" --sanctioned-rebuilds; }
 rm -f tests/m.rs; echo 0 > tools/hidden_copy_count_baseline.txt; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/ref_sum_count_baseline.txt   # the other three counts are 0 and have baselines, so only the rebuild count can fail below
 cat > src/x.rs <<'EOF'
 impl Mag {
@@ -438,9 +438,9 @@ ck; scan --diff-file "$t/ok.diff" >/dev/null || fail "clean overflow/ffi forms f
 # no vacuous pass: --working and --staged outside a git repo (git diff fails) must exit nonzero, not report "0 flagged"
 nogit=$(mktemp -d "$(zb_scratch)"/rules-nogit.XXXXXX)
 for mode in --working --staged; do
-  ck; out="$(RULES_SCAN_ROOT="$nogit" python3 "$here/rules_scan.py" $mode 2>&1)" && { rm -rf "$nogit"; fail "$mode passed although git diff failed: $out"; }
+  ck; out="$(RULES_SCAN_ROOT="$nogit" python3 "$here/bound_layer_scan.py" $mode 2>&1)" && { rm -rf "$nogit"; fail "$mode passed although git diff failed: $out"; }
   ck; grep -c "git diff .*failed" <<< "$out" > /dev/null || { rm -rf "$nogit"; fail "$mode: no git failure message: $out"; }
 done
 rm -rf "$nogit"
-st_done rules_scan 318   # WANT: cases this script runs (tools/selftest_cases.sh)
-echo "rules_scan selftest: ok"
+st_done bound_layer_scan 318   # WANT: cases this script runs (tools/selftest_cases.sh)
+echo "bound_layer_scan selftest: ok"

@@ -6,7 +6,7 @@
 // # bound step (zenith-float-bound/tools/full_gate.sh)  -> blocker before it can be a zf gate step
 // # build-debug, build-release, zero-test, fmt, clippy    -> already covered: the zf workspace build/test/fmt/clippy-x86_64 steps run the bound crate
 // # test-floor        -> tools/test_floor.sh reads the bound crate's own build-debug log; needs a zf step that logs `cargo test -p zenith-float-bound` alone
-// # rules-scan        -> RATCHET_BASE 3c9f36f is a zb SHA; needs a zf-history base (739e804^2 import) and repo-relative paths
+// # bound-layer-scan  -> RATCHET_BASE 3c9f36f is a zb SHA; needs a zf-history base (739e804^2 import) and repo-relative paths
 // # grepq-scan, unsafe/no-float/no-panic/no-clone/derive/src-arith-ffi/manifest scans -> run from zenith-float-bound/ (cd); paths are crate-relative
 // # gate-selftest     -> full_gate_selftest.sh drives the bound gate with its own runlog; needs the zf poplog footer contract
 // # pubfn-coverage, wildcard-enum, la4-red-markers, gen-la-*, tightness -> crate-relative; python3 team env (gen-la-*, tightness)
@@ -18,7 +18,7 @@
 // # matrix-heavy, skip-scan -> ZB_MATRIX_HEAVY external heavy file; skip-scan reads the bound gate's own step logs
 // #
 // # Proposed zf lines once the blockers are fixed (64-bit, crate-relative via cd):
-// # run bound-scans "cd zenith-float-bound && bash tools/grepq_scan_selftest.sh && bash tools/grepq_scan.sh && bash tools/rules_scan_selftest.sh"
+// # run bound-scans "cd zenith-float-bound && bash tools/grepq_scan_selftest.sh && bash tools/grepq_scan.sh && bash tools/bound_layer_scan_selftest.sh"
 // # run bound-floor "cd zenith-float-bound && bash tools/test_floor_selftest.sh && bash tools/test_floor.sh build-debug \"$T/$tag-bound-test.log\""
 // # run bound-mutants "cd zenith-float-bound && bash tools/mutants_apply_check.sh . && bash tools/mutate.sh"
 // # run bound-digests "cd zenith-float-bound && bash tools/digests_selftest.sh && bash tools/digests.sh all"

@@ -9,7 +9,7 @@
 # fails if it is unset or owned by another worktree (marker $CARGO_TARGET_DIR/.worktree-owner, written by the first worktree to use it);
 # build-debug/build-release repeat that check and reject test binaries from outside it.
 #
-# rules-scan runs the scan self-test, then the scan over SCAN_ARGS (default: RATCHET_BASE..HEAD with RATCHET_BASE defaulting to 3c9f36f,
+# bound-layer-scan runs the scan self-test, then the scan over SCAN_ARGS (default: RATCHET_BASE..HEAD with RATCHET_BASE defaulting to 3c9f36f,
 # the commit main was at when the gate was added; set SCAN_ARGS=--working after `git add -A` to scan uncommitted work).
 # build-tests (cargo build --tests; not `cargo test --no-run`, which poplog counts as a zero-test step) separates a compile error from a red test: build-debug/build-release run the tests.
 # manifest-scan: no compile-time env!(CARGO_MANIFEST_DIR) (it bakes one checkout's absolute path into the test binary; a binary reused from
@@ -81,7 +81,7 @@ run build-debug "require cargo && tools/fresh_test_run.sh cargo test -- --test-t
 run zero-test "require cargo && bash scripts/check_zero_test_targets.sh"
 run build-release "require cargo && tools/fresh_test_run.sh cargo test --release -- --test-threads=\${RUST_TEST_THREADS:-8}"
 run test-floor "require awk grep && tools/test_floor_selftest.sh && tools/test_floor.sh build-debug \"$T/$tag-build-debug.log\" && tools/test_floor.sh build-release \"$T/$tag-build-release.log\""
-run rules-scan "require python3 git grep && tools/rules_scan_selftest.sh && tools/rules_scan.sh \${SCAN_ARGS:-\${RATCHET_BASE:-3c9f36f}..HEAD}"
+run bound-layer-scan "require python3 git grep && tools/bound_layer_scan_selftest.sh && tools/bound_layer_scan.sh \${SCAN_ARGS:-\${RATCHET_BASE:-3c9f36f}..HEAD}"
 run grepq-scan "require grep find sort sed && tools/grepq_scan_selftest.sh && tools/grepq_scan.sh"
 run fmt "require cargo rustfmt && cargo fmt --all -- --check"
 run clippy "require cargo cargo-clippy && cargo clippy --all-targets -- -D warnings"
