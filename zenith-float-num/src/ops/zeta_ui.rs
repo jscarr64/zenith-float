@@ -12,6 +12,7 @@ use crate::ext::ExactNum;
 use crate::Consts;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 const NR: RoundingMode = RoundingMode::None;
 
@@ -23,7 +24,7 @@ const BORWEIN_N_DEN: u64 = 25_431;
 /// `arb_zeta_ui` for a positive integer `n ≠ 1`, at precision `p`.
 pub(crate) fn zeta_ui(n: u64, p: usize, _cc: &mut Consts) -> ExactNum {
     if n == 0 {
-        return ExactNum::from_u8(1, p).ldexp(-1, p, NR).neg_via_mul();
+        return ExactNum::from_u8(1, p).ldexp(-1, p, NR).neg();
     }
     if n == 1 {
         return ExactNum::nan(Some(crate::Error::InvalidArgument));
@@ -168,7 +169,7 @@ fn zeta_coeff_k(k: u64, n: u64, s: u64, wp: usize) -> ZetaSplit {
     } else {
         let mut a = q1.clone();
         if k.is_multiple_of(2) {
-            a = a.neg_via_mul();
+            a = a.neg();
         }
         (a, pow_ui(&ExactNum::from_u64(k, wp), s, wp))
     };
@@ -216,7 +217,7 @@ fn zeta_bsplit(a: u64, b: u64, n: u64, s: u64, cont: bool, wp: usize) -> ZetaSpl
 /// `arb_zeta_ui_borwein_bsplit`.
 fn zeta_ui_borwein_bsplit(s: u64, p: usize) -> ExactNum {
     if s == 0 {
-        return ExactNum::from_u8(1, p).ldexp(-1, p, NR).neg_via_mul();
+        return ExactNum::from_u8(1, p).ldexp(-1, p, NR).neg();
     }
     if s == 1 {
         return ExactNum::nan(Some(crate::Error::InvalidArgument));

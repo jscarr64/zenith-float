@@ -1065,6 +1065,7 @@ mod tests {
     use super::*;
     use crate::test_must::Must;
     use crate::Consts;
+    use core::ops::Neg;
 
     fn gold_p() -> (usize, RoundingMode) {
         (256, RoundingMode::ToEven)
@@ -1096,7 +1097,7 @@ mod tests {
         )
         .ok_or(crate::Error::InvalidArgument)?;
         let yend = y.get(y.len() - 1).ok_or(crate::Error::InvalidArgument)?;
-        let einv = one.neg_via_mul().exp(p, rm, &mut cc);
+        let einv = ExactNum::from_i8(-1, p).exp(p, rm, &mut cc);
         let err = ExactNum::sub_ref(yend, &einv, p, rm).abs();
         let tol12 = ExactNum::from_u8(1, p).div(&ten.powsi(RK4_EXP_ERR_DIGITS, p, rm), p, rm);
         assert!(err.is_zero() || err.compare(&tol12) == Some(-1));
@@ -1242,7 +1243,7 @@ mod tests {
         let _ = lam_w.set_precision(wrk, RoundingMode::None);
         let mut pulse =
             |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
-                let nt = lam_w.clone().mul(tt, q, r).neg_via_mul();
+                let nt = ExactNum::mul_ref(&lam_w, tt, q, r).neg();
                 lam_w.clone().mul(&nt.exp(q, r, c), q, r)
             };
         let decided = super::a_priori_trajectory_unrepresentable(
@@ -1259,7 +1260,7 @@ mod tests {
         let got = rk45_adaptive(
             |tt, _y, q, r, c| {
                 evals += 1;
-                let nt = lam.clone().mul(tt, q, r).neg_via_mul();
+                let nt = ExactNum::mul_ref(&lam, tt, q, r).neg();
                 lam.clone().mul(&nt.exp(q, r, c), q, r)
             },
             &zero,
@@ -1368,7 +1369,7 @@ mod tests {
         )
         .map_err(|_| crate::Error::InvalidArgument)?;
         let yende = ye.get(ye.len() - 1).ok_or(crate::Error::InvalidArgument)?;
-        let einv = one.neg_via_mul().exp(p, rm, &mut cc);
+        let einv = one.neg().exp(p, rm, &mut cc);
         let erre = ExactNum::sub_ref(yende, &einv, p, rm).abs();
         assert!(
             erre.is_zero() || erre.compare(&band) != Some(1),
@@ -1638,7 +1639,7 @@ mod tests {
         let got = rk45_adaptive(
             |_t, y, q, r, _cc| {
                 evals += 1;
-                y.clone().mul(&lam, q, r).neg_via_mul()
+                ExactNum::mul_ref(y, &lam, q, r).neg()
             },
             &zero,
             &one,
@@ -1661,7 +1662,7 @@ mod tests {
         let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(tend.compare(&one), Some(0));
-        let expect = lam.neg_via_mul().exp(p, rm, &mut cc);
+        let expect = lam.neg().exp(p, rm, &mut cc);
         let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
         let band = one.clone().ldexp(-16, p, RoundingMode::None);
         assert!(

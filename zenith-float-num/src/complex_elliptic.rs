@@ -1944,7 +1944,7 @@ mod tests {
         let mk_eps = || ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
         let eps = mk_eps();
         let above = ExactComplex::new(ExactNum::from_u8(2, p), mk_eps());
-        let below = ExactComplex::new(two, eps.neg_via_mul());
+        let below = ExactComplex::new(two, mk_eps().neg());
         let ka = above.elliptic_k(p, r, &mut cc);
         let kb = below.elliptic_k(p, r, &mut cc);
         assert!(near(ka.re(), kb.re(), p, 20), "K cut Re");

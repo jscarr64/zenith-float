@@ -3917,7 +3917,16 @@ mod tests {
         let al = ExactNum::from_u8(2, p).div(&ExactNum::from_u8(5, p), p, rm);
         let gam = ExactNum::from_u8(13, p).div(&ExactNum::from_u8(10, p), p, rm);
         let zc = ExactNum::from_u8(7, p).div(&ExactNum::from_u8(20, p), p, rm);
-        let hc = zc.heun_c(&al, &gam, &zero, &one.neg_via_mul(), &al, p, rm, &mut cc);
+        let hc = zc.heun_c(
+            &al,
+            &gam,
+            &zero,
+            &ExactNum::from_i8(-1, p),
+            &al,
+            p,
+            rm,
+            &mut cc,
+        );
         let f1 = zc.hypergeom_1f1(&al.neg(), &gam, p, rm, &mut cc);
         assert!(near(&hc, &f1, p), "HeunC 1F1 reduction");
 

@@ -495,7 +495,7 @@ mod tests {
         let five = ExactNum::from_u8(5, p);
         let c = pi.div(&five, p, rm).cos(p, rm, &mut cc);
         let t5 = c.chebyshev_t(5, p, rm);
-        let neg_one = one.neg_via_mul();
+        let neg_one = ExactNum::from_i8(-1, p);
         assert_eq!(t5.compare(&neg_one), Some(0));
 
         // Standard C_2^{(1)} = 4x² − 1 = U_2. The plan's "3x²−1 at λ=1"

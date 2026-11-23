@@ -745,7 +745,7 @@ fn inv_log_sum(
     let mut psi1m = re(m + 1).digamma_at(p, cc);
     let mut psi1 = one.digamma_at(p, cc);
     let mut psiam = am.digamma_at(p, cc);
-    let mzinv = zinv.neg_via_mul();
+    let mzinv = zinv.neg();
     let big = max_abs_param(&[a, c], p) + u64::from(m);
     let mut sum = ExactComplex::zero(p);
     let mut k: u32 = 0;

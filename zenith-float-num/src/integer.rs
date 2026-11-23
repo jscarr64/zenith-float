@@ -782,7 +782,7 @@ mod tests {
                     }
                     let want =
                         if neg { ExactInt::from_u128(m).neg() } else { ExactInt::from_u128(m) };
-                    let x = if neg { x.neg_via_mul() } else { x };
+                    let x = if neg { x.neg() } else { x };
                     assert_eq!(
                         ExactInt::from_exact_num(&x),
                         Some(want),

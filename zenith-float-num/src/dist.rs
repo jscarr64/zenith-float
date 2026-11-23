@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(nc.compare(&half), Some(0));
 
         let gp = one.gamma_pdf(&one, &one, p, rm, &mut cc);
-        let em1 = one.neg_via_mul().exp(p, rm, &mut cc);
+        let em1 = ExactNum::from_i8(-1, p).exp(p, rm, &mut cc);
         assert_eq!(gp.compare(&em1), Some(0));
 
         let po = zero.poisson_pmf(&one, p, rm, &mut cc);
@@ -425,7 +425,9 @@ mod tests {
         assert_eq!(chi.compare(&table), Some(0));
 
         assert!(one.normal_pdf(&zero, &zero, p, rm, &mut cc).is_nan());
-        assert!(one.neg_via_mul().poisson_pmf(&one, p, rm, &mut cc).is_nan());
+        assert!(ExactNum::from_i8(-1, p)
+            .poisson_pmf(&one, p, rm, &mut cc)
+            .is_nan());
         Ok(())
     }
 }

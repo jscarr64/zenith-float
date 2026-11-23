@@ -5713,7 +5713,7 @@ mod tests {
         assert!(NAN.abs_cmp(&NAN).is_none());
         // Finite values compare by magnitude, whatever their signs (1.0.4 compared signed values).
         let two = ExactNum::from_u8(2, 64);
-        let neg_two = two.neg_via_mul();
+        let neg_two = ExactNum::from_i8(-2, 64);
         assert!(neg_two.abs_cmp(&ONE).ok_or(crate::Error::InvalidArgument)? > 0);
         assert!(ONE.abs_cmp(&neg_two).ok_or(crate::Error::InvalidArgument)? < 0);
         assert!(neg_two.abs_cmp(&two).ok_or(crate::Error::InvalidArgument)? == 0);

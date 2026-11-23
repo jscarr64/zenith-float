@@ -1750,7 +1750,7 @@ impl ExactComplex {
         // `finish` was 1 ulp off in directed modes, ZF-18).
         let (dp, drm) = dest;
         let re = ExactNum::div_ref(&acc.re, &d, dp, drm);
-        let im = ExactNum::div_ref(&acc.im.neg_via_mul(), &d, dp, drm);
+        let im = ExactNum::div_ref(&acc.im.neg(), &d, dp, drm);
         Some(Self::new(re, im))
     }
 

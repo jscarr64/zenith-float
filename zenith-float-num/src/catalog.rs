@@ -119,7 +119,7 @@ fn pfq_1f0(z: &ExactNum, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     if omz.is_negative() && !a.is_int() {
         return cat_nan();
     }
-    let v = omz.pow(&a.clone().neg_via_mul(), wrk, n, cc);
+    let v = omz.pow(&a.neg_via_mul(), wrk, n, cc);
     if finite(&v) {
         v
     } else {
@@ -151,7 +151,7 @@ fn hyp2f1_unit(z: &ExactNum, a: &[ExactNum], c: &ExactNum, p: usize, cc: &mut Co
             return cat_nan();
         }
         let ln2 = ExactNum::from_u8(2, wrk).ln(wrk, n, cc);
-        let scale = a[0].clone().neg_via_mul().mul(&ln2, wrk, n).exp(wrk, n, cc);
+        let scale = ExactNum::mul_ref(&a[0], &ln2, wrk, n).neg().exp(wrk, n, cc);
         return f.mul(&scale, wrk, n);
     }
     let w = wide(c).max(wide(&a[0])).max(wide(&a[1])) + 64;

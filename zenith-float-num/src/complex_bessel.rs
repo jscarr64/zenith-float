@@ -1213,7 +1213,7 @@ impl ExactComplex {
         }
         let v = half
             .ln(p, RoundingMode::None, cc)
-            .neg_via_mul()
+            .neg()
             .mul(&i0, p, RoundingMode::None)
             .add(&sum, p, RoundingMode::None);
         if v.is_nan() {
