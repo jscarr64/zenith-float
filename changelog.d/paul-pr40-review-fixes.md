@@ -50,3 +50,8 @@
   +∞−0i. This changes 98 official T2 rows (49 J + 49 I, ν = −1/2, z = +0+0i, 7 p × 7 modes); land39 REF-CORRECTIONS RC-14a
   records the alt-judge basis (official judge files unedited). Tests b5_j_i_negative_order_at_signed_zeros_is_signed_limit,
   zf_j_i_neg_half_at_zero_is_pos_inf_and_small_z_matches_flint, zf_65_… and the dest-2^59 lib test updated first (red).
+- zenith-float-bound mutate selftests (Spence: pop-logs conflict). The logged()/zf_special fixture runs of mutate.sh exited 1 under
+  the current poplog: they inherited POPLOG_OUTER_* (a "WARNING ignored POPLOG_OUTER_* marker" top-level run), the fixture repo
+  ignored rather than committed Cargo.lock (NOT A GATE: tree dirty at start), and mutate_selftest.sh ended inside the fixture dir
+  (its own run log: NOT A GATE: cwd changed mid-run). The fixtures now unset POPLOG_OUTER_*, commit a generated Cargo.lock, and
+  the selftest returns to its start dir before exit. Red at fcb2ec6 in a clean clone; mutate_selftest 44 cases ok, PASS footer.

@@ -76,7 +76,7 @@ rm "$m/manifest.d/s3.txt"
 # Spence (2026-10-24, 1422-zb-s2-const-steps: 368 `ERR rc=1 line=92 owner=$(inrange ...)`): an id outside every slice range is the
 # normal case and must not trip the poplog ERR trap; a real inrange failure (malformed range row) must still be loud and stop the run.
 pl() { local n=$1; shift   # mutate.sh with its own real run log (ERR trap on); prints output, rc, then the log path
-  ( unset POPLOG_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_PROGRESS_FILE POPLOG_RUNNING RUNLOG_INNER RUNLOG_ACTIVE RUNLOG_PLAIN
+  ( unset POPLOG_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_PROGRESS_FILE POPLOG_RUNNING RUNLOG_INNER RUNLOG_ACTIVE POPLOG_OUTER_LOG POPLOG_OUTER_PID POPLOG_OUTER_DEPTH POPLOG_OUTER_START POPLOG_OUTER_AGENT RUNLOG_PLAIN
     MUTATE_MANIFEST="$m/manifest.txt" POPLOG_ROOT="$t/pl-$n" RUNLOG_AGENT=selftest "$here/mutate.sh" "$@" 2>&1; echo "rc=$?" )
   find "$t/pl-$n" -name '*-mutate.log' | head -1; }
 reset; printf 'src/a.rs:f%s002-A%s001-A.patch%ssuite\nsrc/a.rs:f%s950-A%s001-A.patch%ssuite\n' "$tab" "$tab" "$tab" "$tab" "$tab" "$tab" >> "$m/manifest.txt"

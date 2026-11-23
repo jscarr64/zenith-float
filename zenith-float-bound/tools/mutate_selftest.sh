@@ -9,6 +9,7 @@ runlog_detach_children
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d "$(zb_scratch)"/mutate-selftest.XXXXXX)"; runlog_on_exit "rm -rf \"$t\""
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
+start_cwd=$PWD   # restored before exit: poplog fails a run whose cwd changed (NOT A GATE: cwd changed mid-run)
 r="$t/fix"; mkdir -p "$r/src" "$r/tests" "$r/tools/mutants"; cd "$r" || exit 1
 git init -q . && git config user.email a@b && git config user.name t
 cat > Cargo.toml <<'TOML'
@@ -38,7 +39,10 @@ fn small_works() {
     assert!(!is_small(10));
 }
 RS
-printf '/Cargo.lock\n/target\n' > .gitignore   # mutate.sh runs `cargo fetch` in the repo, which writes Cargo.lock
+printf '/target\n' > .gitignore
+# Paul (2026-11-23, PR #40): mutate.sh runs `cargo fetch`, which writes Cargo.lock. An ignored Cargo.lock made every logged() run
+# NOT A GATE (poplog: tree dirty at start, an ignored file not on its allow-list) and exit 1; commit the lock, like the real repo does.
+cargo generate-lockfile --offline -q || exit 1
 git add -A; git commit -qm fixture
 mk() { # mk <name> <sed-expr>: a patch made by editing src/lib.rs, then reverting
   sed -i "$2" src/lib.rs; git diff > "tools/mutants/$1.patch"; git checkout -q src/lib.rs
@@ -215,7 +219,7 @@ cp "$t/Cargo.toml.keep" "$r/Cargo.toml"; cm
 # (fresh POPLOG_ROOT, not nested in this selftest's log).
 logged() { # logged NAME [ENV...]: mutate.sh with its own run log under $t/pl-NAME; prints the output, then the log path on the last line
   local n=$1; shift
-  ( unset POPLOG_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_PROGRESS_FILE POPLOG_RUNNING RUNLOG_INNER RUNLOG_ACTIVE
+  ( unset POPLOG_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_PROGRESS_FILE POPLOG_RUNNING RUNLOG_INNER RUNLOG_ACTIVE POPLOG_OUTER_LOG POPLOG_OUTER_PID POPLOG_OUTER_DEPTH POPLOG_OUTER_START POPLOG_OUTER_AGENT
     env "$@" POPLOG_ROOT="$t/pl-$n" RUNLOG_AGENT=selftest MUTATE_FLOOR_ZERO_OK=1 MUTATE_FLOOR="$t/mfloor.txt" \
       MUTATE_MANIFEST="$r/tools/mutants/manifest.txt" "$here/mutate.sh" 2>&1; echo "rc=$?" )
   find "$t/pl-$n/selftest" -name '*-mutate.log' -print -quit
@@ -252,7 +256,7 @@ rm -rf "$t/mutate-out/central"
 # include longer than a pipe buffer (64K): a real run log of `--list --slice zf_special` must hold no ERR line.
 printf 'x\n' >> "$t/cases"; mkdir -p "$r/tools/mutants/manifest.d"
 { printf '# range: 700-799\n'; for i in $(seq 1 8000); do printf '# pad %s ..........................................................\n' "$i"; done; } > "$r/tools/mutants/manifest.d/zf_special.txt"; cm
-out="$( ( unset POPLOG_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_PROGRESS_FILE POPLOG_RUNNING RUNLOG_INNER RUNLOG_ACTIVE
+out="$( ( unset POPLOG_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_PROGRESS_FILE POPLOG_RUNNING RUNLOG_INNER RUNLOG_ACTIVE POPLOG_OUTER_LOG POPLOG_OUTER_PID POPLOG_OUTER_DEPTH POPLOG_OUTER_START POPLOG_OUTER_AGENT
   env POPLOG_ROOT="$t/pl-zfs" RUNLOG_AGENT=selftest MUTATE_FLOOR_ZERO_OK=1 MUTATE_FLOOR="$t/mfloor.txt" \
     MUTATE_MANIFEST="$r/tools/mutants/manifest.txt" "$here/mutate.sh" --list --slice zf_special 2>&1; echo "rc=$?" )
   find "$t/pl-zfs/selftest" -name '*-mutate.log' -print -quit)"; lg=$(tail -1 <<< "$out")
@@ -281,6 +285,7 @@ grep -q "^KILLED 001-add-mul" <<< "$out" || fail "workspace layout: wrong report
 [ "$(git -C "$w" worktree list | grep -c 'zb-mutate\.')" = 0 ] || fail "workspace layout: leftover worktree"
 # every worktree and target dir was removed, in every case above
 n="$(leftovers)"; [ "$(printf '%s' "$n" | tr -d '\n 0')" = "" ] || fail "leftover worktrees or dirs: $n"
+cd "$start_cwd" || exit 1
 want_cases=44; ncases=$(grep -c x "$t/cases" 2>/dev/null || echo 0)
 [ "$ncases" = "$want_cases" ] || fail "ran $ncases cases, expected $want_cases (a case was skipped or added without updating want_cases)"
 echo "mutate selftest: ok ($ncases cases)"
