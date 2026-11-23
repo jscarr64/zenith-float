@@ -904,7 +904,7 @@ impl ExactNumNumber {
                 match y.add(&ulp, q, RoundingMode::None) {
                     Ok(hi) => {
                         hi_ovf_add = false;
-                        (y.clone()?, hi)
+                        (y, hi)
                     }
                     Err(Error::ExponentOverflow(_)) => {
                         hi_ovf_add = true;
@@ -917,7 +917,7 @@ impl ExactNumNumber {
                 match y.add(&eps, q, RoundingMode::None) {
                     Ok(hi) => {
                         hi_ovf_add = false;
-                        (y.clone()?, hi)
+                        (y, hi)
                     }
                     Err(Error::ExponentOverflow(_)) => {
                         hi_ovf_add = true;
