@@ -529,8 +529,7 @@ fn int_primitive(mut v: Vec<ExactInt>) -> Vec<ExactInt> {
 }
 
 /// A pseudo-remainder of `a` by `b` (`b` nonzero): `lc(b)^j·a mod b` over the integers, exact.
-fn int_prem(a: &[ExactInt], b: &[ExactInt]) -> Vec<ExactInt> {
-    let mut r = a.to_vec();
+fn int_prem(mut r: Vec<ExactInt>, b: &[ExactInt]) -> Vec<ExactInt> {
     int_strip(&mut r);
     let Some(lb) = b.last() else {
         return r;
@@ -559,7 +558,7 @@ fn int_poly_gcd(a: Vec<ExactInt>, b: Vec<ExactInt>) -> Vec<ExactInt> {
         core::mem::swap(&mut a, &mut b);
     }
     while !b.is_empty() {
-        let r = int_primitive(int_prem(&a, &b));
+        let r = int_primitive(int_prem(a, &b));
         a = b;
         b = r;
     }

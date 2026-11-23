@@ -966,23 +966,22 @@ fn meijer_zero_limit(
             .count() as i64;
         nb - na - nq
     };
-    let mut best: Option<(ExactNum, i64)> = None;
+    let mut best: Option<(&ExactNum, i64)> = None;
     for b0 in bm {
-        let mut cands: Vec<ExactNum> = bm
+        let mut cands: Vec<&ExactNum> = bm
             .iter()
             .chain(ap.iter())
             .chain(bq.iter())
             .filter(|x| int_diff(x, b0))
-            .cloned()
             .collect();
         cands.sort_by(|x, y| {
             x.compare(y)
                 .map_or(core::cmp::Ordering::Equal, |c| c.cmp(&0))
         });
         for s in cands {
-            let f = order(&s);
+            let f = order(s);
             if f >= 1 {
-                if best.as_ref().is_none_or(|(bs, _)| lt(&s, bs)) {
+                if best.as_ref().is_none_or(|(bs, _)| lt(s, bs)) {
                     best = Some((s, f));
                 }
                 break;
@@ -1000,7 +999,7 @@ fn meijer_zero_limit(
     let mut c = ExactNum::from_u8(1, wp);
     for bj in bm {
         // Γ(b - s) near s*: argument -k gives -(-1)^k/k! per unit of (s - s*).
-        let v = ExactNum::sub_ref(bj, &s, wp, RoundingMode::None);
+        let v = ExactNum::sub_ref(bj, s, wp, RoundingMode::None);
         let t = if gamma_pole(&v) {
             let k = v.neg_ref();
             let q = ExactNum::div_ref(&one, &fact(&k, cc), wp, RoundingMode::None);
@@ -1015,7 +1014,7 @@ fn meijer_zero_limit(
         c = c.mul(&t, wp, RoundingMode::None);
     }
     for aj in an {
-        let v = ExactNum::sub_ref(&one, aj, wp, RoundingMode::None).add(&s, wp, RoundingMode::None);
+        let v = ExactNum::sub_ref(&one, aj, wp, RoundingMode::None).add(s, wp, RoundingMode::None);
         if gamma_pole(&v) {
             return cat_nan();
         }
@@ -1023,7 +1022,7 @@ fn meijer_zero_limit(
     }
     for aj in ap {
         // 1/Γ(a - s): argument -k gives -(-1)^k k!.
-        let v = ExactNum::sub_ref(aj, &s, wp, RoundingMode::None);
+        let v = ExactNum::sub_ref(aj, s, wp, RoundingMode::None);
         let t = if gamma_pole(&v) {
             let k = v.neg_ref();
             let q = fact(&k, cc);
@@ -1043,7 +1042,7 @@ fn meijer_zero_limit(
     }
     for bj in bq {
         // 1/Γ(1 - b + s): argument -k gives (-1)^k k!.
-        let v = ExactNum::sub_ref(&one, bj, wp, RoundingMode::None).add(&s, wp, RoundingMode::None);
+        let v = ExactNum::sub_ref(&one, bj, wp, RoundingMode::None).add(s, wp, RoundingMode::None);
         let t = if gamma_pole(&v) {
             let k = v.neg_ref();
             let q = fact(&k, cc);

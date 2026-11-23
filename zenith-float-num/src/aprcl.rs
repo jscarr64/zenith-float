@@ -454,7 +454,7 @@ fn limbs_of(x: &ExactInt) -> &[u64] {
 
 #[cfg(test)]
 fn exact_from_limbs(limbs: &[u64]) -> ExactInt {
-    ExactInt::from_unsigned_limbs(limbs.to_vec())
+    ExactInt::from_le_words(crate::defs::Sign::Pos, limbs)
 }
 
 fn limb_len(a: &[u64]) -> usize {
@@ -1880,12 +1880,9 @@ mod tests {
         // one-limb and two-limb divisors
         for d in [2u64, 3, 5, 7, 19, u64::MAX, (1u64 << 32) + 15] {
             check(
-                &u_from_words(&[next(), next(), next(), next()]),
+                &ExactInt::from_unsigned_limbs(vec![next(), next(), next(), next()]),
                 &ExactInt::from_u64(d),
             );
-        }
-        fn u_from_words(w: &[u64]) -> ExactInt {
-            ExactInt::from_unsigned_limbs(w.to_vec())
         }
         // 2-limb divisor
         let v2 = ExactInt::from_unsigned_limbs(vec![0x123456789abcdefu64, 0x1111111111111111]);
