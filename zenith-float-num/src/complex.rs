@@ -3263,9 +3263,8 @@ mod tests {
     #[test]
     fn cbrt_minus_one_minus_zero_has_exact_half_real() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
-        let mz = compact_signed_zero(true);
-        let z1 = ExactComplex::new(-ExactNum::from_u8(1, 64), mz.clone());
-        let z8 = ExactComplex::new(-ExactNum::from_u8(8, 64), mz);
+        let z1 = ExactComplex::new(-ExactNum::from_u8(1, 64), compact_signed_zero(true));
+        let z8 = ExactComplex::new(-ExactNum::from_u8(8, 64), compact_signed_zero(true));
         let modes = [
             RoundingMode::Up,
             RoundingMode::Down,
@@ -3322,10 +3321,9 @@ mod tests {
     #[test]
     fn sqrt_negative_real_minus_zero_has_exact_zero_real() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
-        let mz = compact_signed_zero(true);
-        let z1 = ExactComplex::new(-ExactNum::from_u8(1, 64), mz.clone());
-        let z4 = ExactComplex::new(-ExactNum::from_u8(4, 64), mz.clone());
-        let z2 = ExactComplex::new(-ExactNum::from_u8(2, 64), mz);
+        let z1 = ExactComplex::new(-ExactNum::from_u8(1, 64), compact_signed_zero(true));
+        let z4 = ExactComplex::new(-ExactNum::from_u8(4, 64), compact_signed_zero(true));
+        let z2 = ExactComplex::new(-ExactNum::from_u8(2, 64), compact_signed_zero(true));
         let modes = [
             RoundingMode::ToEven,
             RoundingMode::Down,
@@ -3341,9 +3339,9 @@ mod tests {
             let neg_one = -ExactNum::from_u8(1, p);
             for rm in modes {
                 for (z, name, exact_im) in [
-                    (z1.clone(), "sqrt(-1-0i)", Some(&neg_one)),
-                    (z4.clone(), "sqrt(-4-0i)", Some(&neg_two)),
-                    (z2.clone(), "sqrt(-2-0i)", None),
+                    (&z1, "sqrt(-1-0i)", Some(&neg_one)),
+                    (&z4, "sqrt(-4-0i)", Some(&neg_two)),
+                    (&z2, "sqrt(-2-0i)", None),
                 ] {
                     let w = z.sqrt(p, rm, &mut cc);
                     assert!(
