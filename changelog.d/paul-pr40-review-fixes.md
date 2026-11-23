@@ -45,3 +45,8 @@
   range as s9_specials_golds): zf_ln_gamma_modest_z_at_p8192_finishes (30 s native) and zf_53_pollard_rho_proof_path
   (2^255−19 in 1 s native) failed only under qemu-aarch64 (5066 ms for the 1 s bound). Native budgets are unchanged;
   under the 6.50 pin they are 195 s and 6.5 s. Green on qemu-aarch64 with ZF_TIME_FACTOR=6.50.
+- B5 follow-up (Jeff 2026-11-22 ~11:58 PM CT): J_ν / I_ν at z = +0±0i, real non-integer ν < 0, give the imaginary zero
+  −sgn Γ(ν+1)·sgn(Im z)·0 (was: the sign of Im z), matching FLINT 3.6.0 along z = r(1 ± i·r²). So J/I_{−1/2}(+0+0i) is
+  +∞−0i. This changes 98 official T2 rows (49 J + 49 I, ν = −1/2, z = +0+0i, 7 p × 7 modes); land39 REF-CORRECTIONS RC-14a
+  records the alt-judge basis (official judge files unedited). Tests b5_j_i_negative_order_at_signed_zeros_is_signed_limit,
+  zf_j_i_neg_half_at_zero_is_pos_inf_and_small_z_matches_flint, zf_65_… and the dest-2^59 lib test updated first (red).

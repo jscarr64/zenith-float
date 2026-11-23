@@ -3116,8 +3116,8 @@ fn zf_65_complex_bessel_negative_order_and_zero_argument() {
         zero.bessel_i(&half, 64, RoundingMode::ToEven, &mut cc),
     ] {
         assert!(
-            v.re().is_inf_pos() && v.im().is_zero() && !v.im().is_negative(),
-            "J/I_-1/2(0+0i) got {v:?}, want +Inf+0i"
+            v.re().is_inf_pos() && v.im().is_zero() && v.im().is_negative(),
+            "J/I_-1/2(0+0i) got {v:?}, want +Inf-0i (imaginary zero -sgnGamma(1/2)*sgn(Im z), FLINT direction)"
         );
     }
 }
@@ -3131,7 +3131,9 @@ fn zf_65_complex_bessel_negative_order_and_zero_argument() {
 /// return an indeterminate ball, so the exact-zero gold is not a FLINT
 /// midpoint. Neighbors at z=2^{-16} and 2^{-8} are FLINT 3.6 midpoints
 /// uniquely correctly rounded to dest p (ctx.prec = p+128; ball radius ≪ ½ ulp).
-/// Covers the 98 official WRONG rows (7 dest p × 7 modes × {J,I} at z=+0+0i).
+/// Covers the 98 official WRONG rows (7 dest p × 7 modes × {J,I} at z=+0+0i). The imaginary zero is
+/// −sgn Γ(1/2)·sgn(Im z)·0, i.e. +∞−0i at +0+0i and +∞+0i at +0−0i (Jeff ruling 2026-11-22 ~11:58 PM CT:
+/// FLINT's direction; land39 REF-CORRECTIONS RC-14). Those 98 rows now change their imaginary zero from +0 to −0.
 #[test]
 fn zf_j_i_neg_half_at_zero_is_pos_inf_and_small_z_matches_flint() {
     let mut cc = Consts::new().expect("Consts");
@@ -3151,18 +3153,18 @@ fn zf_j_i_neg_half_at_zero_is_pos_inf_and_small_z_matches_flint() {
         for p in [64usize, 128, 256, 1024, 2048, 4096, 8192] {
             let j = z0.bessel_j_nu(&half, p, rm, &mut cc);
             assert!(
-                j.re().is_inf_pos() && j.im().is_zero() && !j.im().is_negative(),
-                "J_-1/2(0+0i) p={p} {rm:?} got {j:?}, want +Inf+0i"
+                j.re().is_inf_pos() && j.im().is_zero() && j.im().is_negative(),
+                "J_-1/2(0+0i) p={p} {rm:?} got {j:?}, want +Inf-0i"
             );
             let jm = z0m.bessel_j_nu(&half, p, rm, &mut cc);
             assert!(
-                jm.re().is_inf_pos() && jm.im().is_zero() && jm.im().is_negative(),
-                "J_-1/2(0-0i) p={p} {rm:?} got {jm:?}, want +Inf-0i"
+                jm.re().is_inf_pos() && jm.im().is_zero() && !jm.im().is_negative(),
+                "J_-1/2(0-0i) p={p} {rm:?} got {jm:?}, want +Inf+0i"
             );
             let i = z0.bessel_i(&half, p, rm, &mut cc);
             assert!(
-                i.re().is_inf_pos() && i.im().is_zero() && !i.im().is_negative(),
-                "I_-1/2(0+0i) p={p} {rm:?} got {i:?}, want +Inf+0i"
+                i.re().is_inf_pos() && i.im().is_zero() && i.im().is_negative(),
+                "I_-1/2(0+0i) p={p} {rm:?} got {i:?}, want +Inf-0i"
             );
         }
     }
@@ -5396,7 +5398,8 @@ fn zf_elliptic_k_e_complete_near_one_p8192_matches_flint() {
 
 /// B5 (Spence PR #40 review, Jeff ruling 2026-11-22 8:33 PM CT): J_ν / I_ν at the four signed zeros for real non-integer
 /// ν < 0 return the signed one-sided limit. z = +0±0i (arg ±0): sgn Γ(ν+1)·∞ (DLMF 10.7.3 / 10.30.1), so −∞ on
-/// (−2,−1), (−4,−3), …; the imaginary zero follows Im z. z = −0±0i (arg ±π, C99 Annex G): sgn Γ(ν+1)·e^{±νπi}·∞
+/// (−2,−1), (−4,−3), …; the imaginary zero is −sgn Γ(ν+1)·sgn(Im z)·0 (Jeff ruling 2026-11-22 ~11:58 PM CT: match
+/// FLINT, whose Im along z = r(1 ± i·r²) has that sign: arg (z/2)^ν = ±ν·r², ν < 0). z = −0±0i (arg ±π, C99 Annex G): sgn Γ(ν+1)·e^{±νπi}·∞
 /// (DLMF 10.11.1 / 10.34.1): Re −sgn cos(π(ν−⌊ν⌋))·∞ (+0 at half-odd ν), Im ∓∞.
 /// Expected signs: FLINT 3.6.0 `acb_bessel_j` / `acb_bessel_i` (python-flint 0.9.0) along each direction at |z| = 2^-200
 /// (2^-3000 for ν = −1 ± 2^-2048), mpmath 1.3.0 for ν = −(2^20+1/2) where FLINT gives [±inf], cross-checked against
@@ -5446,9 +5449,10 @@ fn b5_j_i_negative_order_at_signed_zeros_is_signed_limit() -> Result<(), String>
                                 _ => v.re().is_inf_neg(),
                             };
                             assert!(re_ok, "{what}, want {plus_re}Inf re");
+                            let want_im_neg = (plus_re == '+') != im_neg;
                             assert!(
-                                v.im().is_zero() && v.im().is_negative() == im_neg,
-                                "{what}, want imaginary zero with the sign of Im z"
+                                v.im().is_zero() && v.im().is_negative() == want_im_neg,
+                                "{what}, want imaginary zero -sgnGamma(nu+1)*sgn(Im z) (FLINT direction)"
                             );
                         } else {
                             let re_ok = match minus_re {

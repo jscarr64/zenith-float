@@ -291,8 +291,10 @@ fn is_half_odd_integer(x: &ExactNum) -> bool {
 /// \(\arg(-0\pm0i)=\pm\pi\)). With \(n=\lfloor\nu\rfloor\) and \(f=\nu-n\in(0,1)\),
 /// \(\operatorname{sgn}\Gamma(\nu+1)=(-1)^{n+1}\).
 /// - \(z=+0\pm0i\): \(\operatorname{sgn}\Gamma(\nu+1)\cdot\infty\) (DLMF 10.7.3 / 10.30.1), so
-///   \(-\infty\) for \(\nu\in(-2,-1),(-4,-3),\ldots\); the imaginary zero follows
-///   \(\operatorname{Im} z\) as before.
+///   \(-\infty\) for \(\nu\in(-2,-1),(-4,-3),\ldots\); the imaginary zero is
+///   \(-\operatorname{sgn}\Gamma(\nu+1)\operatorname{sgn}(\operatorname{Im} z)\cdot 0\): along
+///   \(z=r(1\pm i\epsilon)\), \(\arg(z/2)^\nu=\pm\nu\epsilon\) with \(\nu<0\) (Jeff 2026-11-22 ~11:58 PM CT:
+///   match FLINT 3.6 `acb_bessel_j` / `acb_bessel_i` there).
 /// - \(z=-0\pm0i\): \(J_\nu(ze^{\pm\pi i})=e^{\pm\nu\pi i}J_\nu(z)\) (DLMF 10.11.1; \(I\): 10.34.1),
 ///   so the limit is \(\operatorname{sgn}\Gamma(\nu+1)\,e^{\pm\nu\pi i}\cdot\infty\): real part
 ///   \(-\operatorname{sgn}\cos(\pi f)\cdot\infty\) (\(+0\) at half-odd \(\nu\), where it is exactly 0 on
@@ -316,7 +318,9 @@ fn bessel_ji_at_zero(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex
         let (n_odd, frac) = floor_parity_and_frac_vs_half(nu.re())?;
         // sgn Γ(ν+1) = (−1)^(n+1): positive exactly when n = ⌊ν⌋ is odd.
         if !z.re().is_negative() {
-            return Some(crate::complex::compact_inf(!n_odd, z.im().is_negative()));
+            // Imaginary zero: −sgn Γ(ν+1)·sgn(Im z) (FLINT's direction: arg (z/2)^ν = ν·arg z, ν < 0).
+            let im_neg = n_odd != z.im().is_negative();
+            return Some(crate::complex::compact_inf(!n_odd, im_neg));
         }
         let re = match frac {
             core::cmp::Ordering::Less => crate::INF_NEG,
@@ -2333,7 +2337,8 @@ mod tests {
     /// DLMF limits at z=0 and z=+∞ that used to return InvalidArgument, as
     /// compact values with no dest-sized allocation (dest 2^59 must return
     /// immediately). Paul call per the cited DLMF paragraphs; signed zeros
-    /// follow Im z, as for the existing integer-order and I(+∞) compact paths.
+    /// follow Im z, as for the existing integer-order and I(+∞) compact paths, except
+    /// J/I_ν(+0±0i) for real non-integer ν < 0: −sgnΓ(ν+1)·sgn(Im z)·0 (FLINT direction, Jeff 2026-11-22).
     #[test]
     fn zf_bessel_dlmf_limits_at_zero_and_pos_inf_dest_2_59_returns_immediately() {
         let p = 1usize << 59;
@@ -2361,8 +2366,8 @@ mod tests {
             t0.elapsed()
         );
         assert!(
-            j.re().is_inf_pos() && j.im().is_zero() && !j.im().is_negative(),
-            "J_-1/2(0+0i) got {j:?}, want +Inf+0i"
+            j.re().is_inf_pos() && j.im().is_zero() && j.im().is_negative(),
+            "J_-1/2(0+0i) got {j:?}, want +Inf-0i"
         );
         let t0 = std::time::Instant::now();
         let jm = z0m.bessel_j_nu(&nmh, p, rm, &mut cc);
@@ -2372,8 +2377,8 @@ mod tests {
             t0.elapsed()
         );
         assert!(
-            jm.re().is_inf_pos() && jm.im().is_zero() && jm.im().is_negative(),
-            "J_-1/2(0-0i) got {jm:?}, want +Inf-0i"
+            jm.re().is_inf_pos() && jm.im().is_zero() && !jm.im().is_negative(),
+            "J_-1/2(0-0i) got {jm:?}, want +Inf+0i"
         );
         let t0 = std::time::Instant::now();
         let i = z0.bessel_i(&nmh, p, rm, &mut cc);
@@ -2383,8 +2388,8 @@ mod tests {
             t0.elapsed()
         );
         assert!(
-            i.re().is_inf_pos() && i.im().is_zero() && !i.im().is_negative(),
-            "I_-1/2(0+0i) got {i:?}, want +Inf+0i"
+            i.re().is_inf_pos() && i.im().is_zero() && i.im().is_negative(),
+            "I_-1/2(0+0i) got {i:?}, want +Inf-0i"
         );
 
         // Y_-1/2(z)=J_{1/2}(z) ~ sqrt(2/(πz)) sin z → 0 (not −∞)
