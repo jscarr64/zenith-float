@@ -295,8 +295,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        )
-        ?;
+        )?;
         assert_eq!(coeffs.len(), CHEBYSHEV_EXP_TERMS);
 
         let ten = ExactNum::from_u8(10, p);
@@ -340,8 +339,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        )
-        ?;
+        )?;
         let one = ExactNum::from_u8(1, p);
         assert_eq!(id_c[1].compare(&one), Some(0));
         for k in 0..IDENTITY_NODES {
@@ -384,10 +382,7 @@ mod tests {
             rm,
             &mut cc,
         );
-        assert_eq!(
-            big.as_ref().map(|c| c.len()),
-            Ok(CHEBYSHEV_MAX_DEGREE + 1)
-        );
+        assert_eq!(big.as_ref().map(|c| c.len()), Ok(CHEBYSHEV_MAX_DEGREE + 1));
         assert!(chebyshev_error_bound(&c, p).compare(&ExactNum::from_u8(5, p)) == Some(0));
         Ok(())
     }
@@ -400,12 +395,7 @@ mod tests {
         let a = ExactNum::from_i64(-1, 64);
         let b = ExactNum::from_u8(1, 64);
         let f = |x: &ExactNum, p: usize, rm: RoundingMode, c: &mut Consts| x.exp(p, rm, c);
-        for &p in &[
-            1usize << 59,
-            (1usize << 60) - 65,
-            (1usize << 60) - 128,
-            (1usize << 60) - 129,
-        ] {
+        for &p in &[1usize << 59, (1usize << 60) - 65, (1usize << 60) - 128, (1usize << 60) - 129] {
             let t0 = std::time::Instant::now();
             let r = chebyshev_coeffs(f, 30, a.clone(), &b, p, RoundingMode::ToEven, &mut cc);
             assert!(

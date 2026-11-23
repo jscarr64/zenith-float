@@ -7,10 +7,10 @@ use crate::defs::Exponent;
 use crate::defs::RoundingMode;
 use crate::defs::EXPONENT_MAX;
 use crate::defs::EXPONENT_MIN;
+use crate::integer::ExactInt;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
-use crate::integer::ExactInt;
 use crate::ExactNum;
 use crate::Sign;
 use crate::Word;
@@ -7318,7 +7318,8 @@ fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<Exact
         // `wp(k)` is non-decreasing in `k`, so the band works at `wp(k_hi)`.
         let wp = even_bernoulli_zeta_wp(k_hi, p)?;
         let mut k_lo = k_hi;
-        let hi_euler = (k_hi as u128).saturating_mul(2).saturating_mul(10) <= (wp as u128).saturating_mul(7);
+        let hi_euler =
+            (k_hi as u128).saturating_mul(2).saturating_mul(10) <= (wp as u128).saturating_mul(7);
         while k_lo > k0 {
             let nxt = k_lo - 1;
             let n_nxt = 2 * nxt;

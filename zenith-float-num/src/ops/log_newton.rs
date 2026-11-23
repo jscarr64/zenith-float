@@ -114,7 +114,11 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
 
-        let d = self.sub(&ONE, p.saturating_add(8).max(WORD_BIT_SIZE), RoundingMode::None)?;
+        let d = self.sub(
+            &ONE,
+            p.saturating_add(8).max(WORD_BIT_SIZE),
+            RoundingMode::None,
+        )?;
         let x1mag = abs_bound_lt_2exp(&d);
 
         if d.is_zero() {
@@ -159,7 +163,9 @@ impl ExactNumNumber {
         let e = neg_t.exp(wp, RoundingMode::None, cc)?;
         let mut xw = self.clone()?;
         xw.set_precision(wp, RoundingMode::None)?;
-        let w = xw.mul(&e, wp, RoundingMode::None)?.sub(&ONE, wp2, RoundingMode::None)?;
+        let w = xw
+            .mul(&e, wp, RoundingMode::None)?
+            .sub(&ONE, wp2, RoundingMode::None)?;
 
         let corr = eval_log_poly(&w, n, wp2)?;
         let mut ret = t.add(&corr, p, RoundingMode::None)?;

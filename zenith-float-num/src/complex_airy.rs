@@ -9,11 +9,11 @@
 use crate::common::util::round_p;
 use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
-use crate::complex_special::typed_nan_pair;
 use crate::complex_special::neg_c;
 use crate::complex_special::pi_c;
 use crate::complex_special::term_negligible;
 use crate::complex_special::two_c;
+use crate::complex_special::typed_nan_pair;
 use crate::complex_special::ziv_complex;
 use crate::Consts;
 use crate::Error;

@@ -2,9 +2,6 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! ExactNumNumber formatting.
 
-use crate::Consts;
-use crate::Exponent;
-use crate::Sign;
 #[cfg(test)]
 use crate::common::util::round_p;
 use crate::defs::Error;
@@ -13,6 +10,9 @@ use crate::defs::RoundingMode;
 #[cfg(test)]
 use crate::defs::WORD_BIT_SIZE;
 use crate::num::ExactNumNumber;
+use crate::Consts;
+use crate::Exponent;
+use crate::Sign;
 
 #[cfg(feature = "std")]
 use std::vec::Vec;
@@ -176,8 +176,8 @@ mod tests {
     use crate::common::test_rng::random;
 
     use crate::{
-        Exponent, WORD_BIT_SIZE, common::util::MAX_DEC_SCALE, common::util::TEST_EXP_BOUND,
-        common::util::random_subnormal, common::util::test_loop_count,
+        common::util::random_subnormal, common::util::test_loop_count, common::util::MAX_DEC_SCALE,
+        common::util::TEST_EXP_BOUND, Exponent, WORD_BIT_SIZE,
     };
 
     use super::*;

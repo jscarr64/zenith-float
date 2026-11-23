@@ -447,7 +447,7 @@ mod tests {
 
         // Strong pseudoprimes to the first several prime bases.
         for s in [
-            "1373653",    // strong PSP to 2 and 3
+            "1373653", // strong PSP to 2 and 3
             "25326001",
             "161304001",
             "960946321",

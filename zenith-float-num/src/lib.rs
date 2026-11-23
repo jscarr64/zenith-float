@@ -56,13 +56,13 @@ mod ieee_soft;
 mod integer;
 mod mantissa;
 mod modular;
-mod primality;
 mod num;
 mod ode;
 mod ops;
 mod orthopoly;
 mod parser;
 mod poly;
+mod primality;
 mod quadrature;
 mod radix_float;
 #[cfg(any(test, feature = "random"))]

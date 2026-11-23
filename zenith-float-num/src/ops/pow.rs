@@ -1268,7 +1268,9 @@ mod test {
     }
 
     fn agree_bits(got: &crate::ExactNum, want: &crate::ExactNum) -> i32 {
-        let d = crate::ExactNum::sub_ref(got, want, got.precision().unwrap_or(64), RoundingMode::None).abs();
+        let d =
+            crate::ExactNum::sub_ref(got, want, got.precision().unwrap_or(64), RoundingMode::None)
+                .abs();
         if d.is_zero() {
             10_000
         } else {

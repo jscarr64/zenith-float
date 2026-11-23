@@ -16,3 +16,4 @@
   (Jeff 2026-11-22). tools/fold_pr1_selftest.sh row P honors the map read from the checked ref; new plant P-MAP (a map
   row with a non-agent name) is DETECTED.
 - M1: changelog.d/paul-tier1-fixes.md no longer calls Γ at p ≥ 2048, ZF-16 and ZF-60 BROKEN (Tier 1 closed, 0 wrong).
+- fmt: `cargo fmt --all` over the 16 zenith-float-num files that failed `cargo fmt --all -- --check` at e6f439f (gate step `fmt`); formatting only (Jeff 2026-11-22 ~11:58 PM CT).

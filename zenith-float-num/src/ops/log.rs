@@ -872,7 +872,6 @@ mod tests {
         Ok(())
     }
 
-
     #[test]
     fn zf_ln_matches_flint_golds() -> Result<(), crate::Error> {
         // FLINT 3.6 arb.log midpoints at dest p = 64, 4096, 65536, and 2^20.
@@ -888,13 +887,8 @@ mod tests {
             let arg = parts.next().unwrap();
             let dec = parts.next().unwrap();
             let t0 = std::time::Instant::now();
-            let x = crate::ExactNum::parse(
-                arg,
-                crate::Radix::Dec,
-                p,
-                RoundingMode::ToEven,
-                &mut cc,
-            );
+            let x =
+                crate::ExactNum::parse(arg, crate::Radix::Dec, p, RoundingMode::ToEven, &mut cc);
             let got = x.ln(p, RoundingMode::ToEven, &mut cc);
             let ms = t0.elapsed().as_millis();
             // The gold is a FLINT midpoint with far more digits than dest p;
@@ -942,7 +936,10 @@ mod tests {
         } else {
             (eps.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
         };
-        assert!(agree >= 16, "ln(1+2^{{-40}}) vs 2^{{-40}}: only {agree} bits");
+        assert!(
+            agree >= 16,
+            "ln(1+2^{{-40}}) vs 2^{{-40}}: only {agree} bits"
+        );
 
         let ln2 = cc.ln_2(p, RoundingMode::ToEven);
         for exp in [1000i64, -1000, 1_000_000, -1_000_000] {
@@ -966,10 +963,18 @@ mod tests {
         let sub = crate::ExactNum::from_u8(3, p).ldexp(-(p as i64 + 500), p, RoundingMode::None);
         let got = sub.ln(p, RoundingMode::ToEven, &mut cc);
         assert!(!got.is_nan(), "ln(subnormal-range) is finite");
-        assert!(got.is_negative(), "ln of a subnormal-range value in (0,1) is negative");
+        assert!(
+            got.is_negative(),
+            "ln of a subnormal-range value in (0,1) is negative"
+        );
         let k = crate::ExactNum::from_i64(-(p as i64 + 500), p);
         let ln3 = crate::ExactNum::from_u8(3, p).ln(p, RoundingMode::ToEven, &mut cc);
-        let want = crate::ExactNum::add_ref(&ln3, &crate::ExactNum::mul_ref(&ln2, &k, p, RoundingMode::None), p, RoundingMode::ToEven);
+        let want = crate::ExactNum::add_ref(
+            &ln3,
+            &crate::ExactNum::mul_ref(&ln2, &k, p, RoundingMode::None),
+            p,
+            RoundingMode::ToEven,
+        );
         let d = crate::ExactNum::sub_ref(&got, &want, p, RoundingMode::None).abs();
         let bits = if d.is_zero() {
             10_000
@@ -993,7 +998,10 @@ mod tests {
         } else {
             (eps4.exponent().unwrap_or(0) - d4.exponent().unwrap_or(0)) as i32
         };
-        assert!(agree4 >= 16, "ln(1+2^{{-80}}) at p=4096 vs 2^{{-80}}: only {agree4} bits");
+        assert!(
+            agree4 >= 16,
+            "ln(1+2^{{-80}}) at p=4096 vs 2^{{-80}}: only {agree4} bits"
+        );
         Ok(())
     }
 
@@ -1004,7 +1012,13 @@ mod tests {
         for p in [64usize, 4096, 65536] {
             for arg in ["2", "10", "0.5"] {
                 let t0 = std::time::Instant::now();
-                let x = crate::ExactNum::parse(arg, crate::Radix::Dec, p, RoundingMode::ToEven, &mut cc);
+                let x = crate::ExactNum::parse(
+                    arg,
+                    crate::Radix::Dec,
+                    p,
+                    RoundingMode::ToEven,
+                    &mut cc,
+                );
                 let ln_x = x.ln(p, RoundingMode::ToEven, &mut cc);
                 let back = ln_x.exp(p, RoundingMode::ToEven, &mut cc);
                 let d = crate::ExactNum::sub_ref(&back, &x, p, RoundingMode::None).abs();
@@ -1021,7 +1035,8 @@ mod tests {
                 );
             }
             // ln(exp(x)) for a non-integer x (covers the exp-first order).
-            let x = crate::ExactNum::parse("0.5", crate::Radix::Dec, p, RoundingMode::ToEven, &mut cc);
+            let x =
+                crate::ExactNum::parse("0.5", crate::Radix::Dec, p, RoundingMode::ToEven, &mut cc);
             let e = x.exp(p, RoundingMode::ToEven, &mut cc);
             let back = e.ln(p, RoundingMode::ToEven, &mut cc);
             let d = crate::ExactNum::sub_ref(&back, &x, p, RoundingMode::None).abs();

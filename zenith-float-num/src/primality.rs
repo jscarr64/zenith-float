@@ -2,9 +2,7 @@
 //! proof path in [`crate::modular::is_prime`]. A probable-prime result is
 //! never returned as a proof.
 
-use crate::modular::{
-    abs_int, add_mod, is_even, mod_inv, mul_mod, rem_nonneg, sub_mod, two,
-};
+use crate::modular::{abs_int, add_mod, is_even, mod_inv, mul_mod, rem_nonneg, sub_mod, two};
 use crate::ExactInt;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -61,7 +59,10 @@ pub(crate) fn jacobi(mut a: ExactInt, mut n: ExactInt) -> i8 {
     let mut t: i8 = 1;
     while !a.is_zero() {
         while is_even(&a) {
-            a = a.div_rem(&two()).map(|(q, _)| q).unwrap_or_else(ExactInt::zero);
+            a = a
+                .div_rem(&two())
+                .map(|(q, _)| q)
+                .unwrap_or_else(ExactInt::zero);
             let n8 = n.low_word() & 7;
             if n8 == 3 || n8 == 5 {
                 t = -t;
@@ -412,7 +413,10 @@ fn ecm_stage2(
         for (j, sj) in &odds {
             let up = k.saturating_add(*j);
             let down = k.saturating_sub(*j);
-            if (up <= b2 && up > b1 && (up as usize) < is_prime_gap.len() && is_prime_gap[up as usize])
+            if (up <= b2
+                && up > b1
+                && (up as usize) < is_prime_gap.len()
+                && is_prime_gap[up as usize])
                 || (down > b1
                     && down <= b2
                     && (down as usize) < is_prime_gap.len()

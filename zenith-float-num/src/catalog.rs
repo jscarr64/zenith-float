@@ -2917,11 +2917,7 @@ mod tests {
                     gi_neg
                 );
                 let hi_pos = pos.scorer_hi(p, rm, &mut cc);
-                assert!(
-                    hi_pos.is_inf_pos(),
-                    "Hi(+∞) p={p} {rm:?} {:?}",
-                    hi_pos
-                );
+                assert!(hi_pos.is_inf_pos(), "Hi(+∞) p={p} {rm:?} {:?}", hi_pos);
                 let hi_neg = neg.scorer_hi(p, rm, &mut cc);
                 assert!(
                     hi_neg.is_zero() && !hi_neg.is_negative(),
@@ -2946,13 +2942,19 @@ mod tests {
                 "Hi(100) should be a huge positive or +∞, got {:?}",
                 hi_big
             );
-            let gi_mbig = big.clone().neg().scorer_gi(p, RoundingMode::ToEven, &mut cc);
+            let gi_mbig = big
+                .clone()
+                .neg()
+                .scorer_gi(p, RoundingMode::ToEven, &mut cc);
             assert!(
                 !gi_mbig.is_nan() && !gi_mbig.is_inf() && !gi_mbig.is_zero(),
                 "Gi(−100) should be a finite oscillation, got {:?}",
                 gi_mbig
             );
-            let hi_mbig = big.clone().neg().scorer_hi(p, RoundingMode::ToEven, &mut cc);
+            let hi_mbig = big
+                .clone()
+                .neg()
+                .scorer_hi(p, RoundingMode::ToEven, &mut cc);
             assert!(
                 !hi_mbig.is_nan() && hi_mbig.is_positive() && !hi_mbig.is_zero(),
                 "Hi(−100) should be a tiny positive, got {:?}",
@@ -2979,7 +2981,11 @@ mod tests {
         let p = 256usize;
         let z = ExactNum::from_u32(32, p);
         let em = crate::hurwitz_jet::log_barnes_g_zeta(&z, p, &mut cc);
-        let st = barnes_ln_g_plus1(&z.sub(&ExactNum::from_u8(1, p), p, RoundingMode::None), p, &mut cc);
+        let st = barnes_ln_g_plus1(
+            &z.sub(&ExactNum::from_u8(1, p), p, RoundingMode::None),
+            p,
+            &mut cc,
+        );
         assert!(near(&em, &st, p), "EM {:?} vs Stirling {:?}", em, st);
         Ok(())
     }
@@ -3012,18 +3018,38 @@ mod tests {
         for &(p, gpos, gneg, lng) in cases {
             let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
             let g = half.barnes_g(p, RoundingMode::ToEven, &mut cc);
-            let want = ExactNum::parse(gpos, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            let want = ExactNum::parse(
+                gpos,
+                crate::Radix::Dec,
+                4 * p,
+                RoundingMode::ToEven,
+                &mut cc,
+            );
             let d = ExactNum::sub_ref(&g, &want, p, RoundingMode::None).abs();
-            let bits = if d.is_zero() { 10_000 } else { (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32 };
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
             assert!(
                 bits >= (p as i32) - 16 || d.is_zero(),
                 "G(1/2) p={p} only {bits} bits"
             );
-            let gm = half.clone().neg().barnes_g(p, RoundingMode::ToEven, &mut cc);
-            let wantn = ExactNum::parse(gneg, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            let gm = half
+                .clone()
+                .neg()
+                .barnes_g(p, RoundingMode::ToEven, &mut cc);
+            let wantn = ExactNum::parse(
+                gneg,
+                crate::Radix::Dec,
+                4 * p,
+                RoundingMode::ToEven,
+                &mut cc,
+            );
             assert!(near(&gm, &wantn, p), "G(-1/2) p={p} got {:?}", gm);
             let lg = crate::hurwitz_jet::log_barnes_g_zeta(&half, p, &mut cc);
-            let wantl = ExactNum::parse(lng, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            let wantl =
+                ExactNum::parse(lng, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
             assert!(near(&lg, &wantl, p), "LogG(1/2) p={p} got {:?}", lg);
         }
         Ok(())
@@ -3055,7 +3081,8 @@ mod tests {
             }
             let g = z.barnes_g(p, RoundingMode::ToEven, &mut cc);
             let ms = t0.elapsed().as_millis();
-            let want = ExactNum::parse(dec, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            let want =
+                ExactNum::parse(dec, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
             let d = ExactNum::sub_ref(&g, &want, p, RoundingMode::None).abs();
             let bits = if d.is_zero() {
                 10_000
@@ -3074,7 +3101,6 @@ mod tests {
         }
         Ok(())
     }
-
 
     /// FLINT golds for G(±1/2) at dest p=2^16. Fresh-process first fills are
     /// about 46 s, under `ZFS_WALL=120`.
@@ -3101,7 +3127,8 @@ mod tests {
             }
             let g = z.barnes_g(p, RoundingMode::ToEven, &mut cc);
             let ms = t0.elapsed().as_millis();
-            let want = ExactNum::parse(dec, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
+            let want =
+                ExactNum::parse(dec, crate::Radix::Dec, 4 * p, RoundingMode::ToEven, &mut cc);
             let d = ExactNum::sub_ref(&g, &want, p, RoundingMode::None).abs();
             let bits = if d.is_zero() {
                 10_000
