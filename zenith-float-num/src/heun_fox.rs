@@ -4181,7 +4181,7 @@ mod tests {
                     ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
                 let bm: Vec<ExactNum> = (0..9).map(|_| ExactNum::new(p)).collect();
                 let got = z.meijer_g(&[], &[], &bm, &[], p, rm, &mut cc);
-                let want = finish(gold.clone(), p, rm);
+                let want = crate::catalog::finish_ref(&gold, p, rm);
                 if got.compare(&want) != Some(0) {
                     bad.push(format!(
                         "G^{{9,0}}_{{0,9}}(1/2) p={p} {rm:?} got {got} want {want}"
@@ -4224,8 +4224,8 @@ mod tests {
         let g = meijer_jet_limit(&z, &r, false, &[], &[], &bm, &[], 256, &mut cc);
         for &p in &[64usize, 256] {
             for &rm in &modes {
-                let got = finish(g.clone(), p, rm);
-                let want = finish(gold.clone(), p, rm);
+                let got = crate::catalog::finish_ref(&g, p, rm);
+                let want = crate::catalog::finish_ref(&gold, p, rm);
                 if got.compare(&want) != Some(0) {
                     bad.push(format!(
                         "G^{{16,0}}_{{0,16}}(1/2) p={p} {rm:?} got {got} want {want}"
@@ -4435,7 +4435,7 @@ mod tests {
                     bad.push(format!("{name} p={p} {rm:?} got NaN"));
                     continue;
                 }
-                let want = finish(gold.clone(), *p, rm);
+                let want = crate::catalog::finish_ref(&gold, *p, rm);
                 if got.compare(&want) != Some(0) {
                     bad.push(format!("{name} p={p} {rm:?} got {got} want {want}"));
                 }

@@ -26,6 +26,12 @@ fn finish(mut y: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     y
 }
 
+/// [`finish`] of a borrowed value: the rounded result is written straight from `y`.
+fn finish_ref(y: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+    let w = WORD_BIT_SIZE.max(1);
+    y.rounded_to(p.div_ceil(w).saturating_mul(w), rm)
+}
+
 impl ExactNum {
     /// Probabilist's Hermite polynomial `He_n(self)`.
     ///
@@ -50,7 +56,7 @@ impl ExactNum {
             return finish(ExactNum::from_u8(1, wrk), p, rm);
         }
         if n == 1 {
-            return finish(self.clone(), p, rm);
+            return finish_ref(self, p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = self.rounded_to(wrk, RoundingMode::None);
@@ -214,7 +220,7 @@ impl ExactNum {
             return finish(ExactNum::from_u8(1, wrk), p, rm);
         }
         if n == 1 {
-            return finish(self.clone(), p, rm);
+            return finish_ref(self, p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = self.rounded_to(wrk, RoundingMode::None);

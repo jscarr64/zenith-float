@@ -3504,7 +3504,7 @@ mod aws_bounds {
             }
             for &rm in &modes {
                 let got = z.struve_h(&nu, p, rm, &mut cc);
-                let want = finish(gold.clone(), p, rm);
+                let want = crate::catalog::finish_ref(&gold, p, rm);
                 if got.compare(&want) != Some(0) {
                     bad.push(format!(
                         "H_{{-1025.5}}(1) p={p} {rm:?} got {got} want {want}"
@@ -3536,7 +3536,7 @@ mod aws_bounds {
             let z = crate::ext::INF_POS;
             let zero = signed_zero(false, p);
             for &rm in &modes {
-                let want0 = finish(zero.clone(), p, rm);
+                let want0 = crate::catalog::finish_ref(&zero, p, rm);
                 let got_j = z.anger_j(&ExactNum::new(p), p, rm, &mut cc);
                 if got_j.compare(&want0) != Some(0) {
                     bad.push(format!("J_0(+Inf) p={p} {rm:?} got {got_j} want {want0}"));
@@ -3603,14 +3603,14 @@ mod aws_bounds {
         );
         let mut bad = Vec::new();
         for &rm in &modes {
-            let want_j = finish(gold_j.clone(), p, rm);
+            let want_j = crate::catalog::finish_ref(&gold_j, p, rm);
             let got_j = z.anger_j(&half(p), p, rm, &mut cc);
             if got_j.compare(&want_j) != Some(0) {
                 bad.push(format!(
                     "J_{{1/2}}(100) p={p} {rm:?} got {got_j} want {want_j}"
                 ));
             }
-            let want_e = finish(gold_e.clone(), p, rm);
+            let want_e = crate::catalog::finish_ref(&gold_e, p, rm);
             let got_e = z.weber_e(&ExactNum::new(p), p, rm, &mut cc);
             if got_e.compare(&want_e) != Some(0) {
                 bad.push(format!("E_0(100) p={p} {rm:?} got {got_e} want {want_e}"));
@@ -3679,14 +3679,14 @@ mod aws_bounds {
         for &rm in &modes {
             let p = 1024usize;
             let z = ExactNum::from_u32(1000, p);
-            let want_j = finish(gold_j.clone(), p, rm);
+            let want_j = crate::catalog::finish_ref(&gold_j, p, rm);
             let got_j = z.anger_j(&half(p), p, rm, &mut cc);
             if got_j.compare(&want_j) != Some(0) {
                 bad.push(format!(
                     "J_{{1/2}}(1000) p={p} {rm:?} got {got_j} want {want_j}"
                 ));
             }
-            let want_e = finish(gold_e.clone(), p, rm);
+            let want_e = crate::catalog::finish_ref(&gold_e, p, rm);
             let got_e = z.weber_e(&ExactNum::new(p), p, rm, &mut cc);
             if got_e.compare(&want_e) != Some(0) {
                 bad.push(format!("E_0(1000) p={p} {rm:?} got {got_e} want {want_e}"));
@@ -3696,14 +3696,14 @@ mod aws_bounds {
             let p = 2048usize;
             let rm = RoundingMode::ToEven;
             let z = ExactNum::from_u32(1000, p);
-            let want_j = finish(gold_j.clone(), p, rm);
+            let want_j = crate::catalog::finish_ref(&gold_j, p, rm);
             let got_j = z.anger_j(&half(p), p, rm, &mut cc);
             if got_j.compare(&want_j) != Some(0) {
                 bad.push(format!(
                     "J_{{1/2}}(1000) p={p} {rm:?} got {got_j} want {want_j}"
                 ));
             }
-            let want_e = finish(gold_e.clone(), p, rm);
+            let want_e = crate::catalog::finish_ref(&gold_e, p, rm);
             let got_e = z.weber_e(&ExactNum::new(p), p, rm, &mut cc);
             if got_e.compare(&want_e) != Some(0) {
                 bad.push(format!("E_0(1000) p={p} {rm:?} got {got_e} want {want_e}"));
@@ -3755,7 +3755,7 @@ mod aws_bounds {
             let nu = ExactNum::from_i32(-7, p).div(&ExactNum::from_u32(4, p), p, N);
             let rms: &[RoundingMode] = if p == 64 { &modes } else { &[RoundingMode::ToEven] };
             for &rm in rms {
-                let want = finish(gold_m74.clone(), p, rm);
+                let want = crate::catalog::finish_ref(&gold_m74, p, rm);
                 let got = z.struve_h(&nu, p, rm, &mut cc);
                 if got.compare(&want) != Some(0) {
                     bad.push(format!("H_{{-7/4}}(1) p={p} {rm:?} got {got} want {want}"));

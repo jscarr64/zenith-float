@@ -40,6 +40,11 @@ pub(crate) fn finish(mut y: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     y
 }
 
+/// [`finish`] of a borrowed value: the rounded result is written straight from `y`.
+pub(crate) fn finish_ref(y: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+    y.rounded_to(word_p(p), rm)
+}
+
 /// Absolute residual below `2^{-(word width + 4)}`.
 fn under_word(err: &ExactNum, p: usize) -> bool {
     let guard = (word_p(p) as i64).saturating_add(4);
@@ -1977,7 +1982,7 @@ impl ExactNum {
             return cat_nan();
         }
         if self.is_zero() {
-            return finish(self.clone(), p, rm);
+            return finish_ref(self, p, rm);
         }
         let wrk = work_p(p);
         let Some((th, u)) = clausen_reduce(self, wrk, cc) else {
