@@ -2905,13 +2905,35 @@ mod tests {
                     };
                     cc.pi(p, rm_m).ldexp(-1, p, RoundingMode::None).neg()
                 };
-                let pz = crate::complex::compact_signed_zero(false);
-                let mz = crate::complex::compact_signed_zero(true);
                 let cases = [
-                    ("+∞+0i", INF_POS.clone(), pz.clone(), &hp, true),
-                    ("+∞-0i", INF_POS.clone(), mz.clone(), &hp, false),
-                    ("-∞+0i", INF_NEG.clone(), pz.clone(), &hp_m, true),
-                    ("-∞-0i", INF_NEG.clone(), mz.clone(), &hp_m, false),
+                    (
+                        "+∞+0i",
+                        INF_POS,
+                        crate::complex::compact_signed_zero(false),
+                        &hp,
+                        true,
+                    ),
+                    (
+                        "+∞-0i",
+                        INF_POS,
+                        crate::complex::compact_signed_zero(true),
+                        &hp,
+                        false,
+                    ),
+                    (
+                        "-∞+0i",
+                        INF_NEG,
+                        crate::complex::compact_signed_zero(false),
+                        &hp_m,
+                        true,
+                    ),
+                    (
+                        "-∞-0i",
+                        INF_NEG,
+                        crate::complex::compact_signed_zero(true),
+                        &hp_m,
+                        false,
+                    ),
                 ];
                 for (lab, re, im, want_re, im_pos) in cases {
                     let x = ExactComplex::new(re, im);

@@ -3166,13 +3166,35 @@ mod tests {
                     };
                     cc.pi(p, rm_m).ldexp(-1, p, RoundingMode::None).neg()
                 };
-                let pz = compact_signed_zero(false);
-                let mz = compact_signed_zero(true);
                 let cases = [
-                    ("+∞+0i", crate::INF_POS.clone(), pz.clone(), &hp, true),
-                    ("+∞-0i", crate::INF_POS.clone(), mz.clone(), &hp, false),
-                    ("-∞+0i", crate::INF_NEG.clone(), pz.clone(), &hp_m, true),
-                    ("-∞-0i", crate::INF_NEG.clone(), mz.clone(), &hp_m, false),
+                    (
+                        "+∞+0i",
+                        crate::INF_POS,
+                        compact_signed_zero(false),
+                        &hp,
+                        true,
+                    ),
+                    (
+                        "+∞-0i",
+                        crate::INF_POS,
+                        compact_signed_zero(true),
+                        &hp,
+                        false,
+                    ),
+                    (
+                        "-∞+0i",
+                        crate::INF_NEG,
+                        compact_signed_zero(false),
+                        &hp_m,
+                        true,
+                    ),
+                    (
+                        "-∞-0i",
+                        crate::INF_NEG,
+                        compact_signed_zero(true),
+                        &hp_m,
+                        false,
+                    ),
                 ];
                 for (lab, re, im, want_re, im_pos) in cases {
                     let got = ExactComplex::new(re, im).asin(p, rm, &mut cc);

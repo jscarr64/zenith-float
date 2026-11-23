@@ -9874,44 +9874,25 @@ mod tests {
             RoundingMode::ToEven,
         )?;
 
-        let cases: [(&str, ExactNumNumber, ExactNumNumber, usize); 11] = [
-            ("J-shape 1/2 p64", x30.clone()?, half.clone()?, p64),
-            ("-1/2 p64", x30.clone()?, half.neg()?, p64),
-            ("5/2 p64", x30.clone()?, five_two.clone()?, p64),
-            ("1/3 p64", x30.clone()?, third.clone()?, p64),
-            ("1/3 8192-bit p64", x30.clone()?, third_wide.clone()?, p64),
-            (
-                "1/3 8192-bit p8192",
-                x30.clone()?,
-                third_wide.clone()?,
-                8192,
-            ),
-            ("pole-adjacent p64", x30.clone()?, nu_pole.clone()?, p64),
-            ("pole-adjacent p2048", x30.clone()?, nu_pole.clone()?, 2048),
-            ("2^{-4} 1/2", pow2(-4, p64)?, half.clone()?, p64),
-            (
-                "2^{-40} 201/2",
-                pow2(-40, p64)?,
-                {
-                    let mut v = ExactNumNumber::from_word(201, p64)?;
-                    v = v.div(&two, p64, RoundingMode::ToEven)?;
-                    v
-                },
-                p64,
-            ),
-            (
-                "2^{-40} -201/2",
-                pow2(-40, p64)?,
-                {
-                    let mut v = ExactNumNumber::from_word(201, p64)?;
-                    v = v.div(&two, p64, RoundingMode::ToEven)?.neg()?;
-                    v
-                },
-                p64,
-            ),
+        let neg_half = half.neg()?;
+        let (x_m4, x_m40) = (pow2(-4, p64)?, pow2(-40, p64)?);
+        let pos_201 = ExactNumNumber::from_word(201, p64)?.div(&two, p64, RoundingMode::ToEven)?;
+        let neg_201 = pos_201.neg()?;
+        let cases: [(&str, &ExactNumNumber, &ExactNumNumber, usize); 11] = [
+            ("J-shape 1/2 p64", &x30, &half, p64),
+            ("-1/2 p64", &x30, &neg_half, p64),
+            ("5/2 p64", &x30, &five_two, p64),
+            ("1/3 p64", &x30, &third, p64),
+            ("1/3 8192-bit p64", &x30, &third_wide, p64),
+            ("1/3 8192-bit p8192", &x30, &third_wide, 8192),
+            ("pole-adjacent p64", &x30, &nu_pole, p64),
+            ("pole-adjacent p2048", &x30, &nu_pole, 2048),
+            ("2^{-4} 1/2", &x_m4, &half, p64),
+            ("2^{-40} 201/2", &x_m40, &pos_201, p64),
+            ("2^{-40} -201/2", &x_m40, &neg_201, p64),
         ];
         for (label, x, nu, p) in cases {
-            check_skip_is_conservative(&x, &nu, p, &mut cc, label)?;
+            check_skip_is_conservative(x, nu, p, &mut cc, label)?;
         }
 
         // The pole-adjacent order must not leak ExponentOverflow / DivisionByZero
