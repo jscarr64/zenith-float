@@ -1047,6 +1047,7 @@ impl ExactNumNumber {
 
 #[cfg(test)]
 mod test {
+    use crate::test_must::Must;
 
     use crate::common::{consts::TWO, util::random_subnormal};
 
@@ -1279,7 +1280,7 @@ mod test {
     }
 
     #[test]
-    fn zf_exp_matches_flint_golds() -> Result<(), crate::Error> {
+    fn zf_exp_matches_flint_golds() -> Result<(), String> {
         // FLINT 3.6 arb.exp midpoints at dest p = 64, 4096, 65536, and 2^20.
         let mut cc = crate::Consts::new()?;
         let raw = include_str!("../testdata/exp_flint_golds.txt");
@@ -1289,9 +1290,9 @@ mod test {
                 continue;
             }
             let mut parts = line.splitn(3, ' ');
-            let p: usize = parts.next().unwrap().parse().unwrap();
-            let arg = parts.next().unwrap();
-            let dec = parts.next().unwrap();
+            let p: usize = parts.next().must("field")?.parse().must("parse")?;
+            let arg = parts.next().must("field")?;
+            let dec = parts.next().must("field")?;
             let t0 = std::time::Instant::now();
             let x = parse_exp_arg(arg, p, &mut cc);
             let got = x.exp(p, RoundingMode::ToEven, &mut cc);
@@ -1317,7 +1318,7 @@ mod test {
     }
 
     #[test]
-    fn zf_exp_edge_cases() -> Result<(), crate::Error> {
+    fn zf_exp_edge_cases() -> Result<(), String> {
         let mut cc = crate::Consts::new()?;
         let p = 256usize;
 
@@ -1347,7 +1348,11 @@ mod test {
         huge.set_exponent(100);
         match huge.exp(p, RoundingMode::ToEven, &mut cc) {
             Err(crate::Error::ExponentOverflow(Sign::Pos)) => {}
-            other => panic!("exp(2^{{100}}) must refuse with ExponentOverflow(Pos), got {other:?}"),
+            other => {
+                return Err(format!(
+                    "exp(2^{{100}}) must refuse with ExponentOverflow(Pos), got {other:?}"
+                ))
+            }
         }
 
         // Underflow of exp(-2^{100}): either a refusal or a result at/below the subnormal range.
@@ -1363,7 +1368,7 @@ mod test {
                     v.exponent()
                 );
             }
-            other => panic!("exp(-2^{{100}}) unexpected {other:?}"),
+            other => return Err(format!("exp(-2^{{100}}) unexpected {other:?}")),
         }
         Ok(())
     }

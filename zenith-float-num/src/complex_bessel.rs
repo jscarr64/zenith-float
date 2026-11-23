@@ -1733,6 +1733,7 @@ mod tests {
     use crate::complex_special::neg_c;
     use crate::complex_special::pi_c;
     use crate::complex_special::two_c;
+    use crate::test_must::Must;
     use crate::Sign;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
@@ -1856,7 +1857,7 @@ mod tests {
     /// modest p, and the Wronskian holds for Y_1(1+i) and the left-half
     /// point Y_1(-1+i) (Arb phase = -3).
     #[test]
-    fn zf_y_int_jk_matches_series_and_wronskian() -> Result<(), crate::Error> {
+    fn zf_y_int_jk_matches_series_and_wronskian() -> Result<(), String> {
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
         for p in [64usize, 256, 1024] {
@@ -1865,7 +1866,7 @@ mod tests {
             let nu1 = ExactComplex::one(p);
             let y1 = z
                 .bessel_y_int_via_jk(1, p, p, &mut cc)
-                .expect("Y_1(1+i) JK");
+                .must("Y_1(1+i) JK")?;
             assert!(!y1.is_nan(), "Y_1(1+i) p={p} NaN");
             let y1s = z.bessel_y1_series(p + series_guard_bits(&z), p, &mut cc);
             assert!(cnear_bits(&y1, &y1s, p, 8), "Y_1(1+i) p={p} JK vs series");
@@ -1876,7 +1877,7 @@ mod tests {
             );
             let y0 = z
                 .bessel_y_int_via_jk(0, p, p, &mut cc)
-                .expect("Y_0(1+i) JK");
+                .must("Y_0(1+i) JK")?;
             let j0 = z.bessel_j_nu(&nu0, p, rm, &mut cc);
             let j1 = z.bessel_j_nu(&nu1, p, rm, &mut cc);
             let lhs = j0.mul(&y1, p, rm).sub(&j1.mul(&y0, p, rm), p, rm);
@@ -1886,18 +1887,18 @@ mod tests {
             let zl = ExactComplex::new(ExactNum::from_i8(-1, p), ExactNum::from_u8(1, p));
             let yl1 = zl
                 .bessel_y_int_via_jk(1, p, p, &mut cc)
-                .expect("Y_1(-1+i) JK");
+                .must("Y_1(-1+i) JK")?;
             assert!(!yl1.is_nan(), "Y_1(-1+i) p={p} NaN");
             let yl0 = zl
                 .bessel_y_int_via_jk(0, p, p, &mut cc)
-                .expect("Y_0(-1+i) JK");
+                .must("Y_0(-1+i) JK")?;
             let jl0 = zl.bessel_j_nu(&nu0, p, rm, &mut cc);
             let jl1 = zl.bessel_j_nu(&nu1, p, rm, &mut cc);
             let lhs = jl0.mul(&yl1, p, rm).sub(&jl1.mul(&yl0, p, rm), p, rm);
             let rhs = neg_c(two_c(p)).div(&pi_c(p, &mut cc).mul(&zl, p, rm), p, rm);
             assert!(cnear_bits(&lhs, &rhs, p, 8), "Wronskian Y_1(-1+i) p={p}");
 
-            let ym = z.bessel_y_int_via_jk(-1, p, p, &mut cc).expect("Y_m1 JK");
+            let ym = z.bessel_y_int_via_jk(-1, p, p, &mut cc).must("Y_m1 JK")?;
             assert!(cnear_bits(&ym, &neg_c(y1.clone()), p, 8), "Y_m1 p={p}");
         }
         Ok(())
@@ -1908,9 +1909,9 @@ mod tests {
     /// official rustc release timings.
     #[test]
     #[ignore]
-    fn zf_y1_1plusi_jk_crossover_and_high_p_timing() {
+    fn zf_y1_1plusi_jk_crossover_and_high_p_timing() -> Result<(), String> {
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().expect("Consts");
+        let mut cc = Consts::new().must("Consts")?;
         let z64 = ExactComplex::new(ExactNum::from_u8(1, 64), ExactNum::from_u8(1, 64));
         let nu1 = ExactComplex::one(64);
         let y64 = z64.bessel_y(&nu1, 64, rm, &mut cc);
@@ -1948,6 +1949,7 @@ mod tests {
                 "Y_1(1+i) p={p} took {tjk:?}"
             );
         }
+        Ok(())
     }
 
     #[test]
@@ -2193,10 +2195,10 @@ mod tests {
     /// immediately: J_(-2)(0)=I_(-2)(0)=0, J_0(0)=I_0(0)=1, Y_n(0)=−∞,
     /// K_n(0)=+∞ (DLMF 10.4.1 / 10.27.3).
     #[test]
-    fn zf_bessel_integer_order_at_zero_dest_2_59_returns_immediately() {
+    fn zf_bessel_integer_order_at_zero_dest_2_59_returns_immediately() -> Result<(), String> {
         let p = 1usize << 59;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().expect("Consts");
+        let mut cc = Consts::new().must("Consts")?;
         let z0 = ExactComplex::new(compact_signed_zero(false), compact_signed_zero(false));
         let z0m = ExactComplex::new(compact_signed_zero(false), compact_signed_zero(true));
         let nm2 = compact_real(-2);
@@ -2311,6 +2313,7 @@ mod tests {
             ii.re().is_inf_pos() && ii.im().is_zero() && !ii.im().is_negative(),
             "I_0(+∞) got {ii:?}, want +Inf+0i"
         );
+        Ok(())
     }
 
     fn assert_dest_oom_fast(name: &str, z: ExactComplex, start: std::time::Instant) {
@@ -2340,10 +2343,11 @@ mod tests {
     /// follow Im z, as for the existing integer-order and I(+∞) compact paths, except
     /// J/I_ν(+0±0i) for real non-integer ν < 0: −sgnΓ(ν+1)·sgn(Im z)·0 (FLINT direction, Jeff 2026-11-22).
     #[test]
-    fn zf_bessel_dlmf_limits_at_zero_and_pos_inf_dest_2_59_returns_immediately() {
+    fn zf_bessel_dlmf_limits_at_zero_and_pos_inf_dest_2_59_returns_immediately(
+    ) -> Result<(), String> {
         let p = 1usize << 59;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().expect("Consts");
+        let mut cc = Consts::new().must("Consts")?;
         let z0 = ExactComplex::new(compact_signed_zero(false), compact_signed_zero(false));
         let z0m = ExactComplex::new(compact_signed_zero(false), compact_signed_zero(true));
         let zinf = ExactComplex::new(crate::INF_POS, compact_signed_zero(false));
@@ -2493,13 +2497,14 @@ mod tests {
             "compact J/Y/K limits at dest 2^59 took {:?}",
             t0.elapsed()
         );
+        Ok(())
     }
 
     #[test]
-    fn zf_bessel_dest_bit_at_dest_2_59_fail_fast_memory_allocation() {
+    fn zf_bessel_dest_bit_at_dest_2_59_fail_fast_memory_allocation() -> Result<(), String> {
         let p = 1usize << 59;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().expect("Consts");
+        let mut cc = Consts::new().must("Consts")?;
         let z = ExactComplex::new(ExactNum::from_u8(2, 64).neg(), compact_signed_zero(false));
         let nu0 = compact_real(0);
         let t0 = std::time::Instant::now();
@@ -2516,5 +2521,6 @@ mod tests {
         let nm2 = compact_real(-2);
         let t4 = std::time::Instant::now();
         assert_dest_oom_fast("J_(-2)(1)", z1.bessel_j_nu(&nm2, p, rm, &mut cc), t4);
+        Ok(())
     }
 }

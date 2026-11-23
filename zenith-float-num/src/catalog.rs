@@ -2750,6 +2750,7 @@ fn barnes_ln_g_plus1(z: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
@@ -3059,7 +3060,7 @@ mod tests {
     /// the six official rows at p=65536, which live in
     /// `zf_barnes_g_half_matches_flint_golds_p65536`).
     #[test]
-    fn zf_barnes_g_half_matches_flint_golds_high_p() -> Result<(), crate::Error> {
+    fn zf_barnes_g_half_matches_flint_golds_high_p() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let raw = include_str!("testdata/barnes_g_half_flint_golds.txt");
         for ln in raw.lines() {
@@ -3068,9 +3069,9 @@ mod tests {
                 continue;
             }
             let mut parts = ln.splitn(3, ' ');
-            let p: usize = parts.next().unwrap().parse().unwrap();
-            let sign = parts.next().unwrap();
-            let dec = parts.next().unwrap();
+            let p: usize = parts.next().must("field")?.parse().must("parse")?;
+            let sign = parts.next().must("field")?;
+            let dec = parts.next().must("field")?;
             if p >= 65_536 {
                 continue;
             }
@@ -3105,7 +3106,7 @@ mod tests {
     /// FLINT golds for G(±1/2) at dest p=2^16. Fresh-process first fills are
     /// about 46 s, under `ZFS_WALL=120`.
     #[test]
-    fn zf_barnes_g_half_matches_flint_golds_p65536() -> Result<(), crate::Error> {
+    fn zf_barnes_g_half_matches_flint_golds_p65536() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let raw = include_str!("testdata/barnes_g_half_flint_golds.txt");
         for ln in raw.lines() {
@@ -3114,9 +3115,9 @@ mod tests {
                 continue;
             }
             let mut parts = ln.splitn(3, ' ');
-            let p: usize = parts.next().unwrap().parse().unwrap();
-            let sign = parts.next().unwrap();
-            let dec = parts.next().unwrap();
+            let p: usize = parts.next().must("field")?.parse().must("parse")?;
+            let sign = parts.next().must("field")?;
+            let dec = parts.next().must("field")?;
             if p < 65_536 {
                 continue;
             }
@@ -3355,8 +3356,8 @@ mod tests {
     /// Both signs of zero; every rounding mode returns +Inf (a pole, not a
     /// finite overflow that C99 7.12.1 would map to +MAX).
     #[test]
-    fn zf_jacobi_arcdn_zero_at_m_one_is_pos_inf() {
-        let mut cc = Consts::new().expect("Consts");
+    fn zf_jacobi_arcdn_zero_at_m_one_is_pos_inf() -> Result<(), String> {
+        let mut cc = Consts::new().must("Consts")?;
         let p = 64;
         let modes = [
             RoundingMode::ToEven,
@@ -3394,5 +3395,6 @@ mod tests {
             g2.is_nan(),
             g2.err()
         );
+        Ok(())
     }
 }

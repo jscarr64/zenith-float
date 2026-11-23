@@ -3277,6 +3277,7 @@ pub(super) fn weber_e_word(
 #[cfg(test)]
 mod aws_bounds {
     use super::*;
+    use crate::test_must::Must;
     use crate::Consts;
     use crate::Error;
     use crate::ExactNum;
@@ -3306,12 +3307,13 @@ mod aws_bounds {
     /// relative error of 2.7e-5 for H_0(100), exactly the size of the t_1
     /// discrepancy (mpmath: K_0≈0.00636556, t_0=1/(50π), t_1=-t_0/z^2).
     #[test]
-    fn zf56_struve_h0_100_recurrence_and_remainder() -> Result<(), Error> {
+    fn zf56_struve_h0_100_recurrence_and_remainder() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let wp = 192usize;
         let z = ExactNum::from_u32(100, wp);
         let nu = ExactNum::new(wp);
-        let (h, good) = struve_asym(&z, &nu, wp, &mut cc).expect("11.6.1 must apply at z=100, ν=0");
+        let (h, good) =
+            struve_asym(&z, &nu, wp, &mut cc).must("11.6.1 must apply at z=100, ν=0")?;
         assert!(finite(&h), "H_0(100) not finite");
         // Y_0(100) + 1/(50π) is the one-term approximation; the true K_0 is
         // smaller than t_0 by about t_0/z^2 ≈ 6.4e-7. A correctly summed
@@ -3351,13 +3353,13 @@ mod aws_bounds {
     }
 
     #[test]
-    fn zf56_struve_series_and_asym_agree_in_overlap() -> Result<(), Error> {
+    fn zf56_struve_series_and_asym_agree_in_overlap() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let wp = 256usize;
         let z = ExactNum::from_u8(20, wp);
         let nu = ExactNum::new(wp);
-        let (s, sg) = struve_series(&z, &nu, wp, &mut cc).expect("series at z=20");
-        let (a, ag) = struve_asym(&z, &nu, wp, &mut cc).expect("asym at z=20");
+        let (s, sg) = struve_series(&z, &nu, wp, &mut cc).must("series at z=20")?;
+        let (a, ag) = struve_asym(&z, &nu, wp, &mut cc).must("asym at z=20")?;
         let bits = sg.min(ag).saturating_sub(8).max(16);
         assert!(
             rel_closer_than(&s, &a, bits, wp),
@@ -3367,13 +3369,13 @@ mod aws_bounds {
     }
 
     #[test]
-    fn zf56_struve_half_integer_terminates() -> Result<(), Error> {
+    fn zf56_struve_half_integer_terminates() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let wp = 192usize;
         let z = ExactNum::from_u32(100, wp);
         let nu = half(wp);
         let (h, good) =
-            struve_asym(&z, &nu, wp, &mut cc).expect("11.6.1 terminates after t_0 for ν=1/2");
+            struve_asym(&z, &nu, wp, &mut cc).must("11.6.1 terminates after t_0 for ν=1/2")?;
         assert!(good >= 40, "bits_good={good} for terminated H_{{1/2}}(100)");
         // K_{1/2} = t_0 exactly, so H = Y + t_0.
         let y = z.bessel_y(&nu, wp, N, &mut cc);
@@ -3390,13 +3392,13 @@ mod aws_bounds {
     }
 
     #[test]
-    fn zf56_anger_a_laplace_large_z() -> Result<(), Error> {
+    fn zf56_anger_a_laplace_large_z() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let wp = 192usize;
         let z = ExactNum::from_u32(100, wp);
         let nu = ExactNum::new(wp);
-        let (a, good) =
-            anger_a_laplace(&nu, &z, wp, &mut cc).expect("Laplace/Watson must apply at z=100, ν=0");
+        let (a, good) = anger_a_laplace(&nu, &z, wp, &mut cc)
+            .must("Laplace/Watson must apply at z=100, ν=0")?;
         assert!(finite(&a) && good >= 16, "A_0(100) good={good}");
         // Leading term is 1/(πz); the next is O(1/z^3) since ν=0 kills the 1/z^2 term.
         let pi = cc.pi(wp, N);
@@ -3412,7 +3414,7 @@ mod aws_bounds {
         // hung in the panel integrator).
         let zbig = one(wp).ldexp(20, wp, N);
         let (ab, gb) =
-            anger_a_laplace(&nu, &zbig, wp, &mut cc).expect("Laplace must apply at z=2^20");
+            anger_a_laplace(&nu, &zbig, wp, &mut cc).must("Laplace must apply at z=2^20")?;
         assert!(finite(&ab) && gb >= 40, "A_0(2^20) good={gb}");
         Ok(())
     }
@@ -3432,7 +3434,7 @@ mod aws_bounds {
     }
 
     #[test]
-    fn zf56_laplace_good_bits_at_high_wp() -> Result<(), Error> {
+    fn zf56_laplace_good_bits_at_high_wp() -> Result<(), String> {
         let mut cc = Consts::new()?;
         for wp in [192usize, 2176, 8320] {
             let z = one(wp).ldexp(20, wp, N);
@@ -3446,7 +3448,7 @@ mod aws_bounds {
                         "A_{{1/2}}(2^20) Laplace rem not tight at wp={wp}, good={g}"
                     );
                 }
-                None => panic!("anger_a_laplace returned None at wp={wp}"),
+                None => return Err(format!("anger_a_laplace returned None at wp={wp}")),
             }
         }
         Ok(())
@@ -3457,7 +3459,7 @@ mod aws_bounds {
     /// refuses (Γ(ν+1/2) is a pole), so the public value was NaN. The series
     /// now starts at the first non-zero term.
     #[test]
-    fn caps_struve_series_after_1024_vanished_terms() -> Result<(), Error> {
+    fn caps_struve_series_after_1024_vanished_terms() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let modes = [
             RoundingMode::ToEven,
@@ -3484,7 +3486,7 @@ mod aws_bounds {
             // The kernel itself must return a value (the old cap was None here).
             if p == 64 {
                 let (h, good) = struve_series(&z, &nu, work_p(p), &mut cc)
-                    .expect("series must start after the vanished run");
+                    .must("series must start after the vanished run")?;
                 assert!(finite(&h) && good > 64, "series good={good} h={h}");
             }
             for &rm in &modes {
@@ -3610,7 +3612,7 @@ mod aws_bounds {
     /// method (DLMF 11.10.4 / 11.11) whose remainder meets this working
     /// precision, not `None` that forces the ~751-term 11.10.8–11 Maclaurin.
     #[test]
-    fn aws_anger_a_z1000_from_error_bound() -> Result<(), Error> {
+    fn aws_anger_a_z1000_from_error_bound() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let z1000 = 1000u32;
         for &p in &[1024usize, 2048] {
@@ -3618,7 +3620,7 @@ mod aws_bounds {
             let z = ExactNum::from_u32(z1000, wp);
             let nu = half(wp);
             let (a, g) = anger_a(&nu, &z, wp, &mut cc)
-                .expect("A_{1/2}(1000) must come from a large-|z| A_ν path");
+                .must("A_{1/2}(1000) must come from a large-|z| A_ν path")?;
             let tight = g >= (wp as i64).saturating_sub(64);
             assert!(finite(&a), "A_{{1/2}}(1000) not finite at wp={wp}");
             assert!(tight, "A_{{1/2}}(1000) rem not tight at wp={wp}, good={g}");

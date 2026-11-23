@@ -614,6 +614,7 @@ mod tests {
     use crate::complex_special::neg_c;
     use crate::complex_special::pi_c;
     use crate::complex_special::two_c;
+    use crate::test_must::Must;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
@@ -734,10 +735,10 @@ mod tests {
     /// S takes the opposite imaginary sign from the operand (the existing p=64
     /// axis convention).
     #[test]
-    fn zf_fresnel_and_si_signed_zero_at_dest_2_59_returns_immediately() {
+    fn zf_fresnel_and_si_signed_zero_at_dest_2_59_returns_immediately() -> Result<(), String> {
         let p = 1usize << 59;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().expect("Consts");
+        let mut cc = Consts::new().must("Consts")?;
         for (re_neg, im_neg) in [(false, false), (false, true), (true, false), (true, true)] {
             let z = ExactComplex::new(compact_signed_zero(re_neg), compact_signed_zero(im_neg));
             let t0 = std::time::Instant::now();
@@ -794,5 +795,6 @@ mod tests {
                 si
             );
         }
+        Ok(())
     }
 }

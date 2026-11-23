@@ -572,6 +572,7 @@ fn log_is_exact_dyadic(
 
 #[cfg(test)]
 mod tests {
+    use crate::test_must::Must;
 
     use crate::{
         common::{
@@ -873,7 +874,7 @@ mod tests {
     }
 
     #[test]
-    fn zf_ln_matches_flint_golds() -> Result<(), crate::Error> {
+    fn zf_ln_matches_flint_golds() -> Result<(), String> {
         // FLINT 3.6 arb.log midpoints at dest p = 64, 4096, 65536, and 2^20.
         let mut cc = crate::Consts::new()?;
         let raw = include_str!("../testdata/ln_flint_golds.txt");
@@ -883,9 +884,9 @@ mod tests {
                 continue;
             }
             let mut parts = line.splitn(3, ' ');
-            let p: usize = parts.next().unwrap().parse().unwrap();
-            let arg = parts.next().unwrap();
-            let dec = parts.next().unwrap();
+            let p: usize = parts.next().must("field")?.parse().must("parse")?;
+            let arg = parts.next().must("field")?;
+            let dec = parts.next().must("field")?;
             let t0 = std::time::Instant::now();
             let x =
                 crate::ExactNum::parse(arg, crate::Radix::Dec, p, RoundingMode::ToEven, &mut cc);

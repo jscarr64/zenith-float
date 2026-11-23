@@ -166,15 +166,19 @@ mod tests {
         }
     }
 
-    fn time_ns(iters: u32, warmup: u32, mut body: impl FnMut()) -> u128 {
+    fn time_ns(
+        iters: u32,
+        warmup: u32,
+        mut body: impl FnMut() -> Result<(), String>,
+    ) -> Result<u128, String> {
         for _ in 0..warmup {
-            body();
+            body()?;
         }
         let t0 = std::time::Instant::now();
         for _ in 0..iters {
-            body();
+            body()?;
         }
-        t0.elapsed().as_nanos() / u128::from(iters.max(1))
+        Ok(t0.elapsed().as_nanos() / u128::from(iters.max(1)))
     }
 
     /// Microbench of one full-width multiply, a squaring, a mul-by-one-word,
@@ -183,7 +187,7 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     #[ignore]
-    fn time_mul_kernel_vs_flint_widths() -> Result<(), crate::Error> {
+    fn time_mul_kernel_vs_flint_widths() -> Result<(), String> {
         use crate::{ExactNum, RoundingMode};
         use std::hint::black_box;
 
@@ -222,18 +226,20 @@ mod tests {
             fill_odd(&mut mb, 0x3333);
 
             let ns = time_ns(n_mul, n_mul.min(8), || {
-                Mantissa::mul_unbalanced(&ma, &mb, &mut mc).unwrap();
+                Mantissa::mul_unbalanced(&ma, &mb, &mut mc)?;
                 black_box(&mc[0]);
-            });
+                Ok(())
+            })?;
             eprintln!(
                 "ZF  mant-mul  p={prec}: n={n_mul}  {ns:.0} ns/op  {} us/op",
                 ns / 1_000
             );
 
             let ns = time_ns(n_mul, n_mul.min(8), || {
-                Mantissa::mul_unbalanced(&ma, &ma, &mut mc).unwrap();
+                Mantissa::mul_unbalanced(&ma, &ma, &mut mc)?;
                 black_box(&mc[0]);
-            });
+                Ok(())
+            })?;
             eprintln!(
                 "ZF  mant-sqr  p={prec}: n={n_mul}  {ns:.0} ns/op  {} us/op",
                 ns / 1_000
@@ -242,7 +248,8 @@ mod tests {
             let ns = time_ns(n_ui, n_ui.min(8), || {
                 Mantissa::mul_by_word(&ma, word as crate::defs::DoubleWord, &mut md);
                 black_box(&md[0]);
-            });
+                Ok(())
+            })?;
             eprintln!(
                 "ZF  mant-mul_ui p={prec}: n={n_ui}  {ns:.0} ns/op  {} us/op",
                 ns / 1_000
@@ -251,7 +258,8 @@ mod tests {
             let ns = time_ns(n_add, n_add.min(8), || {
                 add_limb_slice(&ma, &mb, &mut me);
                 black_box(&me[0]);
-            });
+                Ok(())
+            })?;
             eprintln!(
                 "ZF  mant-add  p={prec}: n={n_add}  {ns:.0} ns/op  {} us/op",
                 ns / 1_000
@@ -264,7 +272,8 @@ mod tests {
 
             let ns = time_ns(n_mul, n_mul.min(8), || {
                 black_box(ExactNum::mul_ref(&a, &b, prec, rm));
-            });
+                Ok(())
+            })?;
             eprintln!(
                 "ZF  ExactNum-mul  p={prec}: n={n_mul}  {ns:.0} ns/op  {} us/op",
                 ns / 1_000
@@ -272,7 +281,8 @@ mod tests {
 
             let ns = time_ns(n_mul, n_mul.min(8), || {
                 black_box(ExactNum::mul_ref(&a, &a, prec, rm));
-            });
+                Ok(())
+            })?;
             eprintln!(
                 "ZF  ExactNum-sqr  p={prec}: n={n_mul}  {ns:.0} ns/op  {} us/op",
                 ns / 1_000
@@ -280,7 +290,8 @@ mod tests {
 
             let ns = time_ns(n_ui, n_ui.min(8), || {
                 black_box(ExactNum::mul_ref(&a, &w, prec, rm));
-            });
+                Ok(())
+            })?;
             eprintln!(
                 "ZF  ExactNum-mul_ui p={prec}: n={n_ui}  {ns:.0} ns/op  {} us/op",
                 ns / 1_000
@@ -288,7 +299,8 @@ mod tests {
 
             let ns = time_ns(n_add, n_add.min(8), || {
                 black_box(ExactNum::add_ref(&a, &b, prec, rm));
-            });
+                Ok(())
+            })?;
             eprintln!(
                 "ZF  ExactNum-add  p={prec}: n={n_add}  {ns:.0} ns/op  {} us/op",
                 ns / 1_000

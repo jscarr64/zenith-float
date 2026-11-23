@@ -613,9 +613,10 @@ pub(super) fn exact_even_bernoulli_rev_range(
 mod tests {
     use super::*;
     use crate::defs::Exponent;
+    use crate::test_must::Must;
 
     #[test]
-    fn flint_sizing_matches_published_formulas() {
+    fn flint_sizing_matches_published_formulas() -> Result<(), String> {
         // FLINT 3.6.0 arith_bernoulli_number_size + bernoulli_denom_size
         // + bernoulli_zeta_terms for nmax = 21192 (the EM fill for ζ(1/2) at p=65536).
         let size = bernoulli_number_size_bits(21192);
@@ -628,7 +629,7 @@ mod tests {
             (728..=740).contains(&den),
             "denom size {den}, expected ~729 plus an 8-bit pad"
         );
-        let wp = bernoulli_global_prec(21192).unwrap();
+        let wp = bernoulli_global_prec(21192).must("bernoulli_global_prec")?;
         // round_p of ~218539.
         assert!(
             (218500..=218600).contains(&wp),
@@ -641,6 +642,7 @@ mod tests {
         );
         // The old integer-ceil power-of-two formula gave 2049 terms here.
         assert!(terms < 1500);
+        Ok(())
     }
 
     #[test]

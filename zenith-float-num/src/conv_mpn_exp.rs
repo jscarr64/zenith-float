@@ -370,6 +370,7 @@ pub(crate) fn scale_x_base_pow(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
 
     fn value_as_f_bits(p: &BasePow) -> (u128, i128) {
         // For small n, pack the high limbs into u128 and keep exp_r.
@@ -384,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn mpn_base_pow_small_exact_powers() {
+    fn mpn_base_pow_small_exact_powers() -> Result<(), String> {
         // 10^2 = 100, 3^5 = 243, 36^2 = 1296; one limb is enough and exact.
         for (b, e, expect) in
             [(10u8, 2u64, 100u128), (3, 5, 243), (36, 2, 1296), (10, 6, 1_000_000)]
@@ -392,7 +393,7 @@ mod tests {
             if e == 0 {
                 continue;
             }
-            let p = mpn_base_pow(b, e, 1).expect("pow");
+            let p = mpn_base_pow(b, e, 1).must("pow")?;
             assert!(p.err_ulps.is_none(), "expected exact {b}^{e}: {p:?} err");
             let (v, exp) = value_as_f_bits(&p);
             // v * 2^exp == expect
@@ -403,20 +404,21 @@ mod tests {
                 assert_eq!(v & ((1u128 << (-exp)) - 1), 0, "{b}^{e} fractional");
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn scale_x_base_pow_mul_and_div_small() {
+    fn scale_x_base_pow_mul_and_div_small() -> Result<(), String> {
         // 1 * 3^5 = 243, 243 * 3^{-5} = 1, 244 * 3^{-5} slightly above 1.
         let one = [1u64];
-        let p = scale_x_base_pow(&one, 64, 64, 3, 5, 2).expect("3^5");
+        let p = scale_x_base_pow(&one, 64, 64, 3, 5, 2).must("3^5")?;
         // 243 in 2 limbs
         let mut n243 = [0u64; 2];
         n243[0] = 243;
-        let q = scale_x_base_pow(&n243, 64 * 2, 64 * 2, 3, -5, 2).expect("243/3^5");
+        let q = scale_x_base_pow(&n243, 64 * 2, 64 * 2, 3, -5, 2).must("243/3^5")?;
         let mut n244 = [0u64; 2];
         n244[0] = 244;
-        let r = scale_x_base_pow(&n244, 64 * 2, 64 * 2, 3, -5, 2).expect("244/3^5");
+        let r = scale_x_base_pow(&n244, 64 * 2, 64 * 2, 3, -5, 2).must("244/3^5")?;
         assert!(p.err_ulps.is_none(), "1*3^5 exact, got {p:?}");
         assert!(q.err_ulps.is_none(), "243/3^5 exact, got {q:?}");
         assert!(r.err_ulps.is_some(), "244/3^5 inexact, got {r:?}");
@@ -429,11 +431,12 @@ mod tests {
         let sh1 = -q.exp_a;
         assert!((0..128).contains(&sh1));
         assert_eq!(a1 >> sh1, 1, "243/3^5 value a={a1} exp_a={}", q.exp_a);
+        Ok(())
     }
 
     #[test]
-    fn scale_x_base_pow_one_times_3_123_at_192_bits() {
-        let p = mpn_base_pow(3, 123, 8).expect("3^123");
+    fn scale_x_base_pow_one_times_3_123_at_192_bits() -> Result<(), String> {
+        let p = mpn_base_pow(3, 123, 8).must("3^123")?;
         assert!(
             p.err_ulps.is_none(),
             "3^123 should be exact in 8 limbs: {p:?}"
@@ -443,9 +446,10 @@ mod tests {
         // and dropped the high limb of the 11-limb product.
         let mut one192 = [0u64; 3];
         one192[2] = 1u64 << 63;
-        let s = scale_x_base_pow(&one192, 1, 192, 3, 123, 8).expect("1*3^123");
+        let s = scale_x_base_pow(&one192, 1, 192, 3, 123, 8).must("1*3^123")?;
         assert!(s.err_ulps.is_none(), "1*3^123 exact, got {s:?}");
         assert_eq!(&s.a[..], &p.a[..], "limbs of 1*3^123 vs 3^123");
         assert_eq!(s.exp_a, p.exp_r, "exp of 1*3^123 vs 3^123");
+        Ok(())
     }
 }

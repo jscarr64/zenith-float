@@ -1917,6 +1917,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
     use crate::Sign;
     use core::ops::Neg;
     use core::str::FromStr;
@@ -2661,7 +2662,7 @@ mod tests {
     /// individual `ln(z+k)` steps (Harper T4 S3 timed out at 120 s). The value
     /// is Arb's continuous log-gamma (Jeff 2026-11-18 12:14 CT).
     #[test]
-    fn zf_ln_gamma_modest_z_at_p8192_finishes() -> Result<(), crate::Error> {
+    fn zf_ln_gamma_modest_z_at_p8192_finishes() -> Result<(), String> {
         let p = 8192;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
@@ -2685,8 +2686,10 @@ mod tests {
             assert!(!lg.is_nan(), "ln_gamma NaN: {lg:?}");
             // i and 1+i agree with principal ln(Γ); 10i does not (Im ≈ 12.232).
             if z.im().compare(&ExactNum::from_u8(10, p)) == Some(0) && z.re().is_zero() {
-                let want_im = ExactNum::from_str("12.23211664743500407478325312857787").unwrap();
-                let want_re = ExactNum::from_str("-15.94031728124131629254188290707618").unwrap();
+                let want_im =
+                    ExactNum::from_str("12.23211664743500407478325312857787").must("from_str")?;
+                let want_re =
+                    ExactNum::from_str("-15.94031728124131629254188290707618").must("from_str")?;
                 assert!(near(lg.re(), &want_re, 64), "10i re {:?}", lg.re());
                 assert!(near(lg.im(), &want_im, 64), "10i im {:?}", lg.im());
             } else {
@@ -2701,8 +2704,8 @@ mod tests {
     }
 
     #[test]
-    fn stirling_sums_improved_match_horner_at_modest_p() {
-        let mut cc = Consts::new().unwrap();
+    fn stirling_sums_improved_match_horner_at_modest_p() -> Result<(), String> {
+        let mut cc = Consts::new().must("Consts")?;
         for &p in &[256usize, 1024, 2048] {
             let z = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(10, p));
             let (r, n) = stirling_choose_param(&z, p, false);
@@ -2732,6 +2735,7 @@ mod tests {
                 assert!(cnear_bits(&d, &d_lo, 64, 4), "digamma(-i) p={p}");
             }
         }
+        Ok(())
     }
 
     /// `(x)_3 = x(x+1)(x+2)` and its derivative, rectangular splitting.
@@ -2750,8 +2754,8 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn zf_y2_1plusi_and_pi_family_timings() {
-        let mut cc = Consts::new().expect("Consts");
+    fn zf_y2_1plusi_and_pi_family_timings() -> Result<(), String> {
+        let mut cc = Consts::new().must("Consts")?;
         let rm = RoundingMode::ToEven;
         for &p in &[256usize, 1024, 2048, 8192, 16384, 32768] {
             let z = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
@@ -2778,15 +2782,16 @@ mod tests {
             let pih = n.elliptic_pi_complete(&mhalf, p, rm, &mut cc);
             eprintln!("Pi(-2,1/2) p={p} {:?} nan={}", t2.elapsed(), pih.is_nan());
             if t2.elapsed() > std::time::Duration::from_secs(180) {
-                panic!("Pi(-2,1/2) p={p} over 3min, stop");
+                return Err(format!("Pi(-2,1/2) p={p} over 3min, stop"));
             }
         }
+        Ok(())
     }
 
     #[test]
     #[ignore]
-    fn zf_gamma_10i_and_digamma_mi_at_p65536_timing() {
-        let mut cc = Consts::new().expect("Consts");
+    fn zf_gamma_10i_and_digamma_mi_at_p65536_timing() -> Result<(), String> {
+        let mut cc = Consts::new().must("Consts")?;
         let rm = RoundingMode::ToEven;
         let p = 65536usize;
         let zg = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(10, p));
@@ -2813,25 +2818,27 @@ mod tests {
         assert!(!d.is_nan());
         let d_lo = w.digamma(64, rm, &mut cc);
         assert!(cnear_bits(&d, &d_lo, 64, 4), "digamma 64k vs p64");
+        Ok(())
     }
 
     #[test]
     #[ignore]
-    fn zf_exact_bernoulli_growth_timings() {
+    fn zf_exact_bernoulli_growth_timings() -> Result<(), String> {
         for &n in &[1024usize, 1536, 2048, 3316] {
             let t0 = std::time::Instant::now();
             crate::ops::special::with_exact_bernoulli(n, |v| {
                 eprintln!("exact bernoulli n={n} len={} {:?}", v.len(), t0.elapsed());
                 Ok(())
             })
-            .expect("exact");
+            .must("exact")?;
         }
+        Ok(())
     }
 
     #[test]
     #[ignore]
-    fn zf_stirling_improved_high_p_plan_and_timings() {
-        let mut cc = Consts::new().expect("Consts");
+    fn zf_stirling_improved_high_p_plan_and_timings() -> Result<(), String> {
+        let mut cc = Consts::new().must("Consts")?;
         let rm = RoundingMode::ToEven;
         for &p in &[256usize, 1024, 2048, 8192, 16384, 32768, 65536] {
             let zg = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(10, p));
@@ -2855,7 +2862,7 @@ mod tests {
             let tg = t0.elapsed();
             eprintln!("gamma(10i) p={p} {:?} nan={}", tg, g.is_nan());
             if tg > tlim {
-                panic!("gamma p={p} exceeded 10min, stop before a 1h run");
+                return Err(format!("gamma p={p} exceeded 10min, stop before a 1h run"));
             }
             let w = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(1, p).neg());
             let t1 = std::time::Instant::now();
@@ -2863,7 +2870,9 @@ mod tests {
             let td = t1.elapsed();
             eprintln!("digamma(-i) p={p} {:?} nan={}", td, d.is_nan());
             if td > tlim {
-                panic!("digamma p={p} exceeded 10min, stop before a 1h run");
+                return Err(format!(
+                    "digamma p={p} exceeded 10min, stop before a 1h run"
+                ));
             }
             if p == 8192 {
                 let g_lo = zg.gamma(64, rm, &mut cc);
@@ -2883,13 +2892,14 @@ mod tests {
             );
             Ok(())
         });
+        Ok(())
     }
 
     #[test]
     #[ignore]
-    fn zf_stirling_choose_param_and_8192_timing() {
+    fn zf_stirling_choose_param_and_8192_timing() -> Result<(), String> {
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().expect("Consts");
+        let mut cc = Consts::new().must("Consts")?;
         let zg = ExactComplex::new(ExactNum::new(64), ExactNum::from_u8(10, 64));
         for p in [256usize, 1024, 2048, 8192] {
             let (r, n) = stirling_choose_param(&zg, p, false);
@@ -2910,6 +2920,7 @@ mod tests {
                 Ok(())
             });
         }
+        Ok(())
     }
 
     /// gamma(10i) and digamma(−i) must follow the modest-p values and finish

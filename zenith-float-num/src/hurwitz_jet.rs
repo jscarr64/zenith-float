@@ -777,6 +777,7 @@ fn powsum_s_minus_one(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
     use crate::Error;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
@@ -829,17 +830,17 @@ mod tests {
     }
 
     #[test]
-    fn zf_hurwitz_em_sieved_matches_naive_at_one_and_half() -> Result<(), Error> {
+    fn zf_hurwitz_em_sieved_matches_naive_at_one_and_half() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let s = ExactNum::from_i32(-1, 64);
         for p in [64usize, 256, 1024] {
             let a1 = ExactNum::from_u8(1, p);
             let a2 = ExactNum::from_u8(1, p).ldexp(-1, p, NR);
             let Some(fast1) = hurwitz_em_jet(&s, &a1, p, &mut cc) else {
-                panic!("jet a=1 failed");
+                return Err("jet a=1 failed".into());
             };
             let Some(fast2) = hurwitz_em_jet(&s, &a2, p, &mut cc) else {
-                panic!("jet a=1/2 failed");
+                return Err("jet a=1/2 failed".into());
             };
             // Closed form: ζ'(-1, 1/2) = -ln2/24 - ζ'(-1)/2.
             let ln2 = cc.ln_2(p, NR);
@@ -874,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn zf_riemann_zeta_matches_flint_golds() -> Result<(), Error> {
+    fn zf_riemann_zeta_matches_flint_golds() -> Result<(), String> {
         // FLINT 3.6 arb.zeta midpoints at dest p = 64, 4096, 16384, 65536.
         let mut cc = Consts::new()?;
         let raw = include_str!("testdata/riemann_zeta_flint_golds.txt");
@@ -884,9 +885,9 @@ mod tests {
                 continue;
             }
             let mut parts = line.splitn(3, ' ');
-            let p: usize = parts.next().unwrap().parse().unwrap();
-            let arg = parts.next().unwrap();
-            let dec = parts.next().unwrap();
+            let p: usize = parts.next().must("field")?.parse().must("parse")?;
+            let arg = parts.next().must("field")?;
+            let dec = parts.next().must("field")?;
             let t0 = std::time::Instant::now();
             let x = parse_zeta_arg(arg, p, &mut cc);
             let got = x.riemann_zeta(p, RoundingMode::ToEven, &mut cc);
@@ -960,7 +961,7 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn time_riemann_zeta_half_p65536() -> Result<(), Error> {
+    fn time_riemann_zeta_half_p65536() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let p = 65536usize;
         let raw = include_str!("testdata/riemann_zeta_flint_golds.txt");
@@ -972,9 +973,9 @@ mod tests {
                 continue;
             }
             let mut parts = line.splitn(3, " ");
-            let gp: usize = parts.next().unwrap().parse().unwrap();
-            let arg = parts.next().unwrap();
-            let dec = parts.next().unwrap();
+            let gp: usize = parts.next().must("field")?.parse().must("parse")?;
+            let arg = parts.next().must("field")?;
+            let dec = parts.next().must("field")?;
             if gp == p && wanted.contains(&arg) {
                 golds.push((arg, dec));
             }
@@ -1035,7 +1036,7 @@ mod tests {
     }
 
     #[test]
-    fn powsum_sieved_matches_direct_sum_at_modest_n() -> Result<(), Error> {
+    fn powsum_sieved_matches_direct_sum_at_modest_n() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let p = 256usize;
         let n = 80u64;
@@ -1048,14 +1049,14 @@ mod tests {
             ("3", ExactNum::from_u8(3, p)),
         ] {
             let got = powsum_sieved(&s, &a, n, p, &mut cc)
-                .unwrap_or_else(|| panic!("sieved failed for s={label}"));
+                .ok_or_else(|| format!("sieved failed for s={label}"))?;
             let want = powsum_direct(&s, n, p, &mut cc);
             jets_agree(&got, &want, p, (p as i32) - 16);
         }
         // N just below/above a power of two, where Horner changes scale.
         for n in [31u64, 32, 33, 63, 64, 65] {
             let s = ExactNum::from_u8(1, p).ldexp(-1, p, NR);
-            let got = powsum_sieved(&s, &a, n, p, &mut cc).expect("sieved");
+            let got = powsum_sieved(&s, &a, n, p, &mut cc).must("sieved")?;
             let want = powsum_direct(&s, n, p, &mut cc);
             jets_agree(&got, &want, p, (p as i32) - 16);
         }
@@ -1078,7 +1079,7 @@ mod tests {
     #[cfg(feature = "std")]
     #[test]
     #[ignore]
-    fn time_powsum_elem_vs_flint() -> Result<(), Error> {
+    fn time_powsum_elem_vs_flint() -> Result<(), String> {
         use std::hint::black_box;
         let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
@@ -1147,7 +1148,7 @@ mod tests {
         let a = ExactNum::from_u8(1, pdest);
         let t0 = std::time::Instant::now();
         let Some((n, m)) = choose_param(&s, &a, pdest, &mut cc) else {
-            panic!("choose_param failed");
+            return Err("choose_param failed".into());
         };
         eprintln!(
             "ZF  choose_param s=1/2 a=1 p={pdest}: N={n} M={m} ms={}",

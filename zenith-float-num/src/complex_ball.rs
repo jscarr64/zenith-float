@@ -686,6 +686,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
 
     #[test]
     fn mag_rounds_up() {
@@ -700,12 +701,17 @@ mod tests {
     }
 
     #[test]
-    fn cancellation_is_not_certified() {
+    fn cancellation_is_not_certified() -> Result<(), String> {
         // (1 + 2^-300) − 1 at q = 192: the radius of 1 + 2^-300 (rounded) covers the result.
         let q = 192;
         let one = RB::exact(ExactNum::from_u8(1, q));
         let tiny = RB::exact(ExactNum::from_u8(1, q).ldexp(-300, q, N));
-        let s = one.add(&tiny, q).unwrap().sub(&one, q).unwrap();
+        let s = one
+            .add(&tiny, q)
+            .must("add/sub")?
+            .sub(&one, q)
+            .must("add/sub")?;
         assert!(round_part(&s, 64, RoundingMode::ToEven).is_none());
+        Ok(())
     }
 }

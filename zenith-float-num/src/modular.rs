@@ -332,6 +332,7 @@ pub fn is_prime(n: &ExactInt) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
 
     #[test]
     fn modular_pow_inv_miller_rho() -> Result<(), crate::Error> {
@@ -378,9 +379,9 @@ mod tests {
     /// slices; 0.76 s on a P-core; FLINT ~14 ms). Measurements:
     /// `~/pop-logs/paul/2026-11-15/land39/final/pr40-fixes/r2nd/pollard/limit/LIMIT.md`.
     #[test]
-    fn zf_53_pollard_rho_proof_path() -> Result<(), crate::Error> {
-        fn dec(s: &str) -> ExactInt {
-            ExactInt::from_dec_string(s).expect("test integer")
+    fn zf_53_pollard_rho_proof_path() -> Result<(), String> {
+        fn dec(s: &str) -> Result<ExactInt, String> {
+            ExactInt::from_dec_string(s).must("test integer")
         }
         fn assert_proved_prime(n: &ExactInt) {
             // pollard_rho proves primality via is_prime and returns None.
@@ -392,13 +393,13 @@ mod tests {
                 n.to_dec_string()
             );
         }
-        fn assert_proved_composite(n: &ExactInt) {
+        fn assert_proved_composite(n: &ExactInt) -> Result<(), String> {
             assert!(
                 !is_prime(n),
                 "must be proved composite {}",
                 n.to_dec_string()
             );
-            let f = pollard_rho(n).expect("a composite must yield a proper factor");
+            let f = pollard_rho(n).must("a composite must yield a proper factor")?;
             assert!(
                 f.soft_cmp(&ExactInt::one()) == Ordering::Greater
                     && f.soft_cmp(n) == Ordering::Less,
@@ -406,9 +407,10 @@ mod tests {
                 f.to_dec_string(),
                 n.to_dec_string()
             );
-            let (q, r) = n.div_rem(&f).expect("div");
+            let (q, r) = n.div_rem(&f).must("div")?;
             assert!(r.is_zero(), "factor does not divide");
             assert!(!q.is_one() && q != *n);
+            Ok(())
         }
 
         // Curve25519 prime, d0225257: APRCL, not an ECM/ρ search of n−1.
@@ -449,7 +451,7 @@ mod tests {
             // Chernick U_k, k=13679106, above the MR13 deterministic bound.
             "3317249643051242788534009",
         ] {
-            assert_proved_composite(&dec(s));
+            assert_proved_composite(&dec(s)?)?;
         }
 
         // Strong pseudoprimes to the first several prime bases.
@@ -462,16 +464,16 @@ mod tests {
             "3215031751", // strong PSP to 2, 3, 5, and 7
             "75130373920513",
         ] {
-            assert_proved_composite(&dec(s));
+            assert_proved_composite(&dec(s)?)?;
         }
 
         // Semiprimes with large balanced factors.
-        let p40a = dec("1099511627791");
-        let p40b = dec("1099511627803");
-        assert_proved_composite(&p40a.mul(&p40b));
-        let p48a = dec("281474976710677");
-        let p48b = dec("281474976710717");
-        assert_proved_composite(&p48a.mul(&p48b));
+        let p40a = dec("1099511627791")?;
+        let p40b = dec("1099511627803")?;
+        assert_proved_composite(&p40a.mul(&p40b))?;
+        let p48a = dec("281474976710677")?;
+        let p48b = dec("281474976710717")?;
+        assert_proved_composite(&p48a.mul(&p48b))?;
         Ok(())
     }
 }

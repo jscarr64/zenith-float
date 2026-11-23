@@ -8307,7 +8307,7 @@ mod tests {
     /// The cached exact B_2k equal sympy `bernoulli(2k)` (sympy 1.14.0), checked by an exact
     /// cross-multiplication; no timing involved.
     #[test]
-    fn test_bernoulli_rev_vs_boustrophedon_modest() -> Result<(), crate::Error> {
+    fn test_bernoulli_rev_vs_boustrophedon_modest() -> Result<(), String> {
         for n in [16, 30, 40] {
             match bernoulli_rev::exact_even_bernoulli_rev(n) {
                 Ok(rev) => {
@@ -8324,7 +8324,7 @@ mod tests {
                         );
                     }
                 }
-                Err(e) => panic!("exact_even_bernoulli_rev({n}) failed: {e:?}"),
+                Err(e) => return Err(format!("exact_even_bernoulli_rev({n}) failed: {e:?}")),
             }
         }
         Ok(())

@@ -2795,6 +2795,7 @@ fn trig_exact_x2(num: i64, den: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
     use crate::Error;
     use crate::NAN;
 
@@ -3120,10 +3121,10 @@ mod tests {
     }
 
     #[test]
-    fn zf_acos_and_log_dest_2_59_fail_fast_memory_allocation() {
+    fn zf_acos_and_log_dest_2_59_fail_fast_memory_allocation() -> Result<(), String> {
         let p = 1usize << 59;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().expect("Consts");
+        let mut cc = Consts::new().must("Consts")?;
         let z0m = ExactComplex::new(
             crate::complex::compact_signed_zero(false),
             crate::complex::compact_signed_zero(true),
@@ -3140,6 +3141,7 @@ mod tests {
         let t1 = std::time::Instant::now();
         let lg = z.log(&base, p, rm, &mut cc);
         assert_dest_oom_fast("log_{1+i}(-2-0i)", lg, t1);
+        Ok(())
     }
 
     /// Compact asin at exact real ±∞ with a signed-zero imaginary part

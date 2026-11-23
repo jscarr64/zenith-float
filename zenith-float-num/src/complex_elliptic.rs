@@ -1857,6 +1857,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
     use crate::Sign;
     use crate::INF_NEG;
     use crate::INF_POS;
@@ -2801,10 +2802,10 @@ mod tests {
     }
 
     #[test]
-    fn zf_elliptic_k_e_dest_2_59_fail_fast_memory_allocation() {
+    fn zf_elliptic_k_e_dest_2_59_fail_fast_memory_allocation() -> Result<(), String> {
         let p = 1usize << 59;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().expect("Consts");
+        let mut cc = Consts::new().must("Consts")?;
         let z0 = ExactComplex::new(
             crate::complex::compact_signed_zero(false),
             crate::complex::compact_signed_zero(true),
@@ -2835,6 +2836,7 @@ mod tests {
         );
         assert_eq!(e1.re().compare(&ExactNum::from_u8(1, 64)), Some(0));
         assert!(e1.im().is_zero(), "E(1) im {:?}", e1.im());
+        Ok(())
     }
 
     /// Compact limits of complete E and of F/E(x,0)=asin(x) at exact ±∞.

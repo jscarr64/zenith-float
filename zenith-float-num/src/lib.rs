@@ -71,6 +71,15 @@ mod rational;
 mod roots;
 mod strop;
 #[cfg(test)]
+mod test_must;
+/// `?` on a library `Result` inside a unit test returning `Result<(), String>` (see `test_must`).
+#[cfg(test)]
+impl From<Error> for alloc::string::String {
+    fn from(e: Error) -> alloc::string::String {
+        alloc::format!("{e:?}")
+    }
+}
+#[cfg(test)]
 mod test_time;
 
 #[cfg(feature = "std")]

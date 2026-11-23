@@ -395,6 +395,7 @@ fn rj_taylor_sum_checked(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
 
     /// nterms=22 (nmax=21) is the first order that traps in ZF-78 / ZF-66:
     /// after the last used x at y=1, FLINT still does
@@ -427,12 +428,16 @@ mod tests {
     /// An inexact dividend must not become a truncated quotient.
     /// 15/4 is the trailing unused RF update at nmax=2.
     #[test]
-    fn divexact_u_rejects_inexact_dividend() {
+    fn divexact_u_rejects_inexact_dividend() -> Result<(), String> {
         let a = int_from_u(15);
         assert!(
             try_divexact_u(&a, 4).is_none(),
             "15/4 must be refused, not truncated to 3"
         );
-        assert_eq!(try_divexact_u(&int_from_u(20), 4).unwrap(), int_from_u(5));
+        assert_eq!(
+            try_divexact_u(&int_from_u(20), 4).must("try_divexact_u")?,
+            int_from_u(5)
+        );
+        Ok(())
     }
 }

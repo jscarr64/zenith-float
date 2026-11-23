@@ -1063,6 +1063,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
     use crate::Consts;
 
     fn gold_p() -> (usize, RoundingMode) {
@@ -1219,7 +1220,7 @@ mod tests {
     /// is 0). A stiff linear sink cannot be used here: explicit RK45
     /// would stay limited by the stability region.
     #[test]
-    fn zf_54_probe_must_not_refuse_a_finishable_transient() -> Result<(), crate::Error> {
+    fn zf_54_probe_must_not_refuse_a_finishable_transient() -> Result<(), String> {
         let p = 64;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
@@ -1273,7 +1274,11 @@ mod tests {
         let ms = wall.elapsed().as_millis();
         let (ts, ys) = match got {
             Ok(v) => v,
-            Err(e) => panic!("adaptive run must finish, not {e:?}; evals={evals} in {ms} ms"),
+            Err(e) => {
+                return Err(format!(
+                    "adaptive run must finish, not {e:?}; evals={evals} in {ms} ms"
+                ))
+            }
         };
         let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
@@ -1378,7 +1383,7 @@ mod tests {
         min_bits: i32,
         max_ms: u128,
         label: &str,
-    ) -> Result<(), crate::Error> {
+    ) -> Result<(), String> {
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
@@ -1403,7 +1408,7 @@ mod tests {
         let ms = t0.elapsed().as_millis();
         let (ts, ys) = match got {
             Ok(v) => v,
-            Err(e) => panic!("{label} must integrate, not {e:?} after {ms} ms"),
+            Err(e) => return Err(format!("{label} must integrate, not {e:?} after {ms} ms")),
         };
         let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
@@ -1437,7 +1442,7 @@ mod tests {
     /// is cheap. atol = 2^{-96} is already out of reach for Dormand–Prince
     /// on [0, 1] (order-5 h ≲ 2^{-19}, tens of millions of steps).
     #[test]
-    fn zf_54_bs_cos_matches_closed_form_p256() -> Result<(), crate::Error> {
+    fn zf_54_bs_cos_matches_closed_form_p256() -> Result<(), String> {
         cos_closed_form_bits(256, -96, 80, 10_000, "y'=cos(t) p=256 atol=2^{-96}")
     }
 
@@ -1447,7 +1452,7 @@ mod tests {
     /// tolerance in a feasible number of order-5 steps; the documented
     /// switch takes Bulirsch–Stoer and must return the closed form.
     #[test]
-    fn zf_54_d0229592_matches_closed_form() -> Result<(), crate::Error> {
+    fn zf_54_d0229592_matches_closed_form() -> Result<(), String> {
         cos_closed_form_bits(
             1024,
             -512,
@@ -1561,7 +1566,7 @@ mod tests {
     /// either on Dormand–Prince or by the documented Bulirsch–Stoer
     /// switch, and match the closed form.
     #[test]
-    fn zf_54_tol_at_precision_floor_matches_closed_form() -> Result<(), crate::Error> {
+    fn zf_54_tol_at_precision_floor_matches_closed_form() -> Result<(), String> {
         let p = 64;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
@@ -1569,7 +1574,7 @@ mod tests {
         let one = ExactNum::from_u8(1, p);
         let wrk = super::work_p(p);
         // wrk_supports_tol requires scale > 2^{-(wrk-8)}. Use 2^{-(wrk-9)}.
-        let exp = -i64::try_from(wrk.saturating_sub(9)).unwrap();
+        let exp = -i64::try_from(wrk.saturating_sub(9)).must("i64::try_from")?;
         let atol = one.clone().ldexp(exp, p, RoundingMode::None);
         assert!(
             super::wrk_supports_tol(&atol, &ExactNum::new(p), &one, wrk),
@@ -1590,7 +1595,11 @@ mod tests {
         let ms = wall.elapsed().as_millis();
         let (ts, ys) = match got {
             Ok(v) => v,
-            Err(e) => panic!("tol at wrk floor must finish, not {e:?} in {ms} ms"),
+            Err(e) => {
+                return Err(format!(
+                    "tol at wrk floor must finish, not {e:?} in {ms} ms"
+                ))
+            }
         };
         let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
@@ -1616,7 +1625,7 @@ mod tests {
     /// This is stiffer than `y' = −y` but not a stability-limited
     /// crawl; the error-model switch must not fire.
     #[test]
-    fn zf_54_stiffish_transient_matches_closed_form() -> Result<(), crate::Error> {
+    fn zf_54_stiffish_transient_matches_closed_form() -> Result<(), String> {
         let p = 64;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
@@ -1643,7 +1652,11 @@ mod tests {
         let ms = wall.elapsed().as_millis();
         let (ts, ys) = match got {
             Ok(v) => v,
-            Err(e) => panic!("stiff-ish y'=-40y must finish, not {e:?}; evals={evals} in {ms} ms"),
+            Err(e) => {
+                return Err(format!(
+                    "stiff-ish y'=-40y must finish, not {e:?}; evals={evals} in {ms} ms"
+                ))
+            }
         };
         let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;

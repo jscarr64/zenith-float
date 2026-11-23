@@ -3842,6 +3842,7 @@ fn fox_h_residue(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_must::Must;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
@@ -3941,7 +3942,7 @@ mod tests {
     }
 
     #[test]
-    fn caps_heun_outside_disk() -> Result<(), crate::Error> {
+    fn caps_heun_outside_disk() -> Result<(), String> {
         // Independent golds: high-dps seed series + Taylor walk (mpmath, 200
         // decimals). Rows are real-analytic continuations along the component
         // of R\{1,a} that contains 0. All 7 rounding modes, correctly rounded
@@ -4052,26 +4053,26 @@ mod tests {
         fn dec(s: &str, wp: usize, cc: &mut Consts) -> ExactNum {
             ExactNum::parse(s, crate::Radix::Dec, wp, RoundingMode::ToEven, cc)
         }
-        fn rat(s: &str, wp: usize, rm: RoundingMode) -> ExactNum {
+        fn rat(s: &str, wp: usize, rm: RoundingMode) -> Result<ExactNum, String> {
             if let Some((ns, ds)) = s.split_once('/') {
-                let n: i32 = ns.parse().unwrap();
-                let d: i32 = ds.parse().unwrap();
+                let n: i32 = ns.parse().must("parse")?;
+                let d: i32 = ds.parse().must("parse")?;
                 let mut x = ExactNum::from_u32(n.unsigned_abs(), wp);
                 if n < 0 {
                     x = x.neg();
                 }
                 if d == 1 {
-                    x
+                    Ok(x)
                 } else {
-                    x.div(&ExactNum::from_u32(d as u32, wp), wp, rm)
+                    Ok(x.div(&ExactNum::from_u32(d as u32, wp), wp, rm))
                 }
             } else {
-                let n: i32 = s.parse().unwrap();
+                let n: i32 = s.parse().must("parse")?;
                 let mut x = ExactNum::from_u32(n.unsigned_abs(), wp);
                 if n < 0 {
                     x = x.neg();
                 }
-                x
+                Ok(x)
             }
         }
         // Parameters are built at a width far above dest p. A dest-p rounding
@@ -4086,13 +4087,13 @@ mod tests {
             for rm in modes {
                 for (z, a, q, al, be, ga, de, gold) in rows_g {
                     let w = dec(gold, 8960, &mut cc);
-                    let v = rat(z, p, rm).heun_g(
-                        &rat(a, PARAM_WP, RoundingMode::ToEven),
-                        &rat(q, PARAM_WP, RoundingMode::ToEven),
-                        &rat(al, PARAM_WP, RoundingMode::ToEven),
-                        &rat(be, PARAM_WP, RoundingMode::ToEven),
-                        &rat(ga, PARAM_WP, RoundingMode::ToEven),
-                        &rat(de, PARAM_WP, RoundingMode::ToEven),
+                    let v = rat(z, p, rm)?.heun_g(
+                        &rat(a, PARAM_WP, RoundingMode::ToEven)?,
+                        &rat(q, PARAM_WP, RoundingMode::ToEven)?,
+                        &rat(al, PARAM_WP, RoundingMode::ToEven)?,
+                        &rat(be, PARAM_WP, RoundingMode::ToEven)?,
+                        &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
+                        &rat(de, PARAM_WP, RoundingMode::ToEven)?,
                         p,
                         rm,
                         &mut cc,
@@ -4107,12 +4108,12 @@ mod tests {
                 }
                 for (z, al, ga, de, eps, q, gold) in rows_c {
                     let w = dec(gold, 8960, &mut cc);
-                    let v = rat(z, p, rm).heun_c(
-                        &rat(al, PARAM_WP, RoundingMode::ToEven),
-                        &rat(ga, PARAM_WP, RoundingMode::ToEven),
-                        &rat(de, PARAM_WP, RoundingMode::ToEven),
-                        &rat(eps, PARAM_WP, RoundingMode::ToEven),
-                        &rat(q, PARAM_WP, RoundingMode::ToEven),
+                    let v = rat(z, p, rm)?.heun_c(
+                        &rat(al, PARAM_WP, RoundingMode::ToEven)?,
+                        &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
+                        &rat(de, PARAM_WP, RoundingMode::ToEven)?,
+                        &rat(eps, PARAM_WP, RoundingMode::ToEven)?,
+                        &rat(q, PARAM_WP, RoundingMode::ToEven)?,
                         p,
                         rm,
                         &mut cc,
