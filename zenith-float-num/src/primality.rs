@@ -212,7 +212,6 @@ fn bit_set(k: &ExactInt, i: usize) -> bool {
     k.shr_towards_zero(i).low_word() & 1 == 1
 }
 
-#[derive(Clone)]
 struct MPt {
     x: ExactInt,
     z: ExactInt,
@@ -240,6 +239,9 @@ fn mont_add(p: &MPt, q: &MPt, diff: &MPt, n: &ExactInt) -> Option<MPt> {
     Some(MPt { x, z })
 }
 
+/// `[k]P` by the Montgomery ladder; the result is always a new point. `k == 1` gives `None` (no
+/// point is computed for it): every caller passes `k = 0` or `k >= 2` (prime powers, multiples of `d`),
+/// and `None` only ends this ECM curve without a factor, which is never a wrong answer.
 fn mont_mul(p: &MPt, k: &ExactInt, a24: &ExactInt, n: &ExactInt) -> Option<MPt> {
     if k.is_zero() {
         return Some(MPt {
@@ -247,13 +249,19 @@ fn mont_mul(p: &MPt, k: &ExactInt, a24: &ExactInt, n: &ExactInt) -> Option<MPt> 
             z: ExactInt::zero(),
         });
     }
-    if k.is_one() {
-        return Some(p.clone());
-    }
     let bits = k.bit_length();
-    let mut r0 = p.clone();
-    let mut r1 = mont_dbl(p, a24, n)?;
-    for i in (0..bits.saturating_sub(1)).rev() {
+    if bits < 2 {
+        return None;
+    }
+    // The ladder starts at (P, [2]P); its first step reads P in place, so P is never copied.
+    let two_p = mont_dbl(p, a24, n)?;
+    let (mut r0, mut r1) = if bit_set(k, bits - 2) {
+        (mont_add(p, &two_p, p, n)?, mont_dbl(&two_p, a24, n)?)
+    } else {
+        let r1 = mont_add(p, &two_p, p, n)?;
+        (two_p, r1)
+    };
+    for i in (0..bits.saturating_sub(2)).rev() {
         if bit_set(k, i) {
             r0 = mont_add(&r0, &r1, p, n)?;
             r1 = mont_dbl(&r1, a24, n)?;
@@ -365,21 +373,20 @@ fn ecm_stage2(
     let d = 210u64;
     let two_q = mont_dbl(q, a24, n)?;
     // Odd multiples [1]Q, [3]Q, …, [d-1]Q.
+    // [1]Q is `q` itself (read in place); `odds` holds [3]Q, [5]Q, … as they are computed.
     let mut odds: Vec<(u64, MPt)> = Vec::new();
-    let mut cur = q.clone();
-    odds.push((1, cur.clone()));
     // [3]Q = [1]Q + [2]Q, difference [1]Q (X is even).
-    let mut nxt = mont_add(&cur, &two_q, q, n)?;
-    let mut prev = cur;
-    cur = nxt;
+    odds.push((3, mont_add(q, &two_q, q, n)?));
     let mut j = 3u64;
     while j < d {
-        odds.push((j, cur.clone()));
         // [j+2] = [j] + [2], difference [j-2]
-        nxt = mont_add(&cur, &two_q, &prev, n)?;
-        prev = cur;
-        cur = nxt;
+        let len = odds.len();
+        let prev = if len >= 2 { &odds[len - 2].1 } else { q };
+        let nxt = mont_add(&odds[len - 1].1, &two_q, prev, n)?;
         j += 2;
+        if j < d {
+            odds.push((j, nxt));
+        }
     }
     let d_q = mont_mul(q, &ExactInt::from_u64(d), a24, n)?;
 
@@ -409,7 +416,7 @@ fn ecm_stage2(
     };
     let mut acc = ExactInt::one();
     while k <= b2.saturating_add(d) {
-        for (j, sj) in &odds {
+        for (j, sj) in core::iter::once((&1u64, q)).chain(odds.iter().map(|(j, s)| (j, s))) {
             let up = k.saturating_add(*j);
             let down = k.saturating_sub(*j);
             if (up <= b2
@@ -466,4 +473,48 @@ pub(crate) fn primes_upto(limit: u64) -> Vec<u32> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod ecm_tests {
+    use super::ecm_curve;
+    use crate::integer::ExactInt;
+
+    /// Outcome digest of a sweep of ECM curves (sigma 6..60) on semiprimes; any factor found must be a
+    /// proper divisor. The digest pins the curves' behaviour bit for bit across refactors.
+    #[test]
+    fn ecm_curve_sweep_is_stable_and_finds_proper_factors() -> Result<(), String> {
+        let ps = [
+            (1_000_003u64, 1_000_033u64),
+            (2_147_483_647, 1_000_000_007),
+            (65_537, 4_294_967_311),
+        ];
+        let mut digest: Vec<String> = Vec::new();
+        for (a, b) in ps {
+            let n = ExactInt::from_u64(a).mul(&ExactInt::from_u64(b));
+            for sigma in 6u64..60 {
+                for (b1, b2) in [(50u64, 2_000u64), (400, 40_000), (2_000, 2_000)] {
+                    match ecm_curve(&n, b1, b2, sigma) {
+                        Some(f) => {
+                            let ok = f == ExactInt::from_u64(a) || f == ExactInt::from_u64(b);
+                            if !ok {
+                                return Err(format!("n={a}*{b} sigma={sigma}: bad factor {f:?}"));
+                            }
+                            digest.push(format!(
+                                "{sigma}:{b1}:{}",
+                                u8::from(f == ExactInt::from_u64(a))
+                            ));
+                        }
+                        None => digest.push(format!("{sigma}:{b1}:-")),
+                    }
+                }
+            }
+        }
+        let found = digest.iter().filter(|d| !d.ends_with('-')).count();
+        eprintln!("ECM-DIGEST found={found} {}", digest.join(","));
+        if found == 0 {
+            return Err("no curve found a factor".to_string());
+        }
+        Ok(())
+    }
 }
