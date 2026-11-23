@@ -2922,6 +2922,55 @@ mod tests {
         Ok(())
     }
 
+    /// (-1 ± 0i)^(a + i) with integer a: the imaginary part is an exact zero (pow_axis_complex_exp_ball, the r = 1
+    /// branch), signed as Im z^w for z -> -1 from that side. Golds: FLINT acb_pow at z = -1 ± 2^-300 i (512 bits), then
+    /// mpmath, both agree on every row: ~/pop-logs/paul/2026-11-15/land39/final/pr40-fixes/r2nd/mutkill/
+    /// axis_pow_zero_sign_flint.{py,out}. Kills the surviving mutants complex.rs:1931 cols 52 (`^` -> `&`, `^` -> `|`),
+    /// 71 (`^` -> `|`) and 73 (delete `!`).
+    #[test]
+    fn pow_on_the_cut_with_complex_exponent_signs_the_exact_zero_imaginary_part(
+    ) -> Result<(), String> {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
+        // (below, a, Im zero negative, Re negative)
+        let rows: [(bool, i32, bool, bool); 10] = [
+            (false, 2, true, false),
+            (false, 1, false, true),
+            (false, -2, false, false),
+            (false, -1, true, true),
+            (false, 3, false, true),
+            (true, 2, false, false),
+            (true, 1, true, true),
+            (true, -2, true, false),
+            (true, -1, false, true),
+            (true, 3, true, true),
+        ];
+        for (below, a, im_neg, re_neg) in rows {
+            let zero = if below { -ExactNum::new(p) } else { ExactNum::new(p) };
+            let z = ExactComplex::new(ExactNum::from_i8(-1, p), zero);
+            let w = ExactComplex::new(ExactNum::from_i32(a, p), ExactNum::from_u8(1, p));
+            let r = z.pow(&w, p, rm, &mut cc);
+            let side = if below { "below" } else { "above" };
+            if !r.im().is_zero() {
+                return Err(format!("{side} a={a}: Im is not an exact zero: {r:?}"));
+            }
+            if r.im().is_negative() != im_neg {
+                return Err(format!(
+                    "{side} a={a}: Im zero sign negative={} want {im_neg}",
+                    r.im().is_negative()
+                ));
+            }
+            if r.re().is_zero() || r.re().is_negative() != re_neg {
+                return Err(format!(
+                    "{side} a={a}: Re {:?} want negative={re_neg}",
+                    r.re()
+                ));
+            }
+        }
+        Ok(())
+    }
+
     #[test]
     fn test_complex_nan() {
         let n = ExactComplex::new(NAN, ExactNum::new(64));

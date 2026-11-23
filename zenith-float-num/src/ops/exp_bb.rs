@@ -254,3 +254,58 @@ pub(crate) fn exp_arf_bb(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber,
     z.set_precision(p, RoundingMode::None)?;
     Ok(z)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{exp_taylor_bound, rec_fac_bound_2exp_si};
+
+    /// Golds: floor(log2(1/n!)) = floor(-lgamma(n+1)/ln 2) from FLINT (python-flint 0.9.0, `arb(n+1).lgamma()`,
+    /// 256 bits), cross-checked with mpmath 1.3.0 `loggamma` (pinned oracle venv); script and output:
+    /// ~/pop-logs/paul/2026-11-15/land39/final/pr40-fixes/r2nd/mutkill/recfac_flint.{py,out}.
+    const LOG2_REC_FAC_FLOOR: [(i64, i64); 5] =
+        [(256, -1684), (300, -2042), (1000, -8530), (4096, -43251), (100000, -1516705)];
+
+    /// n >= 256 (the formula branch): the bound never under-states log2(1/n!) (so the Taylor term count is never too
+    /// small) and is within 1.1 n bits of it (n floor(log2 n) - 3n/2 loses at most about n bits). Kills the surviving
+    /// mutant exp_bb.rs:73:21 `*` -> `/`, which returns a positive "bound" (352 at n = 256).
+    #[test]
+    fn rec_fac_bound_formula_branch_is_a_tight_upper_bound() -> Result<(), String> {
+        for (n, floor) in LOG2_REC_FAC_FLOOR {
+            let rec = rec_fac_bound_2exp_si(n);
+            if rec <= floor {
+                return Err(format!(
+                    "n={n}: bound {rec} is not above log2(1/n!) (floor {floor})"
+                ));
+            }
+            let slack = n + n / 10;
+            if rec > floor + 1 + slack {
+                return Err(format!("n={n}: bound {rec} is more than 1.1 n = {slack} bits above log2(1/n!) (floor {floor})"));
+            }
+        }
+        Ok(())
+    }
+
+    /// Golds: the fewest N with mag*N + log2(1/N!) < -(prec+1), from exact log2(N!) (FLINT `arb.lgamma`, mpmath
+    /// cross-check; same script). The returned count may exceed it (the bound is conservative) by at most 12 %.
+    const TERMS_OPT: [(i64, i64, i64); 4] =
+        [(-16, 6000, 266), (-16, 20000, 825), (-20, 50000, 1707), (-2, 4000, 430)];
+
+    #[test]
+    fn exp_taylor_bound_term_count_is_conservative_and_near_optimal() -> Result<(), String> {
+        for (mag, prec, opt) in TERMS_OPT {
+            let n = exp_taylor_bound(mag, prec);
+            if n < opt {
+                return Err(format!(
+                    "mag={mag} prec={prec}: {n} terms < the {opt} needed"
+                ));
+            }
+            let most = opt + (opt * 12) / 100;
+            if n > most {
+                return Err(format!(
+                    "mag={mag} prec={prec}: {n} terms > {most} (12 % over the optimal {opt})"
+                ));
+            }
+        }
+        Ok(())
+    }
+}

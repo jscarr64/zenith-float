@@ -87,3 +87,7 @@
 - CONTRIBUTING.md has a per-commit checklist (4 checks, fmt, clippy, library `rules_scan --working` and `--count-only`,
   no new clone or panic) and the rule: every 'clean' claim cites a log from the library's own `tools/rules_scan.sh` at
   that exact commit; the bound layer's scanner is never evidence for the library.
+- Killing tests for the 5 mutants that survived the PR #40 sample: (-1 ± 0i)^(a + i) signs the exact-zero imaginary
+  part as the limit from that side (complex.rs:1931 ×4; golds FLINT acb_pow at -1 ± 2^-300 i, then mpmath), and the
+  n ≥ 256 rec_fac bound / exp Taylor term count are a tight conservative bound (exp_bb.rs:73:21; golds FLINT lgamma,
+  then mpmath). Each mutant turns a new test red; the unmutated tree is green.
