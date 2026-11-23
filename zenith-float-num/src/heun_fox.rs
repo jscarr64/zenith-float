@@ -148,23 +148,31 @@ fn meijer_g_series(
     if !r_is_one && !z.is_positive() && !z.is_zero() {
         return GEval::Bad;
     }
-    let z_to_inv_r = if r_is_one {
-        z.clone()
+    let z_pow;
+    let z_to_inv_r: &ExactNum = if r_is_one {
+        z
     } else {
-        pow_real(
+        z_pow = pow_real(
             z,
             &ExactNum::from_u8(1, p).div(r, p, RoundingMode::None),
             p,
             cc,
-        )
+        );
+        &z_pow
     };
-    if !finite(&z_to_inv_r) {
+    if !finite(z_to_inv_r) {
         return GEval::Bad;
     }
     let mut sum = ExactNum::new(p);
     if series == 1 {
         let sign_odd = odd_i((pn as i32) - (m as i32) - (n as i32));
-        let hz = if sign_odd { z_to_inv_r.neg() } else { z_to_inv_r.clone() };
+        let hz_neg;
+        let hz: &ExactNum = if sign_odd {
+            hz_neg = z_to_inv_r.neg_ref();
+            &hz_neg
+        } else {
+            z_to_inv_r
+        };
         for h in 0..m {
             let bh = &b[h];
             let mut gn = Vec::new();
@@ -257,7 +265,7 @@ fn meijer_g_series(
         let inv_z = if z_to_inv_r.is_zero() {
             return GEval::Bad;
         } else {
-            ExactNum::from_u8(1, p).div(&z_to_inv_r, p, RoundingMode::None)
+            ExactNum::from_u8(1, p).div(z_to_inv_r, p, RoundingMode::None)
         };
         let hz = if sign_odd { inv_z.neg() } else { inv_z };
         for k in 0..n {
@@ -412,15 +420,15 @@ impl JetW {
             c: (0..self.len()).map(|_| ExactNum::new(self.wp)).collect(),
         }
     }
-    fn scalar(&self, x: &ExactNum) -> Jet {
+    fn scalar(&self, x: ExactNum) -> Jet {
         let mut j = self.zero();
         if let Some(i) = self.idx(0) {
-            j.c[i] = x.clone();
+            j.c[i] = x;
         }
         j
     }
     /// \(x + c\varepsilon\).
-    fn lin(&self, x: &ExactNum, c: i32) -> Jet {
+    fn lin(&self, x: ExactNum, c: i32) -> Jet {
         let mut j = self.scalar(x);
         if let Some(i) = self.idx(1) {
             j.c[i] = ExactNum::from_i32(c, self.wp);
@@ -432,7 +440,10 @@ impl JetW {
             c: a.c
                 .iter()
                 .zip(&b.c)
-                .map(|(x, y)| self.add_n(x.clone(), y))
+                .map(|(x, y)| {
+                    self.note(y);
+                    ExactNum::add_ref(x, y, self.wp, RoundingMode::None)
+                })
                 .collect(),
         }
     }
@@ -504,8 +515,8 @@ impl JetW {
     }
     /// \(\exp(s)\) for `s` with no terms below order 1.
     fn exp0(&self, s: &Jet) -> Jet {
-        let mut r = self.scalar(&ExactNum::from_u8(1, self.wp));
-        let mut t = self.scalar(&ExactNum::from_u8(1, self.wp));
+        let mut r = self.scalar(ExactNum::from_u8(1, self.wp));
+        let mut t = self.scalar(ExactNum::from_u8(1, self.wp));
         for n in 1..=self.hi.max(0) {
             let inv_n = ExactNum::from_u8(1, self.wp).div(
                 &ExactNum::from_i32(n, self.wp),
@@ -527,9 +538,9 @@ impl JetW {
                 return None;
             }
             let g1 = self.gamma(&ExactNum::from_u8(1, self.wp), c, cc)?;
-            let mut den = self.lin(&ExactNum::new(self.wp), c);
+            let mut den = self.lin(ExactNum::new(self.wp), c);
             for i in 1..=n {
-                den = self.mul(&den, &self.lin(&ExactNum::from_u32(i, self.wp).neg(), c));
+                den = self.mul(&den, &self.lin(ExactNum::from_u32(i, self.wp).neg(), c));
             }
             return self.div(&g1, &den);
         }
@@ -662,21 +673,29 @@ fn pfq_jet(
         .add(&ExactNum::from_u8(2, 64), 64, up)
         .to_u64(RoundingMode::Up)
         .ok()?;
-    let mut t = w.scalar(&ExactNum::from_u8(1, wp));
-    let mut sum = w.scalar(&ExactNum::from_u8(1, wp));
+    let mut t = w.scalar(ExactNum::from_u8(1, wp));
+    let mut sum = w.scalar(ExactNum::from_u8(1, wp));
     let mut mk = ExactNum::from_u8(1, 64);
     let mut k: u64 = 0;
     loop {
         let k_next = k.checked_add(1)?;
         let kk = ExactNum::from_u64(k, wp);
-        let mut num = w.scalar(&ExactNum::from_u8(1, wp));
-        let mut nb = ax.clone();
+        let mut num = w.scalar(ExactNum::from_u8(1, wp));
+        // |x| prod(...); `None` while it is still |x| (read in place).
+        let mut nb_slot: Option<ExactNum> = None;
         for (a, c) in hn {
             let v = ExactNum::add_ref(a, &kk, wp, RoundingMode::None);
-            nb = nb.mul(&up64(&v).add(&crho(*c), 64, up), 64, up);
-            num = w.mul(&num, &w.lin(&v, *c));
+            let f = up64(&v).add(&crho(*c), 64, up);
+            nb_slot = Some(ExactNum::mul_ref(
+                nb_slot.as_ref().unwrap_or(&ax),
+                &f,
+                64,
+                up,
+            ));
+            num = w.mul(&num, &w.lin(v, *c));
         }
-        let mut den = w.scalar(&ExactNum::from_u64(k_next, wp));
+        let nb = nb_slot.as_ref().unwrap_or(&ax);
+        let mut den = w.scalar(ExactNum::from_u64(k_next, wp));
         let mut db = ExactNum::from_u64(k_next, 64);
         for (b, c) in hd {
             let v = ExactNum::add_ref(b, &kk, wp, RoundingMode::None);
@@ -689,9 +708,9 @@ fn pfq_jet(
                 return None;
             }
             db = db.mul(&inf, 64, dn);
-            den = w.mul(&den, &w.lin(&v, *c));
+            den = w.mul(&den, &w.lin(v, *c));
         }
-        mk = mk.mul(&nb, 64, up).div(&db, 64, up);
+        mk = mk.mul(nb, 64, up).div(&db, 64, up);
         t = w.scale(&w.div(&w.mul(&t, &num), &den)?, x);
         sum = w.add(&sum, &t);
         k = k_next;
@@ -702,11 +721,18 @@ fn pfq_jet(
         // ((j+1) prod (j - |b| - |c|rho)); each factor is non-increasing in j.
         let k_bound = k.checked_add(1)?;
         let kk = ExactNum::from_u64(k, 64);
-        let mut bnd = ax.clone();
+        // `None` while the bound is still |x| (read in place).
+        let mut bnd_slot: Option<ExactNum> = None;
         for (a, c) in hn {
             let al = up64(a).add(&crho(*c), 64, up);
             let al = if lt(&al, &one64) { ExactNum::from_u8(1, 64) } else { al };
-            bnd = bnd.mul(&ExactNum::add_ref(&kk, &al, 64, up), 64, up);
+            let f = ExactNum::add_ref(&kk, &al, 64, up);
+            bnd_slot = Some(ExactNum::mul_ref(
+                bnd_slot.as_ref().unwrap_or(&ax),
+                &f,
+                64,
+                up,
+            ));
         }
         let mut d = ExactNum::from_u64(k_bound, 64);
         for (b, c) in hd {
@@ -716,7 +742,7 @@ fn pfq_jet(
             }
             d = d.mul(&q, 64, dn);
         }
-        let bnd = bnd.div(&d, 64, up);
+        let bnd = ExactNum::div_ref(bnd_slot.as_ref().unwrap_or(&ax), &d, 64, up);
         if !lt(&bnd, &one64) {
             continue;
         }
@@ -790,14 +816,17 @@ fn meijer_jet_limit(
         let lnw0 = if r_is_one { lnz } else { lnz.div(r, wp, RoundingMode::None) };
         let lnw = if invert { lnw0.neg() } else { lnw0 };
         let w = lnw.exp(wp, RoundingMode::None, cc);
-        let w = if r_is_one && !invert { z.clone() } else { w };
-        if !finite(&w) || !finite(&lnw) {
+        let w_exp = w;
+        let w: &ExactNum = if r_is_one && !invert { z } else { &w_exp };
+        if !finite(w) || !finite(&lnw) {
             return cat_nan();
         }
-        let x = if odd_i(a.len() as i32 - m as i32 - n as i32) {
-            w.neg_ref()
+        let x_neg;
+        let x: &ExactNum = if odd_i(a.len() as i32 - m as i32 - n as i32) {
+            x_neg = w.neg_ref();
+            &x_neg
         } else {
-            w.clone()
+            w
         };
         let mut g = ExactNum::new(wp);
         let mut mag = i64::MIN / 4;
@@ -840,14 +869,14 @@ fn meijer_jet_limit(
                 .count() as i32;
             let hi = 4 * poles + 4;
             let jw = JetW::new(-poles - 1, hi, wp);
-            let mut num = jw.scalar(&one);
+            let mut num = jw.scalar(ExactNum::from_u8(1, wp));
             for (v, c) in &gn {
                 let Some(gj) = jw.gamma(v, *c, cc) else {
                     return cat_nan();
                 };
                 num = jw.mul(&num, &gj);
             }
-            let mut den = jw.scalar(&one);
+            let mut den = jw.scalar(ExactNum::from_u8(1, wp));
             for (v, c) in &gd {
                 let Some(gj) = jw.gamma(v, *c, cc) else {
                     return cat_nan();
@@ -857,7 +886,7 @@ fn meijer_jet_limit(
             let Some(ratio) = jw.div(&num, &den) else {
                 return cat_nan();
             };
-            let wb = pow_real(&w, bh, wp, cc);
+            let wb = pow_real(w, bh, wp, cc);
             if !finite(&wb) {
                 return cat_nan();
             }
@@ -880,7 +909,7 @@ fn meijer_jet_limit(
                     .unwrap_or(0);
             let tol = wmax.min(0) - wp as i64 - 8;
             tol_used = tol_used.max(tol);
-            let Some(f) = pfq_jet(&hn, &hd, &x, &jw, &weights, tol) else {
+            let Some(f) = pfq_jet(&hn, &hd, x, &jw, &weights, tol) else {
                 return cat_nan();
             };
             for o in jw.lo..=jw.hi {
@@ -1852,7 +1881,8 @@ where
     let lam_s_wp = &tail.lam_s_v;
     let mut c_prev = ExactNum::from_u8(1, wp);
     let mut c = c1.clone();
-    let mut zp = z.clone();
+    // z^j; `None` while j = 1 (z read in place).
+    let mut zp_slot: Option<ExactNum> = None;
     let mut sum = ExactNum::from_u8(1, wp).add(&ExactNum::mul_ref(c1, z, wp, nr), wp, nr);
     let mut dsum = c1.clone();
     let mut peak = sum.exponent().unwrap_or(0).max(0);
@@ -1863,12 +1893,15 @@ where
         coefs.push(c.clone());
     }
     // log2 r^j and t^j tracked through exponents of 64-bit powers.
-    let mut rj = r.clone(); // r^j for j = 1
-    let mut tj = t.clone();
+    // r^j and t^j; `None` while j = 1 (r and t read in place).
+    let mut rj_slot: Option<ExactNum> = None;
+    let mut tj_slot: Option<ExactNum> = None;
     let mut j: u64 = 1;
     let mut w_ok: Option<ExactNum> = None;
     loop {
         // c holds c_j, c_prev c_{j-1}; rj = r^j, tj = t^j.
+        let rj = rj_slot.as_ref().unwrap_or(&r);
+        let tj = tj_slot.as_ref().unwrap_or(&t);
         if w_ok.is_none() {
             w_ok = tail.weight(&r, j);
         }
@@ -1879,15 +1912,12 @@ where
             let rnd = ub64(&c)
                 .add(&ub64(&ls_c), 64, up)
                 .ldexp(4 - wp as i64, 64, up);
-            let dn_ = ub64(&d).add(&rnd, 64, up).mul(&rj, 64, up);
-            let cp = ub64(&c_prev)
-                .mul(&rj, 64, up)
-                .div(&r, 64, up)
-                .mul(w, 64, up);
+            let dn_ = ub64(&d).add(&rnd, 64, up).mul(rj, 64, up);
+            let cp = ub64(&c_prev).mul(rj, 64, up).div(&r, 64, up).mul(w, 64, up);
             let m = if matches!(dn_.compare(&cp), Some(o) if o > 0) { dn_ } else { cp };
             let bound = m
                 .div(w, 64, up)
-                .mul(&tj, 64, up)
+                .mul(tj, 64, up)
                 .mul(&t, 64, up)
                 .div(&geo, 64, up);
             let es = sum.exponent().unwrap_or(0);
@@ -1947,8 +1977,9 @@ where
                 coefs,
             });
         }
-        zp = zp.mul(z, wp, nr);
+        let zp = ExactNum::mul_ref(zp_slot.as_ref().unwrap_or(z), z, wp, nr);
         let term = ExactNum::mul_ref(&c_next, &zp, wp, nr);
+        zp_slot = Some(zp);
         if let (false, Some(e)) = (term.is_zero(), term.exponent()) {
             peak = peak.max(e);
         }
@@ -1966,10 +1997,15 @@ where
         }
         c_prev = c;
         c = c_next;
-        rj = rj.mul(&r, 64, up);
-        tj = tj.mul(&t, 64, up);
+        let (rj, tj) = (
+            ExactNum::mul_ref(rj, &r, 64, up),
+            ExactNum::mul_ref(tj, &t, 64, up),
+        );
         j += 1;
-        if rj.is_zero() || tj.is_zero() {
+        let stop = rj.is_zero() || tj.is_zero();
+        rj_slot = Some(rj);
+        tj_slot = Some(tj);
+        if stop {
             // 64-bit powers underflow only far past any useful length.
             return None;
         }
@@ -3332,8 +3368,9 @@ fn heun_g_outside(
             return None;
         }
         let sings = [ExactNum::new(wp), one, a.clone()];
-        let yb = br_enclose(y.clone(), err_from_loss(&y, 16, wp));
-        let ypb = br_enclose(yp.clone(), err_from_loss(&yp, 16, wp));
+        let (ye, ype) = (err_from_loss(&y, 16, wp), err_from_loss(&yp, 16, wp));
+        let yb = br_enclose(y, ye);
+        let ypb = br_enclose(yp, ype);
         taylor_walk_ball(seed, yb, ypb, z, &sings, wp, |z0, pr| {
             heun_g_ode(z0, a, q, alpha, beta, gamma, delta, pr)
         })
@@ -3361,8 +3398,9 @@ fn heun_c_outside(
             return Some((v, ExactNum::new(64)));
         }
         let sings = [ExactNum::new(wp), ExactNum::from_u8(1, wp)];
-        let yb = br_enclose(y.clone(), err_from_loss(&y, 16, wp));
-        let ypb = br_enclose(yp.clone(), err_from_loss(&yp, 16, wp));
+        let (ye, ype) = (err_from_loss(&y, 16, wp), err_from_loss(&yp, 16, wp));
+        let yb = br_enclose(y, ye);
+        let ypb = br_enclose(yp, ype);
         taylor_walk_ball(seed, yb, ypb, z, &sings, wp, |z0, pr| {
             heun_c_ode(z0, alpha, gamma, delta, eps, q, pr)
         })
@@ -4483,9 +4521,9 @@ mod tests {
                     let g = z.meijer_g(&an1, &[], &bm0, &[], p, rm, &mut cc);
                     assert!(is_ia(&g), "G(1;0) z={z} p={p} {rm:?} got {g}");
                     let h = z.fox_h(
-                        &[(one.clone(), one.clone())],
+                        &[(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p))],
                         &[],
-                        &[(zero.clone(), one.clone())],
+                        &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
                         &[],
                         p,
                         rm,
