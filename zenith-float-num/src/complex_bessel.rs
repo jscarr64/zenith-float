@@ -530,7 +530,7 @@ impl ExactComplex {
         // DLMF 10.4.1: J_{−n}(z) = (−1)^n J_n(z). The generic series starts with 1/Γ(1−n),
         // a removable zero times a pole; reflect the integer order before evaluating it.
         if nu.im().is_zero() && nu.re().is_int() && nu.re().is_negative() && !nu.re().is_zero() {
-            let pos = neg_c(nu.clone());
+            let pos = nu.neg_ref();
             let w = nu.re().precision().unwrap_or(dest).max(dest) + 64;
             let odd = !nu.re().ldexp_ref(-1, w, RoundingMode::None).is_int();
             let r = if odd { neg_rounding(rm) } else { rm };
@@ -633,7 +633,7 @@ impl ExactComplex {
         let dest = round_p(p);
         // DLMF 10.27.1: I_{−n}(z) = I_n(z) for any integer n.
         if nu.im().is_zero() && nu.re().is_int() && nu.re().is_negative() && !nu.re().is_zero() {
-            return self.bessel_i_word(&neg_c(nu.clone()), dest, rm, cc);
+            return self.bessel_i_word(&nu.neg_ref(), dest, rm, cc);
         }
         if real_positive_axis(self, nu) {
             // I_ν(x) is real for x > 0 and real ν; the rotation through J_ν(−ix) leaves a rounding
@@ -695,7 +695,7 @@ impl ExactComplex {
         let dest = round_p(p);
         // DLMF 10.27.3: K_{−ν}(z) = K_ν(z), for arbitrary complex ν; canonicalize to Re ν ≥ 0.
         if nu.re().is_negative() && !nu.re().is_zero() {
-            return self.bessel_k_word(&neg_c(nu.clone()), dest, rm, cc);
+            return self.bessel_k_word(&nu.neg_ref(), dest, rm, cc);
         }
         if real_positive_axis(self, nu) {
             // K_ν(x) is real for x > 0 and real ν (see `bessel_i`).

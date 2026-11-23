@@ -209,7 +209,9 @@ fn rising_block_coeffs(k: usize, l: usize) -> Vec<ExactNum> {
                 RoundingMode::None,
             );
         }
-        nxt[c.len()] = c[c.len() - 1].clone();
+        // The old top coefficient moves up unchanged; c is replaced next.
+        let top = c.len();
+        nxt[top] = c.swap_remove(top - 1);
         c = nxt;
     }
     c

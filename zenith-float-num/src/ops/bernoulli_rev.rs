@@ -383,15 +383,9 @@ pub(super) fn exact_even_bernoulli_rev_range(
             let mut half = ExactNumNumber::from_word(1, pp.max(wp))?;
             half = half.ldexp(-1, pp.max(wp), RoundingMode::None)?;
             if scaled.is_positive() || scaled.is_zero() {
-                scaled
-                    .clone()?
-                    .add(&half, pp.max(wp), RoundingMode::None)?
-                    .floor()
+                scaled.add(&half, pp.max(wp), RoundingMode::None)?.floor()
             } else {
-                scaled
-                    .clone()?
-                    .sub(&half, pp.max(wp), RoundingMode::None)?
-                    .ceil()
+                scaled.sub(&half, pp.max(wp), RoundingMode::None)?.ceil()
             }
         })?;
         if !tint.sub(&scaled, wp, RoundingMode::None)?.abs()?.is_zero()
