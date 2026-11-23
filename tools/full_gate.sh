@@ -4,8 +4,9 @@
 # (tools/test_full_gate_64bit_only.sh, run in the unsafe-scan step, keeps it that way).
 # Every step runs under `timeout` (STEP_TIMEOUT, default 20m; build-debug and features-random-serde default to 40m as headroom for the heavier post-985b100 debug workspace suite; the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
 # output to $T/TAG-<step>.log (T, else ZF_GATE_LOG_DIR, else $HOME/rusty-work/logs/zf-gate/<sha>-<time>; never /tmp). REPO selects the checkout (default: this one).
-# CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The first
-# step, target-dir, runs the tools/fresh_test_run.sh selftest and --claim: it fails if CARGO_TARGET_DIR is unset or owned
+# The library rules run first (Jeff 2026-11-23 07:43 CT): rules-scan, no-clone-progress, fmt, then target-dir, then clippy.
+# CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The
+# target-dir step (before the first build, clippy-x86_64) runs the tools/fresh_test_run.sh selftest and --claim: it fails if CARGO_TARGET_DIR is unset or owned
 # by another worktree (marker $CARGO_TARGET_DIR/.worktree-owner). Every cargo test step (mpfr-tests-build included) runs
 # through tools/fresh_test_run.sh: build with --no-run, then fail on zero test binaries or one outside CARGO_TARGET_DIR,
 # before any test runs; only then the tests run.
@@ -76,7 +77,16 @@ run() {
   grep -E '^ *Running .*\(/[^)]*\)$|^test result: ' "$T/$tag-$name.log" || true
 }
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
+# Jeff 2026-11-23 07:43 CT (ROOT-CAUSE.md): the library rules run FIRST, so no stop-at-first-failure kill can skip them:
+# rules-scan, no-clone-progress and fmt need no target dir; target-dir claims it before clippy, the first build.
+# ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
+run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
+# FAILS on any rise (Jeff 2026-11-23 07:43 CT; it ended in `true` from da53be7 to 2026-11-23): every form, the total and the
+# helper-copy count against tools/no_clone_progress_baseline.txt (the 25e2d82 counts), which is only ever lowered by hand
+run no-clone-progress "tools/no_clone_selftest.sh && tools/no_clone.sh --progress"
+run fmt "cargo fmt --all -- --check"
 run target-dir "tools/fresh_test_run_selftest.sh && tools/fresh_test_run.sh --claim"
+run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 # goldens pinned by SHA256SUMS next to them (fails closed: missing/empty sums, unlisted golden, drift)
 run golden-sums "bash tools/test_gate_tool_checks.sh && tools/golden_sums_selftest.sh && python3 tools/test_round_mpf_directed_residue.py && python3 tools/test_specials_exact_and_hidden_residue.py && tools/golden_sums_check.sh zenith-float-num/tests/oracle/goldens borrow_ops.jsonl"
 # arm-tests.yml must run the workspace tests with --release, like build-release below (fails closed: missing workflow, step or flag)
@@ -107,18 +117,11 @@ run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-f
 # MPFR_TIER selects the MPFR tier (tests/mpfr/common.rs): the gate runs `full` (every run count, the
 # 100032-bit tests) unless the caller sets MPFR_TIER=fast.
 run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $TT"
-# ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
-run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
 # K11 (Paul 2026-11-10): no machine path in shipped scripts; every oracle generator refuses a forged wrong-pin env
 run oracle-env "tools/oracle_env_selftest.sh"
-# FAILS on any rise (Jeff 2026-11-23 07:43 CT; it ended in `true` from da53be7 to 2026-11-23): every form, the total and the
-# helper-copy count against tools/no_clone_progress_baseline.txt (the 25e2d82 counts), which is only ever lowered by hand
-run no-clone-progress "tools/no_clone_selftest.sh && tools/no_clone.sh --progress"
-run fmt "cargo fmt --all -- --check"
-run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
-run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_full_gate_debug_suite_timeouts.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
+run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_full_gate_debug_suite_timeouts.sh && bash tools/test_rules_enforcement.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
 run prepublish "bash scripts/zenith_prepublish.sh"
 echo "done" >> "$T/$tag.rc"
 poplog_finish

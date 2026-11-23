@@ -72,3 +72,7 @@
 - Gate step `no-clone-progress` now FAILS on any rise: `tools/no_clone.sh --progress` checks every no_clone form, the
   total and the helper-copy count against the new `tools/no_clone_progress_baseline.txt`, set to the counts of 25e2d82
   (= 11377ab, the last tree whose gate passed rules-scan), not the inflated tip. It ended in `true` since da53be7.
+- tools/full_gate.sh now starts with the library rules: rules-scan, no-clone-progress, fmt, then target-dir (the claim
+  must precede the first build), then clippy-x86_64. A stop-at-first-failure kill can no longer skip them (ROOT-CAUSE.md:
+  the Nov 17 gates were killed before step 16). tools/test_rules_enforcement.sh (now in the unsafe-scan step) runs the
+  gate's own rules-scan command in a fixture: a planted clone fails it and a crashing check is a named FAIL there.

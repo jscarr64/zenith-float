@@ -72,10 +72,11 @@ grep -c 'test result:' "$t/out" > /dev/null && fail "cargo-no-run ran tests"
 want fail cargo-red-test "$t/wa" env FTR_FAIL=1 CARGO_TARGET_DIR="$td" "$ftr" cargo test --lib -- --test-threads=1
 want fail cargo-shared "$t/wb" env CARGO_TARGET_DIR="$td" "$ftr" cargo test --manifest-path "$t/wa/Cargo.toml" --lib
 if grep -c 'test binaries' "$t/out" > /dev/null; then fail "cargo-shared built before the claim failed"; fi
-# wiring: target-dir runs --claim first; every cargo test step goes through tools/fresh_test_run.sh
+# wiring: target-dir runs --claim before the first step that builds (only the cargo-free rules steps and `cargo fmt`
+# may precede it, Jeff 2026-11-23 07:43 CT); every cargo test step goes through tools/fresh_test_run.sh
 g="$root/tools/full_gate.sh"
-first=$(grep -m1 -E '^run [a-z0-9-]+ "' "$g")
-[[ $first == 'run target-dir '*'tools/fresh_test_run.sh --claim'* ]] || fail "first gate step is not target-dir --claim: $first"
+first=$(grep -E '^run [a-z0-9-]+ "' "$g" | grep -vE '^run (rules-scan|no-clone-progress|fmt) ' | head -1)
+[[ $first == 'run target-dir '*'tools/fresh_test_run.sh --claim'* ]] || fail "first building gate step is not target-dir --claim: $first"
 while IFS= read -r line; do
   [[ $line == *'tools/fresh_test_run.sh cargo test'* ]] || fail "cargo test step not through fresh_test_run: $line"
 done < <(grep -E '^run [a-z0-9-]+ ".*cargo test' "$g")

@@ -4,6 +4,7 @@
 # allowlist works, that staged/working/range modes work, that the clone-count, helper-copy baselines only go down, that the borrowing ops' call graph holds no copy,
 # and that the constant-cache exception allowlist works (unlisted clone fails, listed passes, stale entry fails, count only down).
 set -u
+unset RULES_SCAN_FAULT   # the fault hook is set per call below, never inherited
 here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
 scan() { "$here/rules_scan.sh" "$@"; }
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }

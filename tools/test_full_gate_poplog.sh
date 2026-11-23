@@ -39,8 +39,10 @@ grep -q "SLOT TAKEN slot=1/$ns .*CARGO_BUILD_JOBS=$nj RUST_TEST_THREADS=$nj" "$l
 grep -A3 'STEP END build-debug' "$log" | grep -q 'STEP START mpfr-tests-build' || { echo "FAIL: no mpfr-tests-build step right after build-debug"; fail=1; }
 # through tools/fresh_test_run.sh (Paul, one target dir per worktree): the --no-run build with JSON output, and no test run after it
 grep -qx 'test -p zenith-float-num --release --features mpfr-tests --no-run --message-format=json-render-diagnostics' "$tmp/cargo.args" || { echo "FAIL: mpfr-tests-build did not run cargo test --no-run --features mpfr-tests via fresh_test_run.sh"; fail=1; }
-# target-dir (its selftest needs a real cargo, so it fails under the stub) runs before build-debug
-grep -m1 -o 'STEP START [a-z0-9-]*' "$log" | grep -qx 'STEP START target-dir' || { echo "FAIL: target-dir is not the first step"; fail=1; }
+# the library rules lead (Jeff 2026-11-23 07:43 CT), then target-dir (its selftest needs a real cargo, so it fails under
+# the stub) before the first build
+steps5=$(grep -o 'STEP START [a-z0-9_-]*' "$log" | head -5 | awk '{print $3}' | tr '\n' ' ')
+[[ $steps5 == 'rules-scan no-clone-progress fmt target-dir clippy-x86_64 ' ]] || { echo "FAIL: gate does not start rules-scan no-clone-progress fmt target-dir clippy-x86_64: $steps5"; fail=1; }
 grep -q 'RESULT: FAIL' "$log" || { echo "FAIL: footer not FAIL"; fail=1; }
 [[ $rc -ne 0 ]] || { echo "FAIL: gate exited 0 with zero tests"; fail=1; }
 [[ $fail -eq 0 ]] && echo "ok: full_gate.sh poplog (zero tests -> FAIL, log $log)"
