@@ -700,8 +700,7 @@ impl ExactNumArray {
 
     /// Row vector: `n` copies of `fill` (rounded to `p`).
     pub fn filled(p: usize, n: usize, fill: &ExactNum) -> Self {
-        let mut v = fill.clone();
-        let _ = v.set_precision(p, RoundingMode::ToEven);
+        let mut v = fill.rounded_to(p, RoundingMode::ToEven);
         if p < crate::defs::MIN_PRECISION {
             v = ExactNum::nan(Some(Error::InvalidArgument));
         }
@@ -716,8 +715,7 @@ impl ExactNumArray {
     /// `rows×cols` filled with `fill` (rounded to `p`).
     pub fn filled_2d(p: usize, rows: usize, cols: usize, fill: &ExactNum) -> Option<Self> {
         let n = rows.checked_mul(cols)?;
-        let mut v = fill.clone();
-        let _ = v.set_precision(p, RoundingMode::ToEven);
+        let mut v = fill.rounded_to(p, RoundingMode::ToEven);
         if p < crate::defs::MIN_PRECISION {
             v = ExactNum::nan(Some(Error::InvalidArgument));
         }
@@ -736,8 +734,7 @@ impl ExactNumArray {
             vals: vals
                 .iter()
                 .map(|x| {
-                    let mut y = x.clone();
-                    let _ = y.set_precision(p, RoundingMode::ToEven);
+                    let mut y = x.rounded_to(p, RoundingMode::ToEven);
                     if p < crate::defs::MIN_PRECISION {
                         y = ExactNum::nan(Some(Error::InvalidArgument));
                     }
@@ -760,8 +757,7 @@ impl ExactNumArray {
             vals: vals
                 .iter()
                 .map(|x| {
-                    let mut y = x.clone();
-                    let _ = y.set_precision(p, RoundingMode::ToEven);
+                    let mut y = x.rounded_to(p, RoundingMode::ToEven);
                     if p < crate::defs::MIN_PRECISION {
                         y = ExactNum::nan(Some(Error::InvalidArgument));
                     }
@@ -1416,11 +1412,7 @@ impl ExactNumArray {
         let k = m.min(n);
         let mut q = try_alloc_vec(m.checked_mul(k)?, ExactNum::from_u8(0, p))?;
         let mut r = try_alloc_vec(k.checked_mul(n)?, ExactNum::from_u8(0, p))?;
-        let a = |row: usize, col: usize| -> ExactNum {
-            let mut v = self.vals[row * n + col].clone();
-            let _ = v.set_precision(p, rm);
-            v
-        };
+        let a = |row: usize, col: usize| -> ExactNum { self.vals[row * n + col].rounded_to(p, rm) };
         for j in 0..n {
             let mut v: Vec<ExactNum> = (0..m).map(|i| a(i, j)).collect();
             let jlim = j.min(k);
@@ -1644,9 +1636,7 @@ fn svd_one(p: usize) -> ExactNum {
 }
 
 fn svd_copy_prec(x: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
-    let mut y = x.clone();
-    let _ = y.set_precision(p, rm);
-    y
+    x.rounded_to(p, rm)
 }
 
 fn svd_identity(n: usize, p: usize) -> Option<Vec<ExactNum>> {

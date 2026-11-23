@@ -134,14 +134,7 @@ impl core::fmt::Display for OdeError {
 impl std::error::Error for OdeError {}
 
 fn to_row(p: usize, rm: RoundingMode, vals: &[ExactNum]) -> Option<ExactNumArray> {
-    let rounded: Vec<ExactNum> = vals
-        .iter()
-        .map(|x| {
-            let mut y = x.clone();
-            let _ = y.set_precision(p, rm);
-            y
-        })
-        .collect();
+    let rounded: Vec<ExactNum> = vals.iter().map(|x| x.rounded_to(p, rm)).collect();
     ExactNumArray::from_shape(p, 1, rounded.len(), &rounded)
 }
 
@@ -1235,8 +1228,7 @@ mod tests {
         let _ = y0.set_precision(wrk, RoundingMode::None);
         let mut t0 = ExactNum::new(p);
         let _ = t0.set_precision(wrk, RoundingMode::None);
-        let mut lam_w = lam.clone();
-        let _ = lam_w.set_precision(wrk, RoundingMode::None);
+        let lam_w = lam.rounded_to(wrk, RoundingMode::None);
         let mut pulse =
             |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
                 let nt = ExactNum::mul_ref(&lam_w, tt, q, r).neg();

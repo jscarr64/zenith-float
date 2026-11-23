@@ -53,8 +53,7 @@ impl ExactNum {
             return finish(self.clone(), p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = self.clone();
-        let _ = cur.set_precision(wrk, RoundingMode::None);
+        let mut cur = self.rounded_to(wrk, RoundingMode::None);
         for k in 1..n {
             let kf = ExactNum::from_u32(k as u32, wrk);
             let next = ExactNum::mul_ref(self, &cur, wrk, RoundingMode::None).sub(
@@ -218,8 +217,7 @@ impl ExactNum {
             return finish(self.clone(), p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = self.clone();
-        let _ = cur.set_precision(wrk, RoundingMode::None);
+        let mut cur = self.rounded_to(wrk, RoundingMode::None);
         for _ in 1..n {
             let next = ExactNum::from_u8(2, wrk)
                 .mul(self, wrk, RoundingMode::None)

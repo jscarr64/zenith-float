@@ -2784,8 +2784,7 @@ fn ball_finish(mid: &ExactNum, rad: &ExactNum, p: usize, rm: RoundingMode) -> Op
     }
     let dest = crate::catalog::word_p(p);
     if rad.is_zero() {
-        let mut v = mid.clone();
-        let _ = v.set_precision(dest, rm);
+        let v = mid.rounded_to(dest, rm);
         return Some(v);
     }
     let wide = dest.saturating_add(64).max(

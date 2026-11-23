@@ -51,8 +51,7 @@ impl ExactNumPoly {
     pub fn from_coeffs(p: usize, rm: RoundingMode, coeffs: &[ExactNum]) -> Self {
         let mut out = Vec::with_capacity(coeffs.len());
         for c in coeffs {
-            let mut y = c.clone();
-            let _ = y.set_precision(p, rm);
+            let y = c.rounded_to(p, rm);
             out.push(y);
         }
         let mut s = Self { coeffs: out, p, rm };

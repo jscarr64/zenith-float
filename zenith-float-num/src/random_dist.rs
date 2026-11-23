@@ -76,8 +76,7 @@ impl ExactNum {
         match a.compare(b) {
             Some(c) if c > 0 => return dist_nan(),
             Some(0) => {
-                let mut v = a.clone();
-                let _ = v.set_precision(p, rm);
+                let v = a.rounded_to(p, rm);
                 return v;
             }
             None => return NAN,

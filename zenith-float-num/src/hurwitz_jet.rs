@@ -112,16 +112,8 @@ fn em_bound1(s: &ExactNum, a: &ExactNum, n: u64, m: u64, cc: &mut Consts) -> Opt
     }
     let wp = 64usize;
     let two_m = m.checked_mul(2)?;
-    let sigma = {
-        let mut t = s.clone();
-        let _ = t.set_precision(wp, UP);
-        t
-    };
-    let alpha = {
-        let mut t = a.clone();
-        let _ = t.set_precision(wp, UP);
-        t
-    };
+    let sigma = { s.rounded_to(wp, UP) };
+    let alpha = { a.rounded_to(wp, UP) };
     // A = N+a, B = σ+2M; need A>1 and σ+2M>1.
     let an = ExactNum::from_u64(n, wp).add(&alpha, wp, UP);
     let s2m = sigma.add(&ExactNum::from_u64(two_m, wp), wp, UP);
@@ -185,10 +177,8 @@ fn em_bound1(s: &ExactNum, a: &ExactNum, n: u64, m: u64, cc: &mut Consts) -> Opt
 
 fn a_pow_neg_s_mag(s: &ExactNum, a: &ExactNum, cc: &mut Consts) -> ExactNum {
     let wp = 64usize;
-    let mut aa = a.clone();
-    let _ = aa.set_precision(wp, UP);
-    let mut ss = s.clone();
-    let _ = ss.set_precision(wp, UP);
+    let aa = a.rounded_to(wp, UP);
+    let ss = s.rounded_to(wp, UP);
     if aa.is_zero() {
         return ExactNum::from_u8(1, wp);
     }

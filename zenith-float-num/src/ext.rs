@@ -2213,6 +2213,18 @@ impl ExactNum {
         }
     }
 
+    /// What `let mut x = self.clone(); let _ = x.set_precision(p, rm);` leaves in `x`, written straight
+    /// from `self`: only the kept words are written (see `ExactNumNumber::rounded_to`).
+    ///
+    /// Accuracy: correctly-rounded
+    pub(crate) fn rounded_to(&self, p: usize, rm: RoundingMode) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.rounded_to(p, rm), false, true),
+            Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
     /// Computes the reciprocal of a number with precision `p`.
     /// The result is rounded using the rounding mode `rm`.
     /// Precision is rounded upwards to the word size.
@@ -9912,6 +9924,101 @@ mod unary_kernel_tests {
             fails.len(),
             fails.iter().take(4).collect::<Vec<_>>()
         ))
+    }
+
+    /// Operands the golds do not reach: carries through all-ones words (at the top exponent too, where
+    /// `set_precision` stops with an exponent overflow), exact ties, and subnormals.
+    fn rounding_edges() -> Result<Vec<ExactNumNumber>, String> {
+        let ones = Word::MAX;
+        let top = 1 << (WORD_BIT_SIZE - 1);
+        let rows: [(&[Word], usize, Exponent); 7] = [
+            (&[ones, ones, ones], 3 * WORD_BIT_SIZE, crate::EXPONENT_MAX),
+            (&[ones, ones, ones], 3 * WORD_BIT_SIZE, 7),
+            (&[top, 0, top | 1], 3 * WORD_BIT_SIZE, -3),
+            (&[0, top, top], 3 * WORD_BIT_SIZE, 1),
+            (&[1, 0, 0, top], 4 * WORD_BIT_SIZE, 0),
+            (
+                &[ones, 0, 0x00ff],
+                2 * WORD_BIT_SIZE + 8,
+                crate::EXPONENT_MIN,
+            ),
+            (&[5, 0, 0], 3, crate::EXPONENT_MIN),
+        ];
+        let mut out = Vec::new();
+        for (m, n, e) in rows {
+            for s in [crate::Sign::Pos, crate::Sign::Neg] {
+                let v = ExactNumNumber::from_raw_parts(m, n, s, e, false)
+                    .map_err(|err| format!("edge {m:?} {n} {e}: {err:?}"))?;
+                out.push(v);
+            }
+        }
+        Ok(out)
+    }
+
+    #[test]
+    fn number_layer_rounded_to_is_bit_identical_in_every_mode() -> Result<(), String> {
+        let (mut runs, mut fails) = (0usize, Vec::new());
+        for flags in [(false, false), (true, false), (true, true)] {
+            let mut vs = operands(flags)?;
+            vs.extend(rounding_edges()?);
+            for v in vs {
+                let ps = [
+                    0,
+                    1,
+                    3,
+                    31,
+                    63,
+                    64,
+                    65,
+                    100,
+                    127,
+                    128,
+                    129,
+                    191,
+                    192,
+                    200,
+                    256,
+                    320,
+                    1000,
+                    crate::MAX_PRECISION + 1,
+                ];
+                for p in ps {
+                    for rm in MODES {
+                        let got = v.rounded_to(p, rm);
+                        let mut w = fresh(&v)?;
+                        let _ = w.set_precision(p, rm);
+                        runs += 1;
+                        if full(&got) != full(&Ok(w)) {
+                            fails.push(format!(
+                                "{:?} p={p} {rm:?}: borrowed {}",
+                                v.as_raw_parts(),
+                                full(&got)
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        if fails.is_empty() && runs > 10_000 {
+            return Ok(());
+        }
+        Err(format!(
+            "runs={runs} fails={}: {:?}",
+            fails.len(),
+            fails.iter().take(4).collect::<Vec<_>>()
+        ))
+    }
+
+    #[test]
+    fn rounded_to_keeps_inf_and_nan() {
+        for x in [super::INF_POS, super::INF_NEG, super::NAN] {
+            let got = x.rounded_to(64, RoundingMode::Up);
+            assert_eq!(
+                format!("{:?}", got.inner),
+                format!("{:?}", x.inner),
+                "rounded_to of a non-finite"
+            );
+        }
     }
 
     #[test]

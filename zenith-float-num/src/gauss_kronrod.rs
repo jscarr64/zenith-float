@@ -779,8 +779,7 @@ pub fn wynn_epsilon(seq: &[ExactNum], p: usize, rm: RoundingMode) -> Option<Exac
         if !finite(s) {
             return None;
         }
-        let mut y = s.clone();
-        let _ = y.set_precision(wrk, RoundingMode::None);
+        let y = s.rounded_to(wrk, RoundingMode::None);
         lifted.push(y);
     }
     let value = wynn_table(&lifted, wrk)?.value;
@@ -895,8 +894,7 @@ where
     let mut bb = b.clone();
     let _ = aa.set_precision(wrk, RoundingMode::None);
     let _ = bb.set_precision(wrk, RoundingMode::None);
-    let mut tol_work = tol_rel.clone();
-    let _ = tol_work.set_precision(wrk, RoundingMode::None);
+    let tol_work = tol_rel.rounded_to(wrk, RoundingMode::None);
     let (k0, g0) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
     let err0 = ExactNum::sub_ref(&k0, &g0, wrk, RoundingMode::None).abs();
     let mut panels = vec![Panel {

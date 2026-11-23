@@ -263,8 +263,7 @@ fn pfq_series(z: &ExactNum, a: &[ExactNum], b: &[ExactNum], p: usize) -> ExactNu
             for aj in a {
                 num = num.mul(&ExactNum::add_ref(&km1, aj, wrk, n), wrk, n);
             }
-            let mut den = kf.clone();
-            let _ = den.set_precision(wrk, n);
+            let mut den = kf.rounded_to(wrk, n);
             for bj in b {
                 den = den.mul(&ExactNum::add_ref(&km1, bj, wrk, n), wrk, n);
             }
@@ -1474,10 +1473,8 @@ fn kelvin_eval_1061(
     wp: usize,
     cc: &mut Consts,
 ) -> ExactNum {
-    let mut xc = x.clone();
-    let _ = xc.set_precision(wp, RoundingMode::None);
-    let mut nc = nu.clone();
-    let _ = nc.set_precision(wp, RoundingMode::None);
+    let xc = x.rounded_to(wp, RoundingMode::None);
+    let nc = nu.rounded_to(wp, RoundingMode::None);
     match which {
         KelvinWhich::Ber | KelvinWhich::Bei => {
             let z = kelvin_j_arg(&xc, wp, cc);

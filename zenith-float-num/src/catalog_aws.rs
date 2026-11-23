@@ -1959,8 +1959,7 @@ fn incgamma_tail_uk(
     wp: usize,
     cc: &mut Consts,
 ) -> Option<Vec<ExactNum>> {
-    let mut z_dn = z.clone();
-    let _ = z_dn.set_precision(wp, DN);
+    let z_dn = z.rounded_to(wp, DN);
     if !z_dn.is_positive() {
         return None;
     }
@@ -1997,8 +1996,7 @@ fn h_real_tail(
     wp: usize,
     cc: &mut Consts,
 ) -> Option<ExactNum> {
-    let mut z_dn = z.clone();
-    let _ = z_dn.set_precision(wp, DN);
+    let z_dn = z.rounded_to(wp, DN);
     if !z_dn.is_positive() {
         return None;
     }
@@ -2065,8 +2063,7 @@ fn anger_a_laplace(
     let rho = half(wp);
     let tau = one(wp).ldexp(-2, wp, N);
     let pi = cc.pi(wp, N);
-    let mut z_dn = z.clone();
-    let _ = z_dn.set_precision(wp, DN);
+    let z_dn = z.rounded_to(wp, DN);
     if !z_dn.is_positive() {
         return None;
     }
@@ -2324,17 +2321,13 @@ fn exp_uk_0_tau(
     if !z.is_positive() || !tau.is_positive() {
         return None;
     }
-    let mut tau_up = tau.clone();
-    let _ = tau_up.set_precision(wp, UP);
-    let mut tau_dn = tau.clone();
-    let _ = tau_dn.set_precision(wp, DN);
+    let tau_up = tau.rounded_to(wp, UP);
+    let tau_dn = tau.rounded_to(wp, DN);
     if !tau_dn.is_positive() {
         return None;
     }
-    let mut z_up = z.clone();
-    let _ = z_up.set_precision(wp, UP);
-    let mut z_dn = z.clone();
-    let _ = z_dn.set_precision(wp, DN);
+    let z_up = z.rounded_to(wp, UP);
+    let z_dn = z.rounded_to(wp, DN);
     if !z_dn.is_positive() {
         return None;
     }
@@ -2510,12 +2503,9 @@ fn h_disk_majorant(
     if mid.abs_cmp(rho) != Some(1) {
         return None;
     }
-    let mut mid_up = mid.clone();
-    let _ = mid_up.set_precision(wp, UP);
-    let mut mid_dn = mid.clone();
-    let _ = mid_dn.set_precision(wp, DN);
-    let mut rho_up = rho.clone();
-    let _ = rho_up.set_precision(wp, UP);
+    let mid_up = mid.rounded_to(wp, UP);
+    let mid_dn = mid.rounded_to(wp, DN);
+    let rho_up = rho.rounded_to(wp, UP);
     let d_lo = ExactNum::add_ref(&mid_dn.sqr(wp, DN), &one(wp), wp, DN).sqrt(wp, DN);
     let d_hi = ExactNum::add_ref(&mid_up.sqr(wp, UP), &one(wp), wp, UP).sqrt(wp, UP);
     if !finite(&d_lo) || !finite(&d_hi) {
@@ -2866,10 +2856,8 @@ fn anger_a_u_panel(
         return None;
     }
     let hrem = m_maj.mul(&rpow, wp, UP).div(&one_m, wp, UP);
-    let mut z_dn = z.clone();
-    let _ = z_dn.set_precision(wp, DN);
-    let mut a_dn = a.clone();
-    let _ = a_dn.set_precision(wp, DN);
+    let z_dn = z.rounded_to(wp, DN);
+    let a_dn = a.rounded_to(wp, DN);
     let e_a = ExactNum::mul_ref(&z_dn, &a_dn, wp, DN)
         .neg()
         .exp(wp, UP, cc);

@@ -1264,6 +1264,99 @@ impl Mantissa {
         Ok((Mantissa { m, n }, ovf))
     }
 
+    /// The mantissa `set_precision(p, rm)` leaves, read straight from `self`, for `0 < p < max_bit_len`:
+    /// the words of `round_mantissa(max_bit_len - p, rm, is_positive, &mut false, max_bit_len, inexact)`
+    /// followed by `set_length(p)` on an owned mantissa. Only the `ceil(p / W)` kept words are written; the
+    /// dropped words are only read for the round and sticky bits. The bit length is `self`'s, less the
+    /// dropped words (as `set_length`). Returns the mantissa, whether the rounding carried out of the top
+    /// word, and whether the rounded mantissa at full length would be all zeros.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for the result.
+    pub(crate) fn precision_from(
+        &self,
+        p: usize,
+        rm: RoundingMode,
+        is_positive: bool,
+        inexact: &mut bool,
+    ) -> Result<(Self, bool, bool), Error> {
+        let src: &[Word] = &self.m;
+        let len = self.max_bit_len();
+        debug_assert!(0 < p && p < len);
+        let drop = len - p;
+        let (k, t) = (drop / WORD_BIT_SIZE, drop % WORD_BIT_SIZE);
+        // Bit `i` (from the bottom) of `self`, and whether every bit below `i` is zero.
+        let bit = |i: usize| (src[i / WORD_BIT_SIZE] >> (i % WORD_BIT_SIZE)) & 1 == 1;
+        let zero_below = |i: usize| {
+            let (w, b) = (i / WORD_BIT_SIZE, i % WORD_BIT_SIZE);
+            src[..w].iter().all(|v| v == &0) && (b == 0 || src[w] << (WORD_BIT_SIZE - b) == 0)
+        };
+        let up = match rm {
+            RoundingMode::None => {
+                // `round_mantissa` only records inexactness: the low `t` bits of word `k` stay.
+                *inexact |= !zero_below(drop);
+                None
+            }
+            RoundingMode::ToEven | RoundingMode::ToOdd => {
+                let half = bit(drop - 1);
+                let rest_zero = zero_below(drop - 1);
+                *inexact |= !rest_zero || half;
+                let odd = bit(drop);
+                let tie_up = if rm == RoundingMode::ToEven { odd } else { !odd };
+                Some(half && (!rest_zero || tie_up))
+            }
+            RoundingMode::ToZero
+            | RoundingMode::FromZero
+            | RoundingMode::Up
+            | RoundingMode::Down => {
+                let nz = !zero_below(drop);
+                *inexact |= nz;
+                Some(
+                    nz && match rm {
+                        RoundingMode::FromZero => true,
+                        RoundingMode::Up => is_positive,
+                        RoundingMode::Down => !is_positive,
+                        _ => false,
+                    },
+                )
+            }
+        };
+        let mut m = Self::reserve_new(src.len() - k)?;
+        for (d, w) in m.iter_mut().zip(src[k..].iter()) {
+            *d = *w;
+        }
+        let mut ovf = false;
+        match up {
+            None => {}
+            Some(false) => m[0] = (m[0] >> t) << t,
+            Some(true) => {
+                if ((m[0] >> t) as DoubleWord) + 1 < (WORD_BASE >> t) {
+                    m[0] = ((m[0] >> t) + 1) << t;
+                } else {
+                    m[0] = 0;
+                    ovf = true;
+                    for v in m[1..].iter_mut() {
+                        if *v < WORD_MAX {
+                            *v += 1;
+                            ovf = false;
+                            break;
+                        }
+                        *v = 0;
+                    }
+                    if ovf {
+                        let top = m.len() - 1;
+                        m[top] = WORD_SIGNIFICANT_BIT;
+                    }
+                }
+            }
+        }
+        let full_zero =
+            m.iter().all(|v| v == &0) && (up.is_some() || zero_below(k * WORD_BIT_SIZE));
+        let n = self.n.saturating_sub(k * WORD_BIT_SIZE);
+        Ok((Mantissa { m, n }, ovf, full_zero))
+    }
+
     /// A new mantissa holding the top `keep` bits of `self` and zeros below them, written straight from
     /// `self`: the words and bit length of `mask_bits(max_bit_len - keep, false)` on an owned mantissa (a
     /// `keep` of zero gives a zero, as `set_zero`).

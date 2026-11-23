@@ -1836,6 +1836,59 @@ impl ExactNumNumber {
             .map(|_| {})
     }
 
+    /// What `set_precision(p, rm)` leaves in an owned copy of `self`, written straight from `self` (only the
+    /// kept words are written). A `p` that `set_precision` refuses leaves the copy as it was, and an exponent
+    /// overflow leaves the full-length rounded mantissa with the exponent unchanged, as the owned call does
+    /// before it returns the error.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    pub(crate) fn rounded_to(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        if Self::prec_assertion(p).is_err() || Self::p_assertion(p).is_err() {
+            return self.with_sign(self.s);
+        }
+        let len = self.mantissa_max_bit_len();
+        if len <= p {
+            let mut unused = false;
+            let (m, _) = self
+                .m
+                .rounded_from(0, p, RoundingMode::None, true, &mut unused)?;
+            return Ok(ExactNumNumber {
+                e: self.e,
+                s: self.s,
+                m,
+                inexact: self.inexact,
+                op_inexact: self.op_inexact,
+            });
+        }
+        let mut inexact = self.inexact;
+        let (m, ovf, full_zero) = self
+            .m
+            .precision_from(p, rm, self.is_positive(), &mut inexact)?;
+        let mut r = ExactNumNumber {
+            e: self.e,
+            s: self.s,
+            m,
+            inexact: self.inexact | inexact,
+            op_inexact: None,
+        };
+        if ovf {
+            if r.e == EXPONENT_MAX {
+                r.m.set_length(len)?;
+                r.m.set_bit_len(self.m.bit_len());
+                return Ok(r);
+            }
+            r.e += 1;
+        } else if full_zero {
+            r.m.set_bit_len(0);
+            r.e = 0;
+        } else if self.is_subnormal() {
+            r.m.update_bit_len();
+        }
+        Ok(r)
+    }
+
     /// Try to round and then set the precision to `p`, given `self` has `s` correct digits in mantissa.
     /// Returns true if rounding succeeded. If the fuction returns `false`, `self` is still modified, and should be discarded.
     ///
