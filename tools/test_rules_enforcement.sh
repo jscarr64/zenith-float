@@ -7,6 +7,7 @@
 #   3. rules-scan, no-clone-progress, fmt lead the gate (then target-dir, clippy); a planted clone or a crash fails rules-scan.
 #   4. the committed pre-commit hook stops a planted clone, a count rise, a crash, red fmt and red clippy.
 #   5. .github/workflows/rules-scan.yml runs the library rules on every push; its commands fail a planted clone.
+#   6. CONTRIBUTING.md's per-commit checklist runs the library scan and says a 'clean' claim cites its log at that commit.
 # usage: tools/test_rules_enforcement.sh [ROOT]   (ROOT: a checkout, default this one; text and fixture checks, no cargo)
 set -u
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -125,6 +126,12 @@ if [ -f "$wf" ]; then
 else
   bad "no .github/workflows/rules-scan.yml"
 fi
+
+# 6. the per-commit checklist names the library rules_scan and the 'clean' evidence rule
+c="$root/CONTRIBUTING.md"
+grep -q '^## Per-commit checklist' "$c" || bad "CONTRIBUTING.md has no per-commit checklist"
+grep -q 'tools/rules_scan.sh --count-only' "$c" || bad "the checklist does not run the library tools/rules_scan.sh --count-only"
+grep -q "Every 'clean' claim cites a log from the library's own \`tools/rules_scan.sh\` at that exact commit" "$c" || bad "the checklist lacks the 'clean' evidence rule"
 
 [ $fail -eq 0 ] && echo "test_rules_enforcement: ok"
 exit $fail

@@ -30,6 +30,21 @@ with `--no-verify`.
 
 MPFR golds need Linux x86_64 and `rug` (`--features mpfr-tests`). Replay a random failure with `ZENITH_TEST_SEED=<seed> cargo test <name> -- --test-threads=1`.
 
+## Per-commit checklist
+
+Every commit, before it is made (the pre-commit hook runs items 3 to 5; run the rest yourself and keep the logs):
+
+1. `cargo check -p zenith-float`, `cargo check -p zenith-float --no-default-features`, `cargo check -p zenith-float-num`,
+   `cargo check -p zenith-float-num --no-default-features`.
+2. `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
+3. `tools/rules_scan.sh --working` (the library scanner, at the repo root).
+4. `tools/rules_scan.sh --count-only` and its log, which names the commit. Above baseline the hook allows a commit only
+   when no count rises (`--no-rise HEAD`); that is cleanup, not clean. Never raise a baseline.
+5. No new clone and no new panic, in library or test code (tools/NO_CLONE_RULES.md; tests return `Result` and use `?`).
+
+Every 'clean' claim cites a log from the library's own `tools/rules_scan.sh` at that exact commit (Jeff 2026-11-23 07:43
+CT). The bound layer's `zenith-float-bound/tools/bound_layer_scan.sh` is never evidence for the library.
+
 ## Golds
 
 A gold is an expected **bit pattern**, **named constant**, **identity**, or **MPFR 1-ULP**. Tests that only show “did not panic” or `is_ok()` are not enough. Do not weaken existing golds. Do not mark a failing gold `#[ignore]` to go green.

@@ -84,3 +84,6 @@
   rules_scan selftest, the library `tools/rules_scan.sh` range scan with all count checks, and `no_clone.sh --progress`.
   tools/test_rules_enforcement.sh part 5 runs its `run:` commands in a fixture: clean passes, a planted clone fails.
   CODEOWNERS covers the hook, the workflow, the test, the new baseline and the renamed bound scanner.
+- CONTRIBUTING.md has a per-commit checklist (4 checks, fmt, clippy, library `rules_scan --working` and `--count-only`,
+  no new clone or panic) and the rule: every 'clean' claim cites a log from the library's own `tools/rules_scan.sh` at
+  that exact commit; the bound layer's scanner is never evidence for the library.
