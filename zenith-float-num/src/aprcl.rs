@@ -443,12 +443,12 @@ impl Config {
 
 /// Element of `Z[zeta_{p^k}] / n`: coefficients of `1, zeta, ..., zeta^{p^k-1}`.
 /// Little-endian unsigned limbs of `x` (a single `0` limb when `x` is zero).
-fn limbs_of(x: &ExactInt) -> Vec<u64> {
+fn limbs_of(x: &ExactInt) -> &[u64] {
     let l = x.as_limbs();
     if l.is_empty() {
-        vec![0]
+        &[0]
     } else {
-        l.to_vec()
+        l
     }
 }
 
@@ -708,18 +708,18 @@ fn rem_limbs(u: &[u64], v: &[u64]) -> Vec<u64> {
     r
 }
 
-#[derive(Clone)]
-struct UnityZp {
+/// The modulus `n` is borrowed from the caller's `ExactInt`: every element of one test shares it.
+struct UnityZp<'a> {
     p: u64,
     exp: u32,
-    n: Vec<u64>,
+    n: &'a [u64],
     /// Packed little-endian coefficients: slot `i` is `c[i * nlen .. (i + 1) * nlen]`.
     c: Vec<u64>,
     slots: usize,
 }
 
-impl UnityZp {
-    fn new(p: u64, exp: u32, n: &ExactInt) -> Self {
+impl<'a> UnityZp<'a> {
+    fn new(p: u64, exp: u32, n: &'a ExactInt) -> Self {
         let n_limbs = limbs_of(n);
         let slots = pow_u64(p, exp).unwrap_or(1) as usize;
         let nlen = n_limbs.len();
@@ -736,7 +736,7 @@ impl UnityZp {
         Self {
             p: self.p,
             exp: self.exp,
-            n: self.n.clone(),
+            n: self.n,
             c: vec![0; self.slots.max(1) * self.n.len()],
             slots: self.slots.max(1),
         }
@@ -787,7 +787,7 @@ impl UnityZp {
     fn set_coeff_limbs(&mut self, i: usize, x: &[u64]) {
         self.ensure(i);
         let l = self.nlen();
-        let r = rem_limbs(x, &self.n);
+        let r = rem_limbs(x, self.n);
         let dest = self.slot_mut(i);
         dest.fill(0);
         let take = r.len().min(l);
@@ -796,11 +796,11 @@ impl UnityZp {
 
     fn set_ui(&mut self, i: usize, x: u64) {
         self.ensure(i);
-        let n = self.n.clone();
+        let n = self.n;
         let dest = self.slot_mut(i);
         dest.fill(0);
         if x != 0 {
-            let r = rem_limbs(&[x], &n);
+            let r = rem_limbs(&[x], n);
             let take = r.len().min(dest.len());
             dest[..take].copy_from_slice(&r[..take]);
         }
@@ -808,14 +808,14 @@ impl UnityZp {
 
     fn inc(&mut self, i: usize) {
         self.ensure(i);
-        let n = self.n.clone();
-        add_one_mod(self.slot_mut(i), &n);
+        let n = self.n;
+        add_one_mod(self.slot_mut(i), n);
     }
 
     fn dec(&mut self, i: usize) {
         self.ensure(i);
-        let n = self.n.clone();
-        sub_one_mod(self.slot_mut(i), &n);
+        let n = self.n;
+        sub_one_mod(self.slot_mut(i), n);
     }
 
     fn mul_scalar_ui(&self, s: u64) -> Self {
@@ -837,9 +837,25 @@ impl UnityZp {
         out
     }
 
+    /// Adds (or subtracts) slot `from` mod `n` onto each slot of `to`, all below `from`, then zeroes
+    /// it. The source limbs are read in place.
+    fn fold_slot(&mut self, from: usize, to: impl Iterator<Item = usize>, add: bool) {
+        let l = self.n.len();
+        let (lo, hi) = self.c.split_at_mut(from * l);
+        let src = &mut hi[..l];
+        for t in to {
+            let dest = &mut lo[t * l..(t + 1) * l];
+            if add {
+                add_mod_limbs(dest, src, self.n);
+            } else {
+                sub_mod_limbs(dest, src, self.n);
+            }
+        }
+        src.fill(0);
+    }
+
     fn reduce_xpk(&mut self) {
         let pk = self.p_pow();
-        let n = self.n.clone();
         let mut i = self.slots;
         while i > pk {
             i -= 1;
@@ -849,10 +865,7 @@ impl UnityZp {
             if limbs_is_zero(slot) {
                 continue;
             }
-            let v = slot.to_vec();
-            self.slot_mut(i).fill(0);
-            self.ensure(i - pk);
-            add_mod_limbs(self.slot_mut(i - pk), &v, &n);
+            self.fold_slot(i, core::iter::once(i - pk), true);
         }
     }
 
@@ -862,7 +875,6 @@ impl UnityZp {
         }
         let ppow = self.p_pow_prev();
         let cycl = (self.p as usize - 1) * ppow;
-        let n = self.n.clone();
         let p = self.p as usize;
         let mut i = self.slots;
         while i > cycl {
@@ -876,13 +888,7 @@ impl UnityZp {
             if limbs_is_zero(slot) {
                 continue;
             }
-            let v = slot.to_vec();
-            self.slot_mut(i).fill(0);
-            for j in 0..p - 1 {
-                let ind = i - cycl + j * ppow;
-                self.ensure(ind);
-                sub_mod_limbs(self.slot_mut(ind), &v, &n);
-            }
+            self.fold_slot(i, (0..p - 1).map(|j| i - cycl + j * ppow), false);
         }
         self.trim();
     }
@@ -905,7 +911,7 @@ impl UnityZp {
         let mut out = Self {
             p: self.p,
             exp: self.exp,
-            n: self.n.clone(),
+            n: self.n,
             c: Vec::new(),
             slots: 0,
         };
@@ -935,7 +941,7 @@ impl UnityZp {
         out.c = vec![0u64; out_slots * nl];
         out.slots = out_slots;
         for k in 0..out_slots {
-            let r = rem_limbs(&acc[k * wide..(k + 1) * wide], &self.n);
+            let r = rem_limbs(&acc[k * wide..(k + 1) * wide], self.n);
             let dest = &mut out.c[k * nl..(k + 1) * nl];
             let take = r.len().min(nl);
             dest[..take].copy_from_slice(&r[..take]);
@@ -979,8 +985,7 @@ impl UnityZp {
         let p_pow2 = self.p_pow();
         let m = (p - 1) * p_pow1;
         let mut out = self.zeroed();
-        let nl = self.nlen();
-        let n = self.n.clone();
+        let n = self.n;
         for i in 0..m {
             let g_ind = ((x as u128 * i as u128) % p_pow2 as u128) as usize;
             out.ensure(i);
@@ -990,36 +995,41 @@ impl UnityZp {
         }
         for i in m..p_pow2 {
             let g_ind = ((x as u128 * i as u128) % p_pow2 as u128) as usize;
-            let g_coeff = match self.slot(g_ind) {
-                Some(s) => s.to_vec(),
-                None => vec![0; nl],
-            };
+            // A missing slot is zero, and subtracting zero leaves the slot as it is.
+            let g_coeff = self.slot(g_ind);
             for j in 1..p {
                 let f_ind = i - j * p_pow1;
                 out.ensure(f_ind);
-                sub_mod_limbs(out.slot_mut(f_ind), &g_coeff, &n);
+                if let Some(g) = g_coeff {
+                    sub_mod_limbs(out.slot_mut(f_ind), g, n);
+                }
             }
         }
         out
     }
 
+    /// `self == other` in `Z[zeta]/n`: the difference, written into a new element, reduces to zero
+    /// (the reduction is linear and every coefficient is a residue in `[0, n)`).
     fn equal_to(&self, other: &Self) -> bool {
-        let mut a = self.clone();
-        let mut b = other.clone();
-        a.reduce_cyclotomic();
-        b.reduce_cyclotomic();
-        let n = a.slots.max(b.slots);
-        for i in 0..n {
-            let asl = a.slot(i);
-            let bsl = b.slot(i);
-            match (asl, bsl) {
-                (None, None) => {}
-                (Some(x), None) | (None, Some(x)) if limbs_is_zero(x) => {}
-                (Some(x), Some(y)) if x == y => {}
-                _ => return false,
+        let slots = self.slots.max(other.slots);
+        let mut d = Self {
+            p: self.p,
+            exp: self.exp,
+            n: self.n,
+            c: vec![0; slots.max(1) * self.nlen()],
+            slots: slots.max(1),
+        };
+        for i in 0..slots {
+            let dest = d.slot_mut(i);
+            if let Some(a) = self.slot(i) {
+                dest.copy_from_slice(a);
+            }
+            if let Some(b) = other.slot(i) {
+                sub_mod_limbs(dest, b, self.n);
             }
         }
-        true
+        d.reduce_cyclotomic();
+        (0..d.slots).all(|i| d.slot(i).is_none_or(limbs_is_zero))
     }
 
     /// `h` such that `self = zeta_{p^k}^h`, or `-1`.
@@ -1036,7 +1046,7 @@ impl UnityZp {
     }
 }
 
-fn jacobi_sum_general(f: &mut UnityZp, table: &[u64], p: u64, q: u64, k: u32, a: u64, b: u64) {
+fn jacobi_sum_general(f: &mut UnityZp<'_>, table: &[u64], p: u64, q: u64, k: u32, a: u64, b: u64) {
     f.set_zero();
     let pow_dec = pow_u64(p, k.saturating_sub(1)).unwrap_or(1);
     let size = (p - 1) * pow_dec;
@@ -1061,7 +1071,7 @@ fn jacobi_sum_general(f: &mut UnityZp, table: &[u64], p: u64, q: u64, k: u32, a:
     }
 }
 
-fn jacobi_sum_pq(n: &ExactInt, q: u64, p: u64) -> UnityZp {
+fn jacobi_sum_pq(n: &ExactInt, q: u64, p: u64) -> UnityZp<'_> {
     let table = f_table(q);
     let k = p_power_in_q(q - 1, p);
     let mut f = UnityZp::new(p, k, n);
@@ -1069,7 +1079,7 @@ fn jacobi_sum_pq(n: &ExactInt, q: u64, p: u64) -> UnityZp {
     f
 }
 
-fn jacobi_sum_2q_one(n: &ExactInt, q: u64) -> UnityZp {
+fn jacobi_sum_2q_one(n: &ExactInt, q: u64) -> UnityZp<'_> {
     let table = f_table(q);
     let k = p_power_in_q(q - 1, 2);
     let mut f = UnityZp::new(2, k, n);
@@ -1077,7 +1087,7 @@ fn jacobi_sum_2q_one(n: &ExactInt, q: u64) -> UnityZp {
     f
 }
 
-fn jacobi_sum_2q_two(n: &ExactInt, q: u64) -> UnityZp {
+fn jacobi_sum_2q_two(n: &ExactInt, q: u64) -> UnityZp<'_> {
     let table = f_table(q);
     let k = p_power_in_q(q - 1, 2);
     let b = pow_u64(2, k.saturating_sub(3)).unwrap_or(1);
@@ -1087,7 +1097,7 @@ fn jacobi_sum_2q_two(n: &ExactInt, q: u64) -> UnityZp {
     f
 }
 
-fn check_pk(j: &UnityZp, u: &ExactInt, v: u64) -> i64 {
+fn check_pk(j: &UnityZp<'_>, u: &ExactInt, v: u64) -> i64 {
     let r = j.p_pow() as u64;
     let mut j0 = j.zeroed();
     j0.set_ui(0, 1);
@@ -1129,7 +1139,7 @@ fn check_21(q: u64, n: &ExactInt) -> i64 {
     }
 }
 
-fn check_22(j: &UnityZp, u: &ExactInt, v: u64, q: u64) -> i64 {
+fn check_22(j: &UnityZp<'_>, u: &ExactInt, v: u64, q: u64) -> i64 {
     let j_pow = j.mul(j);
     let j0 = j_pow.mul_scalar_ui(q);
     let jv = if v == 1 {
@@ -1146,7 +1156,7 @@ fn check_22(j: &UnityZp, u: &ExactInt, v: u64, q: u64) -> i64 {
     j0.is_unity()
 }
 
-fn check_2k(j: &UnityZp, j2_1: &UnityZp, j2_2: &UnityZp, u: &ExactInt, v: u64) -> i64 {
+fn check_2k(j: &UnityZp<'_>, j2_1: &UnityZp<'_>, j2_2: &UnityZp<'_>, u: &ExactInt, v: u64) -> i64 {
     let r = j.p_pow() as u64;
     let mut j0 = j.zeroed();
     j0.set_ui(0, 1);
@@ -1766,21 +1776,21 @@ mod tests {
         let n = ExactInt::from_u64(2).pow(255).sub(&ExactInt::from_u64(19));
         let nl = limbs_of(&n);
         for _ in 0..100 {
-            let a = rem_limbs(&[next(), next(), next(), next()], &nl);
-            let b = rem_limbs(&[next(), next(), next(), next()], &nl);
+            let a = rem_limbs(&[next(), next(), next(), next()], nl);
+            let b = rem_limbs(&[next(), next(), next(), next()], nl);
             let mut dest = a.clone();
             dest.resize(nl.len(), 0);
-            add_mod_limbs(&mut dest, &b, &nl);
+            add_mod_limbs(&mut dest, &b, nl);
             let want = rem(&to_e(&a).add(&to_e(&b)), &n);
             assert_eq!(to_e(&dest), want, "add_mod");
             dest = a.clone();
             dest.resize(nl.len(), 0);
-            sub_mod_limbs(&mut dest, &b, &nl);
+            sub_mod_limbs(&mut dest, &b, nl);
             let want = rem(&to_e(&a).sub(&to_e(&b)), &n);
             assert_eq!(to_e(&dest), want, "sub_mod");
             let mut prod = vec![0u64; 10];
             mul_raw(&a, &b, &mut prod);
-            let got = rem_limbs(&prod, &nl);
+            let got = rem_limbs(&prod, nl);
             let want = rem(&to_e(&a).mul(&to_e(&b)), &n);
             assert_eq!(to_e(&got), want, "mul_mod");
         }
@@ -1789,8 +1799,8 @@ mod tests {
         assert_eq!(sq, ExactInt::one(), "exact (n-1)^2");
         let mut prod = vec![0u64; 10];
         let a = limbs_of(&nm1);
-        mul_raw(&a, &a, &mut prod);
-        let got = rem_limbs(&prod, &nl);
+        mul_raw(a, a, &mut prod);
+        let got = rem_limbs(&prod, nl);
         assert_eq!(
             exact_from_limbs(&got),
             ExactInt::one(),
@@ -1831,7 +1841,7 @@ mod tests {
     #[test]
     fn rem_limbs_matches_exactint() {
         fn check(u: &ExactInt, v: &ExactInt) {
-            let got = rem_limbs(&limbs_of(u), &limbs_of(v));
+            let got = rem_limbs(limbs_of(u), limbs_of(v));
             let want = rem(u, v);
             let got_e = exact_from_limbs(&got);
             assert_eq!(got_e, want, "rem({u:?}, {v:?})");
@@ -1915,5 +1925,42 @@ mod tests {
             let v = ExactInt::from_u64(c);
             assert!(!aprcl_is_prime(&v), "APRCL must reject {c}");
         }
+    }
+
+    /// Every odd n in [5, 6000) against trial division, and multi-limb Mersenne primes and their products
+    /// (the Jacobi-sum checks run in Z[zeta]/n with n of 1, 2 and 4 limbs).
+    #[test]
+    fn aprcl_agrees_with_trial_division_and_mersenne() -> Result<(), String> {
+        let trial = |n: u64| {
+            (2..)
+                .take_while(|d| d * d <= n)
+                .all(|d| !n.is_multiple_of(d))
+        };
+        for n in (5u64..6000).step_by(2) {
+            if aprcl_is_prime(&ExactInt::from_u64(n)) != trial(n) {
+                return Err(format!("n={n}"));
+            }
+        }
+        let mersenne = |e: u32| {
+            let mut w = vec![u64::MAX; (e / 64) as usize];
+            if !e.is_multiple_of(64) {
+                w.push((1u64 << (e % 64)) - 1);
+            }
+            ExactInt::from_unsigned_limbs(w)
+        };
+        for e in [61u32, 89, 107, 127, 521] {
+            if !aprcl_is_prime(&mersenne(e)) {
+                return Err(format!("2^{e}-1 not proved prime"));
+            }
+        }
+        for (a, b) in [(61u32, 31u32), (89, 61), (127, 107), (127, 89)] {
+            if aprcl_is_prime(&mersenne(a).mul(&mersenne(b))) {
+                return Err(format!("(2^{a}-1)(2^{b}-1) accepted"));
+            }
+        }
+        if aprcl_is_prime(&mersenne(67)) {
+            return Err("2^67-1 (composite) accepted".to_string());
+        }
+        Ok(())
     }
 }
