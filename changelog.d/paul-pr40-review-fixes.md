@@ -69,3 +69,6 @@
   `bound_layer_scan_selftest.sh`, bound gate step `bound-layer-scan`) and prints first that it is NOT the library scan, so
   the two can't be confused again (ROOT-CAUSE.md: only the bound scanner ran for a week). New
   `tools/test_rules_enforcement.sh` checks it: red at ed094e7, green after.
+- Gate step `no-clone-progress` now FAILS on any rise: `tools/no_clone.sh --progress` checks every no_clone form, the
+  total and the helper-copy count against the new `tools/no_clone_progress_baseline.txt`, set to the counts of 25e2d82
+  (= 11377ab, the last tree whose gate passed rules-scan), not the inflated tip. It ended in `true` since da53be7.

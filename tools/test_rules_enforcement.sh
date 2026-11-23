@@ -3,6 +3,7 @@
 # unseen for a week because the library's rules_scan never ran): the rules are checked on every commit, push and gate.
 #   1. one library scanner: only tools/rules_scan.{py,sh} (+ selftest) carry that name; it names itself first, and the
 #      bound layer's scanner is zenith-float-bound/tools/bound_layer_scan.* and says it is NOT the library scan.
+#   2. the gate's no-clone-progress step fails on any rise (tools/no_clone.sh --progress); a planted clone fails it.
 # usage: tools/test_rules_enforcement.sh [ROOT]   (ROOT: a checkout, default this one; text and fixture checks, no cargo)
 set -u
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -23,6 +24,20 @@ if [ -f "$b" ]; then
 else
   bad "no zenith-float-bound/tools/bound_layer_scan.py"
 fi
+
+# 2. no-clone-progress FAILS on any rise (it ended in `true` since da53be7): run the gate's own step command in a fixture
+step() { grep -m1 -E "^run $1 \"" "$root/tools/full_gate.sh" | sed -E "s/^run $1 \"(.*)\"\$/\1/"; }
+nc=$(step no-clone-progress)
+[[ -n $nc ]] || bad "no no-clone-progress step in tools/full_gate.sh"
+[[ $nc == *'true'* ]] && bad "no-clone-progress still contains \`true\`: $nc"
+[[ $nc == *'no_clone.sh --progress'* ]] || bad "no-clone-progress does not run tools/no_clone.sh --progress: $nc"
+f="$t/nc"; mkdir -p "$f/tools" "$f/zenith-float-num/src"
+cp "$root"/tools/no_clone.py "$root"/tools/no_clone.sh "$root"/tools/no_clone_selftest.sh "$f/tools/" 2>/dev/null
+printf 'clone()\t1\nto_vec()\t0\ncloned()\t0\nClone::clone\t0\nclone_from\t0\nimpl Clone\t0\nderive(Clone)\t0\ntotal\t1\nhelper_copies\t0\n' > "$f/tools/no_clone_progress_baseline.txt"
+printf 'fn f(x: &S) { let y = x.clone(); }\n' > "$f/zenith-float-num/src/a.rs"
+(cd "$f" && bash -c "$nc") > "$t/nc.out" 2>&1 || bad "no-clone-progress failed a tree at its baseline: $(tail -3 "$t/nc.out")"
+printf 'fn f(x: &S) { let y = x.clone(); let z = x.clone(); }\n' > "$f/zenith-float-num/src/a.rs"
+(cd "$f" && bash -c "$nc") > "$t/nc.out" 2>&1 && bad "no-clone-progress passed a planted clone (1 -> 2): $(tail -3 "$t/nc.out")"
 
 [ $fail -eq 0 ] && echo "test_rules_enforcement: ok"
 exit $fail

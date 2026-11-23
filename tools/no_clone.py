@@ -14,6 +14,9 @@ sites may never exceed tools/exception_count_baseline.txt (enforced by rules_sca
 Second counter (`--helpers`): uses of the hidden copy helpers (see HELPERS, which includes the approved Ziv working-copy
 helper `ziv_pass_operand`; uses inside its own file are not counted) in non-definition positions, plus
 Rc::clone / Arc::clone in zenith-float-compare. Ratchet: tools/helper_copy_count_baseline.txt (rules_scan.py).
+
+`--progress` (the gate's no-clone-progress step): no form's count, nor the total, nor the helper-copy count may rise above
+tools/no_clone_progress_baseline.txt (Jeff 2026-11-23 07:43 CT). It never writes that file.
 """
 import os, re, sys, collections
 
@@ -198,6 +201,45 @@ def helper_copy_count():
     return len(helper_sites())
 
 
+PROGRESS_FILE = "tools/no_clone_progress_baseline.txt"
+PROGRESS_KINDS = [k for k, _ in TOKENS] + ["derive(Clone)", "total", "helper_copies"]
+
+
+def progress(by, total):
+    """--progress (Jeff 2026-11-23 07:43 CT, ROOT-CAUSE.md: the step ended in `true` and never failed): every form's
+    count, the total and the helper-copy count against tools/no_clone_progress_baseline.txt (`kind<TAB>count` lines).
+    Any rise is a FAIL; a drop prints a hint. This never writes the file: it is lowered by hand, never raised."""
+    try:
+        lines = open(os.path.join(ROOT, PROGRESS_FILE)).read().splitlines()
+    except OSError:
+        print("no_clone_progress: FAIL missing %s" % PROGRESS_FILE)
+        return 1
+    base = {}
+    for l in lines:
+        f = l.split("\t")
+        if l.startswith("#") or len(f) != 2 or not f[1].strip().isdigit():
+            continue
+        base[f[0]] = int(f[1])
+    cur = dict((k, by.get(k, 0)) for k, _ in TOKENS)
+    cur["derive(Clone)"] = by.get("derive(Clone)", 0)
+    cur["total"] = total
+    cur["helper_copies"] = helper_copy_count()
+    rc = 0
+    for k in PROGRESS_KINDS:
+        if k not in base:
+            print("no_clone_progress: FAIL %s has no `%s` line" % (PROGRESS_FILE, k))
+            rc = 1
+        elif cur[k] > base[k]:
+            print("no_clone_progress: FAIL %s %d RISES above baseline %d" % (k, cur[k], base[k]))
+            rc = 1
+        elif cur[k] < base[k]:
+            print("no_clone_progress: %s %d is below baseline %d: lower it in %s" % (k, cur[k], base[k], PROGRESS_FILE))
+        else:
+            print("no_clone_progress: %s %d == baseline" % (k, cur[k]))
+    print("no_clone_progress: %s" % ("ok (no rise)" if rc == 0 else "FAIL (a count rose; it may only go down)"))
+    return rc
+
+
 def main():
     r = scan()
     bad, allowed = r["bad"], r["allowed"]
@@ -221,6 +263,8 @@ def main():
     for k in r["stale"]:
         print("no_clone: STALE allowlist entry %s %s: no .clone() site matches it any more; remove it" % k)
     print("no_clone: %d violation(s) %s; %d excepted site(s); %d stale entr(y/ies)" % (len(bad), dict(by), len(allowed), len(r["stale"])))
+    if "--progress" in sys.argv:
+        return max(progress(by, len(bad)), 1 if (r["stale"] or r["errors"]) else 0)
     if "--files" in sys.argv:
         for f, n in per.most_common():
             print("%5d %s" % (n, f))

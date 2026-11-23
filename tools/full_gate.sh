@@ -12,7 +12,8 @@
 #
 # Clone ratchet "in progress" mode: `rules-scan` scans the added lines since the ratchet started (RATCHET_BASE,
 # default c74e834^ = the parent of the first commit with rules_scan and the baseline) and enforces the baseline
-# count; `no-clone-progress` prints the remaining no_clone.sh violations (a tracked count, it never fails the gate).
+# count; `no-clone-progress` FAILS when any no_clone.sh form, the total or the helper-copy count rises above
+# tools/no_clone_progress_baseline.txt (tools/no_clone.sh --progress; Jeff 2026-11-23 07:43 CT).
 # The zero-clone goal is unchanged: the baseline in tools/clone_count_baseline.txt only goes down.
 # `rules-scan` also enforces (via rules_scan.py count checks) the helper-copy baseline (tools/helper_copy_count_baseline.txt),
 # the exception allowlist (stale entries fail, tools/exception_count_baseline.txt) and the library-scoped ref ratchets;
@@ -110,8 +111,9 @@ run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zen
 run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
 # K11 (Paul 2026-11-10): no machine path in shipped scripts; every oracle generator refuses a forged wrong-pin env
 run oracle-env "tools/oracle_env_selftest.sh"
-# informational: remaining violations are a tracked count (must only go down; hard fail is for the final step)
-run no-clone-progress "tools/no_clone_selftest.sh && { tools/no_clone.sh | tail -1; tools/no_clone.sh --helpers | tail -1; true; }"
+# FAILS on any rise (Jeff 2026-11-23 07:43 CT; it ended in `true` from da53be7 to 2026-11-23): every form, the total and the
+# helper-copy count against tools/no_clone_progress_baseline.txt (the 25e2d82 counts), which is only ever lowered by hand
+run no-clone-progress "tools/no_clone_selftest.sh && tools/no_clone.sh --progress"
 run fmt "cargo fmt --all -- --check"
 run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 run audit "cargo audit --deny warnings"
