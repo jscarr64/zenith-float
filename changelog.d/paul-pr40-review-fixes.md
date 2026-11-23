@@ -76,3 +76,7 @@
   must precede the first build), then clippy-x86_64. A stop-at-first-failure kill can no longer skip them (ROOT-CAUSE.md:
   the Nov 17 gates were killed before step 16). tools/test_rules_enforcement.sh (now in the unsafe-scan step) runs the
   gate's own rules-scan command in a fixture: a planted clone fails it and a crashing check is a named FAIL there.
+- New committed pre-commit hook `.githooks/pre-commit` (enable: `git config core.hooksPath .githooks`, in
+  CONTRIBUTING.md): `tools/rules_scan.sh --working`, `--count-only --no-rise HEAD`, `cargo fmt --check`, `cargo clippy -D
+  warnings`; all four run and report, any FAIL refuses the commit. tools/test_rules_enforcement.sh part 4: planted clone,
+  count rise, crash, red fmt and red clippy are each refused; a no-op hook fails the test.

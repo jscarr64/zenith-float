@@ -21,6 +21,11 @@ bash scripts/ci.sh
 bash scripts/ci_full.sh
 ```
 
+Enable the committed pre-commit hook once per clone: `git config core.hooksPath .githooks`. It runs
+`tools/rules_scan.sh --working`, `tools/rules_scan.sh --count-only --no-rise HEAD`, `cargo fmt --all -- --check` and
+`cargo clippy --workspace --all-targets --all-features -- -D warnings`, and refuses the commit on any FAIL. Never commit
+with `--no-verify`.
+
 `scripts/ci.sh` is the default gate (workspace tests, `no_std` / thumb, MPFR on Linux x86_64). `scripts/ci_full.sh` is the 12-check pre-publish gate.
 
 MPFR golds need Linux x86_64 and `rug` (`--features mpfr-tests`). Replay a random failure with `ZENITH_TEST_SEED=<seed> cargo test <name> -- --test-threads=1`.

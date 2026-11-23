@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# zenith-float pre-commit hook (Jeff 2026-11-23 07:43 CT, ROOT-CAUSE.md: the library's rules_scan never ran for a week).
+# Enable once per clone:  git config core.hooksPath .githooks
+#   1. tools/rules_scan.sh --working                  banned constructs on every added line (clone and panic rules include tests)
+#   2. tools/rules_scan.sh --count-only --no-rise HEAD every count vs its baseline; above baseline passes only if it does not
+#                                                     rise against HEAD (cleanup mode; never writes a baseline); a crash FAILS
+#   3. cargo fmt --all -- --check
+#   4. cargo clippy --workspace --all-targets --all-features -- -D warnings
+# All four always run and report. A FAIL stops the commit; fix it, never commit with --no-verify.
+# Test: tools/test_rules_enforcement.sh part 4.
+set -u
+cd "$(git rev-parse --show-toplevel)" || exit 1
+rc=0
+step() {
+  local name=$1; shift
+  echo "pre-commit: == $name: $*"
+  if "$@"; then echo "pre-commit: ok $name"; else echo "pre-commit: FAIL $name"; rc=1; fi
+}
+step rules-scan-diff tools/rules_scan.sh --working
+step rules-scan-counts tools/rules_scan.sh --count-only --no-rise HEAD
+step fmt cargo fmt --all -- --check
+step clippy cargo clippy --workspace --all-targets --all-features -- -D warnings
+if [ $rc -eq 0 ]; then echo "pre-commit: ok"; else echo "pre-commit: FAIL (commit refused; fix it, never --no-verify)"; fi
+exit $rc

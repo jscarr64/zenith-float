@@ -5,6 +5,7 @@
 #      bound layer's scanner is zenith-float-bound/tools/bound_layer_scan.* and says it is NOT the library scan.
 #   2. the gate's no-clone-progress step fails on any rise (tools/no_clone.sh --progress); a planted clone fails it.
 #   3. rules-scan, no-clone-progress, fmt lead the gate (then target-dir, clippy); a planted clone or a crash fails rules-scan.
+#   4. the committed pre-commit hook stops a planted clone, a count rise, a crash, red fmt and red clippy.
 # usage: tools/test_rules_enforcement.sh [ROOT]   (ROOT: a checkout, default this one; text and fixture checks, no cargo)
 set -u
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -65,6 +66,41 @@ grep -q 'zenith-float-num/src/x.rs:2 \[clone\]' "$t/rs.out" || bad "planted clon
 grep -q '^rules_scan: FAIL check borrow CRASHED' "$t/rs.out" || bad "crash is not a named FAIL in the rules-scan step"
 grep -q '^rules_scan: checks: clone=ok helper-copy=ok exceptions=ok test-panic=ok neg_via_mul=ok combined=ok borrow=CRASH' "$t/rs.out" \
   || bad "a crash hid the other checks in the rules-scan step: $(grep 'checks:' "$t/rs.out")"
+
+# 4. the committed pre-commit hook (.githooks/pre-commit; core.hooksPath=.githooks) runs rules_scan --working, rules_scan
+#    --count-only --no-rise HEAD, cargo fmt --check and cargo clippy -D warnings: a planted clone, a count rise, a crash
+#    or a red fmt/clippy stops the commit. cargo is a stub here (its args are logged).
+hk="$root/.githooks/pre-commit"
+if [ -x "$hk" ]; then
+  h="$t/hk"; mkdir -p "$h/tools" "$h/zenith-float-num/src" "$h/.githooks" "$t/bin"
+  cp "$root"/tools/rules_scan.py "$root"/tools/rules_scan.sh "$root"/tools/no_clone.py "$h/tools/"; cp "$hk" "$h/.githooks/"
+  : > "$h/tools/rules_allowlist.txt"
+  for b in clone_count helper_copy_count exception_count test_panic_count neg_via_mul_count; do echo 0 > "$h/tools/${b}_baseline.txt"; done
+  printf 'fn a() {}\n' > "$h/zenith-float-num/src/x.rs"
+  printf '#!/usr/bin/env bash\necho "$*" >> "%s/cargo.args"\n[ -n "${STUB_CARGO_FAIL:-}" ] && [[ "$*" == "$STUB_CARGO_FAIL"* ]] && exit 1\nexit 0\n' "$t" > "$t/bin/cargo"; chmod +x "$t/bin/cargo"
+  hc() { (cd "$h" && PATH="$t/bin:$PATH" git commit -qm "$1") > "$t/hk.out" 2>&1; }
+  ( cd "$h" && git init -q . && git config user.email a@b && git config user.name t && git add -A && git commit -qm base --no-verify \
+    && git config core.hooksPath .githooks ) || bad "hook fixture repo"
+  printf 'fn a() {}\nfn b() -> u32 { 1 }\n' > "$h/zenith-float-num/src/x.rs"; (cd "$h" && git add -A)
+  hc clean || bad "hook refused a clean commit: $(tail -5 "$t/hk.out")"
+  grep -qx 'fmt --all -- --check' "$t/cargo.args" || bad "hook did not run cargo fmt --all -- --check"
+  grep -qx 'clippy --workspace --all-targets --all-features -- -D warnings' "$t/cargo.args" || bad "hook did not run cargo clippy -D warnings"
+  n0=$(git -C "$h" rev-list --count HEAD)
+  printf 'fn a() {}\nfn b() -> u32 { 1 }\nfn c(x: &S) -> S { x.clone() }\n' > "$h/zenith-float-num/src/x.rs"; (cd "$h" && git add -A)
+  hc planted && bad "hook let a planted clone through"
+  grep -q 'zenith-float-num/src/x.rs:3 \[clone\]' "$t/hk.out" || bad "hook did not report the planted clone: $(tail -5 "$t/hk.out")"
+  grep -q 'clone count 1 is ABOVE the baseline 0 and RISES vs HEAD (0)' "$t/hk.out" || bad "hook did not report the count rise: $(tail -8 "$t/hk.out")"
+  [ "$(git -C "$h" rev-list --count HEAD)" = "$n0" ] || bad "a commit was created although the hook failed"
+  printf 'fn a() {}\nfn b() -> u32 { 1 }\n' > "$h/zenith-float-num/src/x.rs"; printf '// edit\n' >> "$h/zenith-float-num/src/x.rs"; (cd "$h" && git add -A)
+  RULES_SCAN_FAULT=test-panic hc crash && bad "hook let a crashing rules_scan check through"
+  grep -q 'FAIL check test-panic CRASHED' "$t/hk.out" || bad "hook did not name the crash: $(tail -5 "$t/hk.out")"
+  STUB_CARGO_FAIL=fmt hc fmtred && bad "hook let a red cargo fmt through"
+  STUB_CARGO_FAIL=clippy hc clippyred && bad "hook let a red clippy through"
+  hc green || bad "hook refused a clean edit: $(tail -5 "$t/hk.out")"
+else
+  bad "no executable .githooks/pre-commit"
+fi
+grep -q 'core.hooksPath .githooks' "$root/CONTRIBUTING.md" || bad "CONTRIBUTING.md does not say how to enable the hook (git config core.hooksPath .githooks)"
 
 [ $fail -eq 0 ] && echo "test_rules_enforcement: ok"
 exit $fail
