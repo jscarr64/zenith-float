@@ -1710,23 +1710,26 @@ impl ExactComplex {
                 .unwrap_or(0)
                 .max(z.im.precision().unwrap_or(0))
         };
-        let mut base = self.clone();
+        // `self^(2^i)`; `None` while it is still `self` (read in place).
+        let mut squared: Option<Self> = None;
         let mut acc = Self::one(WORD_BIT_SIZE);
         while e > 0 {
+            let base = squared.as_ref().unwrap_or(self);
             if e & 1 == 1 {
-                let w = width(&acc) + width(&base) + WORD_BIT_SIZE;
+                let w = width(&acc) + width(base) + WORD_BIT_SIZE;
                 if w > limit {
                     return None;
                 }
-                acc = acc.mul(&base, w, n);
+                acc = acc.mul(base, w, n);
             }
             e >>= 1;
             if e > 0 {
-                let w = 2 * width(&base) + WORD_BIT_SIZE;
+                let w = 2 * width(base) + WORD_BIT_SIZE;
                 if w > limit {
                     return None;
                 }
-                base = base.mul(&base, w, n);
+                let next = base.mul(base, w, n);
+                squared = Some(next);
             }
         }
         if acc.re.inexact() || acc.im.inexact() {
@@ -1785,12 +1788,12 @@ impl ExactComplex {
         let two_t = t.ldexp_ref(1, p.max(t.precision().unwrap_or(p)) + 2, n);
         if two_t.is_int() {
             let k = two_t.to_i64(RoundingMode::ToZero).ok()?.rem_euclid(4);
-            let (one, zero) = (ExactNum::from_u8(1, p), ExactNum::new(p));
+            let (one, zero) = (ExactNum::from_u8(1, p), || ExactNum::new(p));
             Some(match k {
-                0 => (zero.clone(), one),
-                1 => (one, zero.clone()),
-                2 => (zero.clone(), -one),
-                _ => (-one, zero.clone()),
+                0 => (zero(), one),
+                1 => (one, zero()),
+                2 => (zero(), -one),
+                _ => (-one, zero()),
             })
         } else {
             let pi = cc.pi(p, n);
@@ -1832,14 +1835,24 @@ impl ExactComplex {
             }
         };
         if r_is_one {
-            let yu = match m {
+            let yu_owned;
+            let yu: &ExactNum = match m {
                 0 => return Some(Self::new(mag, ExactNum::new(p))),
-                2 => a.clone(),
-                -2 => -a.clone(),
-                1 => a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n),
-                _ => -a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n),
+                2 => a,
+                -2 => {
+                    yu_owned = a.neg_ref();
+                    &yu_owned
+                }
+                1 => {
+                    yu_owned = a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n);
+                    &yu_owned
+                }
+                _ => {
+                    yu_owned = -a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n);
+                    &yu_owned
+                }
             };
-            let (sn, cs) = Self::cos_sin_pi_times(&yu, p, cc)?;
+            let (sn, cs) = Self::cos_sin_pi_times(yu, p, cc)?;
             let below = self.im.is_negative();
             let dtheta_pos = below;
             let up = |pos: bool| if pos { ExactNum::new(p) } else { -ExactNum::new(p) };
@@ -1903,16 +1916,26 @@ impl ExactComplex {
             }
         };
         if r_is_one {
-            let yu = match m {
+            let yu_owned;
+            let yu: &ExactNum = match m {
                 0 => {
                     return Some(CB::from_parts(mag, RB::exact(ExactNum::new(p))));
                 }
-                2 => a.clone(),
-                -2 => -a.clone(),
-                1 => a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n),
-                _ => -a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n),
+                2 => a,
+                -2 => {
+                    yu_owned = a.neg_ref();
+                    &yu_owned
+                }
+                1 => {
+                    yu_owned = a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n);
+                    &yu_owned
+                }
+                _ => {
+                    yu_owned = -a.ldexp_ref(-1, a.precision().unwrap_or(p) + 2, n);
+                    &yu_owned
+                }
             };
-            let (sn, cs) = Self::cos_sin_pi_times(&yu, p, cc)?;
+            let (sn, cs) = Self::cos_sin_pi_times(yu, p, cc)?;
             let below = self.im.is_negative();
             let dtheta_pos = below;
             let up = |pos: bool| if pos { ExactNum::new(p) } else { -ExactNum::new(p) };
@@ -1971,27 +1994,25 @@ impl ExactComplex {
         }
         // Arg/π: ±1/2 on the imaginary axis, 1 on the negative real axis (the sign of the
         // side is applied to sin below).
-        let yu = if imag_axis {
+        let yu_owned;
+        let yu: &ExactNum = if imag_axis {
             let h = y.ldexp_ref(-1, y.precision().unwrap_or(p) + 2, n);
-            if below {
-                -h
-            } else {
-                h
-            }
+            yu_owned = if below { -h } else { h };
+            &yu_owned
         } else {
-            y.clone()
+            y
         };
         let t = yu.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
         let two_t = t.ldexp_ref(1, p.max(t.precision().unwrap_or(p)) + 2, n);
         let (sn, cs) = if two_t.is_int() {
             // t ∈ {0, ±1/2, ±1, ±3/2}: exact cos πt and sin πt.
             let k = two_t.to_i64(RoundingMode::ToZero).ok()?.rem_euclid(4);
-            let (one, zero) = (ExactNum::from_u8(1, p), ExactNum::new(p));
+            let (one, zero) = (ExactNum::from_u8(1, p), || ExactNum::new(p));
             match k {
-                0 => (zero.clone(), one),
-                1 => (one, zero.clone()),
-                2 => (zero.clone(), -one),
-                _ => (-one, zero.clone()),
+                0 => (zero(), one),
+                1 => (one, zero()),
+                2 => (zero(), -one),
+                _ => (-one, zero()),
             }
         } else {
             let pi = cc.pi(p, n);
@@ -2046,27 +2067,25 @@ impl ExactComplex {
         }
         // Arg/π: ±1/2 on the imaginary axis, 1 on the negative real axis (the sign of the
         // side is applied to sin below).
-        let yu = if imag_axis {
+        let yu_owned;
+        let yu: &ExactNum = if imag_axis {
             let h = y.ldexp_ref(-1, y.precision().unwrap_or(p) + 2, n);
-            if below {
-                -h
-            } else {
-                h
-            }
+            yu_owned = if below { -h } else { h };
+            &yu_owned
         } else {
-            y.clone()
+            y
         };
         let t = yu.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
         let two_t = t.ldexp_ref(1, p.max(t.precision().unwrap_or(p)) + 2, n);
         let (sn, cs) = if two_t.is_int() {
             // t ∈ {0, ±1/2, ±1, ±3/2}: exact cos πt and sin πt.
             let k = two_t.to_i64(RoundingMode::ToZero).ok()?.rem_euclid(4);
-            let (one, zero) = (ExactNum::from_u8(1, p), ExactNum::new(p));
+            let (one, zero) = (ExactNum::from_u8(1, p), || ExactNum::new(p));
             let (s, c) = match k {
-                0 => (zero.clone(), one),
-                1 => (one, zero.clone()),
-                2 => (zero.clone(), -one),
-                _ => (-one, zero.clone()),
+                0 => (zero(), one),
+                1 => (one, zero()),
+                2 => (zero(), -one),
+                _ => (-one, zero()),
             };
             (RB::exact(s), RB::exact(c))
         } else {
