@@ -63,7 +63,7 @@ fn half_minus_2_pow_neg(k: u32) -> Result<ExactNumNumber, Error> {
     ExactNumNumber::from_raw_parts(&m, p, Sign::Pos, -1, false)
 }
 
-fn to_ext(v: &ExactNumNumber) -> ExactNum {
+fn to_ext(v: &ExactNumNumber) -> Result<ExactNum, Error> {
     ExactNum::from_raw_parts(&RawParts {
         kind: RawKind::Finite,
         words: v.mantissa().digits(),
@@ -73,7 +73,6 @@ fn to_ext(v: &ExactNumNumber) -> ExactNum {
         inexact: false,
         op_inexact: false,
     })
-    .expect("finite")
 }
 
 fn is_minpos(v: &ExactNumNumber, p: usize) -> bool {
@@ -104,7 +103,7 @@ fn zfn01_mul_just_above_half_minpos_to_even_is_minpos() -> Result<(), Error> {
     );
     assert!(got.inexact() || got.op_inexact());
 
-    let ge = to_ext(&a).mul(&to_ext(&b), p, RoundingMode::ToEven);
+    let ge = to_ext(&a)?.mul(&to_ext(&b)?, p, RoundingMode::ToEven);
     let want = ExactNum::min_positive(p);
     assert_eq!(ge, want, "ExactNum mul ToEven: got {ge:?}");
     Ok(())
@@ -187,7 +186,7 @@ fn zfn01_div_just_above_half_minpos_to_even_is_minpos() -> Result<(), Error> {
 #[test]
 fn zfn01_public_mul_signs_to_even() -> Result<(), Error> {
     let p = WORD_BIT_SIZE;
-    let a = to_ext(&half_plus_2_pow_neg(128)?);
+    let a = to_ext(&half_plus_2_pow_neg(128)?)?;
     let b = ExactNum::min_positive(p);
     let want = ExactNum::min_positive(p);
     for (sa, sb, neg) in [
