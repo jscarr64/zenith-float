@@ -88,8 +88,14 @@ helper-copy count may rise only if the clone count falls by at least as much in 
 every use of `ziv_pass_operand` outside its own file must sit in a (file, fn) listed in tools/ziv_shape_a_sites.txt
 (`path<TAB>fn<TAB>reason`), and that list must be covered by a .github/CODEOWNERS line owned by @jscarr64. (1) and
 the CODEOWNERS check apply whenever tools/ziv_shape_a_sites.txt exists; (3) applies to every use.
+CRASH AND NO-RISE (Jeff 2026-11-23 07:43 CT, ROOT-CAUSE.md): every count check runs on its own; a check that raises is
+reported as `rules_scan: FAIL check <name> CRASHED: ...` and the other checks still run and report; the line
+`rules_scan: checks: name=ok|held|FAIL|CRASH ...` lists every check. `--count-only --no-rise REV` (the pre-commit hook)
+lets a count above its baseline pass only when it does not rise against the tree at REV (status `held`, and the run
+says NOT at baseline); it never writes a baseline. The gate and CI run strict. A 'clean' claim must cite this
+scanner's log at that exact commit (CONTRIBUTING.md, per-commit checklist).
 """
-import hashlib, os, re, subprocess, sys, collections
+import hashlib, json, os, re, subprocess, sys, collections, traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.environ.get("RULES_SCAN_ROOT") or os.path.dirname(HERE)
@@ -297,12 +303,12 @@ def read_baseline():
 
 def count_check(update=False):
     cur, base = clone_count(), read_baseline()
+    COUNTS["clone_count_baseline.txt"] = cur
     if base is None:
         print("rules_scan: missing or unreadable tools/clone_count_baseline.txt")
         return 1
     if cur > base:
-        print("rules_scan: clone count %d is ABOVE the baseline %d (it may only go down)" % (cur, base))
-        return 1
+        return above_baseline("clone", "count", cur, base, "clone_count_baseline.txt")
     if cur < base:
         if update:
             open(baseline_path(), "w").write("%d\n" % cur)
@@ -314,8 +320,33 @@ def count_check(update=False):
     return 0
 
 
+# Jeff 2026-11-23 07:43 CT (ROOT-CAUSE.md): every count is recorded in COUNTS (--print-all-counts), and under
+# --no-rise REV (NO_RISE = the counts of the tree at REV) a count above its baseline passes only when it does not rise
+# against REV. That is the pre-commit hook's cleanup mode: it never raises or rewrites a baseline, the gate and CI stay
+# strict, and a commit can only hold or lower every count until the tree is back at or under baseline.
+COUNTS = {}
+NO_RISE = None
+NO_RISE_REV = None
+HELD = []  # labels over baseline that passed only because they do not rise (--no-rise)
+
+
+def above_baseline(label, what, cur, base, key, extra=""):
+    """print the over-baseline verdict; returns rc (0 only under --no-rise when cur does not rise vs NO_RISE_REV)"""
+    if NO_RISE is not None and key in NO_RISE:
+        prev = NO_RISE[key]
+        if cur <= prev:
+            print("rules_scan: %s %s %d is ABOVE the baseline %d but does not rise vs %s (%d)%s" % (label, what, cur, base, NO_RISE_REV, prev, extra))
+            HELD.append(label)
+            return 0
+        print("rules_scan: %s %s %d is ABOVE the baseline %d and RISES vs %s (%d)%s" % (label, what, cur, base, NO_RISE_REV, prev, extra))
+        return 1
+    print("rules_scan: %s %s %d is ABOVE the baseline %d (it may only go down)%s" % (label, what, cur, base, extra))
+    return 1
+
+
 def ratchet(label, fname, cur, update, what="count", extra=""):
     """cur vs tools/<fname>: above -> fail; below -> hint (or lower with update); equal -> ok. Returns rc."""
+    COUNTS[fname] = cur
     path = os.path.join(ROOT, "tools", fname)
     try:
         base = int(open(path).read().split()[0])
@@ -323,8 +354,7 @@ def ratchet(label, fname, cur, update, what="count", extra=""):
         print("rules_scan: missing or unreadable tools/%s" % fname)
         return 1
     if cur > base:
-        print("rules_scan: %s %s %d is ABOVE the baseline %d (it may only go down)%s" % (label, what, cur, base, extra))
-        return 1
+        return above_baseline(label, what, cur, base, fname, extra)
     if cur < base:
         if update:
             open(path, "w").write("%d\n" % cur)
@@ -1173,18 +1203,98 @@ def borrow_check(update=False):
               % (rel, fn if ty == "-" else ty + "::" + fn, a, n, got))
     print("rules_scan: borrowing ops reach %d fns, %d copy sites (%d named exceptions, %d unlisted, %d over-allowed)"
           % (len(reached), len(hits), len(hits) - len(bad), len(bad), len(over)))
-    return 1 if bad or over or missing else 0
+    COUNTS["borrow_unlisted"] = len(bad)
+    if over or missing:
+        return 1
+    if bad:
+        return above_baseline("borrowing-op", "unlisted copy-site count", len(bad), 0, "borrow_unlisted")
+    return 0
+
+
+def fault(name):
+    """selftest hook (tools/rules_scan_selftest.sh): RULES_SCAN_FAULT=<check> makes that check crash. It can only turn a
+    check into a FAIL, never into a pass."""
+    if os.environ.get("RULES_SCAN_FAULT") == name:
+        raise RuntimeError("RULES_SCAN_FAULT=%s (selftest-injected crash)" % name)
+
+
+def guarded(name, fn, *args):
+    """run one check; a crash (any exception) is its own named FAIL and never stops the other checks.
+    Returns (rc, status) with status ok / FAIL / CRASH. (ROOT-CAUSE.md: the 53cce8d crash hid the BORROW results.)"""
+    try:
+        fault(name)
+        rc = fn(*args)
+    except Exception as e:  # noqa: BLE001 - a crash must be reported, never propagate
+        print("rules_scan: FAIL check %s CRASHED: %s: %s" % (name, type(e).__name__, e))
+        traceback.print_exc(file=sys.stderr)
+        return 2, "CRASH"
+    return rc, ("ok" if rc == 0 else "FAIL")
+
+
+COUNT_CHECKS = (("clone", count_check), ("helper-copy", helper_count_check), ("exceptions", exception_check),
+                ("test-panic", test_panic_check), ("neg_via_mul", neg_via_mul_check), ("combined", ruling_check),
+                ("borrow", borrow_check))
 
 
 def both_count_checks(update=False):
-    rc = max(count_check(update), helper_count_check(update), exception_check(update),
-             test_panic_check(update), neg_via_mul_check(update), ruling_check(update), borrow_check(update))
-    if rc == 0:
+    rc, status = 0, []
+    for name, fn in COUNT_CHECKS:
+        held = len(HELD)
+        r, st = guarded(name, fn, update)
+        if st == "ok" and len(HELD) > held:
+            st = "held"
+        rc = max(rc, r)
+        status.append("%s=%s" % (name, st))
+    print("rules_scan: checks: " + " ".join(status))
+    if rc == 0 and HELD:
+        print("rules_scan: no count rises vs %s, but %d count(s) are still ABOVE baseline (%s): NOT clean, NOT at baseline"
+              % (NO_RISE_REV, len(HELD), ", ".join(HELD)))
+    elif rc == 0:
         print("rules_scan: all count baselines hold")
     return rc
 
 
+def counts_at_rev(rev):
+    """{key: count} of the tree at rev (every count check, counted by this scanner), or None"""
+    import tempfile
+    if git("rev-parse", "--verify", "-q", rev + "^{commit}").returncode != 0:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        a = subprocess.run(["git", "-C", ROOT, "archive", rev], capture_output=True)
+        if a.returncode != 0:
+            return None
+        if subprocess.run(["tar", "-x", "-C", tmp], input=a.stdout, capture_output=True).returncode != 0:
+            return None
+        env = dict(os.environ, RULES_SCAN_ROOT=tmp, NO_CLONE_ROOT=tmp)
+        env.pop("RULES_SCAN_FAULT", None)
+        r = subprocess.run([sys.executable, "-B", os.path.abspath(__file__), "--print-all-counts"], env=env, capture_output=True, text=True)
+        try:
+            return json.loads(r.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            return None
+
+
 def main(argv):
+    global NO_RISE, NO_RISE_REV
+    if "--print-all-counts" in argv:
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()):
+            both_count_checks()
+        print(json.dumps(COUNTS, sort_keys=True))
+        return 0
+    if "--print-counts" not in argv:
+        print("rules_scan: zenith-float LIBRARY scanner (tools/rules_scan.py, root %s); the bound layer's own checks are "
+              "zenith-float-bound/tools/bound_layer_scan.sh" % ROOT)
+    if "--no-rise" in argv:
+        i = argv.index("--no-rise")
+        if "--count-only" not in argv or i + 1 >= len(argv):
+            print("rules_scan: FAIL usage: --count-only --no-rise REV")
+            return 2
+        NO_RISE_REV = argv[i + 1]
+        NO_RISE = counts_at_rev(NO_RISE_REV)
+        if NO_RISE is None:
+            print("rules_scan: FAIL --no-rise: could not count the tree at %s" % NO_RISE_REV)
+            return 2
     if "--list-test-panics" in argv:
         sites = test_panic_sites()
         for rel, n, label in sites:
@@ -1223,14 +1333,22 @@ def main(argv):
             print("rules_scan: git diff %s failed: %s" % (rng, r.stderr.strip()))
             return 2
         text, with_count = r.stdout, True
-    hits = scan_diff(text, mode, rev)
+    rc_scan, st = guarded("diff-scan", lambda: 0)
+    hits = []
+    if st == "ok":
+        try:
+            hits = scan_diff(text, mode, rev)
+        except Exception as e:  # noqa: BLE001
+            print("rules_scan: FAIL check diff-scan CRASHED: %s: %s" % (type(e).__name__, e))
+            traceback.print_exc(file=sys.stderr)
+            rc_scan = 2
     for path, n, label, content, key in hits:
         print("%s:%d [%s] %s  allow-key=%s" % (path, n, label, content[:120], key))
     by = collections.Counter(h[2] for h in hits)
     print("rules_scan: %d flagged %s" % (len(hits), dict(by)))
-    rc = 1 if hits else 0
+    rc = max(rc_scan, 1 if hits else 0)
     if with_count and not os.environ.get("RULES_SCAN_SKIP_COUNT"):
-        rc = max(rc, both_count_checks(), per_commit_check(rng))
+        rc = max(rc, both_count_checks(), guarded("per-commit", per_commit_check, rng)[0])
     return rc
 
 

@@ -60,3 +60,8 @@
   `#[path]`, one implementation). Native budgets are unchanged; under qemu-aarch64 they scale by `ZF_TIME_FACTOR`. Red at
   4c83e93 under qemu (ZF_TIME_FACTOR 6.50): Π(n,0) p=65536 2.4 s > 2 s, gamma(3/4) 63 s > 60 s, E_1001 72 s > 60 s raw
   asserts. Green: zenith-float-num --lib 463 passed / 0 failed and tier1_regressions 114 passed / 0 failed on qemu-aarch64.
+- tools/rules_scan.py (Jeff 2026-11-23 07:43 CT, ROOT-CAUSE.md): every count check runs on its own; a crashing check is
+  its own named FAIL (`rules_scan: FAIL check <name> CRASHED`) and every other check still reports
+  (`rules_scan: checks: clone=.. borrow=..`). The scanner names itself first (zenith-float LIBRARY scanner). New
+  `--count-only --no-rise REV` (pre-commit cleanup mode): a count above its baseline passes only when it does not rise
+  against REV, and the run says NOT at baseline; no baseline is written. Selftest red at ed094e7, green after.

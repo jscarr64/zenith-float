@@ -648,4 +648,46 @@ rm -f tools/ziv_shape_a_sites.txt tools/clone_helper_combined_baseline.txt; echo
 rm -f $ZH; rm -rf zenith-float-num/src/num; : > .github/CODEOWNERS; printf 'fn a() {}\n' > zenith-float-num/src/x.rs
 echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
 
+# ---- Jeff 2026-11-23 07:43 CT (ROOT-CAUSE.md): the library scanner names itself, a crashing check is its own named
+# FAIL while every other check still reports, and --no-rise REV lets a cleanup commit through only when no count rises ----
+git add -A; git commit -qm clean-end --allow-empty
+out="$(scan --count-only)" || fail "clean tree at baseline 0 failed: $out"
+echo "$out" | head -1 | grep -q '^rules_scan: zenith-float LIBRARY scanner (tools/rules_scan.py' || fail "no library banner first: $(echo "$out" | head -1)"
+CHECKS="clone helper-copy exceptions test-panic neg_via_mul combined borrow"
+echo "$out" | grep -q "^rules_scan: checks: clone=ok helper-copy=ok exceptions=ok test-panic=ok neg_via_mul=ok combined=ok borrow=ok$" \
+  || fail "no per-check summary line: $out"
+for chk in $CHECKS; do
+  out="$(RULES_SCAN_FAULT=$chk scan --count-only 2>&1)" && fail "a crash in check $chk exited 0: $out"
+  echo "$out" | grep -q "^rules_scan: FAIL check $chk CRASHED: RuntimeError: RULES_SCAN_FAULT" || fail "crash in $chk is not a named FAIL: $out"
+  for o in $CHECKS; do
+    want=ok; [ "$o" = "$chk" ] && want=CRASH
+    echo "$out" | grep '^rules_scan: checks: ' | grep -qw "$o=$want" || fail "fault in $chk: check $o did not report $want: $out"
+  done
+done
+for chk in diff-scan per-commit; do
+  out="$(RULES_SCAN_FAULT=$chk scan "$base..HEAD" 2>&1)" && fail "a crash in $chk exited 0: $out"
+  echo "$out" | grep -q "^rules_scan: FAIL check $chk CRASHED" || fail "crash in range $chk is not a named FAIL: $out"
+  echo "$out" | grep -q "^rules_scan: checks: clone=ok .* borrow=ok" || fail "range crash in $chk hid the count checks: $out"
+done
+# --no-rise REV: over baseline is allowed only while no count rises against REV (the hook's cleanup mode); crash = FAIL
+printf 'fn a(x: &S) { let y = x.clone(); let z = x.clone(); }\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm two
+scan --count-only >/dev/null && fail "2 clones over baseline 0 passed strict --count-only"
+out="$(scan --count-only --no-rise HEAD)" || fail "no rise vs HEAD (2 == 2) failed --no-rise: $out"
+echo "$out" | grep -q "clone count 2 is ABOVE the baseline 0 but does not rise vs HEAD (2)" || fail "no-rise pass not explained: $out"
+echo "$out" | grep -q "^rules_scan: checks: clone=held " || fail "held count not marked held: $out"
+echo "$out" | grep -q "NOT clean, NOT at baseline" || fail "--no-rise pass over baseline claimed clean: $out"
+echo "$out" | grep -q "all count baselines hold" && fail "--no-rise over baseline printed 'all count baselines hold': $out"
+printf 'fn a(x: &S) { let y = x.clone(); let z = x.clone(); let w = x.clone(); }\n' > zenith-float-num/src/x.rs
+out="$(scan --count-only --no-rise HEAD)" && fail "a third clone (rise 2 -> 3) passed --no-rise: $out"
+echo "$out" | grep -q "clone count 3 is ABOVE the baseline 0 and RISES vs HEAD (2)" || fail "rise not named: $out"
+printf 'fn a(x: &S) { let y = x.clone(); }\nfn t() { let _ = r.unwrap(); }\n' > zenith-float-num/src/x.rs
+mkdir -p zenith-float-num/tests; printf 'fn t() { let v = r.unwrap(); }\n' > zenith-float-num/tests/t.rs
+out="$(scan --count-only --no-rise HEAD)" && fail "a new test panic (0 -> 1) passed --no-rise: $out"
+echo "$out" | grep -q "test-panic site count 1 is ABOVE the baseline 0 and RISES vs HEAD (0)" || fail "test-panic rise not named: $out"
+rm -rf zenith-float-num/tests
+out="$(scan --count-only --no-rise HEAD)" || fail "1 clone (down from 2) failed --no-rise: $out"
+scan --count-only --no-rise no-such-rev >/dev/null && fail "--no-rise with an unknown rev passed"
+out="$(RULES_SCAN_FAULT=clone scan --count-only --no-rise HEAD 2>&1)" && fail "a crash under --no-rise passed: $out"
+git checkout -q -- . ; printf 'fn a() {}\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm clean-again
+
 echo "rules_scan selftest: ok"
