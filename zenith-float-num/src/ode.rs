@@ -780,7 +780,8 @@ where
     if !finite(&yp) {
         return Err(OdeError::InvalidArgument);
     }
-    let mut z_prev = y.clone();
+    // z_{m-1}; `None` while it is the start value y (read in place).
+    let mut z_prev_slot: Option<ExactNum> = None;
     let mut z = ExactNum::add_ref(y, &ExactNum::mul_ref(&h, &yp, wrk, rm), wrk, rm);
     if !finite(&z) {
         return Err(OdeError::InvalidArgument);
@@ -796,12 +797,12 @@ where
         if !finite(&fi) {
             return Err(OdeError::InvalidArgument);
         }
-        let z_next = ExactNum::add_ref(&z_prev, &ExactNum::mul_ref(&two_h, &fi, wrk, rm), wrk, rm);
+        let z_prev = z_prev_slot.as_ref().unwrap_or(y);
+        let z_next = ExactNum::add_ref(z_prev, &ExactNum::mul_ref(&two_h, &fi, wrk, rm), wrk, rm);
         if !finite(&z_next) {
             return Err(OdeError::InvalidArgument);
         }
-        z_prev = z;
-        z = z_next;
+        z_prev_slot = Some(core::mem::replace(&mut z, z_next));
     }
     let t_end = ExactNum::add_ref(t, span, wrk, rm);
     let f_end = f(&t_end, &z, wrk, rm, cc);
@@ -809,7 +810,8 @@ where
         return Err(OdeError::InvalidArgument);
     }
     // (z_prev + z + h f(t+H, z)) / 2
-    let sum = ExactNum::add_ref(&z_prev, &z, wrk, rm).add(
+    let z_prev = z_prev_slot.as_ref().unwrap_or(y);
+    let sum = ExactNum::add_ref(z_prev, &z, wrk, rm).add(
         &ExactNum::mul_ref(&h, &f_end, wrk, rm),
         wrk,
         rm,
