@@ -285,8 +285,8 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
                 let j = n as i32 - (m as i32 - k as i32) - 1;
                 let sj = s_at(&s, j + 1)?;
                 let sj1 = s_at(&s, j + 2)?;
-                let bk = sj.mul(&b[k + n], p, rm);
-                let bl = sj1.mul(&b[m - k - 1], p, rm);
+                let bk = ExactNum::mul_ref(sj, &b[k + n], p, rm);
+                let bl = ExactNum::mul_ref(sj1, &b[m - k - 1], p, rm);
                 let piece = bk.sub(&bl, p, rm);
                 if !finite(&piece) {
                     return None;
@@ -300,10 +300,10 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
         if 2 * k != m {
             let num = s_at(&s, j + 1)?;
             let den = s_at(&s, j + 2)?;
-            if den.is_zero() || !finite(&den) || !finite(&num) {
+            if den.is_zero() || !finite(den) || !finite(num) {
                 return None;
             }
-            let beta = num.div(&den, p, rm);
+            let beta = ExactNum::div_ref(num, den, p, rm);
             if !finite(&beta) {
                 return None;
             }
@@ -319,11 +319,11 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
     }
 }
 
-fn s_at(s: &[ExactNum], idx: i32) -> Option<ExactNum> {
+fn s_at(s: &[ExactNum], idx: i32) -> Option<&ExactNum> {
     if idx < 0 {
         return None;
     }
-    s.get(idx as usize).cloned()
+    s.get(idx as usize)
 }
 
 fn s_set(s: &mut [ExactNum], idx: i32, value: ExactNum) -> Option<()> {
