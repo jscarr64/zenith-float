@@ -74,11 +74,11 @@ fn c_abs(z: &ExactComplex, p: usize) -> ExactNum {
 #[path = "carlson_taylor.rs"]
 mod carlson_taylor;
 
-fn max_abs(a: &ExactNum, b: &ExactNum, _p: usize) -> ExactNum {
-    if matches!(a.compare(b), Some(c) if c >= 0) {
-        a.clone()
+fn max_abs(a: ExactNum, b: ExactNum, _p: usize) -> ExactNum {
+    if matches!(a.compare(&b), Some(c) if c >= 0) {
+        a
     } else {
-        b.clone()
+        b
     }
 }
 
@@ -92,7 +92,7 @@ fn max_dev3(
     let dx = c_abs(&ExactComplex::sub_ref(an, x, p, rm()), p);
     let dy = c_abs(&ExactComplex::sub_ref(an, y, p, rm()), p);
     let dz = c_abs(&ExactComplex::sub_ref(an, z, p, rm()), p);
-    max_abs(&max_abs(&dx, &dy, p), &dz, p)
+    max_abs(max_abs(dx, dy, p), dz, p)
 }
 
 fn any_nan(args: &[&ExactComplex]) -> bool {
@@ -265,11 +265,7 @@ fn carlson_rf(
             let yy = ExactComplex::sub_ref(&an, &y, p, rm()).div(&an, p, rm());
             let zz = ExactComplex::sub_ref(&an, &z, p, rm()).div(&an, p, rm());
             // FLINT rf.c:285-295 truncation bound; below 2^-p, or keep duplicating.
-            let eps = max_abs(
-                &max_abs(&c_abs(&xx, p), &c_abs(&yy, p), p),
-                &c_abs(&zz, p),
-                p,
-            );
+            let eps = max_abs(max_abs(c_abs(&xx, p), c_abs(&yy, p), p), c_abs(&zz, p), p);
             if forced || carlson_taylor::trunc_bound_below_prec(&eps, order, p) {
                 let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
                 let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
@@ -382,7 +378,7 @@ fn rd_trunc_ok(
     p: usize,
 ) -> bool {
     let dev = |v: &ExactComplex| c_abs(&ExactComplex::sub_ref(an, v, p, rm()).div(an, p, rm()), p);
-    let eps = max_abs(&max_abs(&dev(x), &dev(y), p), &dev(z), p);
+    let eps = max_abs(max_abs(dev(x), dev(y), p), dev(z), p);
     carlson_taylor::trunc_bound_below_prec(&eps, order, p)
 }
 
@@ -504,11 +500,20 @@ fn flush_cut_bias(z: ExactComplex, dest: usize) -> ExactComplex {
     ExactComplex::new(flush(z.re().clone()), flush(z.im().clone()))
 }
 
-fn min_num(a: &ExactNum, b: &ExactNum) -> ExactNum {
-    if matches!(a.compare(b), Some(c) if c <= 0) {
-        a.clone()
+fn min_num(a: ExactNum, b: ExactNum) -> ExactNum {
+    if matches!(a.compare(&b), Some(c) if c <= 0) {
+        a
     } else {
-        b.clone()
+        b
+    }
+}
+
+/// [`min_num`] of borrowed values: a reference to the smaller one.
+fn min_ref<'a>(a: &'a ExactNum, b: &'a ExactNum) -> &'a ExactNum {
+    if matches!(a.compare(b), Some(c) if c <= 0) {
+        a
+    } else {
+        b
     }
 }
 
@@ -539,8 +544,8 @@ fn rj_sing_dist(
     let tz = ExactComplex::add_ref(t, z, p, rm());
     let tp = ExactComplex::add_ref(t, pv, p, rm());
     min_num(
-        &min_num(&dist_to_neg_ray(&tx, p), &dist_to_neg_ray(&ty, p)),
-        &min_num(&dist_to_neg_ray(&tz, p), &c_abs(&tp, p)),
+        min_num(dist_to_neg_ray(&tx, p), dist_to_neg_ray(&ty, p)),
+        min_num(dist_to_neg_ray(&tz, p), c_abs(&tp, p)),
     )
 }
 
@@ -625,9 +630,9 @@ fn shift_n(
     // N_re = 1 + max(0, −Re of each argument), so Re(arg+N) ≥ 1.
     let zero = ExactNum::new(p);
     let one = ExactNum::from_u8(1, p);
-    let rx = min_num(&min_num(x.re(), y.re()), &min_num(z.re(), pv.re()));
-    let n_re = if rx.is_negative() { one.sub(&rx, p, rm()) } else { one };
-    let n_real = ExactComplex::from_real(n_re.clone(), p);
+    let rx = min_ref(min_ref(x.re(), y.re()), min_ref(z.re(), pv.re()));
+    let n_re = if rx.is_negative() { one.sub(rx, p, rm()) } else { one };
+    let n_real = ExactComplex::from_real(n_re, p);
     let half_im = ExactComplex::new(zero, ExactNum::from_u8(1, p).ldexp(-1, p, rm()));
     let n_up = ExactComplex::add_ref(&n_real, &half_im, p, rm());
     let n_dn = ExactComplex::sub_ref(&n_real, &half_im, p, rm());
@@ -853,11 +858,11 @@ fn rj_u2_rho(
 ) -> ExactNum {
     let t = lam.mul(&u.mul(u, p, rm()), p, rm());
     let rho_t = min_num(
-        &min_num(
-            &dist_to_neg_ray(&ExactComplex::add_ref(&t, y, p, rm()), p),
-            &dist_to_neg_ray(&ExactComplex::add_ref(&t, z, p, rm()), p),
+        min_num(
+            dist_to_neg_ray(&ExactComplex::add_ref(&t, y, p, rm()), p),
+            dist_to_neg_ray(&ExactComplex::add_ref(&t, z, p, rm()), p),
         ),
-        &c_abs(&ExactComplex::add_ref(&t, pv, p, rm()), p),
+        c_abs(&ExactComplex::add_ref(&t, pv, p, rm()), p),
     );
     let uabs = c_abs(u, p);
     let labs = c_abs(lam, p);
@@ -1070,8 +1075,8 @@ fn carlson_rj_dupe(
     let mut k = 0usize;
     loop {
         let dmax = max_abs(
-            &max_dev3(&am, &x, &y, &z, p),
-            &c_abs(&ExactComplex::sub_ref(&am, &pv, p, rm()), p),
+            max_dev3(&am, &x, &y, &z, p),
+            c_abs(&ExactComplex::sub_ref(&am, &pv, p, rm()), p),
             p,
         );
         // Quick stop: (dmax/|A|)^order < 2^{-p}. This is zf's rule, not
@@ -1102,8 +1107,8 @@ fn carlson_rj_dupe(
             .filter(|(xx, yy, zz, pp)| {
                 // FLINT rj.c:466-477 truncation bound; below 2^-p, or keep duplicating.
                 let eps = max_abs(
-                    &max_abs(&c_abs(xx, p), &c_abs(yy, p), p),
-                    &max_abs(&c_abs(zz, p), &c_abs(pp, p), p),
+                    max_abs(c_abs(xx, p), c_abs(yy, p), p),
+                    max_abs(c_abs(zz, p), c_abs(pp, p), p),
                     p,
                 );
                 forced || carlson_taylor::trunc_bound_below_prec(&eps, order, p)
@@ -1604,7 +1609,13 @@ impl ExactComplex {
         // m or n as well can overpower x. If 1−x² is off the cut, bump
         // m (and n) when their product term is on the cut.
         let x = if cut_a && is_real_c(self) { bump_real(self, dest) } else { self.clone() };
-        let mm = if !cut_a && cut_b && is_real_c(m) { bump_real(m, dest) } else { m.clone() };
+        let mm_bumped;
+        let mm: &ExactComplex = if !cut_a && cut_b && is_real_c(m) {
+            mm_bumped = bump_real(m, dest);
+            &mm_bumped
+        } else {
+            m
+        };
         let one = ExactComplex::one(wp);
         let x2 = x.mul(&x, wp, rm());
         let a = leave_cut(&one_minus(&x2, wp), dest);
@@ -1663,11 +1674,23 @@ impl ExactComplex {
         let on_cut = cut_a || cut_b;
         // R_F / R_D only: no R_C(1,1+e_m) cancellation, so no extra work.
         let wp = p;
-        let x = if cut_a && is_real_c(self) { bump_real(self, dest) } else { self.clone() };
-        let mm = if !cut_a && cut_b && is_real_c(m) { bump_real(m, dest) } else { m.clone() };
+        let x_bumped;
+        let x: &ExactComplex = if cut_a && is_real_c(self) {
+            x_bumped = bump_real(self, dest);
+            &x_bumped
+        } else {
+            self
+        };
+        let mm_bumped;
+        let mm: &ExactComplex = if !cut_a && cut_b && is_real_c(m) {
+            mm_bumped = bump_real(m, dest);
+            &mm_bumped
+        } else {
+            m
+        };
         let one = ExactComplex::one(wp);
         let three = c_u32(3, wp);
-        let x2 = x.mul(&x, wp, rm());
+        let x2 = x.mul(x, wp, rm());
         let a = leave_cut(&one_minus(&x2, wp), dest);
         let b = leave_cut(&one_minus(&mm.mul(&x2, wp, rm()), wp), dest);
         let rf = carlson_rf(&a, &b, &one, wp, cc);
@@ -1809,11 +1832,19 @@ impl ExactComplex {
         let on_cut = cut_a || cut_b || cut_n;
         let wp = if on_cut { rj_cut_work(dest, p) } else { p };
         let xb = if cut_a && is_real_c(x) { bump_real(x, dest) } else { x.clone() };
-        let mm = if !cut_a && cut_b && is_real_c(m) { bump_real(m, dest) } else { m.clone() };
-        let nn = if !cut_a && cut_n && is_real_c(self) {
-            bump_real(self, dest)
+        let mm_bumped;
+        let mm: &ExactComplex = if !cut_a && cut_b && is_real_c(m) {
+            mm_bumped = bump_real(m, dest);
+            &mm_bumped
         } else {
-            self.clone()
+            m
+        };
+        let nn_bumped;
+        let nn: &ExactComplex = if !cut_a && cut_n && is_real_c(self) {
+            nn_bumped = bump_real(self, dest);
+            &nn_bumped
+        } else {
+            self
         };
         let one = ExactComplex::one(wp);
         let three = c_u32(3, wp);
@@ -2186,13 +2217,13 @@ mod tests {
         let r = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
         for p in [64usize, 256, 1024] {
-            let one = ExactNum::from_u8(1, p);
-            let half = ExactNum::div_ref(&one, &ExactNum::from_u8(2, p), p, r);
+            let one = || ExactNum::from_u8(1, p);
+            let half = || ExactNum::div_ref(&one(), &ExactNum::from_u8(2, p), p, r);
             let cases: &[(&str, ExactComplex, ExactComplex)] = &[
                 (
                     "Pi(-2,1/2)",
                     ExactComplex::from_real(ExactNum::from_u8(2, p).neg(), p),
-                    ExactComplex::from_real(half.clone(), p),
+                    ExactComplex::from_real(half(), p),
                 ),
                 (
                     "Pi(1+i,-1)",
@@ -2207,7 +2238,7 @@ mod tests {
                 (
                     "Pi(1+i,1/2+i/2)",
                     ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
-                    ExactComplex::new(half.clone(), half.clone()),
+                    ExactComplex::new(half(), half()),
                 ),
             ];
             for (lab, n, m) in cases {
@@ -2226,7 +2257,7 @@ mod tests {
                 );
             }
             // Official remainder: m=2 stays off the AGM path.
-            let n = ExactComplex::new(one.clone(), one.clone());
+            let n = ExactComplex::new(one(), one());
             let m2 = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
             assert!(
                 !pi_complete_agm_applicable(&n, &m2, p),
@@ -2246,8 +2277,8 @@ mod tests {
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
         let four = ExactNum::from_u8(4, p);
-        let half = ExactNum::div_ref(&one, &two, p, r);
-        let qtr = ExactNum::div_ref(&one, &four, p, r);
+        let half = || ExactNum::div_ref(&one, &two, p, r);
+        let qtr = || ExactNum::div_ref(&one, &four, p, r);
         let centers: [(ExactComplex, ExactComplex, &str); 2] = [
             (
                 ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
@@ -2256,18 +2287,12 @@ mod tests {
             ),
             (
                 ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
-                ExactComplex::new(half.clone(), half.clone()),
+                ExactComplex::new(half(), half()),
                 "Pi(1+i,1/2+i/2)",
             ),
         ];
         // Offsets ±0, ±1/4, ±1/2 in Re and Im of n and (separately) of m.
-        let offs = [
-            ExactNum::from_u8(0, p),
-            qtr.clone(),
-            qtr.neg_ref(),
-            half.clone(),
-            half.neg_ref(),
-        ];
+        let offs = [ExactNum::from_u8(0, p), qtr(), qtr().neg(), half(), half().neg()];
         let mut checked = 0usize;
         for (n0, m0, lab) in &centers {
             for dre in &offs {
@@ -2333,8 +2358,8 @@ mod tests {
         let one = ExactNum::from_u8(1, p);
         let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
         let m1 = ExactComplex::from_real(ExactNum::from_u8(1, p).neg(), p);
-        let half = one.div(&ExactNum::from_u8(2, p), p, r);
-        let m2 = ExactComplex::new(half.clone(), half);
+        let half = || ExactNum::div_ref(&one, &ExactNum::from_u8(2, p), p, r);
+        let m2 = ExactComplex::new(half(), half());
         for (lab, m) in [("Pi(1+i,-1)", &m1), ("Pi(1+i,1/2+i/2)", &m2)] {
             let t0 = std::time::Instant::now();
             let got = n.elliptic_pi_complete(m, p, r, &mut cc);
