@@ -315,7 +315,7 @@ impl ExactNumNumber {
 
     /// A new number with the magnitude, storage and flags of `self` and the sign `s`; the result's
     /// limbs are written straight from `self`.
-    fn with_sign(&self, s: Sign) -> Result<Self, Error> {
+    pub(crate) fn with_sign(&self, s: Sign) -> Result<Self, Error> {
         let mut unused = false;
         let (m, _) = self.m.rounded_from(
             0,

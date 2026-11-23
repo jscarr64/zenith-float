@@ -219,8 +219,7 @@ impl ExactNumNumber {
     fn erfc_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // e^{-x^2} / (x √π) * ∑ (-1)^k (2k-1)!! / (2x^2)^k
         let x2 = self.mul(self, p, RoundingMode::None)?;
-        let mut nx2 = x2.clone()?;
-        nx2.set_sign(Sign::Neg);
+        let nx2 = x2.with_sign(Sign::Neg)?;
         let expm = nx2.exp(p, RoundingMode::None, cc)?;
         let pi = cc.pi_num(p, RoundingMode::None)?;
         let sqrt_pi = pi.sqrt(p, RoundingMode::None)?;
@@ -1380,14 +1379,12 @@ impl ExactNumNumber {
         // γ(1, x) = 1 − e^{−x} (DLMF 8.4.7); do not send this through the power series.
         let one = Self::from_word(1, p)?;
         if self.cmp(&one) == 0 {
-            let mut nx = x.clone()?;
-            nx.set_sign(Sign::Neg);
+            let nx = x.with_sign(Sign::Neg)?;
             return one.sub(&nx.exp(p, RoundingMode::None, cc)?, p, RoundingMode::None);
         }
         // γ(s,x) = x^s e^{-x} Σ_{k=0} x^k / (s)_{k+1}
         let xs = x.pow(self, p, RoundingMode::None, cc)?;
-        let mut nx = x.clone()?;
-        nx.set_sign(Sign::Neg);
+        let nx = x.with_sign(Sign::Neg)?;
         let exm = nx.exp(p, RoundingMode::None, cc)?;
         let pre = xs.mul(&exm, p, RoundingMode::None)?;
         let mut poch = self.clone()?;
@@ -2379,8 +2376,7 @@ impl ExactNumNumber {
                 return Err(Error::InvalidArgument);
             }
             let jp = self.bessel_jn_series(nu, p, cc, true)?;
-            let mut nneg = nu.clone()?;
-            nneg.set_sign(if nu.is_positive() { Sign::Neg } else { Sign::Pos });
+            let nneg = nu.with_sign(if nu.is_positive() { Sign::Neg } else { Sign::Pos })?;
             let jm = self.bessel_jn_series(&nneg, p, cc, true)?;
             let c = nupi.cos(p, RoundingMode::None, cc)?;
             jp.mul(&c, p, RoundingMode::None)?
@@ -2410,8 +2406,7 @@ impl ExactNumNumber {
         }
         if let Some(n) = as_i32_exact(nu, p)? {
             let an = Self::from_word(n.unsigned_abs() as Word, p)?;
-            let mut ax = self.clone()?;
-            ax.set_sign(Sign::Pos);
+            let ax = self.with_sign(Sign::Pos)?;
             // I_n(−x) = (−1)^n I_n(x): a flipped sign rounds I_n(|x|) in the mirrored direction.
             if self.is_negative() && n.unsigned_abs() % 2 == 1 {
                 ax.bessel_series(
@@ -2472,8 +2467,7 @@ impl ExactNumNumber {
     }
 
     fn bessel_k_at(&self, nu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        let mut nu = nu.clone()?;
-        nu.set_sign(Sign::Pos);
+        let nu = nu.with_sign(Sign::Pos)?;
         if let Some(n) = half_integer_n(&nu, p)? {
             return self.k_half_integer(n, p, cc);
         }
@@ -2934,8 +2928,7 @@ impl ExactNumNumber {
             sum = sum.add(&term, p, RoundingMode::None)?;
         }
         let pi = cc.pi_num(p, RoundingMode::None)?;
-        let mut nx = self.clone()?;
-        nx.set_sign(Sign::Neg);
+        let nx = self.with_sign(Sign::Neg)?;
         let pref = pi
             .div(&two_x, p, RoundingMode::None)?
             .sqrt(p, RoundingMode::None)?
@@ -3053,8 +3046,7 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
         let ip = self.bessel_i(mu, p, RoundingMode::None, cc)?;
-        let mut mneg = mu.clone()?;
-        mneg.set_sign(Sign::Neg);
+        let mneg = mu.with_sign(Sign::Neg)?;
         let im = self.bessel_i(&mneg, p, RoundingMode::None, cc)?;
         let two = Self::from_word(2, p)?;
         pi.div(&two, p, RoundingMode::None)?
@@ -3103,8 +3095,7 @@ impl ExactNumNumber {
         }
         let pi = cc.pi_num(p, RoundingMode::None)?;
         let two = Self::from_word(2, p)?;
-        let mut nx = self.clone()?;
-        nx.set_sign(Sign::Neg);
+        let nx = self.with_sign(Sign::Neg)?;
         let pref = pi
             .div(
                 &two.mul(self, p, RoundingMode::None)?,
@@ -8299,8 +8290,7 @@ mod tests {
         // γ(1, 2^30) = 1 − e^{−2^30} used to hit the 2^28 series-term cap.
         let x30 = pow2(30, 4096)?;
         let got = s1.gammainc_at(&x30, 4096, &mut cc)?;
-        let mut nx = x30.clone()?;
-        nx.set_sign(Sign::Neg);
+        let nx = x30.with_sign(Sign::Neg)?;
         let want = ExactNumNumber::from_word(1, 4096)?.sub(
             &nx.exp(4096, RoundingMode::None, &mut cc)?,
             4096,

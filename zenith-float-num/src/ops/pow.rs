@@ -178,8 +178,7 @@ impl ExactNumNumber {
 
         if crate::ops::exp_bb::use_exp_arf_bb(self, p) {
             // This helper always returns exp(|self|); the caller inverts when self < 0.
-            let mut mag = self.clone()?;
-            mag.set_sign(Sign::Pos);
+            let mag = self.with_sign(Sign::Pos)?;
             return crate::ops::exp_bb::exp_arf_bb(&mag, p);
         }
 
@@ -448,8 +447,7 @@ impl ExactNumNumber {
             return self.pow_exact_integer_underflow(mag, k * lead, p, rm);
         }
         let p = round_p(p);
-        let mut square = self.clone()?;
-        square.set_sign(Sign::Pos);
+        let mut square = self.with_sign(Sign::Pos)?;
         let mut exp = mag;
         let mut acc = ExactNumNumber::small_const(1);
         while exp > 1 {

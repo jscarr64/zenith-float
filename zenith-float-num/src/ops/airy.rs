@@ -122,8 +122,7 @@ impl ExactNumNumber {
     /// The Taylor pair is used while a smallest asymptotic term e^{-2ζ} is still
     /// above 2^{-p} (the same cutoff as `airy_all`).
     fn airy_prefer_series(&self, p: usize, cc: &mut Consts) -> Result<bool, Error> {
-        let mut ax = self.clone()?;
-        ax.set_sign(Sign::Pos);
+        let ax = self.with_sign(Sign::Pos)?;
         let xi = ax.airy_xi_scales(p, cc)?.0;
         if xi.exponent() >= 24 {
             return Ok(false);
@@ -182,8 +181,7 @@ impl ExactNumNumber {
         // The asymptotic expansions stop at a smallest term of about e^{-2ξ}, ξ = (2/3)|x|^{3/2};
         // use them only once that is below 2^-p. Otherwise sum the Taylor pair, whose terms
         // reach about e^{ξ} while Ai can be as small as e^{-ξ}: carry 2ξ·log₂e extra bits.
-        let mut ax = self.clone()?;
-        ax.set_sign(Sign::Pos);
+        let ax = self.with_sign(Sign::Pos)?;
         let xi = ax.airy_xi_scales(p, cc)?.0;
         let xi_bits = if xi.exponent() >= 24 { None } else { Some(xi.int_as_usize()?) };
         if let Some(xi_n) = xi_bits.filter(|&n| n < (p + 16) * 7 / 20) {
@@ -249,8 +247,7 @@ impl ExactNumNumber {
 
     fn airy_asymp_pos(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {
         let (xi, x14, x_m14, pi_m12) = self.airy_xi_scales(p, cc)?;
-        let mut nxi = xi.clone()?;
-        nxi.set_sign(Sign::Neg);
+        let nxi = xi.with_sign(Sign::Neg)?;
         let exp_m = nxi.exp(p, RoundingMode::None, cc)?;
         let exp_p = xi.exp(p, RoundingMode::None, cc)?;
         let (su, sv) = airy_uv_sums(&xi, p, true)?;
@@ -295,8 +292,7 @@ impl ExactNumNumber {
         let half = one_half_airy(p)?;
         match which {
             AiryWhich::Ai | AiryWhich::AiPrime => {
-                let mut nxi = xi.clone()?;
-                nxi.set_sign(Sign::Neg);
+                let nxi = xi.with_sign(Sign::Neg)?;
                 let exp_m = nxi.exp(p, RoundingMode::None, cc)?;
                 let (su, sv) = airy_uv_sums(&xi, p, true)?;
                 let val = if matches!(which, AiryWhich::Ai) {
@@ -336,8 +332,7 @@ impl ExactNumNumber {
 
     #[allow(clippy::type_complexity)]
     fn airy_asymp_neg(&self, p: usize, cc: &mut Consts) -> Result<([Self; 4], [Self; 4]), Error> {
-        let mut z = self.clone()?;
-        z.set_sign(Sign::Pos);
+        let z = self.with_sign(Sign::Pos)?;
         let (zeta_p, z14, z_m14, pi_m12) = z.airy_xi_scales(p, cc)?;
         // The phase χ = ζ + π/4 enters sin/cos with an absolute error, so ζ = (2/3) z^{3/2} and
         // π carry exponent(ζ) extra bits (as the trig reduction does): at p bits alone ζ ~ 2^1500

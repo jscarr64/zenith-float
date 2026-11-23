@@ -1091,8 +1091,7 @@ impl ExactNumNumber {
         if n == 0 {
             return Err(Error::InvalidArgument);
         }
-        let mut x = self.clone()?;
-        x.set_sign(Sign::Pos);
+        let mut x = self.with_sign(Sign::Pos)?;
         x.set_inexact(false);
 
         let q_log = self
@@ -1308,8 +1307,7 @@ impl ExactNumNumber {
         // `x`'s sign before `mul_base_pow` so directed Up/Down (toward ±∞)
         // match that contract. Comparing a positive v to |x| with the same
         // `rm` would flip Up and Down on negatives.
-        let mut y = yint.clone()?;
-        y.set_sign(x.sign());
+        let y = yint.with_sign(x.sign())?;
         match y.mul_base_pow(base, scale, p, rm) {
             Ok(v) => Ok(v.cmp(x) == 0 && v.sign() == x.sign()),
             // A near-overflow interval can exhaust retries or bump past
