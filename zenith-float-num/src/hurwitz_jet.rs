@@ -377,7 +377,7 @@ pub(crate) fn zeta_prime_minus_one(p: usize, cc: &mut Consts) -> ExactNum {
     {
         if let Ok(g) = ZETA_PRIME_M1.read() {
             if let Some(v) = g.as_ref().filter(|v| v.precision().unwrap_or(0) >= p) {
-                return cached_round(v.clone(), p);
+                return v.rounded_to(p, RoundingMode::ToEven);
             }
         }
         // Extra words cover the slightly wider `work_p` used by G(-1/2)

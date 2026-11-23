@@ -588,7 +588,7 @@ fn cached_const(
                 .as_ref()
                 .filter(|v| v.precision().unwrap_or(0) >= p + WORD_BIT_SIZE)
             {
-                return round(v.clone());
+                return v.rounded_to(p, RoundingMode::ToEven);
             }
         }
         let v = f(p + WORD_BIT_SIZE, cc);
@@ -1487,10 +1487,11 @@ fn kelvin_eval_1061(
             let z = kelvin_j_arg(&xc, wp, cc);
             let n = ExactComplex::from_real(nc, wp);
             let j = z.bessel_j_nu(&n, wp, RoundingMode::None, cc);
+            let (j_re, j_im) = j.into_parts();
             if matches!(which, KelvinWhich::Ber) {
-                j.re().clone()
+                j_re
             } else {
-                j.im().clone()
+                j_im
             }
         }
         KelvinWhich::Ker | KelvinWhich::Kei => {
@@ -1507,10 +1508,11 @@ fn kelvin_eval_1061(
                 .mul(&half_pi, wp, RoundingMode::None)
                 .exp(wp, RoundingMode::None, cc);
             let w = phase.mul(&k, wp, RoundingMode::None);
+            let (w_re, w_im) = w.into_parts();
             if matches!(which, KelvinWhich::Ker) {
-                w.re().clone()
+                w_re
             } else {
-                w.im().clone()
+                w_im
             }
         }
     }
@@ -1590,15 +1592,15 @@ impl ExactNum {
         if self.is_inf() {
             return plus_zero(p);
         }
-        let x = self.clone();
+        let x = self;
         ziv_round(p, rm, |wp| {
             if !x.is_negative() {
                 if !x.is_zero() {
-                    if let Some(r) = scorer_watson(&x, false, wp, cc) {
+                    if let Some(r) = scorer_watson(x, false, wp, cc) {
                         return Some(r);
                     }
                 }
-                return scorer_taylor(&x, false, wp, cc);
+                return scorer_taylor(x, false, wp, cc);
             }
             let y = x.neg_ref();
             match scorer_watson(&y, true, wp, cc) {
@@ -1608,7 +1610,7 @@ impl ExactNum {
                     let eh = h.exponent()? - gh - 1;
                     Some(diff_good(&bi, eb, &h, eh, wp))
                 }
-                None => scorer_taylor(&x, false, wp, cc),
+                None => scorer_taylor(x, false, wp, cc),
             }
         })
     }
@@ -1652,7 +1654,7 @@ impl ExactNum {
                 return b;
             }
         }
-        let x = self.clone();
+        let x = self;
         ziv_round(p, rm, |wp| {
             if !x.is_positive() {
                 if !x.is_zero() {
@@ -1660,9 +1662,9 @@ impl ExactNum {
                         return Some(r);
                     }
                 }
-                return scorer_taylor(&x, true, wp, cc);
+                return scorer_taylor(x, true, wp, cc);
             }
-            match scorer_watson(&x, false, wp, cc) {
+            match scorer_watson(x, false, wp, cc) {
                 Some((g, gg)) => {
                     let bi = x.bi(wp, RoundingMode::None, cc);
                     if !finite(&bi) {
@@ -1672,7 +1674,7 @@ impl ExactNum {
                     let eg = g.exponent()? - gg - 1;
                     Some(diff_good(&bi, eb, &g, eg, wp))
                 }
-                None => scorer_taylor(&x, true, wp, cc),
+                None => scorer_taylor(x, true, wp, cc),
             }
         })
     }
@@ -1709,12 +1711,14 @@ impl ExactNum {
         if let Some(v) = kelvin_edge(self, nu, KelvinWhich::Ber, p, rm, cc) {
             return v;
         }
-        let (arg, flip) = if self.is_negative() {
-            (self.abs_ref(), is_odd_integer(nu))
+        let arg_abs;
+        let (arg, flip): (&Self, bool) = if self.is_negative() {
+            arg_abs = self.abs_ref();
+            (&arg_abs, is_odd_integer(nu))
         } else {
-            (self.clone(), false)
+            (self, false)
         };
-        let y = kelvin_positive(&arg, nu, KelvinWhich::Ber, p, rm, cc);
+        let y = kelvin_positive(arg, nu, KelvinWhich::Ber, p, rm, cc);
         if flip {
             y.neg()
         } else {
@@ -1751,12 +1755,14 @@ impl ExactNum {
         if let Some(v) = kelvin_edge(self, nu, KelvinWhich::Bei, p, rm, cc) {
             return v;
         }
-        let (arg, flip) = if self.is_negative() {
-            (self.abs_ref(), is_odd_integer(nu))
+        let arg_abs;
+        let (arg, flip): (&Self, bool) = if self.is_negative() {
+            arg_abs = self.abs_ref();
+            (&arg_abs, is_odd_integer(nu))
         } else {
-            (self.clone(), false)
+            (self, false)
         };
-        let y = kelvin_positive(&arg, nu, KelvinWhich::Bei, p, rm, cc);
+        let y = kelvin_positive(arg, nu, KelvinWhich::Bei, p, rm, cc);
         if flip {
             y.neg()
         } else {
@@ -2528,13 +2534,15 @@ impl ExactNum {
     fn polylog_series(z: &ExactNum, n: usize, p: usize) -> ExactNum {
         let wrk = work_p(p);
         let nr = RoundingMode::None;
-        let mut xk = z.clone();
+        // z^k; `None` while k = 1 (z read in place).
+        let mut xk_slot: Option<ExactNum> = None;
         let mut sum = ExactNum::new(wrk);
         let mut last_e = None;
         let mut k: u64 = 1;
         loop {
             let den = ExactNum::from_u64(k, wrk).powsi(n as i64, wrk, nr);
-            let term = ExactNum::div_ref(&xk, &den, wrk, nr);
+            let xk = xk_slot.as_ref().unwrap_or(z);
+            let term = ExactNum::div_ref(xk, &den, wrk, nr);
             sum = sum.add(&term, wrk, nr);
             if under_word(&term, p) {
                 break;
@@ -2545,7 +2553,7 @@ impl ExactNum {
                 break;
             }
             last_e = e;
-            xk = xk.mul(z, wrk, nr);
+            xk_slot = Some(ExactNum::mul_ref(xk, z, wrk, nr));
             k = k.saturating_add(1);
         }
         sum
