@@ -36,20 +36,24 @@ fn log2_mag(z: &ExactComplex) -> i128 {
 const REQUIRED_DECREASE: i128 = 42_949_672;
 
 /// Arb `acb_hypgeom_pfq_choose_n` specialised to `{}_0F_1(;a;z)`
-/// (upper none, lower `(a,1)`). `n_max = 50 + 10 prec`.
+/// (upper none, lower `(a,1)`), without Arb's `n_max = 50 + 10 prec`: the walk runs until the terms have
+/// fallen 2^-(prec+4) below their peak. Arb's Bessel I/J switch to an asymptotic expansion for large |z| (and past
+/// `n_max` its `pfq_direct` tail bound is infinite, never a silent truncation); here the `I_ν` series is used
+/// for every Re z > 0, and a capped walk returned `n_best = 1`, i.e. only the first term (I_ν(20000), 7b972c3).
+/// `None` only if the index would pass `u32::MAX` (the terms' index type).
 ///
 /// The term-size walk is in `Q32` fixed point (`crate::common::fixlog`), so the choice is the same on every
 /// target. The parts of `a` enter as signed powers of two ([`rough_mid`]), as the earlier `double` walk had them;
 /// Arb uses the `double` midpoint itself. It only sets the number of terms.
-fn choose_n_0f1(a: &ExactComplex, z: &ExactComplex, prec: usize) -> usize {
+fn choose_n_0f1(a: &ExactComplex, z: &ExactComplex, prec: usize) -> Option<usize> {
     if z.re().is_zero() && z.im().is_zero() {
-        return 1;
+        return Some(1);
     }
     let log2_z = log2_mag(z);
     let rm = RoundingMode::None;
     let are = rough_mid(a.re());
     let aim2 = rough_mid(a.im()).sqr(64, rm);
-    let n_max = (50 + 10 * prec).min(usize::MAX / 2);
+    let n_max = u32::MAX as usize;
     let n_skip = 1usize;
     let n_min = 1usize;
     let target = (prec as i128).saturating_add(4).saturating_mul(ONE);
@@ -57,7 +61,6 @@ fn choose_n_0f1(a: &ExactComplex, z: &ExactComplex, prec: usize) -> usize {
     let mut term_max: i128 = 0;
     let mut accuracy_best: i128 = 0;
     let mut n_best = n_skip;
-    let mut success = false;
     let mut n = n_skip;
     while n < n_max {
         // t = 1 / (|a+n-1|^2 |n|^2); increase = 0.5 log2(t) + log2|z|
@@ -84,16 +87,11 @@ fn choose_n_0f1(a: &ExactComplex, z: &ExactComplex, prec: usize) -> usize {
             accuracy_best = accuracy;
         }
         if accuracy_best > target {
-            success = true;
-            break;
+            return Some(n_best);
         }
         n += 1;
     }
-    if success {
-        n_best
-    } else {
-        n_best.max(n_min).min(n_max)
-    }
+    None
 }
 
 /// A rough midpoint for [`choose_n_0f1`]: `sign(x) 2^floor(log2|x|)` for `floor(log2|x|)` in `[-1022, 63]`,
@@ -204,7 +202,9 @@ pub(crate) fn hypgeom_0f1(a: &ExactComplex, z: &ExactComplex, p: usize) -> Exact
     if z.re().is_zero() && z.im().is_zero() {
         return one(p);
     }
-    let n = choose_n_0f1(a, z, p);
+    let Some(n) = choose_n_0f1(a, z, p) else {
+        return crate::complex_special::nan_pair(crate::Error::PrecisionRetryExhausted);
+    };
     if n < 4 || p < 128 {
         return sum_forward(a, z, n.max(1), p).0;
     }
@@ -255,7 +255,7 @@ mod tests {
                 RoundingMode::ToEven,
             );
             let w = ExactComplex::new(ExactNum::new(p), half.re().clone().neg()); // -i/2
-            let n = choose_n_0f1(&two, &w, p);
+            let n = choose_n_0f1(&two, &w, p).ok_or(Error::PrecisionRetryExhausted)?;
             let fwd = sum_forward(&two, &w, n.max(1), p).0;
             // force the bsplit path even at p=64 by calling bsplit+close for p>=4
             let bs = if n >= 4 {
@@ -269,6 +269,34 @@ mod tests {
             assert!(near(&bs, &fwd, p, 8), "p={p} bsplit vs forward");
         }
         let _ = Consts::new()?;
+        Ok(())
+    }
+
+    /// `{}_0F_1(;3/2;x^2/4) = \sinh(x)/x` at x = 20000 (I_{1/2}(20000), complex_bessel_mpmath): the terms
+    /// grow until n ~ x/2 = 10^4, past Arb's `n_max = 50 + 10 prec`. Capping the walk there summed only
+    /// the first term (7b972c3); the walk now runs until the terms have decreased by 2^-(prec+4).
+    #[test]
+    fn zf_0f1_large_z_runs_to_convergence() -> Result<(), Error> {
+        let p = 128;
+        let mut cc = Consts::new()?;
+        let x = ExactNum::from_u32(20_000, p);
+        let a = ExactComplex::from_real(
+            ExactNum::from_u8(3, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None),
+            p,
+        );
+        let w = ExactComplex::from_real(ExactNum::from_u32(100_000_000, p), p);
+        let got = hypgeom_0f1(&a, &w, p + 64);
+        let want = ExactComplex::from_real(
+            x.sinh(p + 64, RoundingMode::None, &mut cc)
+                .div(&x, p + 64, RoundingMode::None),
+            p + 64,
+        );
+        assert!(
+            near(&got, &want, p, 8),
+            "0F1(;3/2;1e8): got {:?}, want {:?}",
+            got.re(),
+            want.re()
+        );
         Ok(())
     }
 }

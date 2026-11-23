@@ -35,3 +35,9 @@
   ln(Γ(z)) imaginary parts (1.5405…, −0.6726…). Complex ln Γ is Arb's continuous log-gamma since Jeff's 2026-11-18
   12:14 CT ruling; the code matches FLINT 0.9.0 `acb_lgamma` (−4.7427…, 62.1593…; mpmath `loggamma` agrees), 2πk from
   the old values, so "−2 / −1 correct bits" was a stale reference, not a 1–2 bit error. Test-only change.
+- Complex Bessel I_ν / K_ν at |z| = 20000 (complex_bessel_mpmath, 12 rows at p = 128 and 256): the Arb 0F1 term-count
+  walk (`choose_n_0f1`, 7b972c3) stopped at Arb's `n_max = 50 + 10 prec` and then returned `n_best = 1`, so the series
+  was the first term only (I_{1/2}(20000) = 112.8 instead of 2.19e8683). The walk now runs until the terms have
+  decreased 2^-(prec+4) (no cap; NaN PrecisionRetryExhausted only past u32::MAX terms), as the "Caps" rulings require.
+  Values match FLINT 0.9.0 `bessel_i` / `bessel_k` and the mpmath refs. New unit test zf_0f1_large_z_runs_to_convergence
+  (0F1(;3/2;10^8) = sinh(20000)/20000; red: got 1).
