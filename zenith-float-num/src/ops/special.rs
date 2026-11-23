@@ -347,12 +347,13 @@ impl ExactNumNumber {
             let mut ex = x.clone()?;
             ex.set_inexact(false);
             let num = exact_product(1, n - 1)?;
-            let mut den = ex.clone()?;
+            // den = ex (ex+1) ⋯ (ex+n−1); `None` = the product so far is `ex` itself.
+            let mut den: Option<Self> = None;
             for k in 1..n {
                 let t = exact_add_num(&ex, &Self::from_word(k as Word, WORD_BIT_SIZE)?)?;
-                den = exact_mul_num(&den, &t)?;
+                den = Some(exact_mul_num(den.as_ref().unwrap_or(&ex), &t)?);
             }
-            let mut r = num.div(&den, p, rm)?;
+            let mut r = num.div(den.as_ref().unwrap_or(&ex), p, rm)?;
             r.set_inexact(r.inexact() | inexact);
             return Ok(r);
         }
@@ -1334,7 +1335,7 @@ impl ExactNumNumber {
         let one = Self::from_word(1, WORD_BIT_SIZE)?;
         let sm1 = self.sub(&one, p, nr)?;
         let mut term = Self::from_word(1, p)?;
-        let mut sum = term.clone()?;
+        let mut sum = Self::from_word(1, p)?;
         let mut a = sm1.clone()?;
         let mut done = false;
         let n_max = 4 * p + 64;
@@ -6324,10 +6325,16 @@ fn gamma_arg_too_close_to_nonpos_int(z: &ExactNumNumber, q: usize) -> Result<boo
     }
     let fl = z.floor_ref()?;
     let one = N::from_word(1, q)?;
-    let ceil = if z.is_int() { fl.clone()? } else { fl.add(&one, q, RoundingMode::None)? };
+    let fl_up;
+    let ceil: &N = if z.is_int() {
+        &fl
+    } else {
+        fl_up = fl.add(&one, q, RoundingMode::None)?;
+        &fl_up
+    };
     let d_fl = z.sub(&fl, q, RoundingMode::None)?.abs()?;
     let d_ce = ceil.sub(z, q, RoundingMode::None)?.abs()?;
-    let (d, n) = if d_fl.cmp(&d_ce) <= 0 { (d_fl, fl) } else { (d_ce, ceil) };
+    let (d, n) = if d_fl.cmp(&d_ce) <= 0 { (d_fl, &fl) } else { (d_ce, ceil) };
     let close = d.is_zero() || d.exponent() <= -80;
     Ok(close && !n.is_positive())
 }

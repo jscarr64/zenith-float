@@ -1443,8 +1443,9 @@ impl ExactComplex {
     pub(crate) fn erf_of_ball(w: &CB, q: usize, cc: &mut Consts) -> Option<CB> {
         let c = ExactComplex::new(w.re.v.clone(), w.im.v.clone());
         let v = c.erf(q, RoundingMode::None, cc);
-        let re = RB::rounded(v.re().clone(), q)?;
-        let im = RB::rounded(v.im().clone(), q)?;
+        let (v_re, v_im) = v.into_parts();
+        let re = RB::rounded(v_re, q)?;
+        let im = RB::rounded(v_im, q)?;
         let d = w.re.r.add(w.im.r);
         if d.is_zero() {
             return Some(CB::from_parts(re, im));
@@ -1455,8 +1456,9 @@ impl ExactComplex {
             return None;
         }
         // e^{-Re w²} = e^{im² − re²}, bounded from a 64-bit ball.
-        let wr = RB::exact(c.re().clone());
-        let wi = RB::exact(c.im().clone());
+        let (c_re, c_im) = c.into_parts();
+        let wr = RB::exact(c_re);
+        let wi = RB::exact(c_im);
         let g = wi.sqr(64)?.sub(&wr.sqr(64)?, 64)?;
         let eg = g.exp(64, cc)?.abs_ub();
         Some(CB::from_parts(re, im).widen(eg.mul(d).mul_pow2(2)))
