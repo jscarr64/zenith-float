@@ -9,13 +9,13 @@
 - Complex mul forms the four products exactly and rounds each part once; when an exact product of nonzero operands
   underflows, the directed modes keep the per-product rounding so the least subnormal is reached. Complex exp/sin/cos
   round each part through the Ziv loop (ZF-18).
-- Gamma at p ≥ 2048 scales the Stirling term count with p so it stays under the shift cap (BROKEN: 361 of 385 r.gamma
-  rows at p ≥ 2048 pass; 24 still return NaN(PrecisionRetryExhausted), and the Γ family has 1,047 of 9,057 rows still
-  failing, deferred to Tier 2); sin/cos/tan carry the full argument exponent in π with no cap, the width limited only by
-  representability and allocation (ZF-16 BROKEN: 222 of 588 rows still fail, in rem_pi and Clausen, deferred);
-  atan/atan2 invert directed rounding before negating π (ZF-17, ZF-36).
-- Jacobi: K reduction carries the argument exponent bits with no cap (ZF-60 BROKEN: 317 of 590 rows still fail, in cd,
-  dc, sn, ns, dn; deferred) and am keeps its 2π quasi-period (ZF-23); arccn for
+- Gamma at p ≥ 2048 scales the Stirling term count with p (FIXED: 385 of 385 r.gamma rows at p ≥ 2048 and 9,057 of
+  9,057 Γ-family rows, T1-gamma-stirling-cap, correct at the Tier 1 close); sin/cos/tan carry the full argument exponent
+  in π with no cap, the width limited only by representability and allocation, and rem_pi is correctly rounded to p
+  (ZF-16 FIXED in 902514c: 588 of 588 rows correct); atan/atan2 invert directed rounding before negating π (ZF-17,
+  ZF-36).
+- Jacobi: K reduction carries the argument exponent bits with no cap and certifies only the bits the AGM evaluation
+  keeps (ZF-60 FIXED in 0a29258: 590 of 590 rows correct) and am keeps its 2π quasi-period (ZF-23); arccn for
   x < 0 (ZF-62); m = 1 far out of range (ZF-59).
 - Special values: distribution zero scale/shape is NaN (ZF-45); bessel_y at x = 0 (ZF-26); elliptic_pi at x = ±1
   (ZF-34); gammainc_upper at s = 0 is E1(x) (ZF-61); barnes_g at non-positive integers and tiny |z| (ZF-77, ZF-74);
@@ -25,6 +25,9 @@
   (ZF-55, 5 of 5 rows); precision-limit overflows return errors (C2).
 - Build: the `random` feature needs std (E2).
 - Grid digests complex_mul_div, trig_hyperbolic and jacobi re-pinned for these output changes (jacobi held count 24 -> 0).
+- Status update (Spence PR #40 M1, 2026-11-22): the BROKEN/deferred notes above were written at 2ca3977 and are
+  superseded. Tier 1 closed with 0 wrong: 29,227 official-correct + 118 alt-correct, 0 wrong/unjudged/timeout/crash
+  (at 8d8174d, an ancestor of e6f439f; land39 `final/t1-close-8d8174d/`, COUNTS.txt sha256 dff2acaf…9e19, families from combined.tsv).
 - No new `.clone()`: the Tier 1 sites build the value fresh or use a borrowing op, so the clone baseline does not rise.
 - 2F1 outside the unit disc via DLMF 15.8.8; z = 1 with no finite limit is ±Inf (ZF-44, ZF-67). Terminating 2F1 is summed
   exactly by binary splitting at any degree and rounded once (ZF-70); size limit removed per Jeff's order 2026-11-15;

@@ -77,15 +77,31 @@ check_B() {
 # commits), compared case-insensitively. Commits made before 2026-10-30 12:30 PM CDT (committer date; the imported zb
 # history) are exempt: they predate the rule and are never rewritten. A missing, empty, unknown, extra-word, repeated or
 # not-in-the-last-paragraph trailer fails.
+# A commit with no trailer passes when docs/agent-trailer-map.tsv AT THE CHECKED REF lists it (Jeff 2026-11-22 8:33 PM CT,
+# PR #40 B6: no history rewrite; the committed map stands in for the trailer): one `SHA<TAB>agent<TAB>...` row per commit,
+# agent a name from the list below or `unknown` (recorded honestly when no record attributes it). Any map row whose SHA
+# is not 40 hex digits or whose agent is not such a name fails the row, so the map cannot carry a bad attribution.
 AGENTS=" paul spence dana cassie rusty eugene harper laney tessa casey grok jeff vera "
 AGENT_CUTOFF=1793381400 # 2026-10-30 12:30:00 CDT
+AGENT_MAP=docs/agent-trailer-map.tsv
 check_P() {
-  local c ct v n=0
+  local c ct v n=0 map ms ma
+  map=$(git show "$1:$AGENT_MAP" 2> /dev/null | grep -v '^#') || map=
+  while IFS=$'\t' read -r ms ma _; do
+    [ -n "$ms$ma" ] || continue
+    if ! [[ "$ms" =~ ^[0-9a-f]{40}$ ]] || { [ "${ma,,}" != unknown ] && [[ "$AGENTS" != *" ${ma,,} "* ]]; }; then
+      echo "  P: $AGENT_MAP row '$ms' agent '$ma' is not a 40-hex SHA with a ghact agent name or 'unknown'"
+      return 1
+    fi
+  done <<< "$map"
   while IFS=$'\t' read -r c ct v; do
     [ -n "$c" ] || continue
     [ "$ct" -ge "$AGENT_CUTOFF" ] || continue
     n=$((n + 1))
     v=${v,,}
+    if [ -z "$v" ] && printf '%s\n' "$map" | grep -q "^$c"$'\t'; then
+      continue
+    fi
     if [ -z "$v" ] || [[ "$AGENTS" != *" $v "* ]]; then
       echo "  P: $c Agent trailer '${v}' is not one ghact agent name"
       return 1
@@ -306,6 +322,20 @@ plant_P_empty() { plant_P_msg $'fold-pr1 plant: empty agent\n\nAgent:'; }
 plant_P_word() { plant_P_msg $'fold-pr1 plant: trailing word\n\nAgent: paul extra'; }
 plant_P_notlast() { plant_P_msg $'fold-pr1 plant: trailer not in the last paragraph\n\nAgent: paul\n\nA later paragraph of prose.'; }
 plant_P_two() { plant_P_msg $'fold-pr1 plant: two agents\n\nAgent: paul\nAgent: rusty'; }
+# The map is honored only with valid rows: a planted commit (itself correctly trailed) that rewrites one map row's agent
+# to a non-agent name must be DETECTED.
+plant_P_map() {
+  local blob tree c idx rc
+  git cat-file -e "$HEAD_SHA:$AGENT_MAP" 2> /dev/null || return 1
+  blob=$(git show "$HEAD_SHA:$AGENT_MAP" | awk -F'\t' -v OFS='\t' '!/^#/ && !d {$2 = "nobody"; d = 1} {print}' | git hash-object -w --stdin) || return 1
+  idx=$(mktemp "$work/idx.XXXXXX") || return 1
+  GIT_INDEX_FILE=$idx git read-tree "$HEAD_SHA" && GIT_INDEX_FILE=$idx git update-index --cacheinfo "100644,$blob,$AGENT_MAP" \
+    && tree=$(GIT_INDEX_FILE=$idx git write-tree) || { rm -f "$idx"; return 1; }
+  rm -f "$idx"
+  c=$(git commit-tree "$tree" -p "$HEAD_SHA" -m $'fold-pr1 plant: map row with a non-agent name\n\nAgent: paul') || return 1
+  check_P "$c"; rc=$?
+  return $rc
+}
 B=build; [ "$NO_BUILD" = 1 ] && B=nobuild
 
 row A check_A "$ZB_TIP" -- check_A 0000000000000000000000000000000000000001
@@ -324,6 +354,7 @@ row P-EMPTY check_P "$HEAD_SHA" -- plant_P_empty
 row P-WORD check_P "$HEAD_SHA" -- plant_P_word
 row P-NOTLAST check_P "$HEAD_SHA" -- plant_P_notlast
 row P-TWO check_P "$HEAD_SHA" -- plant_P_two
+row P-MAP check_P "$HEAD_SHA" -- plant_P_map
 row Q check_Q "$real" -- plant_new_file "$PFX/rust-toolchain.toml" check_Q "$plant"
 row R check_R "$real" -- plant_file .github/CODEOWNERS "\\|^/$PFX/tools/digests.sh|d" check_R "$plant"
 row S check_S "$real" -- plant_add_line Cargo.lock $'\n[[package]]\nname = "fold-pr1-plant"\nversion = "0.0.1"' check_S "$plant"
