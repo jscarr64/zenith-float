@@ -125,8 +125,6 @@ fn is_odd_int(n: &ExactNum, p: usize) -> bool {
     !ExactNum::div_ref(n, &two(p), p, N).is_int()
 }
 
-/// \(1/\Gamma(z)\) is zero at a non-positive integer; otherwise \(\Gamma(z)\).
-
 #[cfg(test)]
 mod aws_test_hooks {
     use core::cell::Cell;
@@ -190,6 +188,7 @@ mod aws_test_hooks {
     }
 }
 
+/// \(1/\Gamma(z)\) is zero at a non-positive integer; otherwise \(\Gamma(z)\).
 fn gamma_or_pole(z: &ExactNum, p: usize, cc: &mut Consts) -> Option<ExactNum> {
     #[cfg(test)]
     aws_test_hooks::note_gamma();
@@ -3917,12 +3916,13 @@ mod aws_bounds {
 
     /// p=2^59 is a valid public precision (below MAX=2^60-1), but a
     /// work_p(p)+WORD mantissa cannot be allocated. The z=0 closed forms
-    /// must refuse immediately, the same way struve_h already does, and
-    /// must not call Consts::pi at that width (the Chudnovsky cache would
-    /// walk kext ≈ wrk/47 terms and miss ZFS_WALL). The MAX_PRECISION
-    /// rows already return InvalidArgument because pi's public entry
-    /// rejects a working width above the ceiling; this locks the 2^59
-    /// contract too.
+    /// must refuse immediately and must not call Consts::pi at that width
+    /// (the Chudnovsky cache would walk kext ≈ wrk/47 terms and miss
+    /// ZFS_WALL). Since bcbb599 (Jeff 2026-11-18 3:21 PM CT: fail fast with
+    /// MemoryAllocation on unallocatable dests) that refusal is
+    /// MemoryAllocation from the dest reserve probe, for all three, at
+    /// 2^59 and at MAX_PRECISION alike (the probe runs before pi's own
+    /// ceiling check, which used to give InvalidArgument at MAX).
     #[test]
     fn aws_anger_weber_p_2_59_hits_precision_limit() -> Result<(), Error> {
         use std::time::Instant;
@@ -3934,9 +3934,10 @@ mod aws_bounds {
             let h = z.struve_h(&nu, p, RoundingMode::ToEven, &mut cc);
             let j = z.anger_j(&nu, p, RoundingMode::ToEven, &mut cc);
             let e = z.weber_e(&nu, p, RoundingMode::ToEven, &mut cc);
-            assert_eq!(h.err(), Some(Error::InvalidArgument), "struve_h p={p}");
-            assert_eq!(j.err(), Some(Error::InvalidArgument), "anger_j p={p}");
-            assert_eq!(e.err(), Some(Error::InvalidArgument), "weber_e p={p}");
+            let want = Error::MemoryAllocation;
+            assert_eq!(h.err(), Some(want), "struve_h p={p}");
+            assert_eq!(j.err(), Some(want), "anger_j p={p}");
+            assert_eq!(e.err(), Some(want), "weber_e p={p}");
         }
         let dt = t0.elapsed();
         assert!(

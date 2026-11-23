@@ -255,7 +255,6 @@ fn from_above(z: &ExactComplex) -> bool {
     }
 }
 
-
 /// Jeff 2026-11-18 10:37 CT: complex Bessel at a negative-real `z` with a
 /// signed-zero imaginary part follows Arb's principal value (the from-above
 /// sheet, Arg = +π). The sign of that zero is ignored on this cut only.
@@ -285,16 +284,24 @@ fn is_half_odd_integer(x: &ExactNum) -> bool {
 /// Exact \(J_\nu(0)\) / \(I_\nu(0)\) that need no dest-sized mantissa:
 /// \(J_0(0)=I_0(0)=1\), \(J_n(0)=I_n(0)=0\) for integer \(n\ne 0\), and \(0\)
 /// when \(\operatorname{Re}\nu>0\) (DLMF 10.7.3 / 10.30.1: \((z/2)^\nu/\Gamma(\nu+1)\)).
-/// For real \(\nu<0\), the one-sided limit as \(z\to 0+\) is \(+\infty\)
-/// (DLMF 10.7.3 / 10.30.1; arg of \(0\pm 0i\) is 0). Official `judge.py`
-/// and mpmath return \(+\infty\) at exact \(z=0\). DLMF 10.2.2 / 10.25.2
-/// do not define a finite value (the leading \((z/2)^\nu\) is singular),
-/// and FLINT 3.6 returns an indeterminate ball; the compact value is the
-/// official / mpmath \(+\infty\), with the imaginary zero following
-/// \(\operatorname{Im} z\). Returning compact \(+\infty\) (a pole) at
-/// exact \(z=0\), the way it worked before c3dfd98, is a Paul call per
-/// DLMF 10.7.3 / 10.30.1. It is not a Jeff ruling. Other orders (pure
-/// imaginary, etc.) return `None`.
+///
+/// Real non-integer \(\nu<0\) (Jeff 2026-11-22 8:33 PM CT: the signed one-sided limit per
+/// DLMF): the leading term \((z/2)^\nu/\Gamma(\nu+1)\) of DLMF 10.2.2 / 10.25.2 dominates as
+/// \(z\to0\) along the direction of the signed zeros (C99 Annex G `carg`: \(\arg(+0\pm0i)=\pm0\),
+/// \(\arg(-0\pm0i)=\pm\pi\)). With \(n=\lfloor\nu\rfloor\) and \(f=\nu-n\in(0,1)\),
+/// \(\operatorname{sgn}\Gamma(\nu+1)=(-1)^{n+1}\).
+/// - \(z=+0\pm0i\): \(\operatorname{sgn}\Gamma(\nu+1)\cdot\infty\) (DLMF 10.7.3 / 10.30.1), so
+///   \(-\infty\) for \(\nu\in(-2,-1),(-4,-3),\ldots\); the imaginary zero follows
+///   \(\operatorname{Im} z\) as before.
+/// - \(z=-0\pm0i\): \(J_\nu(ze^{\pm\pi i})=e^{\pm\nu\pi i}J_\nu(z)\) (DLMF 10.11.1; \(I\): 10.34.1),
+///   so the limit is \(\operatorname{sgn}\Gamma(\nu+1)\,e^{\pm\nu\pi i}\cdot\infty\): real part
+///   \(-\operatorname{sgn}\cos(\pi f)\cdot\infty\) (\(+0\) at half-odd \(\nu\), where it is exactly 0 on
+///   the ray), imaginary part \(\mp\infty\).
+///
+/// FLINT 3.6 returns an indeterminate ball at exact 0 and mpmath returns \(+\infty\) for every
+/// \(\nu\) (it drops the sign, land39 REF-CORRECTIONS RC-14); the signs above match FLINT 3.6
+/// `acb_bessel_j` / `acb_bessel_i` along each direction (land39/final/pr40-fixes/b5). Other orders
+/// (pure imaginary, etc.) return `None`.
 fn bessel_ji_at_zero(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex> {
     if nu.im().is_zero() && nu.re().is_int() {
         if nu.re().is_zero() {
@@ -306,9 +313,51 @@ fn bessel_ji_at_zero(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex
         return Some(crate::complex::compact_complex_zero(false, false));
     }
     if nu.im().is_zero() && nu.re().is_negative() && !nu.re().is_zero() {
-        return Some(crate::complex::compact_inf(false, z.im().is_negative()));
+        let (n_odd, frac) = floor_parity_and_frac_vs_half(nu.re())?;
+        // sgn Γ(ν+1) = (−1)^(n+1): positive exactly when n = ⌊ν⌋ is odd.
+        if !z.re().is_negative() {
+            return Some(crate::complex::compact_inf(!n_odd, z.im().is_negative()));
+        }
+        let re = match frac {
+            core::cmp::Ordering::Less => crate::INF_NEG,
+            core::cmp::Ordering::Greater => crate::INF_POS,
+            core::cmp::Ordering::Equal => crate::complex::compact_signed_zero(false),
+        };
+        let im = if z.im().is_negative() { crate::INF_POS } else { crate::INF_NEG };
+        return Some(ExactComplex::new(re, im));
     }
     None
+}
+
+/// For a finite non-integer `x`: whether \(n=\lfloor x\rfloor\) is odd, and how \(f=x-n\) compares with
+/// \(1/2\). Exact: \(g=\lfloor 2x\rfloor=2n+\lfloor 2f\rfloor\), so \(f=1/2\) iff \(2x\) is an integer,
+/// otherwise \(f>1/2\) iff \(g\) is odd, and \(n=\lfloor g/2\rfloor\). `None` if zf cannot form a step.
+fn floor_parity_and_frac_vs_half(x: &ExactNum) -> Option<(bool, core::cmp::Ordering)> {
+    let two = ExactNum::from_u8(2, crate::DEFAULT_P);
+    let half =
+        || ExactNum::from_u8(1, crate::DEFAULT_P).ldexp(-1, crate::DEFAULT_P, RoundingMode::None);
+    let twice = x.mul_full_prec(&two);
+    if twice.is_nan() {
+        return None;
+    }
+    let twice_int = twice.is_int();
+    let g = twice.floor();
+    let g_half = g.mul_full_prec(&half());
+    if g_half.is_nan() {
+        return None;
+    }
+    let frac = if twice_int {
+        core::cmp::Ordering::Equal
+    } else if g_half.is_int() {
+        core::cmp::Ordering::Less
+    } else {
+        core::cmp::Ordering::Greater
+    };
+    let n_half = g_half.floor().mul_full_prec(&half());
+    if n_half.is_nan() {
+        return None;
+    }
+    Some((!n_half.is_int(), frac))
 }
 
 /// Compact \(Y_\nu(0)\) / \(K_\nu(0)\) from the DLMF leading term, no dest-sized
@@ -344,7 +393,10 @@ fn bessel_yk_at_zero(nu: &ExactComplex, y: bool, z: &ExactComplex) -> ExactCompl
 /// \(\operatorname{Im} z\). Do not allocate a dest-sized buffer.
 fn bessel_jyk_at_pos_inf(nu: &ExactComplex, z: &ExactComplex) -> Option<ExactComplex> {
     if z.re().is_inf_pos() && z.im().is_zero() && !nu.re().is_inf() && !nu.im().is_inf() {
-        return Some(crate::complex::compact_complex_zero(false, z.im().is_negative()));
+        return Some(crate::complex::compact_complex_zero(
+            false,
+            z.im().is_negative(),
+        ));
     }
     None
 }
@@ -392,11 +444,7 @@ fn real_part_only(v: ExactComplex, p: usize) -> ExactComplex {
 fn reflect_phase(nu: &ExactComplex, upper: bool, p: usize, cc: &mut Consts) -> ExactComplex {
     // Integer nu: e^{± n π i} = (-1)^n exactly, either sign.
     if let Some(n) = integer_nu(nu, p) {
-        return if n % 2 == 0 {
-            ExactComplex::one(p)
-        } else {
-            neg_c(ExactComplex::one(p))
-        };
+        return if n % 2 == 0 { ExactComplex::one(p) } else { neg_c(ExactComplex::one(p)) };
     }
     let pi_i = ExactComplex::new(ExactNum::new(p), cc.pi(p, RoundingMode::None));
     let a = nu.mul(&pi_i, p, RoundingMode::None);
@@ -838,7 +886,7 @@ impl ExactComplex {
                 .mul(&j, work_p, RoundingMode::None);
         let corr = if upper { corr } else { neg_c(corr) };
         Some(
-            reflect_phase(&nu, !upper, work_p, cc)
+            reflect_phase(nu, !upper, work_p, cc)
                 .mul(&y, work_p, RoundingMode::None)
                 .add(&corr, work_p, RoundingMode::None),
         )
@@ -933,10 +981,7 @@ impl ExactComplex {
         let sum_exp = term_mag_exp(&sum);
         // Peak-term cancellation is bounded by i_series_exp_cancel_bits; the
         // caller already pads the working width with that plus I_SERIES_PAD.
-        let peak_exp = match sum_exp {
-            Some(se) => Some(se + i_series_exp_cancel_bits(self) as i64),
-            None => None,
-        };
+        let peak_exp = sum_exp.map(|se| se + i_series_exp_cancel_bits(self) as i64);
         (sum, peak_exp, sum_exp)
     }
 
@@ -1681,10 +1726,10 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Sign;
     use crate::complex_special::neg_c;
     use crate::complex_special::pi_c;
     use crate::complex_special::two_c;
+    use crate::Sign;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
@@ -1776,12 +1821,19 @@ mod tests {
 
         let half = half_c(p);
         let z0 = ExactComplex::zero(p);
-        // J_ν(0) = 0 for Re ν > 0 (DLMF 10.2.2); the pole is at Re ν < 0, ν ∉ ℤ.
+        // J_ν(0) = 0 for Re ν > 0 (DLMF 10.2.2). At real ν < 0, ν ∉ ℤ, J_ν(+0+0i) is the signed
+        // one-sided limit sgn Γ(ν+1)·∞ (Jeff 2026-11-22): +∞ at ν = −1/2, −∞ at ν = −3/2.
         let j0 = z0.bessel_j_nu(&half, p, rm, &mut cc);
         assert!(j0.re().is_zero() && j0.im().is_zero());
-        assert!(z0
-            .bessel_j_nu(&neg_c(half.clone()), p, rm, &mut cc)
-            .is_nan());
+        let jm = z0.bessel_j_nu(&neg_c(half_c(p)), p, rm, &mut cc);
+        assert!(jm.re().is_inf_pos() && jm.im().is_zero());
+        let three_half = half_c(p).mul(
+            &ExactComplex::new(ExactNum::from_u8(3, p), ExactNum::new(p)),
+            p,
+            rm,
+        );
+        let j3 = z0.bessel_j_nu(&neg_c(three_half), p, rm, &mut cc);
+        assert!(j3.re().is_inf_neg() && j3.im().is_zero());
 
         let eps = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
         let below = ExactComplex::new(
@@ -1795,7 +1847,6 @@ mod tests {
         assert!(cnear_bits(&ja, &jb.conj(), p, 8) || !tiny(ja.im(), p) || !tiny(jb.im(), p));
         Ok(())
     }
-
 
     /// Integer-order Y via J + K(iz) + phase agrees with the Y0/Y1 series at
     /// modest p, and the Wronskian holds for Y_1(1+i) and the left-half
@@ -1813,10 +1864,7 @@ mod tests {
                 .expect("Y_1(1+i) JK");
             assert!(!y1.is_nan(), "Y_1(1+i) p={p} NaN");
             let y1s = z.bessel_y1_series(p + series_guard_bits(&z), p, &mut cc);
-            assert!(
-                cnear_bits(&y1, &y1s, p, 8),
-                "Y_1(1+i) p={p} JK vs series"
-            );
+            assert!(cnear_bits(&y1, &y1s, p, 8), "Y_1(1+i) p={p} JK vs series");
             let y1pub = z.bessel_y(&nu1, p, rm, &mut cc);
             assert!(
                 cnear_bits(&y1pub, &y1s, p, 8),
@@ -1829,10 +1877,7 @@ mod tests {
             let j1 = z.bessel_j_nu(&nu1, p, rm, &mut cc);
             let lhs = j0.mul(&y1, p, rm).sub(&j1.mul(&y0, p, rm), p, rm);
             let rhs = neg_c(two_c(p)).div(&pi_c(p, &mut cc).mul(&z, p, rm), p, rm);
-            assert!(
-                cnear_bits(&lhs, &rhs, p, 8),
-                "Wronskian Y_1(1+i) p={p}"
-            );
+            assert!(cnear_bits(&lhs, &rhs, p, 8), "Wronskian Y_1(1+i) p={p}");
 
             let zl = ExactComplex::new(ExactNum::from_i8(-1, p), ExactNum::from_u8(1, p));
             let yl1 = zl
@@ -1846,14 +1891,9 @@ mod tests {
             let jl1 = zl.bessel_j_nu(&nu1, p, rm, &mut cc);
             let lhs = jl0.mul(&yl1, p, rm).sub(&jl1.mul(&yl0, p, rm), p, rm);
             let rhs = neg_c(two_c(p)).div(&pi_c(p, &mut cc).mul(&zl, p, rm), p, rm);
-            assert!(
-                cnear_bits(&lhs, &rhs, p, 8),
-                "Wronskian Y_1(-1+i) p={p}"
-            );
+            assert!(cnear_bits(&lhs, &rhs, p, 8), "Wronskian Y_1(-1+i) p={p}");
 
-            let ym = z
-                .bessel_y_int_via_jk(-1, p, p, &mut cc)
-                .expect("Y_m1 JK");
+            let ym = z.bessel_y_int_via_jk(-1, p, p, &mut cc).expect("Y_m1 JK");
             assert!(cnear_bits(&ym, &neg_c(y1.clone()), p, 8), "Y_m1 p={p}");
         }
         Ok(())
@@ -1882,7 +1922,10 @@ mod tests {
             let t1 = std::time::Instant::now();
             let ys = z.bessel_y1_series(p + series_guard_bits(&z), p, &mut cc);
             let tser = t1.elapsed();
-            eprintln!("Y_1(1+i) p={p} jk={tjk:?} series={tser:?} nan={}", y.is_nan());
+            eprintln!(
+                "Y_1(1+i) p={p} jk={tjk:?} series={tser:?} nan={}",
+                y.is_nan()
+            );
             if p <= 8192 {
                 assert!(cnear_bits(&y, &ys, 64, 4), "Y_1(1+i) p={p} vs series");
             }
@@ -2044,8 +2087,11 @@ mod tests {
             // Principal / from-above identities (DLMF 10.11.2 / 10.27.8–10).
             let yx = x.bessel_y(&nu, p, rm, &mut cc);
             let nupi = nu.mul(&pi_c(p, &mut cc), p, rm);
-            let two_i_cos = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(2, p))
-                .mul(&nupi.cos(p, rm, &mut cc), p, rm);
+            let two_i_cos = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(2, p)).mul(
+                &nupi.cos(p, rm, &mut cc),
+                p,
+                rm,
+            );
             let phase_minus = neg_c(nu.mul(&i_pi, p, rm)).exp(p, rm, &mut cc);
             // Y(−x+0i) = e^{−iνπ} Y(x) + 2i cos(νπ) J(x)
             let want_y = phase_minus
@@ -2077,7 +2123,6 @@ mod tests {
         }
         Ok(())
     }
-
 
     /// DLMF 10.30.4: `I_ν(z) ∼ e^z / √(2πz)` as `|z|→∞` in `|arg z|<π/2`.
     /// `z = +∞+0i` has arg 0, so `I_ν(+∞) = +∞` (imaginary part → 0), for any
@@ -2126,7 +2171,8 @@ mod tests {
     }
 
     fn compact_half(neg: bool) -> ExactComplex {
-        let h = ExactNum::from_u8(1, crate::DEFAULT_P).ldexp(-1, crate::DEFAULT_P, RoundingMode::None);
+        let h =
+            ExactNum::from_u8(1, crate::DEFAULT_P).ldexp(-1, crate::DEFAULT_P, RoundingMode::None);
         let re = if neg { h.neg() } else { h };
         ExactComplex::new(re, compact_signed_zero(false))
     }
@@ -2309,21 +2355,33 @@ mod tests {
         // (no dest-sized allocation); dest 2^59 must still return immediately.
         let t0 = std::time::Instant::now();
         let j = z0.bessel_j_nu(&nmh, p, rm, &mut cc);
-        assert!(t0.elapsed().as_secs() < 1, "J_-1/2(0) at dest 2^59 took {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed().as_secs() < 1,
+            "J_-1/2(0) at dest 2^59 took {:?}",
+            t0.elapsed()
+        );
         assert!(
             j.re().is_inf_pos() && j.im().is_zero() && !j.im().is_negative(),
             "J_-1/2(0+0i) got {j:?}, want +Inf+0i"
         );
         let t0 = std::time::Instant::now();
         let jm = z0m.bessel_j_nu(&nmh, p, rm, &mut cc);
-        assert!(t0.elapsed().as_secs() < 1, "J_-1/2(0-0i) took {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed().as_secs() < 1,
+            "J_-1/2(0-0i) took {:?}",
+            t0.elapsed()
+        );
         assert!(
             jm.re().is_inf_pos() && jm.im().is_zero() && jm.im().is_negative(),
             "J_-1/2(0-0i) got {jm:?}, want +Inf-0i"
         );
         let t0 = std::time::Instant::now();
         let i = z0.bessel_i(&nmh, p, rm, &mut cc);
-        assert!(t0.elapsed().as_secs() < 1, "I_-1/2(0) took {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed().as_secs() < 1,
+            "I_-1/2(0) took {:?}",
+            t0.elapsed()
+        );
         assert!(
             i.re().is_inf_pos() && i.im().is_zero() && !i.im().is_negative(),
             "I_-1/2(0+0i) got {i:?}, want +Inf+0i"
@@ -2332,30 +2390,49 @@ mod tests {
         // Y_-1/2(z)=J_{1/2}(z) ~ sqrt(2/(πz)) sin z → 0 (not −∞)
         let t0 = std::time::Instant::now();
         let y = z0.bessel_y(&nmh, p, rm, &mut cc);
-        assert!(t0.elapsed().as_secs() < 1, "Y_-1/2(0) took {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed().as_secs() < 1,
+            "Y_-1/2(0) took {:?}",
+            t0.elapsed()
+        );
         assert!(
             y.re().is_zero() && !y.re().is_negative() && y.im().is_zero() && !y.im().is_negative(),
             "Y_-1/2(0+0i) got {y:?}, want +0+0i"
         );
         let t0 = std::time::Instant::now();
         let ym = z0m.bessel_y(&nmh, p, rm, &mut cc);
-        assert!(t0.elapsed().as_secs() < 1, "Y_-1/2(0-0i) took {:?}", t0.elapsed());
         assert!(
-            ym.re().is_zero() && !ym.re().is_negative() && ym.im().is_zero() && ym.im().is_negative(),
+            t0.elapsed().as_secs() < 1,
+            "Y_-1/2(0-0i) took {:?}",
+            t0.elapsed()
+        );
+        assert!(
+            ym.re().is_zero()
+                && !ym.re().is_negative()
+                && ym.im().is_zero()
+                && ym.im().is_negative(),
             "Y_-1/2(0-0i) got {ym:?}, want +0-0i"
         );
 
         // DLMF 10.30.2: K_{±1/2}(0)=+∞ for real ν
         let t0 = std::time::Instant::now();
         let k = z0.bessel_k(&ph, p, rm, &mut cc);
-        assert!(t0.elapsed().as_secs() < 1, "K_1/2(0) took {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed().as_secs() < 1,
+            "K_1/2(0) took {:?}",
+            t0.elapsed()
+        );
         assert!(
             k.re().is_inf_pos() && k.im().is_zero() && !k.im().is_negative(),
             "K_1/2(0+0i) got {k:?}, want +Inf+0i"
         );
         let t0 = std::time::Instant::now();
         let km = z0m.bessel_k(&nmh, p, rm, &mut cc);
-        assert!(t0.elapsed().as_secs() < 1, "K_-1/2(0-0i) took {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed().as_secs() < 1,
+            "K_-1/2(0-0i) took {:?}",
+            t0.elapsed()
+        );
         assert!(
             km.re().is_inf_pos() && km.im().is_zero() && km.im().is_negative(),
             "K_-1/2(0-0i) got {km:?}, want +Inf-0i"
@@ -2364,7 +2441,11 @@ mod tests {
         // DLMF 10.30.2: (z/2)^{-ν} has no unique direction at exact 0 when Im ν ≠ 0.
         let t0 = std::time::Instant::now();
         let kc = z0.bessel_k(&n1i, p, rm, &mut cc);
-        assert!(t0.elapsed().as_secs() < 1, "K_1+i(0) took {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed().as_secs() < 1,
+            "K_1+i(0) took {:?}",
+            t0.elapsed()
+        );
         assert!(
             kc.is_nan()
                 && kc.re().err() == Some(Error::InvalidArgument)
@@ -2374,10 +2455,7 @@ mod tests {
 
         // DLMF 10.7.8 / 10.17.3 / 10.25.3: J,Y,K(+∞ ± 0i) = +0, imag zero follows Im z.
         // Include a complex order (J_1+i(+∞)) and K_1+i(+∞).
-        for (label, zinf_arg, im_neg) in [
-            ("+∞+0i", &zinf, false),
-            ("+∞-0i", &zinfm, true),
-        ] {
+        for (label, zinf_arg, im_neg) in [("+∞+0i", &zinf, false), ("+∞-0i", &zinfm, true)] {
             let cases: [(&str, ExactComplex); 7] = [
                 ("J_0", zinf_arg.bessel_j_nu(&n0, p, rm, &mut cc)),
                 ("J_-1/2", zinf_arg.bessel_j_nu(&nmh, p, rm, &mut cc)),

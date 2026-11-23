@@ -2,32 +2,32 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! Conversion utilities.
 
-use crate::Consts;
-use crate::EXPONENT_MAX;
-use crate::EXPONENT_MIN;
 use crate::common::buf::WordBuf;
 use crate::common::consts::TEN;
-use crate::common::util::MAX_PREC_RETRY;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::log2_ceil;
 use crate::common::util::round_p;
 use crate::common::util::shift_slice_left;
 use crate::common::util::shift_slice_right;
+use crate::common::util::MAX_PREC_RETRY;
 use crate::conv_mpn_exp::mpn_scan1;
 use crate::conv_mpn_exp::scale_x_base_pow;
-use crate::defs::DEFAULT_P;
 use crate::defs::DoubleWord;
 use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::Radix;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
+use crate::defs::Word;
+use crate::defs::DEFAULT_P;
 use crate::defs::WORD_BASE;
 use crate::defs::WORD_BIT_SIZE;
 use crate::defs::WORD_MAX;
-use crate::defs::Word;
 use crate::mantissa::Mantissa;
 use crate::num::ExactNumNumber;
+use crate::Consts;
+use crate::EXPONENT_MAX;
+use crate::EXPONENT_MIN;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -868,7 +868,7 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut retries = 0usize;
         loop {
-            let n_limbs = (p_wrk + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+            let n_limbs = p_wrk.div_ceil(WORD_BIT_SIZE);
             let sy = scale_x_base_pow(
                 self.mantissa().digits(),
                 self.exponent(),
@@ -882,15 +882,15 @@ impl ExactNumNumber {
             if self.inexact() {
                 y.set_inexact(true);
             }
-            if sy.err_ulps.is_none() {
+            let Some(err_ulps) = sy.err_ulps else {
                 y.set_precision(p, rm)?;
                 return Ok(y);
-            }
+            };
             // mpn_exp is truncated toward zero: the true value is in [y, y+ε).
             // When ε is below the stored ulp of `y`, the tightest representable
             // one-sided interval is [y, y+ulp). If both ends dest-round the
             // same way, the integer spelling is decided; otherwise grow `p_wrk`.
-            let f = i128::from(sy.err_ulps.unwrap());
+            let f = i128::from(err_ulps);
             let ulp_exp = i128::from(y.exponent()) - i128::from(y.mantissa_max_bit_len() as i64);
             let q = y.mantissa_max_bit_len().saturating_add(WORD_BIT_SIZE);
             // Adding a positive eps at EXPONENT_MAX, or dest-rounding Up a
@@ -1022,7 +1022,7 @@ impl ExactNumNumber {
         p: usize,
         cc: &mut Consts,
     ) -> Result<usize, Error> {
-        if base < 2 || base > 36 {
+        if !(2..=36).contains(&base) {
             return Err(Error::InvalidArgument);
         }
         if base.is_power_of_two() {
@@ -1082,7 +1082,7 @@ impl ExactNumNumber {
             zero.push(0);
             return Ok((self.sign(), zero, 0));
         }
-        if base < 2 || base > 36 {
+        if !(2..=36).contains(&base) {
             return Err(Error::InvalidArgument);
         }
 
@@ -1118,7 +1118,7 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut retries = 0usize;
         loop {
-            let n_limbs = (p_wrk + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+            let n_limbs = p_wrk.div_ceil(WORD_BIT_SIZE);
             let scale = (n as i64)
                 .checked_sub(e)
                 .ok_or(Error::ExponentOverflow(self.sign()))?;
@@ -1200,7 +1200,7 @@ impl ExactNumNumber {
                     // uniquely identify the two neighboring spellings; one of
                     // Y-1, Y, Y+1 lies in the interval. This is not an
                     // opposite-digit-mode retry of get_str.
-                    let scale = (e as i64)
+                    let scale = e
                         .checked_sub(n as i64)
                         .ok_or(Error::ExponentOverflow(self.sign()))?;
                     let p_out = self.mantissa_max_bit_len();
@@ -1337,10 +1337,10 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
         let p = y.mantissa_max_bit_len();
-        if err_ulps.is_none() {
+        let Some(err_ulps) = err_ulps else {
             return Self::round_exact_significand_to_int(y, rm, sign);
-        }
-        let f = i128::from(err_ulps.unwrap());
+        };
+        let f = i128::from(err_ulps);
         // Error is 2^{exp_a + f}. If that is >= 1, the integer is not determined.
         if exp_a.saturating_add(f) >= 0 && !y_is_int && !y_is_half {
             return Ok(None);
@@ -1406,7 +1406,11 @@ impl ExactNumNumber {
             Some(v) => v,
             None => return Ok(None),
         };
-        if i_lo.cmp(&i_hi) == 0 { Ok(Some(i_lo)) } else { Ok(None) }
+        if i_lo.cmp(&i_hi) == 0 {
+            Ok(Some(i_lo))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Round a positive exact significand `y` to an integer in format mode `rm`.
@@ -1444,7 +1448,11 @@ impl ExactNumNumber {
                         return Ok(None);
                     }
                     let even = !fl.is_odd_int();
-                    if rm == RoundingMode::ToEven { !even } else { even }
+                    if rm == RoundingMode::ToEven {
+                        !even
+                    } else {
+                        even
+                    }
                 }
             }
         };
@@ -1481,11 +1489,7 @@ impl ExactNumNumber {
         let pbits = y.mantissa_max_bit_len();
         let src = y.mantissa().digits();
         let extra_left = e_us.saturating_sub(pbits);
-        let extra_words = if extra_left == 0 {
-            0
-        } else {
-            (extra_left + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE
-        };
+        let extra_words = if extra_left == 0 { 0 } else { extra_left.div_ceil(WORD_BIT_SIZE) };
         let mut buf = WordBuf::new(src.len() + extra_words)?;
         buf[..src.len()].copy_from_slice(src);
         if extra_left > 0 {
@@ -1541,13 +1545,13 @@ impl ExactNumNumber {
 mod tests {
 
     use super::*;
-    use crate::WORD_SIGNIFICANT_BIT;
     use crate::common::test_rng::random;
-    use crate::common::util::MAX_DEC_SCALE;
-    use crate::common::util::TEST_EXP_BOUND;
     use crate::common::util::random_subnormal;
     use crate::common::util::test_loop_count;
-    use crate::defs::{EXPONENT_MAX, EXPONENT_MIN, Sign};
+    use crate::common::util::MAX_DEC_SCALE;
+    use crate::common::util::TEST_EXP_BOUND;
+    use crate::defs::{Sign, EXPONENT_MAX, EXPONENT_MIN};
+    use crate::WORD_SIGNIFICANT_BIT;
 
     #[cfg(not(feature = "std"))]
     use alloc::vec;
@@ -1953,18 +1957,16 @@ mod tests {
         for rdx in [Radix::Bin, Radix::Oct, Radix::Dec, Radix::Hex] {
             for e1 in [123, -123, 0] {
                 let m1 = [];
-                assert!(
-                    ExactNumNumber::convert_from_radix(
-                        s1,
-                        &m1,
-                        e1,
-                        rdx,
-                        p1,
-                        RoundingMode::ToEven,
-                        &mut cc
-                    )?
-                    .is_zero()
-                );
+                assert!(ExactNumNumber::convert_from_radix(
+                    s1,
+                    &m1,
+                    e1,
+                    rdx,
+                    p1,
+                    RoundingMode::ToEven,
+                    &mut cc
+                )?
+                .is_zero());
                 let m1 = [1, rdx.value(), 0];
                 assert!(matches!(
                     ExactNumNumber::convert_from_radix(
@@ -1993,31 +1995,27 @@ mod tests {
                     Err(Error::InvalidArgument)
                 ));
                 let m1 = [0; 256];
-                assert!(
-                    ExactNumNumber::convert_from_radix(
-                        s1,
-                        &m1,
-                        e1,
-                        rdx,
-                        p1,
-                        RoundingMode::ToEven,
-                        &mut cc,
-                    )?
-                    .is_zero()
-                );
+                assert!(ExactNumNumber::convert_from_radix(
+                    s1,
+                    &m1,
+                    e1,
+                    rdx,
+                    p1,
+                    RoundingMode::ToEven,
+                    &mut cc,
+                )?
+                .is_zero());
                 let m1 = [0];
-                assert!(
-                    ExactNumNumber::convert_from_radix(
-                        s1,
-                        &m1,
-                        e1,
-                        rdx,
-                        p1,
-                        RoundingMode::ToEven,
-                        &mut cc,
-                    )?
-                    .is_zero()
-                );
+                assert!(ExactNumNumber::convert_from_radix(
+                    s1,
+                    &m1,
+                    e1,
+                    rdx,
+                    p1,
+                    RoundingMode::ToEven,
+                    &mut cc,
+                )?
+                .is_zero());
             }
         }
 

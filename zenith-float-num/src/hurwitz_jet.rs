@@ -21,9 +21,9 @@ use crate::ops::special::with_even_bernoulli;
 use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
-use core::ops::Neg;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 const NR: RoundingMode = RoundingMode::None;
 const UP: RoundingMode = RoundingMode::Up;
@@ -77,8 +77,11 @@ impl Jet {
     fn mullow(&self, other: &Self, p: usize) -> Self {
         Self {
             c0: ExactNum::mul_ref(&self.c0, &other.c0, p, NR),
-            c1: ExactNum::mul_ref(&self.c1, &other.c0, p, NR)
-                .add(&ExactNum::mul_ref(&self.c0, &other.c1, p, NR), p, NR),
+            c1: ExactNum::mul_ref(&self.c1, &other.c0, p, NR).add(
+                &ExactNum::mul_ref(&self.c0, &other.c1, p, NR),
+                p,
+                NR,
+            ),
         }
     }
 }
@@ -104,13 +107,7 @@ fn bit_count(n: u64) -> u32 {
 /// matching FLINT `_acb_poly_zeta_em_bound` / `_acb_poly_zeta_em_bound1` in
 /// the real case: rising factorial of `|s| + x`, power integral, and
 /// `4/(2π)^{2M}`. All short-precision arithmetic is rounded upward.
-fn em_bound1(
-    s: &ExactNum,
-    a: &ExactNum,
-    n: u64,
-    m: u64,
-    cc: &mut Consts,
-) -> Option<ExactNum> {
+fn em_bound1(s: &ExactNum, a: &ExactNum, n: u64, m: u64, cc: &mut Consts) -> Option<ExactNum> {
     if n < 1 || m < 1 {
         return None;
     }
@@ -132,8 +129,7 @@ fn em_bound1(
     if !an.is_positive() || matches!(an.compare(&ExactNum::from_u8(1, wp)), Some(c) if c <= 0) {
         return None;
     }
-    if !s2m.is_positive() || matches!(s2m.compare(&ExactNum::from_u8(1, wp)), Some(c) if c <= 0)
-    {
+    if !s2m.is_positive() || matches!(s2m.compare(&ExactNum::from_u8(1, wp)), Some(c) if c <= 0) {
         return None;
     }
     let bm1 = s2m.sub(&ExactNum::from_u8(1, wp), wp, UP);
@@ -180,11 +176,7 @@ fn em_bound1(
     let scale = ExactNum::from_u8(4, wp).div(&pow, wp, UP);
     let b0 = r0.mul(&scale, wp, UP);
     let b1 = r1.mul(&scale, wp, UP);
-    let mag = if matches!(b1.compare(&b0), Some(c) if c > 0) {
-        b1
-    } else {
-        b0
-    };
+    let mag = if matches!(b1.compare(&b0), Some(c) if c > 0) { b1 } else { b0 };
     if mag.is_nan() || !mag.is_positive() {
         None
     } else {
@@ -210,12 +202,7 @@ fn a_pow_neg_s_mag(s: &ExactNum, a: &ExactNum, cc: &mut Consts) -> ExactNum {
 }
 
 /// FLINT `_acb_poly_zeta_em_choose_param` for a real argument and jet length 2.
-fn choose_param(
-    s: &ExactNum,
-    a: &ExactNum,
-    target: usize,
-    cc: &mut Consts,
-) -> Option<(u64, u64)> {
+fn choose_param(s: &ExactNum, a: &ExactNum, target: usize, cc: &mut Consts) -> Option<(u64, u64)> {
     let target_u = u64::try_from(target).ok()?;
     let mut tol = a_pow_neg_s_mag(s, a, cc);
     // tol *= 2^{-target}
@@ -275,16 +262,8 @@ fn bernoulli_even(m: usize, p: usize) -> Option<Vec<ExactNum>> {
 
 /// Euler–Maclaurin sum for the length-2 jet, after `_acb_poly_zeta_em_sum`
 /// with `deflate = false`.
-fn em_sum(
-    s: &ExactNum,
-    a: &ExactNum,
-    n: u64,
-    m: u64,
-    p: usize,
-    cc: &mut Consts,
-) -> Option<Jet> {
-    let p = p
-        .saturating_add(2 * (bit_count(n) as usize + 2));
+fn em_sum(s: &ExactNum, a: &ExactNum, n: u64, m: u64, p: usize, cc: &mut Consts) -> Option<Jet> {
+    let p = p.saturating_add(2 * (bit_count(n) as usize + 2));
     let one = ExactNum::from_u8(1, p);
     #[cfg(all(test, feature = "std"))]
     let t_powsum = std::time::Instant::now();
@@ -339,9 +318,15 @@ fn em_sum(
         // term *= ((s+x)+2r-1)((s+x)+2r) / ((N+a)^2 (2r+1)(2r+2))
         // Integer factors as one-word values (FLINT fmpz / arb_mul_ui). Building
         // them at dest `p` made each of the ~10^4 tail steps a full-width mul.
-        let splus0 = s.clone().add(&ExactNum::from_u64((2 * r - 1) as u64, WORD_BIT_SIZE), p, NR);
+        let splus0 = s.clone().add(
+            &ExactNum::from_u64((2 * r - 1) as u64, WORD_BIT_SIZE),
+            p,
+            NR,
+        );
         term = term.mul_cpx(&splus0, p);
-        let splus1 = s.clone().add(&ExactNum::from_u64((2 * r) as u64, WORD_BIT_SIZE), p, NR);
+        let splus1 = s
+            .clone()
+            .add(&ExactNum::from_u64((2 * r) as u64, WORD_BIT_SIZE), p, NR);
         term = term.mul_cpx(&splus1, p);
         let den = na2.clone().mul(
             &ExactNum::from_u64((2 * r + 1) as u64 * (2 * r + 2) as u64, WORD_BIT_SIZE),
@@ -446,8 +431,6 @@ pub(crate) fn log_barnes_g_zeta(z: &ExactNum, p: usize, cc: &mut Consts) -> Exac
     zm1.mul(&lng, p, NR).sub(&zp, p, NR).add(&c, p, NR)
 }
 
-
-
 /// `Σ_{k=1}^{n} k ln k`, via `Σ_p ln(p) Σ_{j: p^j ≤ n} p^j T(⌊n/p^j⌋)`
 /// with `T(m) = m(m+1)/2`. Only `π(n)` full-precision logarithms.
 fn sum_k_ln_k(n: u64, p: usize, cc: &mut Consts) -> ExactNum {
@@ -486,16 +469,12 @@ fn is_exact_neg_one(x: &ExactNum, p: usize) -> bool {
     matches!(x.compare(&ExactNum::from_i32(-1, p)), Some(0))
 }
 
-
 /// Memory cap for the dense `k^{-s}` tables (two arrays of `ExactNum`).
 /// Above this, composites are factored from a smallest-prime-factor table
 /// so the 2^20 sieve does not allocate tens of gigabytes.
 fn powsum_table_too_big(n: u64, p: usize) -> bool {
     let bytes = (p / 8).saturating_add(64) as u64;
-    n.saturating_add(1)
-        .saturating_mul(bytes)
-        .saturating_mul(2)
-        > 1_500_000_000
+    n.saturating_add(1).saturating_mul(bytes).saturating_mul(2) > 1_500_000_000
 }
 
 /// `k^{-s}` and its `s`-derivative `-ln(k) k^{-s}`.
@@ -521,11 +500,7 @@ fn powsum_term_from_ln(
     if inv.is_nan() || inv.is_inf() {
         return None;
     }
-    let dinv = if k <= 1 {
-        ExactNum::new(p)
-    } else {
-        ExactNum::mul_ref(&inv, ln, p, NR).neg()
-    };
+    let dinv = if k <= 1 { ExactNum::new(p) } else { ExactNum::mul_ref(&inv, ln, p, NR).neg() };
     Some(Jet { c0: inv, c1: dinv })
 }
 
@@ -544,13 +519,7 @@ fn prime_invpow(
 /// Sieved Σ_{k=1}^{n} k^{-(s+x)} at `a = 1` (FLINT `acb_dirichlet_powsum_sieved`):
 /// logs and powers only at primes, composites by multiplication.
 /// The length-2 jet is `c0 = Σ k^{-s}`, `c1 = Σ -ln(k) k^{-s}`.
-fn powsum_sieved(
-    s: &ExactNum,
-    a: &ExactNum,
-    n: u64,
-    p: usize,
-    cc: &mut Consts,
-) -> Option<Jet> {
+fn powsum_sieved(s: &ExactNum, a: &ExactNum, n: u64, p: usize, cc: &mut Consts) -> Option<Jet> {
     if n == 0 || !is_exact_one(a, p) {
         return None;
     }
@@ -773,25 +742,20 @@ fn powsum_s_minus_one(
         // Σ (k+1) ln(k+1) = S(n).
         let c0 = crate::ExactInt::from_u128(nf * (nf + 1) / 2).to_exact_num(p, NR);
         let s_n = sum_k_ln_k(n, p, cc);
-        return Some(Jet {
-            c0,
-            c1: s_n.neg(),
-        });
+        return Some(Jet { c0, c1: s_n.neg() });
     }
     if is_exact_half(a, p) {
         // Σ (k+1/2) = n²/2.
         // Σ (k+1/2) ln(k+1/2)
         //   = (1/2)[S(2n-1) - n(n-1) ln 2 - 2 S(n-1)] - (ln 2) n²/2.
-        let c0 = crate::ExactInt::from_u128(nf * nf).to_exact_num(p, NR).ldexp(-1, p, NR);
+        let c0 = crate::ExactInt::from_u128(nf * nf)
+            .to_exact_num(p, NR)
+            .ldexp(-1, p, NR);
         let s_odd = if n == 0 {
             ExactNum::new(p)
         } else {
             let s_hi = sum_k_ln_k(2 * n - 1, p, cc);
-            let s_lo = if n == 1 {
-                ExactNum::new(p)
-            } else {
-                sum_k_ln_k(n - 1, p, cc)
-            };
+            let s_lo = if n == 1 { ExactNum::new(p) } else { sum_k_ln_k(n - 1, p, cc) };
             let ln2 = cc.ln_2(p, NR);
             let nn1 = crate::ExactInt::from_u128(nf * (nf - 1)).to_exact_num(p, NR);
             s_hi.sub(&nn1.mul(&ln2, p, NR), p, NR)
@@ -809,7 +773,6 @@ fn powsum_s_minus_one(
     }
     None
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -880,16 +843,16 @@ mod tests {
             };
             // Closed form: ζ'(-1, 1/2) = -ln2/24 - ζ'(-1)/2.
             let ln2 = cc.ln_2(p, NR);
-            let c = ln2
-                .div(&ExactNum::from_u32(24, p), p, NR)
-                .neg()
-                .sub(&fast1.1.clone().ldexp(-1, p, NR), p, NR);
+            let c = ln2.div(&ExactNum::from_u32(24, p), p, NR).neg().sub(
+                &fast1.1.clone().ldexp(-1, p, NR),
+                p,
+                NR,
+            );
             assert!(near(&fast2.1, &c, p / 2), "closed form ζ'(-1,1/2) p={p}");
             let _ = fast1;
         }
         Ok(())
     }
-
 
     fn parse_zeta_arg(arg: &str, p: usize, cc: &mut Consts) -> ExactNum {
         if let Some((num, den)) = arg.split_once('/') {
@@ -971,7 +934,10 @@ mod tests {
 
         // ζ(1/2) is finite and negative.
         let zhalf = half.riemann_zeta(p, RoundingMode::ToEven, &mut cc);
-        assert!(!zhalf.is_nan() && zhalf.is_negative(), "zeta(1/2) is finite and negative");
+        assert!(
+            !zhalf.is_nan() && zhalf.is_negative(),
+            "zeta(1/2) is finite and negative"
+        );
 
         // Large positive s: ζ(s) → 1. At s = 400, 2^{-400} is far below a 256-bit ulp.
         let large = ExactNum::from_u32(400, p);
@@ -985,7 +951,10 @@ mod tests {
 
         // Large |s| on the negative side: ζ(-21) is a finite nonzero rational.
         let zneg = ExactNum::from_i32(-21, p).riemann_zeta(p, RoundingMode::ToEven, &mut cc);
-        assert!(!zneg.is_nan() && !zneg.is_zero() && !zneg.is_inf(), "zeta(-21) is finite and nonzero");
+        assert!(
+            !zneg.is_nan() && !zneg.is_zero() && !zneg.is_inf(),
+            "zeta(-21) is finite and nonzero"
+        );
         Ok(())
     }
 
@@ -1093,7 +1062,7 @@ mod tests {
         Ok(())
     }
 
-    fn time_ns(iters: u32, warmup: u32, mut body: impl FnMut()) -> f64 {
+    fn time_ns(iters: u32, warmup: u32, mut body: impl FnMut()) -> u128 {
         for _ in 0..warmup {
             body();
         }
@@ -1101,7 +1070,7 @@ mod tests {
         for _ in 0..iters {
             body();
         }
-        t0.elapsed().as_secs_f64() / f64::from(iters) * 1e9
+        t0.elapsed().as_nanos() / u128::from(iters.max(1))
     }
 
     /// Elementary kernels used by powsum, side by side with
@@ -1126,42 +1095,38 @@ mod tests {
                 black_box(k.ln(prec, rm, &mut cc));
             });
             eprintln!(
-                "ZF  ln(10007) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  ln(10007) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
             let ns = time_ns(n, n.min(2), || {
                 black_box(two.ln(prec, rm, &mut cc));
             });
             eprintln!(
-                "ZF  ln(2) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  ln(2) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
             let ns = time_ns(n, n.min(2), || {
                 black_box(tenth.exp(prec, rm, &mut cc));
             });
             eprintln!(
-                "ZF  exp(1/10) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  exp(1/10) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
             let ns = time_ns(n, n.min(2), || {
                 black_box(k.sqrt(prec, rm));
             });
             eprintln!(
-                "ZF  sqrt(10007) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  sqrt(10007) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
             let ns = time_ns(n, n.min(2), || {
                 black_box(k.sqrt(prec, rm).reciprocal(prec, rm));
             });
             eprintln!(
-                "ZF  1/sqrt(10007) p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  1/sqrt(10007) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
-            for (label, sarg) in [
-                ("s=1/2", &s_half),
-                ("s=-1/2", &s_mhalf),
-                ("s=3/2", &s_3h),
-            ] {
+            for (label, sarg) in [("s=1/2", &s_half), ("s=-1/2", &s_mhalf), ("s=3/2", &s_3h)] {
                 let ns = time_ns(n, n.min(2), || {
                     let ln = k.ln(prec, rm, &mut cc);
                     black_box(
@@ -1171,8 +1136,8 @@ mod tests {
                     );
                 });
                 eprintln!(
-                    "ZF  exp(-s ln k) {label} p={prec}: n={n}  {ns:.0} ns/op  {:.4} ms/op",
-                    ns / 1e6
+                    "ZF  exp(-s ln k) {label} p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
+                    ns / 1_000
                 );
             }
         }
@@ -1211,5 +1176,4 @@ mod tests {
         );
         Ok(())
     }
-
 }

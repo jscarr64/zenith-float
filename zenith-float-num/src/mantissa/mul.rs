@@ -131,7 +131,6 @@ mod tests {
         s1
     }
 
-
     fn algo_for_limbs(limbs: usize) -> &'static str {
         if limbs <= 32 {
             "schoolbook"
@@ -158,9 +157,7 @@ mod tests {
     fn add_limb_slice(a: &[Word], b: &[Word], out: &mut [Word]) {
         let mut carry: crate::defs::DoubleWord = 0;
         for i in 0..a.len() {
-            let s = a[i] as crate::defs::DoubleWord
-                + b[i] as crate::defs::DoubleWord
-                + carry;
+            let s = a[i] as crate::defs::DoubleWord + b[i] as crate::defs::DoubleWord + carry;
             out[i] = s as Word;
             carry = s >> crate::defs::WORD_BIT_SIZE;
         }
@@ -169,7 +166,7 @@ mod tests {
         }
     }
 
-    fn time_ns(iters: u32, warmup: u32, mut body: impl FnMut()) -> f64 {
+    fn time_ns(iters: u32, warmup: u32, mut body: impl FnMut()) -> u128 {
         for _ in 0..warmup {
             body();
         }
@@ -177,7 +174,7 @@ mod tests {
         for _ in 0..iters {
             body();
         }
-        t0.elapsed().as_secs_f64() / f64::from(iters) * 1e9
+        t0.elapsed().as_nanos() / u128::from(iters.max(1))
     }
 
     /// Microbench of one full-width multiply, a squaring, a mul-by-one-word,
@@ -197,16 +194,16 @@ mod tests {
         // thresholds (32 / 220 / 5400 limbs).
         let cases: &[(usize, u32, u32, u32)] = &[
             (64, 20000, 50000, 20000),
-            (2048, 4000, 12000, 8000),   // 32 limbs, schoolbook top
-            (2112, 4000, 12000, 8000),   // 33 limbs, toom2 bottom
+            (2048, 4000, 12000, 8000), // 32 limbs, schoolbook top
+            (2112, 4000, 12000, 8000), // 33 limbs, toom2 bottom
             (4096, 2000, 8000, 4000),
-            (14080, 400, 2000, 800),     // 220 limbs, toom2 top
-            (14144, 400, 2000, 800),     // 221 limbs, toom3 bottom
+            (14080, 400, 2000, 800), // 220 limbs, toom2 top
+            (14144, 400, 2000, 800), // 221 limbs, toom3 bottom
             (16384, 400, 2000, 800),
             (65536, 80, 400, 200),
             (262144, 10, 80, 40),
-            (345600, 2, 20, 8),          // 5400 limbs, toom3 top
-            (345664, 2, 20, 8),          // 5401 limbs, fft bottom
+            (345600, 2, 20, 8), // 5400 limbs, toom3 top
+            (345664, 2, 20, 8), // 5401 limbs, fft bottom
         ];
 
         for &(prec, n_mul, n_add, n_ui) in cases {
@@ -229,8 +226,8 @@ mod tests {
                 black_box(&mc[0]);
             });
             eprintln!(
-                "ZF  mant-mul  p={prec}: n={n_mul}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  mant-mul  p={prec}: n={n_mul}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
 
             let ns = time_ns(n_mul, n_mul.min(8), || {
@@ -238,8 +235,8 @@ mod tests {
                 black_box(&mc[0]);
             });
             eprintln!(
-                "ZF  mant-sqr  p={prec}: n={n_mul}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  mant-sqr  p={prec}: n={n_mul}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
 
             let ns = time_ns(n_ui, n_ui.min(8), || {
@@ -247,8 +244,8 @@ mod tests {
                 black_box(&md[0]);
             });
             eprintln!(
-                "ZF  mant-mul_ui p={prec}: n={n_ui}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  mant-mul_ui p={prec}: n={n_ui}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
 
             let ns = time_ns(n_add, n_add.min(8), || {
@@ -256,8 +253,8 @@ mod tests {
                 black_box(&me[0]);
             });
             eprintln!(
-                "ZF  mant-add  p={prec}: n={n_add}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  mant-add  p={prec}: n={n_add}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
 
             let a = ExactNum::from_u8(2, prec).sqrt(prec, rm);
@@ -269,32 +266,32 @@ mod tests {
                 black_box(ExactNum::mul_ref(&a, &b, prec, rm));
             });
             eprintln!(
-                "ZF  ExactNum-mul  p={prec}: n={n_mul}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  ExactNum-mul  p={prec}: n={n_mul}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
 
             let ns = time_ns(n_mul, n_mul.min(8), || {
                 black_box(ExactNum::mul_ref(&a, &a, prec, rm));
             });
             eprintln!(
-                "ZF  ExactNum-sqr  p={prec}: n={n_mul}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  ExactNum-sqr  p={prec}: n={n_mul}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
 
             let ns = time_ns(n_ui, n_ui.min(8), || {
                 black_box(ExactNum::mul_ref(&a, &w, prec, rm));
             });
             eprintln!(
-                "ZF  ExactNum-mul_ui p={prec}: n={n_ui}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  ExactNum-mul_ui p={prec}: n={n_ui}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
 
             let ns = time_ns(n_add, n_add.min(8), || {
                 black_box(ExactNum::add_ref(&a, &b, prec, rm));
             });
             eprintln!(
-                "ZF  ExactNum-add  p={prec}: n={n_add}  {ns:.0} ns/op  {:.4} ms/op",
-                ns / 1e6
+                "ZF  ExactNum-add  p={prec}: n={n_add}  {ns:.0} ns/op  {} us/op",
+                ns / 1_000
             );
         }
         Ok(())

@@ -4456,10 +4456,7 @@ mod tests {
             for z in &zs {
                 for rm in modes {
                     let g = z.meijer_g(&an1, &[], &bm0, &[], p, rm, &mut cc);
-                    assert!(
-                        is_ia(&g),
-                        "G(1;0) z={z} p={p} {rm:?} got {g}"
-                    );
+                    assert!(is_ia(&g), "G(1;0) z={z} p={p} {rm:?} got {g}");
                     let h = z.fox_h(
                         &[(one.clone(), one.clone())],
                         &[],
@@ -4469,10 +4466,7 @@ mod tests {
                         rm,
                         &mut cc,
                     );
-                    assert!(
-                        is_ia(&h),
-                        "H(1,1;0,1) z={z} p={p} {rm:?} got {h}"
-                    );
+                    assert!(is_ia(&h), "H(1,1;0,1) z={z} p={p} {rm:?} got {h}");
                 }
             }
             if p > 256 {
@@ -4480,9 +4474,9 @@ mod tests {
             }
             let rm = RoundingMode::ToEven;
             // a-b = 2 is also a positive integer.
-            let g2 = zero.meijer_g(&[two.clone()], &[], &bm0, &[], p, rm, &mut cc);
+            let g2 = zero.meijer_g(core::slice::from_ref(&two), &[], &bm0, &[], p, rm, &mut cc);
             assert!(is_ia(&g2), "G(2;0) at 0 p={p} got {g2}");
-            let g2z = one.meijer_g(&[two.clone()], &[], &bm0, &[], p, rm, &mut cc);
+            let g2z = one.meijer_g(core::slice::from_ref(&two), &[], &bm0, &[], p, rm, &mut cc);
             assert!(is_ia(&g2z), "G(2;0) at 1 p={p} got {g2z}");
             // Sibling with no an-bm positive integer stays finite: G^{1,0}_{0,1}(0|;0)=1.
             let sib = zero.meijer_g(&[], &[], core::slice::from_ref(&zero), &[], p, rm, &mut cc);
@@ -4491,7 +4485,7 @@ mod tests {
                 "sibling G^{{1,0}}_{{0,1}}(0) p={p} got {sib}"
             );
             // a-b = 1/2 is not an integer; the value is finite at z=1/2.
-            let ghalf = half.meijer_g(&[half.clone()], &[], &bm0, &[], p, rm, &mut cc);
+            let ghalf = half.meijer_g(core::slice::from_ref(&half), &[], &bm0, &[], p, rm, &mut cc);
             assert!(
                 !ghalf.is_nan() && finite(&ghalf),
                 "G(1/2;0) at 1/2 should be finite p={p} got {ghalf}"

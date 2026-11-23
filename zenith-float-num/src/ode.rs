@@ -563,11 +563,7 @@ fn mantissa_words(p: usize) -> usize {
 #[cfg(test)]
 fn max_representable_trajectory_len(p: usize) -> usize {
     let per = mantissa_words(p).saturating_mul(2);
-    if per == 0 {
-        usize::MAX
-    } else {
-        usize::MAX / per
-    }
+    usize::MAX.checked_div(per).unwrap_or(usize::MAX)
 }
 
 /// The 4e6c7e7 opening-probe rule, kept only as a test witness.
@@ -806,7 +802,12 @@ where
         return Err(OdeError::InvalidArgument);
     }
     for i in 1..n {
-        let ti = ExactNum::add_ref(t, &ExactNum::mul_ref(&h, &ExactNum::from_u64(i, wrk), wrk, rm), wrk, rm);
+        let ti = ExactNum::add_ref(
+            t,
+            &ExactNum::mul_ref(&h, &ExactNum::from_u64(i, wrk), wrk, rm),
+            wrk,
+            rm,
+        );
         let fi = f(&ti, &z, wrk, rm, cc);
         if !finite(&fi) {
             return Err(OdeError::InvalidArgument);
@@ -824,7 +825,11 @@ where
         return Err(OdeError::InvalidArgument);
     }
     // (z_prev + z + h f(t+H, z)) / 2
-    let sum = ExactNum::add_ref(&z_prev, &z, wrk, rm).add(&ExactNum::mul_ref(&h, &f_end, wrk, rm), wrk, rm);
+    let sum = ExactNum::add_ref(&z_prev, &z, wrk, rm).add(
+        &ExactNum::mul_ref(&h, &f_end, wrk, rm),
+        wrk,
+        rm,
+    );
     Ok(sum.ldexp(-1, wrk, rm))
 }
 
@@ -858,13 +863,24 @@ where
             let n_k = 2 * (k as u64 + 1);
             let n_kj = 2 * ((k - j) as u64 + 1);
             // den = (n_k / n_{k-j})² - 1
-            let ratio = ExactNum::div_ref(&ExactNum::from_u64(n_k, wrk), &ExactNum::from_u64(n_kj, wrk), wrk, rm);
-            let den = ExactNum::mul_ref(&ratio, &ratio, wrk, rm).sub(&ExactNum::from_u8(1, wrk), wrk, rm);
+            let ratio = ExactNum::div_ref(
+                &ExactNum::from_u64(n_k, wrk),
+                &ExactNum::from_u64(n_kj, wrk),
+                wrk,
+                rm,
+            );
+            let den =
+                ExactNum::mul_ref(&ratio, &ratio, wrk, rm).sub(&ExactNum::from_u8(1, wrk), wrk, rm);
             if den.is_zero() || !finite(&den) {
                 return Err(OdeError::InvalidArgument);
             }
             let diff = ExactNum::sub_ref(&cur[j - 1], &row[j - 1], wrk, rm);
-            let nxt = ExactNum::add_ref(&cur[j - 1], &ExactNum::div_ref(&diff, &den, wrk, rm), wrk, rm);
+            let nxt = ExactNum::add_ref(
+                &cur[j - 1],
+                &ExactNum::div_ref(&diff, &den, wrk, rm),
+                wrk,
+                rm,
+            );
             if !finite(&nxt) {
                 return Err(OdeError::InvalidArgument);
             }
@@ -1223,21 +1239,13 @@ mod tests {
         let _ = t0.set_precision(wrk, RoundingMode::None);
         let mut lam_w = lam.clone();
         let _ = lam_w.set_precision(wrk, RoundingMode::None);
-        let mut pulse = |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
-            let nt = lam_w.clone().mul(tt, q, r).neg_via_mul();
-            lam_w.clone().mul(&nt.exp(q, r, c), q, r)
-        };
+        let mut pulse =
+            |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
+                let nt = lam_w.clone().mul(tt, q, r).neg_via_mul();
+                lam_w.clone().mul(&nt.exp(q, r, c), q, r)
+            };
         let decided = super::a_priori_trajectory_unrepresentable(
-            &tab,
-            &mut pulse,
-            &t0,
-            &y0,
-            &h0,
-            &span,
-            &atol,
-            &rtol,
-            wrk,
-            &mut cc,
+            &tab, &mut pulse, &t0, &y0, &h0, &span, &atol, &rtol, wrk, &mut cc,
         );
         assert_eq!(
             decided,
@@ -1278,8 +1286,14 @@ mod tests {
             "y(t1) must be 1 within a generous multiple of atol; evals={evals}"
         );
         assert!(evals > 16, "the run must actually integrate; evals={evals}");
-        assert!(evals < 100_000, "the tail must grow, not crawl; evals={evals}");
-        assert!(ms < 2_000, "the finishable run must be quick; took {ms} ms, evals={evals}");
+        assert!(
+            evals < 100_000,
+            "the tail must grow, not crawl; evals={evals}"
+        );
+        assert!(
+            ms < 2_000,
+            "the finishable run must be quick; took {ms} ms, evals={evals}"
+        );
         let _ = ts;
         Ok(())
     }
@@ -1326,11 +1340,14 @@ mod tests {
             err.is_zero() || err.compare(&band) != Some(1),
             "reachable tight tol must return 1+sin(1); evals={evals_r}"
         );
-        assert!(evals_r > 16, "a finishable run actually integrates; evals={evals_r}");
+        assert!(
+            evals_r > 16,
+            "a finishable run actually integrates; evals={evals_r}"
+        );
 
         // Same reachable bar on a different f, so the bound is class-wide.
         let mut evals_e = 0u32;
-        let ( _, ye) = rk45_adaptive(
+        let (_, ye) = rk45_adaptive(
             |_t, y, _q, _r, _cc| {
                 evals_e += 1;
                 y.neg_via_mul()
@@ -1390,7 +1407,11 @@ mod tests {
         };
         let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
-        assert_eq!(tend.compare(&one), Some(0), "{label} must land on t=1; {ms} ms");
+        assert_eq!(
+            tend.compare(&one),
+            Some(0),
+            "{label} must land on t=1; {ms} ms"
+        );
         let expect = one.clone().add(&one.sin(p, rm, &mut cc), p, rm);
         let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
         let bits = if err.is_zero() {
@@ -1404,7 +1425,10 @@ mod tests {
             bits >= min_bits || err.is_zero(),
             "{label}: y(1) vs 1+sin(1) only {bits} bits after {ms} ms"
         );
-        assert!(ms < max_ms, "{label} must finish under {max_ms} ms; took {ms} ms");
+        assert!(
+            ms < max_ms,
+            "{label} must finish under {max_ms} ms; took {ms} ms"
+        );
         let _ = ts;
         Ok(())
     }
@@ -1424,7 +1448,13 @@ mod tests {
     /// switch takes Bulirsch–Stoer and must return the closed form.
     #[test]
     fn zf_54_d0229592_matches_closed_form() -> Result<(), crate::Error> {
-        cos_closed_form_bits(1024, -512, 500, 90_000, "d0229592 y'=cos(t) p=1024 atol=2^{-512}")
+        cos_closed_form_bits(
+            1024,
+            -512,
+            500,
+            90_000,
+            "d0229592 y'=cos(t) p=1024 atol=2^{-512}",
+        )
     }
 
     /// A caller-requested RK4 / Euler length above the old 65536 cap is a

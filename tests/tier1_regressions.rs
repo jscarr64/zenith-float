@@ -3190,15 +3190,31 @@ fn zf_j_i_neg_half_at_zero_is_pos_inf_and_small_z_matches_flint() {
         let z = parse_complex(&format!("{zt},0")).expect("z");
         let v = z.bessel_j_nu(&half, p, rm, &mut cc);
         let w = want(tok);
-        assert!(same(v.re(), &w), "J_-1/2({zt}) p={p} re {} want {tok}", v.re());
-        assert!(v.im().is_zero() && !v.im().is_negative(), "J_-1/2({zt}) p={p} im {}", v.im());
+        assert!(
+            same(v.re(), &w),
+            "J_-1/2({zt}) p={p} re {} want {tok}",
+            v.re()
+        );
+        assert!(
+            v.im().is_zero() && !v.im().is_negative(),
+            "J_-1/2({zt}) p={p} im {}",
+            v.im()
+        );
     }
     for &(zt, p, tok) in &i_golds {
         let z = parse_complex(&format!("{zt},0")).expect("z");
         let v = z.bessel_i(&half, p, rm, &mut cc);
         let w = want(tok);
-        assert!(same(v.re(), &w), "I_-1/2({zt}) p={p} re {} want {tok}", v.re());
-        assert!(v.im().is_zero() && !v.im().is_negative(), "I_-1/2({zt}) p={p} im {}", v.im());
+        assert!(
+            same(v.re(), &w),
+            "I_-1/2({zt}) p={p} re {} want {tok}",
+            v.re()
+        );
+        assert!(
+            v.im().is_zero() && !v.im().is_negative(),
+            "I_-1/2({zt}) p={p} im {}",
+            v.im()
+        );
     }
 }
 
@@ -3306,9 +3322,18 @@ fn zf_i100_z1000_toeven_128_matches_flint() {
     let mut cc = Consts::new().expect("Consts");
     let p = 128;
     let rm = RoundingMode::ToEven;
-    let z = ExactComplex::new(parse_real("3e8p0").expect("1000"), parse_real("0").expect("0"));
-    let zi = ExactComplex::new(parse_real("0").expect("0"), parse_real("3e8p0").expect("1000i"));
-    let nu = ExactComplex::new(parse_real("64p0").expect("100"), parse_real("0").expect("0"));
+    let z = ExactComplex::new(
+        parse_real("3e8p0").expect("1000"),
+        parse_real("0").expect("0"),
+    );
+    let zi = ExactComplex::new(
+        parse_real("0").expect("0"),
+        parse_real("3e8p0").expect("1000i"),
+    );
+    let nu = ExactComplex::new(
+        parse_real("64p0").expect("100"),
+        parse_real("0").expect("0"),
+    );
     let gold_re = "F:+:1430:908ee542bcfc5f9d74534a3955e4f135";
     let gold_im = "Z:+";
     let want = |s: &str| -> ExactNum {
@@ -3324,26 +3349,68 @@ fn zf_i100_z1000_toeven_128_matches_flint() {
         v.compare(w) == Some(0) && (!v.is_zero() || v.is_negative() == w.is_negative())
     };
     let i = z.bessel_i(&nu, p, rm, &mut cc);
-    assert!(same(i.re(), &want(gold_re)), "I_100(1000) re {} want {gold_re}", i.re());
-    assert!(same(i.im(), &want(gold_im)), "I_100(1000) im {} want {gold_im}", i.im());
+    assert!(
+        same(i.re(), &want(gold_re)),
+        "I_100(1000) re {} want {gold_re}",
+        i.re()
+    );
+    assert!(
+        same(i.im(), &want(gold_im)),
+        "I_100(1000) im {} want {gold_im}",
+        i.im()
+    );
     let j = zi.bessel_j_nu(&nu, p, rm, &mut cc);
-    assert!(same(j.re(), &want(gold_re)), "J_100(1000i) re {} want {gold_re}", j.re());
-    assert!(same(j.im(), &want(gold_im)), "J_100(1000i) im {} want {gold_im}", j.im());
+    assert!(
+        same(j.re(), &want(gold_re)),
+        "J_100(1000i) re {} want {gold_re}",
+        j.re()
+    );
+    assert!(
+        same(j.im(), &want(gold_im)),
+        "J_100(1000i) im {} want {gold_im}",
+        j.im()
+    );
 
     // J_5(1000i) = i I_5(1000): real +0, imag = I_5(1000).
     let nu5 = ExactComplex::new(parse_real("5p0").expect("5"), parse_real("0").expect("0"));
     let i5 = z.bessel_i(&nu5, p, rm, &mut cc);
     let j5 = zi.bessel_j_nu(&nu5, p, rm, &mut cc);
-    assert!(same(i5.im(), &want(gold_im)), "I_5(1000) im {} want {gold_im}", i5.im());
-    assert!(same(j5.re(), &want(gold_im)), "J_5(1000i) re {} want {gold_im}", j5.re());
-    assert!(same(j5.im(), i5.re()), "J_5(1000i) im {} want I_5(1000) {}", j5.im(), i5.re());
+    assert!(
+        same(i5.im(), &want(gold_im)),
+        "I_5(1000) im {} want {gold_im}",
+        i5.im()
+    );
+    assert!(
+        same(j5.re(), &want(gold_im)),
+        "J_5(1000i) re {} want {gold_im}",
+        j5.re()
+    );
+    assert!(
+        same(j5.im(), i5.re()),
+        "J_5(1000i) im {} want I_5(1000) {}",
+        j5.im(),
+        i5.re()
+    );
 
     // I_100(1000i) = i^{100} J_100(1000) = J_100(1000), imag +0.
     let i_on_i = zi.bessel_i(&nu, p, rm, &mut cc);
     let j_on_r = z.bessel_j_nu(&nu, p, rm, &mut cc);
-    assert!(same(i_on_i.im(), &want(gold_im)), "I_100(1000i) im {} want {gold_im}", i_on_i.im());
-    assert!(same(j_on_r.im(), &want(gold_im)), "J_100(1000) im {} want {gold_im}", j_on_r.im());
-    assert!(same(i_on_i.re(), j_on_r.re()), "I_100(1000i) re {} want J_100(1000) {}", i_on_i.re(), j_on_r.re());
+    assert!(
+        same(i_on_i.im(), &want(gold_im)),
+        "I_100(1000i) im {} want {gold_im}",
+        i_on_i.im()
+    );
+    assert!(
+        same(j_on_r.im(), &want(gold_im)),
+        "J_100(1000) im {} want {gold_im}",
+        j_on_r.im()
+    );
+    assert!(
+        same(i_on_i.re(), j_on_r.re()),
+        "I_100(1000i) re {} want J_100(1000) {}",
+        i_on_i.re(),
+        j_on_r.re()
+    );
 }
 
 /// ZF-58: Kelvin functions at large order (ν = 100, 498.5 at x = 1000) and the complex
@@ -5325,4 +5392,83 @@ fn zf_elliptic_k_e_complete_near_one_p8192_matches_flint() {
             "{func} {rm:?} im differs from the FLINT dest-p gold"
         );
     }
+}
+
+/// B5 (Spence PR #40 review, Jeff ruling 2026-11-22 8:33 PM CT): J_ν / I_ν at the four signed zeros for real non-integer
+/// ν < 0 return the signed one-sided limit. z = +0±0i (arg ±0): sgn Γ(ν+1)·∞ (DLMF 10.7.3 / 10.30.1), so −∞ on
+/// (−2,−1), (−4,−3), …; the imaginary zero follows Im z. z = −0±0i (arg ±π, C99 Annex G): sgn Γ(ν+1)·e^{±νπi}·∞
+/// (DLMF 10.11.1 / 10.34.1): Re −sgn cos(π(ν−⌊ν⌋))·∞ (+0 at half-odd ν), Im ∓∞.
+/// Expected signs: FLINT 3.6.0 `acb_bessel_j` / `acb_bessel_i` (python-flint 0.9.0) along each direction at |z| = 2^-200
+/// (2^-3000 for ν = −1 ± 2^-2048), mpmath 1.3.0 for ν = −(2^20+1/2) where FLINT gives [±inf], cross-checked against
+/// FLINT's sgn Γ(ν+1) (`land39/final/pr40-fixes/b5/b5_flint_oracle.{py,out}`). mpmath returns +inf at exact 0 for every
+/// ν (land39 REF-CORRECTIONS RC-14). Every row fails on e6f439f where ν ∈ (−2,−1) etc. gave +∞ and −0±0i gave +∞±0i.
+#[test]
+fn b5_j_i_negative_order_at_signed_zeros_is_signed_limit() -> Result<(), String> {
+    let mut cc = Consts::new().map_err(|e| format!("Consts: {e:?}"))?;
+    let f2048 = format!("-{}p-2048", "f".repeat(512));
+    let g2048 = format!("-1{}1p-2048", "0".repeat(511));
+    // (ν, sign of Re at +0±0i, Re at −0±0i: '+' +∞, '-' −∞, '0' +0)
+    let rows: [(&str, char, char); 14] = [
+        ("-1p-2", '+', '+'),
+        ("-1p-1", '+', '0'),
+        ("-ffffffffffffffffp-64", '+', '-'),
+        ("-10000000000000001p-64", '-', '+'),
+        (f2048.as_str(), '+', '-'),
+        (g2048.as_str(), '-', '+'),
+        ("-5p-2", '-', '+'),
+        ("-3p-1", '-', '0'),
+        ("-5p-1", '+', '0'),
+        ("-7p-1", '-', '0'),
+        ("-200001p-1", '+', '0'),
+        ("-3p-2", '+', '-'),
+        ("-7p-2", '-', '-'),
+        ("-bp-2", '+', '-'),
+    ];
+    let zeros = [(false, false), (false, true), (true, false), (true, true)];
+    for (nu_t, plus_re, minus_re) in rows {
+        let nu = ExactComplex::new(parse_real(nu_t)?, signed_zero(false));
+        for rm in MODES {
+            for p in [64usize, 128, 256, 1024, 2048] {
+                for (re_neg, im_neg) in zeros {
+                    let z = ExactComplex::new(signed_zero(re_neg), signed_zero(im_neg));
+                    for (name, v) in [
+                        ("J", z.bessel_j_nu(&nu, p, rm, &mut cc)),
+                        ("I", z.bessel_i(&nu, p, rm, &mut cc)),
+                    ] {
+                        let what = format!(
+                            "{name}_{nu_t}({}0{}0i) p={p} {rm:?}: got {v:?}",
+                            if re_neg { "-" } else { "+" },
+                            if im_neg { "-" } else { "+" }
+                        );
+                        if !re_neg {
+                            let re_ok = match plus_re {
+                                '+' => v.re().is_inf_pos(),
+                                _ => v.re().is_inf_neg(),
+                            };
+                            assert!(re_ok, "{what}, want {plus_re}Inf re");
+                            assert!(
+                                v.im().is_zero() && v.im().is_negative() == im_neg,
+                                "{what}, want imaginary zero with the sign of Im z"
+                            );
+                        } else {
+                            let re_ok = match minus_re {
+                                '+' => v.re().is_inf_pos(),
+                                '-' => v.re().is_inf_neg(),
+                                _ => v.re().is_zero() && !v.re().is_negative(),
+                            };
+                            assert!(re_ok, "{what}, want re {minus_re}");
+                            let im_ok =
+                                if im_neg { v.im().is_inf_pos() } else { v.im().is_inf_neg() };
+                            assert!(
+                                im_ok,
+                                "{what}, want im {}Inf",
+                                if im_neg { "+" } else { "-" }
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }

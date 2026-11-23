@@ -157,11 +157,7 @@ fn f_table(q: u64) -> Vec<u64> {
 
 fn isqrt(n: &ExactInt) -> ExactInt {
     if n.is_zero() || n.is_one() || n.is_negative() {
-        return if n.is_negative() {
-            ExactInt::zero()
-        } else {
-            n.clone()
-        };
+        return if n.is_negative() { ExactInt::zero() } else { n.clone() };
     }
     let bits = n.bit_length();
     let mut hi = ExactInt::from_u64(2).pow((bits.div_ceil(2) + 1) as u64);
@@ -392,7 +388,9 @@ impl Config {
             let mut num = 0u128;
             for (p, e) in factor_u64(q - 1) {
                 // phi(p^e)^2 = (p^{e-1} (p-1))^2
-                let phi = pow_u64(p, e.saturating_sub(1)).unwrap_or(1).saturating_mul(p - 1);
+                let phi = pow_u64(p, e.saturating_sub(1))
+                    .unwrap_or(1)
+                    .saturating_mul(p - 1);
                 let phi = phi as u128;
                 num = num.saturating_add(phi.saturating_mul(phi));
             }
@@ -683,11 +681,7 @@ fn rem_limbs(u: &[u64], v: &[u64]) -> Vec<u64> {
         let uj_n1 = un[j + n - 1] as u128;
         let vnm1 = vn[n - 1] as u128;
         let dividend = (uj_n << 64) | uj_n1;
-        let mut qhat = if uj_n == vnm1 {
-            u64::MAX as u128
-        } else {
-            dividend / vnm1
-        };
+        let mut qhat = if uj_n == vnm1 { u64::MAX as u128 } else { dividend / vnm1 };
         let mut rhat = dividend - qhat * vnm1;
         let vn_2 = vn[n - 2] as u128;
         let uj_n2 = un[j + n - 2] as u128;
@@ -895,9 +889,7 @@ impl UnityZp {
 
     fn trim(&mut self) {
         let l = self.nlen();
-        while self.slots > 0
-            && limbs_is_zero(&self.c[(self.slots - 1) * l..self.slots * l])
-        {
+        while self.slots > 0 && limbs_is_zero(&self.c[(self.slots - 1) * l..self.slots * l]) {
             self.slots -= 1;
         }
         self.c.truncate(self.slots * l);
@@ -1054,11 +1046,7 @@ fn jacobi_sum_general(f: &mut UnityZp, table: &[u64], p: u64, q: u64, k: u32, a:
     }
     let q_i = q as usize;
     for i in 1..q.saturating_sub(1) {
-        let t = if (i as usize) < table.len() {
-            table[i as usize]
-        } else {
-            0
-        };
+        let t = if (i as usize) < table.len() { table[i as usize] } else { 0 };
         let l = (a as u128 * i as u128 + b as u128 * t as u128) % pow as u128;
         if l < size as u128 {
             f.inc(l as usize);
@@ -1098,7 +1086,6 @@ fn jacobi_sum_2q_two(n: &ExactInt, q: u64) -> UnityZp {
     jacobi_sum_general(&mut f, &table, 2, q, k, a, b);
     f
 }
-
 
 fn check_pk(j: &UnityZp, u: &ExactInt, v: u64) -> i64 {
     let r = j.p_pow() as u64;
@@ -1272,11 +1259,7 @@ enum Status {
 }
 
 fn is_mul_coprime(r: u64, s: &ExactInt, n: &ExactInt) -> bool {
-    let g_r = if r == 0 {
-        1
-    } else {
-        gcd_u64(r, rem_u64(n, r))
-    };
+    let g_r = if r == 0 { 1 } else { gcd_u64(r, rem_u64(n, r)) };
     if g_r != 1 {
         return false;
     }
@@ -1772,9 +1755,14 @@ mod tests {
 
     #[test]
     fn limb_add_sub_mul_and_unity_pow() {
-        fn to_e(w: &[u64]) -> ExactInt { exact_from_limbs(w) }
+        fn to_e(w: &[u64]) -> ExactInt {
+            exact_from_limbs(w)
+        }
         let mut s = 0x123456789abcdefu64;
-        let mut next = || { s = s.wrapping_mul(6364136223846793005).wrapping_add(1); s };
+        let mut next = || {
+            s = s.wrapping_mul(6364136223846793005).wrapping_add(1);
+            s
+        };
         let n = ExactInt::from_u64(2).pow(255).sub(&ExactInt::from_u64(19));
         let nl = limbs_of(&n);
         for _ in 0..100 {
@@ -1803,14 +1791,21 @@ mod tests {
         let a = limbs_of(&nm1);
         mul_raw(&a, &a, &mut prod);
         let got = rem_limbs(&prod, &nl);
-        assert_eq!(exact_from_limbs(&got), ExactInt::one(), "rem_limbs (n-1)^2 got {got:?} prod={prod:?}");
+        assert_eq!(
+            exact_from_limbs(&got),
+            ExactInt::one(),
+            "rem_limbs (n-1)^2 got {got:?} prod={prod:?}"
+        );
 
         // zeta_{32}^{16} == -1 in Z[x]/(x^{16}+1, n)
         let mut z = UnityZp::new(2, 5, &n);
         z.set_ui(1, 1);
         let z16 = z.pow_ui(16);
         // expect coeff 0 = n-1
-        let c0 = z16.slot(0).map(|s| exact_from_limbs(s)).unwrap_or_else(ExactInt::zero);
+        let c0 = z16
+            .slot(0)
+            .map(exact_from_limbs)
+            .unwrap_or_else(ExactInt::zero);
         assert_eq!(c0, nm1, "zeta^16 coeff0, slots={}", z16.slots);
         for i in 1..z16.slots.max(z16.p_pow()) {
             if let Some(s) = z16.slot(i) {
@@ -1818,10 +1813,16 @@ mod tests {
             }
         }
         let z16s = z16.sqr();
-        let s0 = z16s.slot(0).map(|s| exact_from_limbs(s)).unwrap_or_else(ExactInt::zero);
+        let s0 = z16s
+            .slot(0)
+            .map(exact_from_limbs)
+            .unwrap_or_else(ExactInt::zero);
         assert_eq!(s0, ExactInt::one(), "(-1)^2 via UnityZp::sqr");
         let z32 = z.pow_ui(32);
-        let one_c = z32.slot(0).map(|s| exact_from_limbs(s)).unwrap_or_else(ExactInt::zero);
+        let one_c = z32
+            .slot(0)
+            .map(exact_from_limbs)
+            .unwrap_or_else(ExactInt::zero);
         assert_eq!(one_c, ExactInt::one(), "zeta^32 != 1, slots={}", z32.slots);
         assert_eq!(z32.is_unity(), 0);
         assert_eq!(z16.is_unity(), 16);
@@ -1850,7 +1851,16 @@ mod tests {
             s
         };
         for _ in 0..80 {
-            let u = ExactInt::from_unsigned_limbs(vec![next(), next(), next(), next(), next(), next(), next(), next()]);
+            let u = ExactInt::from_unsigned_limbs(vec![
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
+            ]);
             check(&u, &n);
             let v = ExactInt::from_unsigned_limbs(vec![next() | 1, next(), next(), next()]);
             if !v.is_zero() {
@@ -1859,7 +1869,10 @@ mod tests {
         }
         // one-limb and two-limb divisors
         for d in [2u64, 3, 5, 7, 19, u64::MAX, (1u64 << 32) + 15] {
-            check(&u_from_words(&[next(), next(), next(), next()]), &ExactInt::from_u64(d));
+            check(
+                &u_from_words(&[next(), next(), next(), next()]),
+                &ExactInt::from_u64(d),
+            );
         }
         fn u_from_words(w: &[u64]) -> ExactInt {
             ExactInt::from_unsigned_limbs(w.to_vec())
@@ -1870,13 +1883,23 @@ mod tests {
 
         // Wide numerators (mul accumulators are 2*nlen+2 limbs) and q*n+r identities.
         for _ in 0..200 {
-            let q = ExactInt::from_unsigned_limbs(vec![next(), next(), next(), next(), next(), next()]);
+            let q =
+                ExactInt::from_unsigned_limbs(vec![next(), next(), next(), next(), next(), next()]);
             let r_lim = vec![next(), next(), next(), next()];
             let r = rem(&ExactInt::from_unsigned_limbs(r_lim), &n);
             let u = q.mul(&n).add(&r);
             check(&u, &n);
             let wide = ExactInt::from_unsigned_limbs(vec![
-                next(), next(), next(), next(), next(), next(), next(), next(), next(), next(),
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
+                next(),
             ]);
             check(&wide, &n);
         }

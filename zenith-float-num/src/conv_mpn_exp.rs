@@ -5,9 +5,9 @@ use crate::common::buf::WordBuf;
 use crate::defs::DoubleWord;
 use crate::defs::Error;
 use crate::defs::Sign;
+use crate::defs::Word;
 use crate::defs::WORD_BIT_SIZE;
 use crate::defs::WORD_SIGNIFICANT_BIT;
-use crate::defs::Word;
 use crate::mantissa::Mantissa;
 
 /// A truncated power `a * 2^{exp_r}` of an integer base.
@@ -187,8 +187,12 @@ pub(crate) fn mpn_base_pow(base: u8, e: u64, n: usize) -> Result<BasePow, Error>
     })
 }
 
-fn take_high_limbs<'a>(src: &'a [Word], n: usize) -> &'a [Word] {
-    if src.len() <= n { src } else { &src[src.len() - n..] }
+fn take_high_limbs(src: &[Word], n: usize) -> &[Word] {
+    if src.len() <= n {
+        src
+    } else {
+        &src[src.len() - n..]
+    }
 }
 
 fn low_limbs_nonzero(src: &[Word], kept_high: usize) -> bool {
@@ -290,7 +294,7 @@ pub(crate) fn scale_x_base_pow(
         });
     }
 
-    let exp_abs = u64::try_from(k.unsigned_abs()).map_err(|_| Error::InvalidArgument)?;
+    let exp_abs = k.unsigned_abs();
     let pow = mpn_base_pow(base, exp_abs, n)?;
 
     if k > 0 {
@@ -419,11 +423,11 @@ mod tests {
         // 243 = a * 2^{exp_a}
         let a243 = (u128::from(p.a[1]) << 64) | u128::from(p.a[0]);
         let sh = -p.exp_a;
-        assert!(sh >= 0 && sh < 128);
+        assert!((0..128).contains(&sh));
         assert_eq!(a243 >> sh, 243, "1*3^5 value a={a243} exp_a={}", p.exp_a);
         let a1 = (u128::from(q.a[1]) << 64) | u128::from(q.a[0]);
         let sh1 = -q.exp_a;
-        assert!(sh1 >= 0 && sh1 < 128);
+        assert!((0..128).contains(&sh1));
         assert_eq!(a1 >> sh1, 1, "243/3^5 value a={a1} exp_a={}", q.exp_a);
     }
 

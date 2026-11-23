@@ -3,6 +3,8 @@
 //! Software-limb [`ExactComplex`] arithmetic only. The error-function path is the
 //! Faddeeva function throughout — not the real series evaluated at \(\lvert z\rvert\).
 
+use crate::common::fixlog;
+use crate::common::fixlog::ONE;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
 use crate::complex_ball::ziv_complex_ball;
@@ -20,178 +22,6 @@ use crate::WORD_BIT_SIZE;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-/// `std` f64 methods, with no_std stand-ins. Used only to choose Stirling
-/// parameters and block lengths, not to form a returned value.
-mod fmath {
-    #[cfg(feature = "std")]
-    pub fn log2(x: f64) -> f64 {
-        x.log2()
-    }
-    #[cfg(feature = "std")]
-    pub fn ln(x: f64) -> f64 {
-        x.ln()
-    }
-    #[cfg(feature = "std")]
-    pub fn sqrt(x: f64) -> f64 {
-        x.sqrt()
-    }
-    #[cfg(feature = "std")]
-    pub fn ceil(x: f64) -> f64 {
-        x.ceil()
-    }
-    #[cfg(feature = "std")]
-    pub fn round(x: f64) -> f64 {
-        x.round()
-    }
-    #[cfg(feature = "std")]
-    pub fn cos(x: f64) -> f64 {
-        x.cos()
-    }
-    #[cfg(feature = "std")]
-    pub fn atan2(y: f64, x: f64) -> f64 {
-        y.atan2(x)
-    }
-    #[cfg(feature = "std")]
-    pub fn powi(x: f64, n: i32) -> f64 {
-        x.powi(n)
-    }
-    #[cfg(feature = "std")]
-    pub fn powf(x: f64, n: f64) -> f64 {
-        x.powf(n)
-    }
-
-    #[cfg(not(feature = "std"))]
-    pub fn log2(x: f64) -> f64 {
-        if x <= 0.0 || !x.is_finite() {
-            return f64::NAN;
-        }
-        let bits = x.to_bits();
-        let e = ((bits >> 52) & 0x7ff) as i32 - 1023;
-        let frac_bits = bits & ((1u64 << 52) - 1);
-        let frac = 1.0 + (frac_bits as f64) * (1.0 / (1u64 << 52) as f64); // [1, 2)
-        let z = frac - 1.0;
-        // log2(1+z) = ln(1+z)/ln(2), ln(1+z) ≈ z - z^2/2 + z^3/3 - z^4/4 + z^5/5
-        let z2 = z * z;
-        let z3 = z2 * z;
-        let z4 = z3 * z;
-        let z5 = z4 * z;
-        let ln = z - 0.5 * z2 + (1.0 / 3.0) * z3 - 0.25 * z4 + 0.2 * z5;
-        (e as f64) + ln * (1.0 / core::f64::consts::LN_2)
-    }
-    #[cfg(not(feature = "std"))]
-    pub fn ln(x: f64) -> f64 {
-        log2(x) * core::f64::consts::LN_2
-    }
-    #[cfg(not(feature = "std"))]
-    pub fn sqrt(x: f64) -> f64 {
-        if x <= 0.0 {
-            return if x == 0.0 { x } else { f64::NAN };
-        }
-        if !x.is_finite() {
-            return x;
-        }
-        // One Newton step from the exponent-halved IEEE guess.
-        let bits = x.to_bits();
-        let guess = f64::from_bits((bits >> 1) + 0x1ff8_0000_0000_0000);
-        let mut g = guess;
-        g = 0.5 * (g + x / g);
-        g = 0.5 * (g + x / g);
-        g
-    }
-    #[cfg(not(feature = "std"))]
-    pub fn ceil(x: f64) -> f64 {
-        if !x.is_finite() {
-            return x;
-        }
-        let t = x as i64 as f64;
-        if t < x { t + 1.0 } else { t }
-    }
-    #[cfg(not(feature = "std"))]
-    pub fn round(x: f64) -> f64 {
-        if !x.is_finite() {
-            return x;
-        }
-        if x >= 0.0 {
-            ceil(x - 0.5)
-        } else {
-            -ceil(-x - 0.5)
-        }
-    }
-    #[cfg(not(feature = "std"))]
-    pub fn cos(x: f64) -> f64 {
-        // Range-reduce roughly and use a short Taylor series (parameter choice only).
-        let pi = core::f64::consts::PI;
-        let mut y = x - 2.0 * pi * round(x / (2.0 * pi));
-        if y > pi {
-            y -= 2.0 * pi;
-        }
-        if y < -pi {
-            y += 2.0 * pi;
-        }
-        let y2 = y * y;
-        1.0 - y2 * (0.5 - y2 * (1.0 / 24.0 - y2 * (1.0 / 720.0)))
-    }
-    #[cfg(not(feature = "std"))]
-    pub fn atan2(y: f64, x: f64) -> f64 {
-        // Coarse atan2 for the Stirling arg factor only.
-        if x == 0.0 && y == 0.0 {
-            return 0.0;
-        }
-        let abs_y = if y < 0.0 { -y } else { y };
-        let abs_x = if x < 0.0 { -x } else { x };
-        let a = if abs_x > abs_y {
-            let t = abs_y / abs_x;
-            t / (1.0 + 0.28 * t * t)
-        } else if abs_y == 0.0 {
-            0.0
-        } else {
-            let t = abs_x / abs_y;
-            core::f64::consts::FRAC_PI_2 - t / (1.0 + 0.28 * t * t)
-        };
-        let mut a = if x < 0.0 { core::f64::consts::PI - a } else { a };
-        if y < 0.0 {
-            a = -a;
-        }
-        a
-    }
-    #[cfg(not(feature = "std"))]
-    pub fn powi(x: f64, n: i32) -> f64 {
-        if n == 0 {
-            return 1.0;
-        }
-        let mut acc = 1.0;
-        let mut b = x;
-        let mut e = if n < 0 { -n } else { n } as u32;
-        while e > 0 {
-            if e & 1 == 1 {
-                acc *= b;
-            }
-            e >>= 1;
-            if e == 0 {
-                break;
-            }
-            b *= b;
-        }
-        if n < 0 { 1.0 / acc } else { acc }
-    }
-    #[cfg(not(feature = "std"))]
-    pub fn powf(x: f64, n: f64) -> f64 {
-        if x <= 0.0 {
-            return f64::NAN;
-        }
-        // x^n = 2^(n log2 x)
-        let p = n * log2(x);
-        // 2^p = 2^{ip} * 2^{frac}
-        let ip = if p >= 0.0 { p as i32 } else { p as i32 - 1 };
-        let frac = p - (ip as f64);
-        // 2^frac ≈ 1 + frac*ln2 + (frac*ln2)^2/2
-        let u = frac * core::f64::consts::LN_2;
-        let two_frac = 1.0 + u + 0.5 * u * u;
-        two_frac * powi(2.0, ip)
-    }
-}
-
-
 /// L1 radius \(\lvert\mathrm{Re}\,z\rvert+\lvert\mathrm{Im}\,z\rvert\) below which
 /// the Faddeeva power series is used (Poppe–Wijers inner region).
 const FADDEEVA_SERIES_L1: u32 = 8;
@@ -202,16 +32,20 @@ const FADDEEVA_SERIES_L1: u32 = 8;
 /// factorial is then evaluated by rectangular splitting ([`rising2_ui_rs`]).
 fn stirling_choose_param(z: &ExactComplex, p: usize, digamma: bool) -> (usize, usize) {
     let prec = p.saturating_add((usize::BITS - p.leading_zeros()) as usize);
-    let beta = if prec <= 32768 {
-        0.17
+    // BETA in hundredths: 0.17, 0.20, 0.24.
+    let beta_pct: u128 = if prec <= 32768 {
+        17
     } else if prec <= 131072 {
-        0.20
+        20
     } else {
-        0.24
+        24
     };
-    let w = (beta * (prec as f64)).max(1.0);
     let wp = 64usize.max(WORD_BIT_SIZE);
-    let w_ceil = (fmath::ceil(w) as u32).max(1);
+    // ceil(BETA * prec), at least 1, in exact integers (FLINT: a double product). A value past `u32::MAX`
+    // saturates, as the double-to-integer conversion did.
+    let w_ceil = u32::try_from((beta_pct * prec as u128).div_ceil(100))
+        .unwrap_or(u32::MAX)
+        .max(1);
     let w2 = ExactNum::from_u32(w_ceil, wp).sqr(wp, RoundingMode::None);
     let one = ExactComplex::one(wp);
     let mut t = ExactComplex::new(z.re().clone(), z.im().clone());
@@ -220,10 +54,11 @@ fn stirling_choose_param(z: &ExactComplex, p: usize, digamma: bool) -> (usize, u
         let re_lt_one = t.re().is_negative()
             || t.re().is_zero()
             || matches!(t.re().compare(&ExactNum::from_u8(1, wp)), Some(c) if c < 0);
-        let az2 = t
-            .re()
-            .sqr(wp, RoundingMode::None)
-            .add(&t.im().sqr(wp, RoundingMode::None), wp, RoundingMode::None);
+        let az2 = t.re().sqr(wp, RoundingMode::None).add(
+            &t.im().sqr(wp, RoundingMode::None),
+            wp,
+            RoundingMode::None,
+        );
         let mag_lt = matches!(az2.compare(&w2), Some(c) if c < 0) || az2.is_nan();
         if !re_lt_one && !mag_lt {
             break;
@@ -235,93 +70,75 @@ fn stirling_choose_param(z: &ExactComplex, p: usize, digamma: bool) -> (usize, u
         }
     }
     let log2z = match t.abs(wp, RoundingMode::None).exponent() {
-        Some(e) => (e as f64) - 1.0,
-        None => 0.0,
+        Some(e) => i128::from(e).saturating_sub(1).saturating_mul(ONE),
+        None => 0,
     };
     let argf = argf_log2(&t);
     let n = stirling_choose_n(log2z, argf, digamma, prec);
     (r, n.max(1))
 }
 
-fn argf_log2(z: &ExactComplex) -> f64 {
-    let re = num_to_f64(z.re());
-    let im = num_to_f64(z.im());
-    if !re.is_finite() || !im.is_finite() {
-        return 0.0;
+/// `Q32` value of `-log2(cos(arg(z)/2))`, FLINT's `argf` in
+/// `acb_hypgeom_gamma_stirling_choose_param`, without trigonometry:
+/// `cos^2(arg/2) = (|z| + Re z) / (2|z|)`, so it is
+/// `(1 + log2|z| - log2(|z| + Re z)) / 2`, rounded up (`log2|z|` from above,
+/// `log2(|z| + Re z)` from below, both at 64 bits). `4` past FLINT's cut
+/// `cos(arg/2) <= 1e-15`, that is `cos^2(arg/2) <= 1e-30`; `0` for `z = 0` or a
+/// non-finite `z` (as the double path gave).
+fn argf_log2(z: &ExactComplex) -> i128 {
+    if z.re().is_nan() || z.im().is_nan() || z.re().is_inf() || z.im().is_inf() {
+        return 0;
     }
-    let arg = fmath::atan2(im, re);
-    let c = fmath::cos(0.5 * arg);
-    if c <= 1e-15 {
-        4.0
-    } else {
-        (-fmath::ln(c)) / core::f64::consts::LN_2
-    }
-}
-
-fn num_to_f64(x: &ExactNum) -> f64 {
-    if x.is_zero() {
-        return if x.is_negative() { -0.0 } else { 0.0 };
-    }
-    if x.is_inf() {
-        return if x.is_negative() {
-            f64::NEG_INFINITY
-        } else {
-            f64::INFINITY
-        };
-    }
-    if x.is_nan() {
-        return f64::NAN;
-    }
-    let Some(e) = x.exponent() else {
-        return 0.0;
+    let a = z.abs(64, RoundingMode::Up);
+    let Some(log2_a) = fixlog::log2_abs_up(&a) else {
+        return 0;
     };
-    // Scale so the magnitude is near 2^52, then read an integer significand.
-    let shift = (52 as i128).saturating_sub((e as i128) - 1);
-    let sh = if shift > Exponent::MAX as i128 {
-        Exponent::MAX
-    } else if shift < Exponent::MIN as i128 {
-        Exponent::MIN
-    } else {
-        shift as Exponent
-    };
-    let y = x.clone().abs().ldexp(sh, 64, RoundingMode::Down);
-    let u = y.to_u64(RoundingMode::Down).unwrap_or(1u64 << 52) as f64;
-    let exp2 = ((e as i32) - 1) - 52;
-    let m = if exp2.abs() < 1023 {
-        u * fmath::powi(2.0, exp2)
-    } else {
-        u * fmath::powi(2.0, exp2.clamp(-1022, 1022))
-    };
-    if x.is_negative() {
-        -m
-    } else {
-        m
+    let s = a.add(z.re(), 64, RoundingMode::Down);
+    if s.is_negative() {
+        return 4 * ONE;
     }
+    let Some(log2_s) = fixlog::log2_abs_down(&s) else {
+        return 4 * ONE;
+    };
+    // log2(cos^2(arg/2)) = log2_s - 1 - log2_a
+    let log2_c2 = log2_s - ONE - log2_a;
+    if log2_c2 <= fixlog::LOG2_1E_M30_DOWN {
+        return 4 * ONE;
+    }
+    // -log2_c2 / 2, rounded up; never negative (cos^2 <= 1).
+    (-log2_c2).max(0).saturating_add(1) >> 1
 }
 
 /// Upper bound on `log2(|B_{2k}|)` used to pick the Stirling length:
 /// `|B_{2k}| < 4 √(πk) (k/(πe))^{2k}` plus 16 safety bits.
-fn bernoulli_log2_ub_f64(two_k: usize) -> f64 {
+///
+/// In `Q32`, rounded up: `2 + log2(pi k)/2 + 2k log2(k/(pi e)) + 16`.
+fn bernoulli_log2_ub(two_k: usize) -> i128 {
     let k = two_k / 2;
     if k < 1 {
-        return 8.0;
+        return 8 * ONE;
     }
-    let kf = k as f64;
-    2.0 + 0.5 * fmath::log2(core::f64::consts::PI * kf)
-        + (2.0 * kf) * fmath::log2(kf / (core::f64::consts::PI * core::f64::consts::E))
-        + 16.0
+    let ku = u64::try_from(k).unwrap_or(u64::MAX);
+    let log2_k = fixlog::log2_u64_up(ku).unwrap_or(0);
+    let half = (fixlog::LOG2_PI_UP + log2_k + 1) >> 1;
+    let per = log2_k - fixlog::LOG2_PI_DOWN - fixlog::LOG2_E_DOWN;
+    (2 * ONE + half + 16 * ONE).saturating_add(i128::from(ku).saturating_mul(2).saturating_mul(per))
 }
 
-fn stirling_choose_n(log2z: f64, argf: f64, digamma: bool, prec: usize) -> usize {
-    let pref = -(prec as f64);
-    let mut bound_best = f64::INFINITY;
+/// FLINT's Stirling length choice, with `log2z` and `argf` in `Q32`.
+fn stirling_choose_n(log2z: i128, argf: i128, digamma: bool, prec: usize) -> usize {
+    let pref = (prec as i128).saturating_mul(ONE).saturating_neg();
+    let mut bound_best = i128::MAX;
     let mut nbest = 1usize;
     for n in 1..=prec.saturating_add(64) {
-        let b2 = bernoulli_log2_ub_f64(2 * n);
+        let b2 = bernoulli_log2_ub(2 * n);
+        let n2 = (n as i128).saturating_mul(2);
         let boundn = if digamma {
-            b2 - (2.0 * n as f64) * log2z + ((2 * n + 1) as f64) * argf
+            b2.saturating_sub(n2.saturating_mul(log2z))
+                .saturating_add((n2 + 1).saturating_mul(argf))
         } else {
-            b2 - ((2 * n - 1) as f64) * log2z + (2.0 * n as f64) * argf
+            b2.saturating_sub((n2 - 1).saturating_mul(log2z))
+                .saturating_add(n2.saturating_mul(argf))
         };
         if boundn <= pref {
             return n;
@@ -330,7 +147,7 @@ fn stirling_choose_n(log2z: f64, argf: f64, digamma: bool, prec: usize) -> usize
             nbest = n;
             bound_best = boundn;
         }
-        if boundn > 1.0 && n > 8 {
+        if boundn > ONE && n > 8 {
             return nbest;
         }
     }
@@ -361,10 +178,12 @@ fn rs_block_len(n: usize, prec: usize) -> usize {
     } else if n <= 40 {
         6
     } else {
-        let m0 = fmath::sqrt(n as f64) as usize;
-        let extra = 1.5 * (prec.saturating_sub(1024) as f64).max(0.0);
-        let m = 8.0 + 0.27 * fmath::powf(extra, 0.4);
-        (m as usize).clamp(1, 64).min(m0.max(1))
+        let m0 = n.isqrt();
+        // FLINT: `m = 8 + 0.27 * pow(1.5 * max(prec - 1024, 0), 0.4)` in double, truncated, at most 64. Here the
+        // exact floor: 8 + the largest k <= 0.27 (3d/2)^(2/5), d = max(prec - 1024, 0), capped at 56.
+        let d = u64::try_from(prec.saturating_sub(1024)).unwrap_or(u64::MAX);
+        let k = fixlog::floor_scaled_root(27, 100, d.saturating_mul(3), 2, 2, 5, 56);
+        (8 + usize::try_from(k).unwrap_or(56)).min(m0.max(1))
     }
 }
 
@@ -380,10 +199,10 @@ fn rising_block_coeffs(k: usize, l: usize) -> Vec<ExactNum> {
         let mut nxt = alloc::vec![ExactNum::new(p); c.len() + 1];
         nxt[0] = c[0].clone().mul(&a, p, RoundingMode::None);
         for i in 1..c.len() {
-            nxt[i] = c[i]
-                .clone()
-                .mul(&a, p, RoundingMode::None)
-                .add(&c[i - 1], p, RoundingMode::None);
+            nxt[i] =
+                c[i].clone()
+                    .mul(&a, p, RoundingMode::None)
+                    .add(&c[i - 1], p, RoundingMode::None);
         }
         nxt[c.len()] = c[c.len() - 1].clone();
         c = nxt;
@@ -409,41 +228,34 @@ fn rising2_ui_rs(x: &ExactComplex, n: usize, p: usize) -> (ExactComplex, ExactCo
     xpow.push(one_w.clone());
     let xc = ExactComplex::new(x.re().clone(), x.im().clone());
     // Re-widen x to wp.
-    let xw = ExactComplex::new(
-        xc.re().clone(),
-        xc.im().clone(),
-    );
+    let xw = ExactComplex::new(xc.re().clone(), xc.im().clone());
     xpow.push(xw.clone());
     let mut accp = xw.clone();
     for _ in 2..=m {
         accp = accp.mul(&xw, wp, RoundingMode::None);
         xpow.push(accp.clone());
     }
-    let mut t: Option<ExactComplex> = None;
-    let mut dt: Option<ExactComplex> = None;
+    // (t, dt): the product so far and its derivative, set together.
+    let mut acc: Option<(ExactComplex, ExactComplex)> = None;
     let mut k = 0usize;
     while k < n {
         let l = m.min(n - k);
         let (pk, dpk) = rising_block_eval(&xpow, k, l, wp);
-        match t {
-            None => {
-                t = Some(pk);
-                dt = Some(dpk);
-            }
-            Some(tv) => {
+        acc = Some(match acc {
+            None => (pk, dpk),
+            Some((tv, dtv)) => {
                 let new_t = tv.mul(&pk, wp, RoundingMode::None);
-                let new_dt = dt
-                    .as_ref()
-                    .unwrap()
-                    .mul(&pk, wp, RoundingMode::None)
-                    .add(&tv.mul(&dpk, wp, RoundingMode::None), wp, RoundingMode::None);
-                t = Some(new_t);
-                dt = Some(new_dt);
+                let new_dt = dtv.mul(&pk, wp, RoundingMode::None).add(
+                    &tv.mul(&dpk, wp, RoundingMode::None),
+                    wp,
+                    RoundingMode::None,
+                );
+                (new_t, new_dt)
             }
-        }
+        });
         k += l;
     }
-    (t.unwrap_or(one), dt.unwrap_or(zero))
+    acc.unwrap_or((one, zero))
 }
 
 fn rising_block_eval(
@@ -465,17 +277,26 @@ fn rising_block_eval(
     let mut pval = ExactComplex::zero(wp);
     for i in 0..=l {
         let ci = ExactComplex::from_real(c[i].clone(), wp);
-        pval = pval.add(&xpow[i].mul(&ci, wp, RoundingMode::None), wp, RoundingMode::None);
+        pval = pval.add(
+            &xpow[i].mul(&ci, wp, RoundingMode::None),
+            wp,
+            RoundingMode::None,
+        );
     }
     let mut dp = ExactComplex::zero(wp);
     for i in 1..=l {
-        let ci = c[i].clone().mul(&exact_from_usize(i, wp), wp, RoundingMode::None);
+        let ci = c[i]
+            .clone()
+            .mul(&exact_from_usize(i, wp), wp, RoundingMode::None);
         let ci = ExactComplex::from_real(ci, wp);
-        dp = dp.add(&xpow[i - 1].mul(&ci, wp, RoundingMode::None), wp, RoundingMode::None);
+        dp = dp.add(
+            &xpow[i - 1].mul(&ci, wp, RoundingMode::None),
+            wp,
+            RoundingMode::None,
+        );
     }
     (pval, dp)
 }
-
 
 // Positive integers n for which Γ(n)=(n-1)! is evaluated by multiplying 1…n-1
 // instead of Stirling, when the bit-length bound of the real kernel holds
@@ -656,63 +477,60 @@ fn stirling_k_default(prec: usize) -> usize {
     } else if prec <= 1024 {
         2
     } else {
-        let d = fmath::sqrt(prec.saturating_sub(4096) as f64);
-        ((4.0 + 0.1 * d) as usize).clamp(4, 100)
+        // floor(4 + sqrt(prec - 4096) / 10) = 4 + floor(isqrt(prec - 4096) / 10).
+        (4 + prec.saturating_sub(4096).isqrt() / 10).clamp(4, 100)
     }
 }
 
-fn log2_abs_c(z: &ExactComplex, p: usize) -> f64 {
-    let v = num_to_f64(&z.abs(p, RoundingMode::None));
-    if v > 0.0 && v.is_finite() {
-        fmath::log2(v)
-    } else {
-        0.0
-    }
+/// `Q32` lower bound on `log2|z|`; `0` for `z = 0` or a non-finite `z`.
+fn log2_abs_c(z: &ExactComplex, p: usize) -> i128 {
+    fixlog::log2_abs_down(&z.abs(p, RoundingMode::Down)).unwrap_or(0)
 }
 
 /// `log2` of the successive log-gamma Stirling term bounds, as in
 /// `_arb_hypgeom_gamma_stirling_term_bounds`.
-fn stirling_term_mags_log2(log2_zinv: f64, len: usize) -> Vec<f64> {
-    let mut v = alloc::vec![0.0; len];
+/// In `Q32`, each rounded up (`log2_zinv` as given).
+fn stirling_term_mags_log2(log2_zinv: i128, len: usize) -> Vec<i128> {
+    let mut v = alloc::vec![0i128; len];
     if len <= 1 {
         return v;
     }
-    let mut b = log2_zinv - fmath::log2(12.0);
+    let up =
+        |x: usize| fixlog::log2_u64_up(u64::try_from(x.max(1)).unwrap_or(u64::MAX)).unwrap_or(0);
+    let mut b = log2_zinv.saturating_sub(fixlog::LOG2_12_DOWN);
     v[1] = b;
-    let log2_u = 2.0 * (log2_zinv - fmath::log2(2.0 * core::f64::consts::PI));
-    for n in 2..len {
-        let a = (2 * n - 2) as f64;
-        let c = (2 * n - 3) as f64;
-        b += fmath::log2(a.max(1.0)) + fmath::log2(c.max(1.0)) + log2_u;
-        v[n] = b;
+    let log2_u = log2_zinv
+        .saturating_sub(fixlog::LOG2_2PI_DOWN)
+        .saturating_mul(2);
+    for (n, slot) in v.iter_mut().enumerate().skip(2) {
+        b = b
+            .saturating_add(up(2 * n - 2) + up(2 * n - 3))
+            .saturating_add(log2_u);
+        *slot = b;
     }
-    if len >= 3 {
-        for n in (1..len - 1).rev() {
-            if v[n] < v[n + 1] {
-                v[n] = v[n + 1];
-            }
-        }
+    // Running maximum from the right over v[1..]: v[n] = max(v[n], v[n + 1]).
+    let mut run = i128::MIN;
+    for x in v[1..].iter_mut().rev() {
+        run = run.max(*x);
+        *x = run;
     }
     v
 }
 
-fn flint_bit_count(x: usize) -> f64 {
-    if x == 0 {
-        0.0
-    } else {
-        (usize::BITS - x.leading_zeros()) as f64
-    }
+/// FLINT `FLINT_BIT_COUNT`, in `Q32`.
+fn flint_bit_count(x: usize) -> i128 {
+    i128::from(usize::BITS - x.leading_zeros()) * ONE
 }
 
 /// Returns `(M, K, Mk, term_mags)` for `acb_hypgeom_gamma_stirling_sum_improved`.
 fn stirling_improved_plan(
     nterms: usize,
     prec: usize,
-    log2_zinv: f64,
-) -> (usize, usize, Vec<usize>, Vec<f64>) {
+    log2_zinv: i128,
+) -> (usize, usize, Vec<usize>, Vec<i128>) {
     let n = nterms.max(2);
     let mut k = stirling_k_default(prec);
-    if log2_zinv > 10.0 {
+    if log2_zinv > 10 * ONE {
         k = 1;
     }
     let term_mags = stirling_term_mags_log2(log2_zinv, n + 1);
@@ -720,13 +538,16 @@ fn stirling_improved_plan(
         return (n, 1, alloc::vec![n, n], term_mags);
     }
     let mut mk = alloc::vec![n; k + 1];
-    for kk in 2..=k {
-        let log2_k = fmath::log2(kk as f64);
-        while mk[kk] > 2 {
-            let mnew = mk[kk] - 1;
-            let err = term_mags[mnew] - log2_k * (2.0 * mnew as f64) + flint_bit_count(n - mnew);
-            if err < -(prec as f64) {
-                mk[kk] = mnew;
+    let neg_prec = (prec as i128).saturating_mul(ONE).saturating_neg();
+    for (kk, mkk) in mk.iter_mut().enumerate().skip(2) {
+        let log2_k = fixlog::log2_u64_down(u64::try_from(kk).unwrap_or(u64::MAX)).unwrap_or(0);
+        while *mkk > 2 {
+            let mnew = *mkk - 1;
+            let err = term_mags[mnew]
+                .saturating_sub(log2_k.saturating_mul(2 * mnew as i128))
+                .saturating_add(flint_bit_count(n - mnew));
+            if err < neg_prec {
+                *mkk = mnew;
             } else {
                 break;
             }
@@ -901,18 +722,23 @@ fn stirling_sum_s3(
     m_head: usize,
     k_max: usize,
     mk: &[usize],
-    term_mags: &[f64],
+    term_mags: &[i128],
     p: usize,
     cc: &mut Consts,
     digamma: bool,
 ) -> ExactComplex {
-    let wp_f = (p as f64) + term_mags.get(m_head).copied().unwrap_or(0.0);
-    let wp = round_p((fmath::round(wp_f) as i64).clamp(10, p as i64) as usize);
+    let wp_q = (p as i128)
+        .saturating_mul(ONE)
+        .saturating_add(term_mags.get(m_head).copied().unwrap_or(0));
+    let wp_i = fixlog::round_q(wp_q).clamp(10, (p as i128).max(10));
+    let wp = round_p(usize::try_from(wp_i).unwrap_or(10));
     let pi = pi_c(wp, cc);
     // u = -1 / (2 π z)^2
-    let two_pi_z = two_c(wp)
-        .mul(&pi, wp, RoundingMode::None)
-        .mul(&ExactComplex::new(z.re().clone(), z.im().clone()), wp, RoundingMode::None);
+    let two_pi_z = two_c(wp).mul(&pi, wp, RoundingMode::None).mul(
+        &ExactComplex::new(z.re().clone(), z.im().clone()),
+        wp,
+        RoundingMode::None,
+    );
     let mut u = ExactComplex::one(wp).div(
         &two_pi_z.mul(&two_pi_z, wp, RoundingMode::None),
         wp,
@@ -920,8 +746,7 @@ fn stirling_sum_s3(
     );
     u = u.neg();
     let tail_len = nterms.saturating_sub(m_head);
-    let mblk = fmath::sqrt(tail_len as f64) as usize;
-    let mblk = mblk.max(1);
+    let mblk = tail_len.isqrt().max(1);
     let upow = c_powers(&u, mblk, wp);
     let mut s3 = ExactComplex::new(ExactNum::new(wp), ExactNum::new(wp));
     let mut kodd = 1usize;
@@ -939,13 +764,13 @@ fn stirling_sum_s3(
                 let km = mk[k].saturating_sub(m_head).saturating_sub(1).min(mblk);
                 ukpow = alloc::vec![upow[0].clone()];
                 let mut k2p = ExactNum::from_u8(1, wp);
-                for j in 1..=km {
+                for uj in upow.iter().take(km + 1).skip(1) {
                     k2p = k2p.mul(
                         &exact_from_usize(k.saturating_mul(k), wp),
                         wp,
                         RoundingMode::None,
                     );
-                    ukpow.push(upow[j].div(
+                    ukpow.push(uj.div(
                         &ExactComplex::from_real(k2p.clone(), wp),
                         wp,
                         RoundingMode::None,
@@ -986,7 +811,11 @@ fn stirling_sum_s3(
                 }
             }
             if k != 1 {
-                s4 = s4.div(&ExactComplex::from_real(kpow.clone(), wp), wp, RoundingMode::None);
+                s4 = s4.div(
+                    &ExactComplex::from_real(kpow.clone(), wp),
+                    wp,
+                    RoundingMode::None,
+                );
                 if kpow_exp != 0 {
                     s4 = s4.ldexp(-kpow_exp, wp, RoundingMode::None);
                 }
@@ -1004,11 +833,7 @@ fn stirling_sum_s3(
         }
     }
     // multiply by -2 * fact * u^M [* z for log-gamma]
-    let fact_n = if digamma {
-        2 * m_head - 1
-    } else {
-        2 * m_head - 2
-    };
+    let fact_n = if digamma { 2 * m_head - 1 } else { 2 * m_head - 2 };
     let fact = ExactComplex::from_real(fact_ui(fact_n, wp), wp);
     let u_m = c_pow_ui(&u, m_head, wp);
     s3 = s3
@@ -1035,7 +860,7 @@ fn stirling_log_sum_s2(z: &ExactComplex, m_head: usize, p: usize) -> ExactComple
     };
     let zinv = ExactComplex::one(p).div(z, p, RoundingMode::None);
     let w = zinv.mul(&zinv, p, RoundingMode::None);
-    let mblk = (fmath::sqrt(m_head as f64) as usize).max(1);
+    let mblk = m_head.isqrt().max(1);
     let upow = c_powers(&w, mblk, p);
     let mut s2 = ExactComplex::new(ExactNum::new(p), ExactNum::new(p));
     let mut n = m_head - 1;
@@ -1076,7 +901,7 @@ fn stirling_digamma_sum_s2(z: &ExactComplex, m_head: usize, p: usize) -> ExactCo
     };
     let zinv = ExactComplex::one(p).div(z, p, RoundingMode::None);
     let w = zinv.mul(&zinv, p, RoundingMode::None);
-    let mblk = (fmath::sqrt(m_head as f64) as usize).max(1);
+    let mblk = m_head.isqrt().max(1);
     let upow = c_powers(&w, mblk, p);
     let mut s2 = ExactComplex::new(ExactNum::new(p), ExactNum::new(p));
     // Polynomial Σ_{n=1}^{M-1} B_{2n}/(2n) w^n, evaluated high-to-low
@@ -1139,7 +964,6 @@ fn stirling_digamma_coeff_sum_improved(
     };
     s2.add(&s3, p, RoundingMode::None)
 }
-
 
 impl ExactComplex {
     /// Error function \(\mathrm{erf}(z)=1-\mathrm{erfc}(z)\). Entire; NaN in → NaN out.
@@ -1939,7 +1763,6 @@ impl ExactComplex {
         self.ln_gamma_positive(p, cc)
     }
 
-
     fn ln_gamma_positive(&self, p: usize, cc: &mut Consts) -> Self {
         // Rising factorial by rectangular splitting; the \(2\pi i k\)
         // correction still comes from the sum of factor arguments (cheap
@@ -2139,7 +1962,6 @@ mod tests {
         (terms, e_min)
     }
 
-
     fn abs_needs_shift(z: &ExactComplex, p: usize, min_exp: Exponent) -> bool {
         match z.abs(p, RoundingMode::None).exponent() {
             Some(e) => e < min_exp,
@@ -2188,7 +2010,6 @@ mod tests {
         }
         Ok(())
     }
-
 
     fn near_bits(a: &ExactNum, b: &ExactNum, p: usize, slack: Exponent) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
@@ -2923,7 +2744,6 @@ mod tests {
         assert!(rd.im().is_zero());
     }
 
-
     #[test]
     #[ignore]
     fn zf_y2_1plusi_and_pi_family_timings() {
@@ -2962,7 +2782,6 @@ mod tests {
     #[test]
     #[ignore]
     fn zf_gamma_10i_and_digamma_mi_at_p65536_timing() {
-
         let mut cc = Consts::new().expect("Consts");
         let rm = RoundingMode::ToEven;
         let p = 65536usize;
@@ -2971,7 +2790,10 @@ mod tests {
         let g = zg.gamma(p, rm, &mut cc);
         let tg = t0.elapsed();
         eprintln!("gamma(10i) p={p} {:?} nan={}", tg, g.is_nan());
-        assert!(tg < std::time::Duration::from_secs(600), "gamma 64k over 10min");
+        assert!(
+            tg < std::time::Duration::from_secs(600),
+            "gamma 64k over 10min"
+        );
         assert!(!g.is_nan());
         let g_lo = zg.gamma(64, rm, &mut cc);
         assert!(cnear_bits(&g, &g_lo, 64, 4), "gamma 64k vs p64");
@@ -2980,7 +2802,10 @@ mod tests {
         let d = w.digamma(p, rm, &mut cc);
         let td = t1.elapsed();
         eprintln!("digamma(-i) p={p} {:?} nan={}", td, d.is_nan());
-        assert!(td < std::time::Duration::from_secs(600), "digamma 64k over 10min");
+        assert!(
+            td < std::time::Duration::from_secs(600),
+            "digamma 64k over 10min"
+        );
         assert!(!d.is_nan());
         let d_lo = w.digamma(64, rm, &mut cc);
         assert!(cnear_bits(&d, &d_lo, 64, 4), "digamma 64k vs p64");
@@ -3047,7 +2872,11 @@ mod tests {
         // launch the full gamma/digamma call until this is known to be under 1h.
         let t0 = std::time::Instant::now();
         let _ = crate::ops::special::with_even_bernoulli(3316, 65536, |v| {
-            eprintln!("bernoulli n=3316 p=65536 len={} {:?}", v.len(), t0.elapsed());
+            eprintln!(
+                "bernoulli n=3316 p=65536 len={} {:?}",
+                v.len(),
+                t0.elapsed()
+            );
             Ok(())
         });
     }
@@ -3163,7 +2992,10 @@ mod tests {
                     ("digamma(+∞)", pos.digamma(p, rm, &mut cc)),
                 ] {
                     assert!(
-                        !got.is_nan() && got.re().is_inf_pos() && got.im().is_zero() && !got.im().is_negative(),
+                        !got.is_nan()
+                            && got.re().is_inf_pos()
+                            && got.im().is_zero()
+                            && !got.im().is_negative(),
                         "{lab} p={p} {rm:?} {:?}",
                         got
                     );
@@ -3189,8 +3021,16 @@ mod tests {
                     "digamma(1-i∞) p={p} {rm:?} {:?}",
                     dn
                 );
-                for (lab, z) in [("gamma", neg.gamma(p, rm, &mut cc)), ("ln_gamma", neg.ln_gamma(p, rm, &mut cc)), ("digamma", neg.digamma(p, rm, &mut cc))] {
-                    assert!(z.is_nan(), "{lab}(−∞) p={p} {rm:?} should stay IA, got {:?}", z);
+                for (lab, z) in [
+                    ("gamma", neg.gamma(p, rm, &mut cc)),
+                    ("ln_gamma", neg.ln_gamma(p, rm, &mut cc)),
+                    ("digamma", neg.digamma(p, rm, &mut cc)),
+                ] {
+                    assert!(
+                        z.is_nan(),
+                        "{lab}(−∞) p={p} {rm:?} should stay IA, got {:?}",
+                        z
+                    );
                 }
                 let nan = ExactComplex::new(crate::NAN.clone(), ExactNum::new(p));
                 let gn = nan.gamma(p, rm, &mut cc);

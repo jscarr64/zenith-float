@@ -4,6 +4,7 @@
 
 pub mod buf;
 pub mod consts;
+pub(crate) mod fixlog;
 pub mod int;
 #[cfg(any(test, feature = "random"))]
 pub mod test_rng;

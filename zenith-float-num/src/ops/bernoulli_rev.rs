@@ -115,11 +115,7 @@ fn exp2_q32_ceil(x_q32: u128) -> u128 {
 /// `primes` must contain every prime up to `n+1`.
 fn bernoulli_denom_int(n: usize, primes: &[u32]) -> Result<ExactInt, Error> {
     if n % 2 == 1 {
-        return Ok(if n == 1 {
-            ExactInt::from_u64(2)
-        } else {
-            ExactInt::one()
-        });
+        return Ok(if n == 1 { ExactInt::from_u64(2) } else { ExactInt::one() });
     }
     let mut den = ExactInt::from_u64(6);
     for &p in primes.iter().skip(2) {
@@ -127,7 +123,7 @@ fn bernoulli_denom_int(n: usize, primes: &[u32]) -> Result<ExactInt, Error> {
         if p.saturating_sub(1) > n {
             break;
         }
-        if n % (p - 1) == 0 {
+        if n.is_multiple_of(p - 1) {
             den.mul_u64_assign(p as u64);
         }
     }
@@ -250,7 +246,6 @@ fn int_to_num(x: &ExactInt) -> Result<ExactNumNumber, Error> {
     let sign = if x.is_negative() { Sign::Neg } else { Sign::Pos };
     ExactNumNumber::from_words(limbs, sign, e)
 }
-
 
 /// FLINT `arb_div_2expm1_ui`: y = z / (2^n - 1).
 fn div_2expm1(z: &ExactNumNumber, n: usize, p: usize) -> Result<ExactNumNumber, Error> {
@@ -613,7 +608,6 @@ pub(super) fn exact_even_bernoulli_rev_range(
         .map(|b| b.ok_or(Error::InvalidArgument))
         .collect()
 }
-
 
 #[cfg(test)]
 mod tests {

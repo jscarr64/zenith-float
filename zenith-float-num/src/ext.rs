@@ -6116,12 +6116,15 @@ mod tests {
             &mut cc,
         );
 
+        // Since a09e84b / e8502fe the spelling is MPFR mpfr_get_str with n = 0: m = 1 + ceil(128·log10 2) = 40 digits.
+        // Reference: MPFR 4.2.2 via gmpy2 2.3.2 (land39/final/pr40-fixes/ci/mpfr_display_ref.{py,out}); the old 39-digit
+        // spelling also parses back, it is just not MPFR's.
         let d1str = format!("{}", d1);
-        assert_eq!(&d1str, "1.23456789012345678901234567890123456789e-2");
+        assert_eq!(&d1str, "1.234567890123456789012345678901234567889e-2");
         assert_eq!(format!("{:e}", d1), d1str);
         assert_eq!(
             format!("{:E}", d1),
-            "1.23456789012345678901234567890123456789E-2"
+            "1.234567890123456789012345678901234567889E-2"
         );
         let mut d2 = ExactNum::from_str(&d1str)?;
         d2.set_precision(DEFAULT_P, RoundingMode::ToEven)?;
@@ -6135,6 +6138,7 @@ mod tests {
             &mut cc,
         );
         let d1str = format!("{}", d1);
+        // MPFR's 40 digits are ...7890; zf drops trailing zeros of the digit string.
         assert_eq!(&d1str, "-1.23456789012345678901234567890123456789e+2");
         let mut d2 = ExactNum::from_str(&d1str)?;
         d2.set_precision(DEFAULT_P, RoundingMode::ToEven)?;

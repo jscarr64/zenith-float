@@ -6,8 +6,8 @@
 
 use crate::common::util::round_p;
 use crate::complex_special::nan_pair;
-use crate::complex_special::typed_nan_pair;
 use crate::complex_special::pi_c;
+use crate::complex_special::typed_nan_pair;
 use crate::complex_special::ziv_complex;
 use crate::defs::Exponent;
 use crate::Consts;
@@ -182,6 +182,32 @@ fn carlson_rc(x0: &ExactComplex, y0: &ExactComplex, p: usize, cc: &mut Consts) -
     }
 }
 
+/// Homogeneity normalization for the Carlson integrals (Spence PR #40 R2). `R_F` has degree `-1/2`, `R_D` and
+/// `R_J` degree `-3/2` (DLMF 19.16), and scaling every argument by the positive real `4^-t` keeps each on its own
+/// side of every cut. `t` is half the largest part exponent (floor), so after scaling the largest part is below
+/// `2^2` and `|A|` is far from both ends of the exponent range. Without this, `|A|^2` overflows for arguments near
+/// `2^(2^61)` (`c_abs(A) = +Inf` stops the duplication at `k = 0` on an unconverged series, or `X = (A-x)/A`
+/// overflows to NaN), and underflows near `2^-(2^61)` (`c_abs(A) = 0`). An argument more than about `2^62`
+/// binades below the largest underflows when scaled; it is then below `2^-(2^61)` relative, under every
+/// precision's last bit, except that two such arguments make two zeros, which `R_F`/`R_J` refuse.
+fn carlson_norm_exp(args: &[&ExactComplex]) -> Exponent {
+    args.iter()
+        .flat_map(|z| [z.re(), z.im()])
+        .filter(|x| !x.is_zero())
+        .filter_map(|x| x.exponent())
+        .max()
+        .map_or(0, |e| e.div_euclid(2))
+}
+
+/// `z 4^-t`, exact (the width keeps every bit of `z`).
+fn carlson_scaled(z: &ExactComplex, t: Exponent, p: usize) -> ExactComplex {
+    let w = [z.re().precision(), z.im().precision()]
+        .into_iter()
+        .flatten()
+        .fold(p, usize::max);
+    z.ldexp(t.saturating_mul(-2), w, rm())
+}
+
 /// Symmetric \(R_F(x,y,z)\). At most one argument may be \(0\).
 fn carlson_rf(
     x0: &ExactComplex,
@@ -198,6 +224,16 @@ fn carlson_rf(
     if zeros > 1 {
         return nan_pair(Error::InvalidArgument);
     }
+    let t = carlson_norm_exp(&[x0, y0, z0]);
+    if t != 0 {
+        // R_F(4^t x, 4^t y, 4^t z) = 2^-t R_F(x, y, z)
+        let (xs, ys, zs) = (
+            carlson_scaled(x0, t, p),
+            carlson_scaled(y0, t, p),
+            carlson_scaled(z0, t, p),
+        );
+        return carlson_rf(&xs, &ys, &zs, p, cc).ldexp(t.saturating_neg(), p, rm());
+    }
     let four = c_u32(4, p);
     let three = c_u32(3, p);
     // Signed-zero negative reals take the C99 side of the principal-sqrt cut.
@@ -213,23 +249,33 @@ fn carlson_rf(
             .add(&z, p, rm())
             .div(&three, p, rm());
         let dmax = max_dev3(&an, &x, &y, &z, p);
-        // Arb acb_elliptic_rf stops when (dmax/|A|)^order < 2^{-p}
-        // (rf.c: rel = max(|x-y|,|x-z|)/|x|). A floor of 1 on the
-        // denominator stops too early when |A|<1 and drops trailing bits.
+        // Quick stop: (dmax/|A|)^order < 2^{-p}. This is zf's rule, not
+        // FLINT's: rf.c:241-252 uses max(|x-y|,|x-z|) / (lower bound of |x|)
+        // after a duplication step. Both are scale-invariant; a floor of 1 on
+        // the denominator stops too early when |A|<1 and drops trailing bits.
+        // The rigorous gate is the truncation bound below (rf.c:285-295).
         let scale = c_abs(&an, p);
         let no_improve = k > 2
             && prev_d
                 .as_ref()
                 .is_some_and(|pd| matches!(dmax.compare(pd), Some(c) if c > 0));
-        if carlson_taylor::rel_pow_below_prec(&dmax, &scale, order, p, p) || no_improve || k >= p
-        {
+        let forced = no_improve || k >= p;
+        if carlson_taylor::rel_pow_below_prec(&dmax, &scale, order, p, p) || forced {
             let xx = ExactComplex::sub_ref(&an, &x, p, rm()).div(&an, p, rm());
             let yy = ExactComplex::sub_ref(&an, &y, p, rm()).div(&an, p, rm());
             let zz = ExactComplex::sub_ref(&an, &z, p, rm()).div(&an, p, rm());
-            let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
-            let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
-            let series = carlson_taylor::rf_taylor_sum(&e2, &e3, order, p);
-            return series.div(&an.sqrt(p, rm(), cc), p, rm());
+            // FLINT rf.c:285-295 truncation bound; below 2^-p, or keep duplicating.
+            let eps = max_abs(
+                &max_abs(&c_abs(&xx, p), &c_abs(&yy, p), p),
+                &c_abs(&zz, p),
+                p,
+            );
+            if forced || carlson_taylor::trunc_bound_below_prec(&eps, order, p) {
+                let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
+                let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
+                let series = carlson_taylor::rf_taylor_sum(&e2, &e3, order, p);
+                return series.div(&an.sqrt(p, rm(), cc), p, rm());
+            }
         }
         prev_d = Some(dmax);
         let sx = x.sqrt(p, rm(), cc);
@@ -260,6 +306,16 @@ fn carlson_rd(
     if is_c_zero(z0) || (is_c_zero(x0) && is_c_zero(y0)) {
         return nan_pair(Error::InvalidArgument);
     }
+    let t = carlson_norm_exp(&[x0, y0, z0]);
+    if t != 0 {
+        // R_D(4^t x, 4^t y, 4^t z) = 2^-3t R_D(x, y, z)
+        let (xs, ys, zs) = (
+            carlson_scaled(x0, t, p),
+            carlson_scaled(y0, t, p),
+            carlson_scaled(z0, t, p),
+        );
+        return carlson_rd(&xs, &ys, &zs, p, cc).ldexp(t.saturating_mul(-3), p, rm());
+    }
     let four = c_u32(4, p);
     let three = c_u32(3, p);
     let five = c_u32(5, p);
@@ -278,15 +334,19 @@ fn carlson_rd(
             .add(&three.mul(&z, p, rm()), p, rm())
             .div(&five, p, rm());
         let dmax = max_dev3(&an, &x, &y, &z, p);
-        // Arb acb_elliptic_rf stops when (dmax/|A|)^order < 2^{-p}
-        // (rf.c: rel = max(|x-y|,|x-z|)/|x|). A floor of 1 on the
-        // denominator stops too early when |A|<1 and drops trailing bits.
+        // Quick stop: (dmax/|A|)^order < 2^{-p}. This is zf's rule, not
+        // FLINT's: rf.c:241-252 uses max(|x-y|,|x-z|) / (lower bound of |x|)
+        // after a duplication step. Both are scale-invariant; a floor of 1 on
+        // the denominator stops too early when |A|<1 and drops trailing bits.
+        // The rigorous gate is the truncation bound below (rf.c:285-295).
         let scale = c_abs(&an, p);
         let no_improve = k > 2
             && prev_d
                 .as_ref()
                 .is_some_and(|pd| matches!(dmax.compare(pd), Some(c) if c > 0));
-        if carlson_taylor::rel_pow_below_prec(&dmax, &scale, order, p, p) || no_improve || k >= p
+        let forced = no_improve || k >= p;
+        if (carlson_taylor::rel_pow_below_prec(&dmax, &scale, order, p, p) || forced)
+            && (forced || rd_trunc_ok(&an, &x, &y, &z, order, p))
         {
             let series = rd_series_arb(&an, &x, &y, &z, order, p, cc);
             return three
@@ -309,6 +369,21 @@ fn carlson_rd(
         z = zl.div(&four, p, rm());
         k += 1;
     }
+}
+
+/// FLINT rj.c:466-477 truncation bound for the R_D-as-R_J sum (`P = Z`): `eps = max(|X|, |Y|, |Z|)` with
+/// `X = (A - x)/A` and so on, as [`rd_series_arb`] forms them.
+fn rd_trunc_ok(
+    an: &ExactComplex,
+    x: &ExactComplex,
+    y: &ExactComplex,
+    z: &ExactComplex,
+    order: usize,
+    p: usize,
+) -> bool {
+    let dev = |v: &ExactComplex| c_abs(&ExactComplex::sub_ref(an, v, p, rm()).div(an, p, rm()), p);
+    let eps = max_abs(&max_abs(&dev(x), &dev(y), p), &dev(z), p);
+    carlson_taylor::trunc_bound_below_prec(&eps, order, p)
 }
 
 /// Remainder of \(R_D\) as the \(R_J\) Taylor sum with \(p=z\) (Arb).
@@ -1005,21 +1080,41 @@ fn carlson_rj_dupe(
             &c_abs(&ExactComplex::sub_ref(&am, &pv, p, rm()), p),
             p,
         );
-        // Arb acb_elliptic_rf stops when (dmax/|A|)^order < 2^{-p}
-        // (rf.c: rel = max(|x-y|,|x-z|)/|x|). A floor of 1 on the
-        // denominator stops too early when |A|<1 and drops trailing bits.
+        // Quick stop: (dmax/|A|)^order < 2^{-p}. This is zf's rule, not
+        // FLINT's: rf.c:241-252 uses max(|x-y|,|x-z|) / (lower bound of |x|)
+        // after a duplication step. Both are scale-invariant; a floor of 1 on
+        // the denominator stops too early when |A|<1 and drops trailing bits.
+        // The rigorous gate is the truncation bound below (rf.c:285-295).
         let scale = c_abs(&am, p);
         let no_improve = k > 2
             && prev_d
                 .as_ref()
                 .is_some_and(|pd| matches!(dmax.compare(pd), Some(c) if c > 0));
-        if carlson_taylor::rel_pow_below_prec(&dmax, &scale, order, p, p) || no_improve || k >= p
-        {
-            let t = fac.div(&am, p, rm());
-            let xx = ExactComplex::sub_ref(&a0, x0, p, rm()).mul(&t, p, rm());
-            let yy = ExactComplex::sub_ref(&a0, y0, p, rm()).mul(&t, p, rm());
-            let zz = ExactComplex::sub_ref(&a0, z0, p, rm()).mul(&t, p, rm());
-            let pp = c_neg(&xx.clone().add(&yy, p, rm()).add(&zz, p, rm()), p).div(&two, p, rm());
+        let forced = no_improve || k >= p;
+        let stop_hint = carlson_taylor::rel_pow_below_prec(&dmax, &scale, order, p, p) || forced;
+        let stop = stop_hint
+            .then(|| {
+                let t = fac.div(&am, p, rm());
+                let xx = ExactComplex::sub_ref(&a0, x0, p, rm()).mul(&t, p, rm());
+                let yy = ExactComplex::sub_ref(&a0, y0, p, rm()).mul(&t, p, rm());
+                let zz = ExactComplex::sub_ref(&a0, z0, p, rm()).mul(&t, p, rm());
+                let pp = c_neg(
+                    &ExactComplex::add_ref(&xx, &yy, p, rm()).add(&zz, p, rm()),
+                    p,
+                )
+                .div(&two, p, rm());
+                (xx, yy, zz, pp)
+            })
+            .filter(|(xx, yy, zz, pp)| {
+                // FLINT rj.c:466-477 truncation bound; below 2^-p, or keep duplicating.
+                let eps = max_abs(
+                    &max_abs(&c_abs(xx, p), &c_abs(yy, p), p),
+                    &max_abs(&c_abs(zz, p), &c_abs(pp, p), p),
+                    p,
+                );
+                forced || carlson_taylor::trunc_bound_below_prec(&eps, order, p)
+            });
+        if let Some((xx, yy, zz, pp)) = stop {
             let e2 = xx
                 .mul(&yy, p, rm())
                 .add(&xx.mul(&zz, p, rm()), p, rm())
@@ -1108,6 +1203,13 @@ fn carlson_rj(
     if zeros > 1 {
         return nan_pair(Error::InvalidArgument);
     }
+    let t = carlson_norm_exp(&[x0, y0, z0, p0]);
+    if t != 0 {
+        // R_J(4^t x, 4^t y, 4^t z, 4^t p) = 2^-3t R_J(x, y, z, p)
+        let (xs, ys) = (carlson_scaled(x0, t, p), carlson_scaled(y0, t, p));
+        let (zs, ps) = (carlson_scaled(z0, t, p), carlson_scaled(p0, t, p));
+        return carlson_rj(&xs, &ys, &zs, &ps, p, cc).ldexp(t.saturating_mul(-3), p, rm());
+    }
     let x = leave_cut(x0, p);
     let y = leave_cut(y0, p);
     let z = leave_cut(z0, p);
@@ -1164,14 +1266,15 @@ fn leave_cut_visible(z: &ExactComplex, p: usize, force_lower: bool) -> ExactComp
     }
 }
 
-/// Complete \(\Pi(n,m)\) when \(\operatorname{Re}(m)\ge 1\), via DLMF 19.21.6.
-/// Principal-sqrt \(R_J\) duplication is off-sheet for \(R_J(0,1-m,1,1-n)\),
-/// and the shift-integral / defining trig quadrature both miss `ZFS_WALL=120`
-/// at dest p≥4096. Express that \(R_J\) in \(R_F\) and \(R_D\) only:
-/// \((\sqrt{r}\sqrt{p}/z) R_J(0,y,z,p)=(r-1)R_F(0,y,z)R_D(p,rz,z)+R_D(0,y,z)R_F(p,rz,z)\),
-/// \(r=(y-p)/(y-z)\). The product of principal square roots (not \(\sqrt{rp}\))
-/// is the branch that matches \(R_J\) on the lower side of the \(m\)-cut.
-/// Real \(m\ge 1\), including \(m=2+0i\), is forced onto that lower side (Jeff / 3b5e5bd).
+// Design note (the dedicated function was folded into the complete-Π path; see the DLMF 19.21.6 comment there):
+// Complete \(\Pi(n,m)\) when \(\operatorname{Re}(m)\ge 1\), via DLMF 19.21.6.
+// Principal-sqrt \(R_J\) duplication is off-sheet for \(R_J(0,1-m,1,1-n)\),
+// and the shift-integral / defining trig quadrature both miss `ZFS_WALL=120`
+// at dest p≥4096. Express that \(R_J\) in \(R_F\) and \(R_D\) only:
+// \((\sqrt{r}\sqrt{p}/z) R_J(0,y,z,p)=(r-1)R_F(0,y,z)R_D(p,rz,z)+R_D(0,y,z)R_F(p,rz,z)\),
+// \(r=(y-p)/(y-z)\). The product of principal square roots (not \(\sqrt{rp}\))
+// is the branch that matches \(R_J\) on the lower side of the \(m\)-cut.
+// Real \(m\ge 1\), including \(m=2+0i\), is forced onto that lower side (Jeff / 3b5e5bd).
 
 /// True when `z` is real and `Re(z) ≥ 1` (the Legendre cut of \(K\) and \(\Pi\)).
 fn on_legendre_cut(z: &ExactComplex, p: usize) -> bool {
@@ -1315,7 +1418,6 @@ fn pi_complete_via_rd(
     rf0.add(&n.div(&three, p, rm()).mul(&rj, p, rm()), p, rm())
 }
 
-
 fn pi_complete_via_rf_rj(
     n: &ExactComplex,
     m: &ExactComplex,
@@ -1339,7 +1441,6 @@ fn pi_complete_via_rf_rj(
         v
     }
 }
-
 
 impl ExactComplex {
     /// Complete elliptic \(K(m)\), \(m=k^2\). Cut on \([1,+\infty)\). \(m=1\) is \(+\infty\).
@@ -1651,8 +1752,7 @@ impl ExactComplex {
             if s.is_nan() || is_c_zero(&s) {
                 return nan_pair(Error::InvalidArgument);
             }
-            let half_pi = ExactComplex::from_real(cc.pi(p, rm()), p)
-                .div(&c_u32(2, p), p, rm());
+            let half_pi = ExactComplex::from_real(cc.pi(p, rm()), p).div(&c_u32(2, p), p, rm());
             return half_pi.div(&s, p, rm());
         }
         // DLMF 19.8.7–19.8.8 AGM, principal square roots, in the
@@ -1757,9 +1857,9 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Sign;
     use crate::INF_NEG;
     use crate::INF_POS;
-    use crate::Sign;
     use core::ops::Neg;
     use core::str::FromStr;
 
@@ -1897,8 +1997,6 @@ mod tests {
         Ok(())
     }
 
-
-
     /// Official-family values against Arb midpoints at dest 64, 256, and 1024.
     #[test]
     fn zf_pi_family_matches_arb_midpoints() -> Result<(), crate::Error> {
@@ -1926,7 +2024,13 @@ mod tests {
             let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
             let m = ExactComplex::from_real(half, p);
             let got = n.elliptic_pi_complete(&m, p, r, &mut cc);
-            check(p, got, "1.0226975086065923912210632881204494", "0", "Pi(-2,1/2)")?;
+            check(
+                p,
+                got,
+                "1.0226975086065923912210632881204494",
+                "0",
+                "Pi(-2,1/2)",
+            )?;
 
             let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
             let m = ExactComplex::from_real(ExactNum::from_u8(1, p).neg(), p);
@@ -2068,7 +2172,6 @@ mod tests {
         Ok(())
     }
 
-
     /// Complex DLMF 19.8.7–19.8.8 AGM matches the existing R_F+(n/3)R_J
     /// path at dest 64/256/1024 on the official in-domain complete-Π rows,
     /// including both tight rows.
@@ -2164,8 +2267,8 @@ mod tests {
             for dre in &offs {
                 for dim in &offs {
                     let n = ExactComplex::new(
-                        n0.re().clone().add(&dre, p, r),
-                        n0.im().clone().add(&dim, p, r),
+                        ExactNum::add_ref(n0.re(), dre, p, r),
+                        ExactNum::add_ref(n0.im(), dim, p, r),
                     );
                     let m = m0.clone();
                     if !pi_complete_agm_applicable(&n, &m, p) {
@@ -2174,7 +2277,8 @@ mod tests {
                     let agm = pi_complete_agm(&n, &m, p, p, &mut cc);
                     let rj = pi_complete_via_rf_rj(&n, &m, p, p, &mut cc, false);
                     assert!(
-                        !agm.is_nan() && !rj.is_nan()
+                        !agm.is_nan()
+                            && !rj.is_nan()
                             && near(agm.re(), rj.re(), p, 16)
                             && near(agm.im(), rj.im(), p, 16),
                         "{lab} n-shift dre/dim AGM {:?} RJ {:?}",
@@ -2188,8 +2292,8 @@ mod tests {
                 for dim in &offs {
                     let n = n0.clone();
                     let m = ExactComplex::new(
-                        m0.re().clone().add(&dre, p, r),
-                        m0.im().clone().add(&dim, p, r),
+                        ExactNum::add_ref(m0.re(), dre, p, r),
+                        ExactNum::add_ref(m0.im(), dim, p, r),
                     );
                     if !pi_complete_agm_applicable(&n, &m, p) {
                         continue;
@@ -2197,7 +2301,8 @@ mod tests {
                     let agm = pi_complete_agm(&n, &m, p, p, &mut cc);
                     let rj = pi_complete_via_rf_rj(&n, &m, p, p, &mut cc, false);
                     assert!(
-                        !agm.is_nan() && !rj.is_nan()
+                        !agm.is_nan()
+                            && !rj.is_nan()
                             && near(agm.re(), rj.re(), p, 16)
                             && near(agm.im(), rj.im(), p, 16),
                         "{lab} m-shift dre/dim AGM {:?} RJ {:?}",
@@ -2481,7 +2586,13 @@ mod tests {
             RoundingMode::None,
         ];
         // Each part: None = compact zero, Some(true)=+∞, Some(false)=−∞.
-        let cases: &[(&str, fn(usize) -> ExactComplex, Option<bool>, Option<bool>)] = &[
+        type Case = (
+            &'static str,
+            fn(usize) -> ExactComplex,
+            Option<bool>,
+            Option<bool>,
+        );
+        let cases: &[Case] = &[
             // remaining-28 n = 1/2+3/4 i → +∞ + i∞
             (
                 "1/2+3/4i",
@@ -2496,9 +2607,7 @@ mod tests {
             // remaining-28 n = 10−3i → −∞ − i∞
             (
                 "10-3i",
-                |p| {
-                    ExactComplex::new(ExactNum::from_u8(10, p), ExactNum::from_u8(3, p).neg())
-                },
+                |p| ExactComplex::new(ExactNum::from_u8(10, p), ExactNum::from_u8(3, p).neg()),
                 Some(false),
                 Some(false),
             ),
@@ -2550,9 +2659,7 @@ mod tests {
             ),
             (
                 "1-i",
-                |p| {
-                    ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p).neg())
-                },
+                |p| ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p).neg()),
                 None,
                 Some(false),
             ),
@@ -2563,11 +2670,7 @@ mod tests {
                 for &(label, mk, re_pos, im_pos) in cases {
                     let n = mk(p);
                     let got = n.elliptic_pi_complete(&m1, p, rm, &mut cc);
-                    assert!(
-                        !got.is_nan(),
-                        "Π({label}, 1) p={p} {rm:?} is NaN {:?}",
-                        got
-                    );
+                    assert!(!got.is_nan(), "Π({label}, 1) p={p} {rm:?} is NaN {:?}", got);
                     match re_pos {
                         None => assert!(
                             got.re().is_zero(),
@@ -2745,20 +2848,29 @@ mod tests {
             let z0 = ExactComplex::zero(p);
             let one = ExactComplex::from_real(ExactNum::from_u8(1, p), p);
             for rm in modes {
-                let epos = ExactComplex::from_real(INF_POS.clone(), p).elliptic_e_complete(p, rm, &mut cc);
+                let epos =
+                    ExactComplex::from_real(INF_POS.clone(), p).elliptic_e_complete(p, rm, &mut cc);
                 assert!(
-                    !epos.is_nan() && epos.re().is_zero() && !epos.re().is_negative() && epos.im().is_inf_neg(),
+                    !epos.is_nan()
+                        && epos.re().is_zero()
+                        && !epos.re().is_negative()
+                        && epos.im().is_inf_neg(),
                     "E(+∞+0i) p={p} {rm:?} {:?}",
                     epos
                 );
-                let epos_m = ExactComplex::new(INF_POS.clone(), crate::complex::compact_signed_zero(true))
-                    .elliptic_e_complete(p, rm, &mut cc);
+                let epos_m =
+                    ExactComplex::new(INF_POS.clone(), crate::complex::compact_signed_zero(true))
+                        .elliptic_e_complete(p, rm, &mut cc);
                 assert!(
-                    !epos_m.is_nan() && epos_m.re().is_zero() && !epos_m.re().is_negative() && epos_m.im().is_inf_pos(),
+                    !epos_m.is_nan()
+                        && epos_m.re().is_zero()
+                        && !epos_m.re().is_negative()
+                        && epos_m.im().is_inf_pos(),
                     "E(+∞-0i) p={p} {rm:?} {:?}",
                     epos_m
                 );
-                let eneg = ExactComplex::from_real(INF_NEG.clone(), p).elliptic_e_complete(p, rm, &mut cc);
+                let eneg =
+                    ExactComplex::from_real(INF_NEG.clone(), p).elliptic_e_complete(p, rm, &mut cc);
                 assert!(
                     !eneg.is_nan() && eneg.re().is_inf_pos() && eneg.im().is_zero(),
                     "E(−∞) p={p} {rm:?} {:?}",
@@ -2811,7 +2923,8 @@ mod tests {
                     }
                 }
                 // W4: E(∞, 1) stays +∞+0i
-                let ew4 = ExactComplex::from_real(INF_POS.clone(), p).elliptic_e(&one, p, rm, &mut cc);
+                let ew4 =
+                    ExactComplex::from_real(INF_POS.clone(), p).elliptic_e(&one, p, rm, &mut cc);
                 assert!(
                     !ew4.is_nan() && ew4.re().is_inf_pos() && ew4.im().is_zero(),
                     "E(+∞, 1) p={p} {rm:?} should stay +∞+0i, got {:?}",
@@ -2824,11 +2937,249 @@ mod tests {
             let hundred = ExactComplex::from_real(ExactNum::from_u8(100, p), p);
             let e100 = hundred.elliptic_e_complete(p, RoundingMode::ToEven, &mut cc);
             assert!(
-                !e100.is_nan() && !e100.re().is_inf() && !e100.im().is_inf() && e100.re().is_positive() && e100.im().is_negative(),
+                !e100.is_nan()
+                    && !e100.re().is_inf()
+                    && !e100.im().is_inf()
+                    && e100.re().is_positive()
+                    && e100.im().is_negative(),
                 "E(100+0i) should be a finite + − i (lower side), got {:?}",
                 e100
             );
         }
         Ok(())
+    }
+
+    /// R2 (Spence PR #40, 2026-11-22): boundary tests for the complex Carlson `|A|` scale and truncation.
+    ///
+    /// FLINT 3.6.0 golds (`complex_elliptic_r2_golds.rs`). Each row runs at p = 64, 128, 256, 1024, 8192 and is
+    /// checked normwise: `|got - want| <= 2^(e - p + SLACK)` with `e` the exponent of the larger part of `want`.
+    /// The `*_b` and `*_d` rows also run with every argument scaled by `4^k`, and are compared with
+    /// `2^-k want` (R_F) or `2^-3k want` (R_D, R_J), the homogeneity of DLMF 19.16 (R_F has degree -1/2, R_D
+    /// and R_J -3/2). `k = 2^60` makes `|A|^2` overflow (`c_abs(A) = +Inf` while the deviations stay finite);
+    /// `k = -2^60` and `k = 1 - 2^61` make `|A|^2` underflow (`c_abs(A) = 0`).
+    mod r2_carlson_boundaries {
+        use super::*;
+        use crate::common::util::round_p;
+        use crate::ExactInt;
+
+        include!("complex_elliptic_r2_golds.rs");
+
+        const SLACK: Exponent = 24;
+        const PRECS: [usize; 5] = [64, 128, 256, 1024, 8192];
+
+        fn gold_num(m: &str, e: i64) -> Result<ExactNum, String> {
+            if m == "0" {
+                return Ok(ExactNum::new(64));
+            }
+            let i = ExactInt::from_dec_string(m)
+                .ok_or_else(|| alloc::format!("bad gold mantissa {m}"))?;
+            let bits = round_p(i.bit_length().max(64));
+            Ok(i.to_exact_num(bits, RoundingMode::None)
+                .ldexp(e, bits, RoundingMode::None))
+        }
+
+        fn gold(name: &str, p: usize) -> Result<ExactComplex, String> {
+            let row = R2_GOLDS
+                .iter()
+                .find(|r| r.0 == name && r.1 == p)
+                .ok_or_else(|| alloc::format!("no gold {name} p={p}"))?;
+            Ok(ExactComplex::new(
+                gold_num(row.2 .0, row.2 .1)?,
+                gold_num(row.3 .0, row.3 .1)?,
+            ))
+        }
+
+        /// `n 2^e`, exact.
+        fn d(n: i64, e: Exponent, w: usize) -> ExactNum {
+            let m = ExactNum::from_word(n.unsigned_abs() as crate::Word, w).ldexp(
+                e,
+                w,
+                RoundingMode::None,
+            );
+            if n < 0 {
+                m.neg()
+            } else {
+                m
+            }
+        }
+
+        fn c(re: ExactNum, im: ExactNum) -> ExactComplex {
+            ExactComplex::new(re, im)
+        }
+
+        /// The arguments of each row, exact dyadics at width `w` (the generator's rows, same order).
+        fn args(name: &str, w: usize) -> Result<Vec<ExactComplex>, String> {
+            let z = || ExactNum::new(w);
+            let r = |n: i64, e: Exponent| c(d(n, e, w), ExactNum::new(w));
+            let one_m =
+                |k: i64| ExactNum::sub_ref(&d(1, 0, w), &d(k, -40, w), w, RoundingMode::None);
+            let one_p = |k: i64| d(1, 0, w).add(&d(k, -40, w), w, RoundingMode::None);
+            Ok(match name {
+                "rf_a0" => {
+                    alloc::vec![r(1, 0), c(d(-1, -1, w), d(1, 0, w)), c(d(-1, -1, w), d(-1, 0, w))]
+                }
+                "rf_atiny" => alloc::vec![
+                    r(1, 0),
+                    c(d(-1, -1, w), d(1, 0, w)),
+                    c(
+                        d(-1, -1, w).add(&d(3, -200, w), w, RoundingMode::None),
+                        d(-1, 0, w)
+                    ),
+                ],
+                "rf_b" | "rd_b" => alloc::vec![r(2, 0), r(1, 0), r(1, 0)],
+                "rf_below" => alloc::vec![r(1, 0), r(1, 0), c(one_m(3), z())],
+                "rf_above" => alloc::vec![r(1, 0), r(1, 0), c(one_p(3), z())],
+                "rf_d" | "rd_d" => {
+                    alloc::vec![c(d(1, 0, w), d(1, 0, w)), c(d(2, 0, w), d(-1, 0, w)), r(3, 0)]
+                }
+                "rd_a0" => {
+                    alloc::vec![c(d(1, 0, w), d(1, 0, w)), c(d(2, 0, w), d(-1, 0, w)), r(-1, 0)]
+                }
+                "rd_below" => alloc::vec![c(one_m(5), z()), r(1, 0), r(1, 0)],
+                "rd_above" => alloc::vec![c(one_p(5), z()), r(1, 0), r(1, 0)],
+                "rj_a0" => alloc::vec![
+                    r(1, 0),
+                    c(d(1, 0, w), d(1, 0, w)),
+                    c(d(1, 0, w), d(-1, 0, w)),
+                    r(-3, -1)
+                ],
+                "rj_b" => alloc::vec![r(2, 0), r(1, 0), r(1, 0), r(1, 0)],
+                "rj_below" => alloc::vec![c(one_m(5), z()), r(1, 0), r(1, 0), r(1, 0)],
+                "rj_above" => alloc::vec![c(one_p(5), z()), r(1, 0), r(1, 0), r(1, 0)],
+                "rj_d" => alloc::vec![
+                    c(d(1, 0, w), d(1, 0, w)),
+                    c(d(2, 0, w), d(-1, 0, w)),
+                    r(3, 0),
+                    c(d(1, 0, w), d(2, 0, w)),
+                ],
+                _ => return Err(alloc::format!("no row {name}")),
+            })
+        }
+
+        fn eval(name: &str, a: &[ExactComplex], p: usize, cc: &mut Consts) -> ExactComplex {
+            match &name[..2] {
+                "rf" => carlson_rf(&a[0], &a[1], &a[2], p, cc),
+                "rd" => carlson_rd(&a[0], &a[1], &a[2], p, cc),
+                _ => carlson_rj(&a[0], &a[1], &a[2], &a[3], p, cc),
+            }
+        }
+
+        /// Normwise `|got - want| <= 2^(e - p + SLACK)`, `e` the larger part exponent of `want`.
+        fn close(got: &ExactComplex, want: &ExactComplex, p: usize) -> bool {
+            let e = [want.re(), want.im()]
+                .iter()
+                .filter(|x| !x.is_zero())
+                .filter_map(|x| x.exponent())
+                .max();
+            let Some(e) = e else {
+                return got.re().is_zero() && got.im().is_zero();
+            };
+            let w = round_p(p + 128);
+            let lim = e - (p as Exponent) + SLACK;
+            [(got.re(), want.re()), (got.im(), want.im())]
+                .iter()
+                .all(|(g, t)| {
+                    let dd = ExactNum::sub_ref(g, t, w, RoundingMode::None);
+                    !dd.is_nan() && (dd.is_zero() || dd.exponent().is_some_and(|de| de <= lim))
+                })
+        }
+
+        const ROWS: [&str; 16] = [
+            "rf_a0", "rf_atiny", "rf_b", "rf_below", "rf_above", "rf_d", "rd_a0", "rd_b",
+            "rd_below", "rd_above", "rd_d", "rj_a0", "rj_b", "rj_below", "rj_above", "rj_d",
+        ];
+
+        #[test]
+        fn r2_carlson_rows_match_flint_at_each_tier() -> Result<(), String> {
+            let mut cc = Consts::new().map_err(|e| alloc::format!("Consts: {e:?}"))?;
+            let mut bad = Vec::new();
+            for &p in &PRECS {
+                for name in ROWS {
+                    let got = eval(name, &args(name, p + 64)?, p, &mut cc);
+                    let want = gold(name, p)?;
+                    if !close(&got, &want, p) {
+                        bad.push(alloc::format!("{name} p={p}: got {got:?} want {want:?}"));
+                    }
+                }
+            }
+            assert!(
+                bad.is_empty(),
+                "{} of 80 rows wrong:\n{}",
+                bad.len(),
+                bad.join("\n")
+            );
+            Ok(())
+        }
+
+        /// FLINT's truncation bound `2 q^order / (1 - q)`, `q = 9 eps / 8` (rf.c:285-295), against hand values:
+        /// `eps = 2^-4`, `order = 10` gives `log2 = 1 + 10 log2(9/128) - log2(119/128) = -37.196...`
+        /// (mpmath 1.3.0), so it is below `2^-37` and not below `2^-38`. The quick rule stops at prec 40 for
+        /// `eps = 2^-4 (1 - 2^-10)` (`eps < 2^-ceil(40/10)`), where the bound is still about `2^-37.2`: the
+        /// bound is the stricter gate.
+        #[test]
+        fn r2_truncation_bound_matches_flint_formula() {
+            let tb = carlson_taylor::trunc_bound_below_prec;
+            let e4 = ExactNum::from_u8(1, 64).ldexp(-4, 64, RoundingMode::None);
+            assert!(tb(&e4, 10, 37));
+            assert!(!tb(&e4, 10, 38));
+            let e4m = ExactNum::from_word(1023, 64).ldexp(-14, 64, RoundingMode::None);
+            assert!(carlson_taylor::rel_pow_below_prec(
+                &e4m,
+                &ExactNum::from_u8(1, 64),
+                10,
+                40,
+                64
+            ));
+            assert!(!tb(&e4m, 10, 40));
+            assert!(
+                tb(&ExactNum::new(64), 10, 1 << 40),
+                "eps = 0: nothing is left out"
+            );
+            assert!(!tb(&ExactNum::nan(None), 10, 1), "NaN eps never stops");
+            assert!(!tb(&crate::INF_POS, 10, 1), "Inf eps never stops");
+            let q1 = ExactNum::from_u8(8, 64).div(&ExactNum::from_u8(9, 64), 64, RoundingMode::Up);
+            assert!(!tb(&q1, 500, 1), "q >= 1: the geometric series diverges");
+            assert!(!tb(&ExactNum::from_u8(1, 64), 500, 1));
+        }
+
+        /// `4^k` scaling: `|A|` huge (`k = 2^60`, `c_abs(A)` overflows), tiny (`k = -2^60`, and `1 - 2^61`
+        /// for R_F, where the arguments sit two binades above `EXPONENT_MIN`), and ordinary `k`.
+        #[test]
+        fn r2_carlson_scaled_rows_follow_homogeneity() -> Result<(), String> {
+            let mut cc = Consts::new().map_err(|e| alloc::format!("Consts: {e:?}"))?;
+            let big = 1i64 << 60;
+            let (mut bad, mut n) = (Vec::new(), 0usize);
+            for &p in &PRECS {
+                for name in ["rf_b", "rf_d", "rd_b", "rd_d", "rj_b", "rj_d"] {
+                    let deg: i64 = if name.starts_with("rf") { 1 } else { 3 };
+                    let mut ks = alloc::vec![1i64, -1, 1000, -1000, big, -big];
+                    if deg == 1 {
+                        ks.push(1 - (1i64 << 61));
+                    }
+                    for k in ks {
+                        let a: Vec<ExactComplex> = args(name, p + 64)?
+                            .iter()
+                            .map(|x| x.ldexp(2 * k, p + 64, RoundingMode::None))
+                            .collect();
+                        let got = eval(name, &a, p, &mut cc);
+                        let want =
+                            gold(name, p)?.ldexp(-deg * k, round_p(p + 128), RoundingMode::None);
+                        n += 1;
+                        if !close(&got, &want, p) {
+                            bad.push(alloc::format!(
+                                "{name} 4^{k} p={p}: got {got:?} want {want:?}"
+                            ));
+                        }
+                    }
+                }
+            }
+            assert!(
+                bad.is_empty(),
+                "{} of {n} scaled rows wrong:\n{}",
+                bad.len(),
+                bad.join("\n")
+            );
+            Ok(())
+        }
     }
 }

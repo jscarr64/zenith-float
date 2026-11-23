@@ -627,7 +627,6 @@ impl ExactInt {
     }
 }
 
-
 /// The base-`two_w` limbs (lowest first) of `trunc(|x|)` for a finite `x` with `|x| >= 1`; `two_w` is
 /// `2^w`. `|x| < 2^e` fits in `ceil(e / w)` limbs, so the loop has that fixed trip count: arithmetic
 /// that never brings the quotient to zero (a `two_w` of 0 or 1, say) cannot grow the limbs without
@@ -707,7 +706,10 @@ mod tests {
         let back = s.shr_towards_zero(70);
         assert_eq!(back, a.mul(&ExactInt::from_u64(3)));
         assert!(ExactInt::from_u64(7).shr_towards_zero(3).is_zero());
-        assert_eq!(ExactInt::from_i64(-32).shr_towards_zero(2), ExactInt::from_i64(-8));
+        assert_eq!(
+            ExactInt::from_i64(-32).shr_towards_zero(2),
+            ExactInt::from_i64(-8)
+        );
         assert_eq!(a.shl(0), a);
         assert!(a.shr_towards_zero(10_000).is_zero());
     }
@@ -741,7 +743,7 @@ mod tests {
     fn to_exact_num_wide_is_linear() {
         // A ~2^18-bit integer. The accum walk is thousands of wide adds;
         // the packed conversion should finish in a few milliseconds.
-        let n = ExactInt::from_u64(0xdead_beef_cafebabe).shl(1 << 18);
+        let n = ExactInt::from_u64(0xdead_beef_cafe_babe).shl(1 << 18);
         let t0 = std::time::Instant::now();
         let y = n.to_exact_num(1 << 18, RoundingMode::ToEven);
         let ms = t0.elapsed().as_millis();
