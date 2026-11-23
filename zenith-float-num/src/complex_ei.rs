@@ -136,8 +136,8 @@ impl ExactComplex {
         ziv_complex(dest, rm, |pw| {
             let v = self.si_at(pw, dest, cc);
             match (re_zero, im_zero) {
-                (true, false) => ExactComplex::new(zero(re_neg, pw), v.im().clone()),
-                (false, true) => ExactComplex::new(v.re().clone(), zero(im_zero_neg, pw)),
+                (true, false) => ExactComplex::new(zero(re_neg, pw), v.into_parts().1),
+                (false, true) => ExactComplex::new(v.into_parts().0, zero(im_zero_neg, pw)),
                 _ => v,
             }
         })
@@ -237,12 +237,11 @@ impl ExactComplex {
         let dest = round_p(p);
         if !finite_parts(self) {
             let pw = dest + WORD_BIT_SIZE;
-            let mut v = self.fresnel_pair_plain(pw, cc).0;
-            let (mut re, mut im) = (v.re().clone(), v.im().clone());
+            let v = self.fresnel_pair_plain(pw, cc).0;
+            let (mut re, mut im) = v.into_parts();
             let _ = re.set_precision(dest, rm);
             let _ = im.set_precision(dest, rm);
-            v = ExactComplex::new(re, im);
-            return v;
+            return ExactComplex::new(re, im);
         }
         if let Some(v) = self.fresnel_axis(true, dest, rm, cc) {
             return v;
@@ -282,12 +281,11 @@ impl ExactComplex {
         let dest = round_p(p);
         if !finite_parts(self) {
             let pw = dest + WORD_BIT_SIZE;
-            let mut v = self.fresnel_pair_plain(pw, cc).1;
-            let (mut re, mut im) = (v.re().clone(), v.im().clone());
+            let v = self.fresnel_pair_plain(pw, cc).1;
+            let (mut re, mut im) = v.into_parts();
             let _ = re.set_precision(dest, rm);
             let _ = im.set_precision(dest, rm);
-            v = ExactComplex::new(re, im);
-            return v;
+            return ExactComplex::new(re, im);
         }
         if let Some(v) = self.fresnel_axis(false, dest, rm, cc) {
             return v;

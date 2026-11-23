@@ -664,14 +664,14 @@ fn stirling_log_sum_horner(z: &ExactComplex, terms: usize, p: usize) -> ExactCom
     // z^(2k-1); `None` while it is z itself (read in place).
     let mut zpow_owned: Option<ExactComplex> = None;
     let mut prev_e = Exponent::MIN;
-    for (k, b) in bs.iter().enumerate() {
+    for (k, b) in bs.into_iter().enumerate() {
         let k = k + 1;
         let two_k = ExactNum::from_u32((2 * k) as u32, p);
         let two_k_m1 = ExactNum::from_u32((2 * k - 1) as u32, p);
         let den_r = two_k.mul(&two_k_m1, p, RoundingMode::None);
         let zpow = zpow_owned.as_ref().unwrap_or(z);
         let den = ExactComplex::from_real(den_r, p).mul(zpow, p, RoundingMode::None);
-        let term = ExactComplex::from_real(b.clone(), p).div(&den, p, RoundingMode::None);
+        let term = ExactComplex::from_real(b, p).div(&den, p, RoundingMode::None);
         s = s.add(&term, p, RoundingMode::None);
         let e = term
             .abs(p, RoundingMode::None)
@@ -701,12 +701,12 @@ fn stirling_digamma_coeff_sum_horner(z: &ExactComplex, terms: usize, p: usize) -
     };
     let mut s = ExactComplex::new(ExactNum::new(p), ExactNum::new(p));
     let mut prev_e = Exponent::MIN;
-    for (k, b) in bs.iter().enumerate() {
+    for (k, b) in bs.into_iter().enumerate() {
         let k = k + 1;
         zp = zp.mul(&z2, p, RoundingMode::None);
         let two_k = ExactComplex::from_real(ExactNum::from_u32((2 * k) as u32, p), p);
         let den = two_k.mul(&zp, p, RoundingMode::None);
-        let term = ExactComplex::from_real(b.clone(), p).div(&den, p, RoundingMode::None);
+        let term = ExactComplex::from_real(b, p).div(&den, p, RoundingMode::None);
         s = s.add(&term, p, RoundingMode::None);
         let e = term
             .abs(p, RoundingMode::None)
@@ -1056,7 +1056,7 @@ impl ExactComplex {
                 v.im,
             ))
         });
-        Some(ExactComplex::new(re, im.im().clone()))
+        Some(ExactComplex::new(re, im.into_parts().1))
     }
 
     /// For `Re z < 0` past the series switch, `erfc(z) = 2 − erfc(−z)` with `|erfc(−z)|` below

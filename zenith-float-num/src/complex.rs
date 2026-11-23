@@ -1658,9 +1658,10 @@ impl ExactComplex {
         };
         let pa = round_p(p) + 2 * WORD_BIT_SIZE;
         let a = root(pa, cc);
-        let snap = |v: &ExactNum, o: &ExactNum| {
-            let (Some(ev), Some(eo)) = (v.exponent(), o.exponent()) else {
-                return v.clone();
+        // `v` is one part of the root (moved in); `eo` is the other part's exponent.
+        let snap = |v: ExactNum, eo: Option<Exponent>| {
+            let (Some(ev), Some(eo)) = (v.exponent(), eo) else {
+                return v;
             };
             if ev < eo - Exponent::try_from(round_p(p) + WORD_BIT_SIZE).unwrap_or(Exponent::MAX) {
                 let mut z = ExactNum::from_u8(0, WORD_BIT_SIZE);
@@ -1669,10 +1670,12 @@ impl ExactComplex {
                 }
                 z
             } else {
-                v.clone()
+                v
             }
         };
-        let mut c = Self::new(snap(&a.re, &a.im), snap(&a.im, &a.re));
+        let (a_re, a_im) = a.into_parts();
+        let (e_re, e_im) = (a_re.exponent(), a_im.exponent());
+        let mut c = Self::new(snap(a_re, e_im), snap(a_im, e_re));
         if c.set_precision(p, RoundingMode::ToEven).is_ok() {
             let (sz, _) = span_c(self)?;
             if let Some(v) = exact_pow_within(&c, n, sz + 8) {
@@ -1939,17 +1942,16 @@ impl ExactComplex {
             let below = self.im.is_negative();
             let dtheta_pos = below;
             let up = |pos: bool| if pos { ExactNum::new(p) } else { -ExactNum::new(p) };
+            let cs_neg = cs.is_negative();
             let re = if cs.is_zero() {
                 RB::exact(up(
                     imag_axis || (a.is_negative() ^ sn.is_negative() ^ !dtheta_pos)
                 ))
             } else {
-                mag.mul(&RB::rounded(cs.clone(), p)?, p)?
+                mag.mul(&RB::rounded(cs, p)?, p)?
             };
             let im = if sn.is_zero() {
-                RB::exact(up(
-                    imag_axis || !(a.is_negative() ^ cs.is_negative() ^ !dtheta_pos)
-                ))
+                RB::exact(up(imag_axis || !(a.is_negative() ^ cs_neg ^ !dtheta_pos)))
             } else {
                 mag.mul(&RB::rounded(sn, p)?, p)?
             };
@@ -2748,18 +2750,21 @@ fn exact_pow_within(c: &ExactComplex, n: usize, max_span: usize) -> Option<Exact
         Some(r)
     };
     let mut e = n;
-    let mut base = c.clone();
+    // c^(2^j); `None` while j = 0 (c read in place).
+    let mut base_slot: Option<ExactComplex> = None;
     let mut acc: Option<ExactComplex> = None;
     while e > 0 {
+        let base = base_slot.as_ref().unwrap_or(c);
         if e & 1 == 1 {
             acc = Some(match acc {
                 None => base.clone(),
-                Some(a) => mul(&a, &base)?,
+                Some(a) => mul(&a, base)?,
             });
         }
         e >>= 1;
         if e > 0 {
-            base = mul(&base, &base)?;
+            let sq = mul(base, base)?;
+            base_slot = Some(sq);
         }
     }
     acc
