@@ -1022,7 +1022,13 @@ impl ExactComplex {
             return None;
         }
         let pos = re_positive(self);
-        let w = if pos { self.clone() } else { neg_c(self.clone()) };
+        let w_neg;
+        let w: &Self = if pos {
+            self
+        } else {
+            w_neg = self.neg_ref();
+            &w_neg
+        };
         let e = w.erfc_word(dest, RoundingMode::ToEven, cc);
         let er = e.re();
         if er.is_nan() || er.is_zero() {
@@ -1060,8 +1066,8 @@ impl ExactComplex {
         if !self.re().is_negative() || self.re().is_zero() || use_faddeeva_series(self, dest) {
             return None;
         }
-        let w = neg_c(self.clone());
-        let er = w.erfc_word(dest, RoundingMode::ToEven, cc).re().clone();
+        let w = self.neg_ref();
+        let (er, _) = w.erfc_word(dest, RoundingMode::ToEven, cc).into_parts();
         if er.is_nan() || er.is_zero() {
             return None;
         }
@@ -1522,10 +1528,7 @@ impl ExactComplex {
         if im_negative_or_neg_real(z) {
             let zb = CB::exact(z);
             let two_exp = zb.mul(&zb, q)?.neg().exp(q, cc)?.scale2(1)?;
-            return two_exp.sub(
-                &Self::faddeeva_upper_ball(&neg_c(z.clone()), q, dest_p, cc)?,
-                q,
-            );
+            return two_exp.sub(&Self::faddeeva_upper_ball(&z.neg_ref(), q, dest_p, cc)?, q);
         }
         Self::faddeeva_upper_ball(z, q, dest_p, cc)
     }
@@ -3113,19 +3116,17 @@ mod tests {
         for p in [64usize, 256, 2048] {
             let nan_plus_i = ExactComplex::new(crate::NAN, ExactNum::from_u8(1, p));
             let i_times_nan = ExactComplex::new(ExactNum::from_u8(1, p), crate::NAN);
+            let nan_nan = ExactComplex::new(crate::NAN, crate::NAN);
             let typed = ExactComplex::new(
                 ExactNum::nan(Some(Error::InvalidArgument)),
                 ExactNum::from_u8(1, p),
             );
             for rm in modes {
                 for (lab, z) in [
-                    ("nan+i typeless", nan_plus_i.clone()),
-                    ("i*nan typeless", i_times_nan.clone()),
-                    (
-                        "nan+nan typeless",
-                        ExactComplex::new(crate::NAN, crate::NAN),
-                    ),
-                    ("nan+i typed IA", typed.clone()),
+                    ("nan+i typeless", &nan_plus_i),
+                    ("i*nan typeless", &i_times_nan),
+                    ("nan+nan typeless", &nan_nan),
+                    ("nan+i typed IA", &typed),
                 ] {
                     assert_typed_ia(lab, p, rm, z.gamma(p, rm, &mut cc));
                     assert_typed_ia(lab, p, rm, z.ln_gamma(p, rm, &mut cc));

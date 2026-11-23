@@ -2583,6 +2583,11 @@ impl ExactComplex {
         Self::new(self.re.neg(), self.im.neg())
     }
 
+    /// `-self` written from the borrowed parts (ExactNum::neg_ref on each).
+    pub(crate) fn neg_ref(&self) -> Self {
+        Self::new(self.re.neg_ref(), self.im.neg_ref())
+    }
+
     /// `-self` for an operand that has to stay borrowed (see [`ExactNum::neg_via_mul`]).
     pub(crate) fn neg_via_mul(&self) -> Self {
         Self::new(self.re.neg_via_mul(), self.im.neg_via_mul())

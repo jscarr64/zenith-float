@@ -670,7 +670,7 @@ where
                 || leftover.compare(&scale) == Some(0)
             {
                 t = t1.clone();
-                push_pair(&mut ts, &mut ys, t.clone(), y.clone());
+                push_pair(&mut ts, &mut ys, t, y);
                 break;
             }
             return Err(OdeError::ToleranceUnreachable);
@@ -704,23 +704,24 @@ where
                 return Err(OdeError::ToleranceUnreachable);
             }
         }
-        let ratio = if err.is_zero() {
-            grow.clone()
+        let raw;
+        let ratio: &ExactNum = if err.is_zero() {
+            &grow
         } else {
             let q = scale
                 .div(&err, wrk, RoundingMode::None)
                 .nth_root(5, wrk, RoundingMode::None);
-            let raw = q.mul(&fac, wrk, RoundingMode::None);
+            raw = q.mul(&fac, wrk, RoundingMode::None);
             if raw.compare(&grow) == Some(1) {
-                grow.clone()
+                &grow
             } else if raw.compare(&shrink) == Some(-1) {
-                shrink.clone()
+                &shrink
             } else {
-                raw
+                &raw
             }
         };
-        let h_used = h.clone();
-        h = h.mul(&ratio, wrk, RoundingMode::None);
+        let h_next = ExactNum::mul_ref(&h, ratio, wrk, RoundingMode::None);
+        let h_used = core::mem::replace(&mut h, h_next);
         if !ok && !finite(&h) {
             return Err(OdeError::InvalidArgument);
         }
@@ -842,7 +843,6 @@ where
 {
     let rm = RoundingMode::None;
     let mut row: Vec<ExactNum> = Vec::with_capacity(ODE_BS_K_MAX);
-    let mut y_last = y.clone();
     for k in 0..ODE_BS_K_MAX {
         let n = 2 * (k as u64 + 1);
         let t0k = modified_midpoint(f, t, y, span, n, wrk, cc)?;
@@ -875,12 +875,12 @@ where
             }
             cur.push(nxt);
         }
-        y_last = cur[k].clone();
         if k >= 1 {
             let err = ExactNum::sub_ref(&cur[k], &cur[k - 1], wrk, rm).abs();
-            let scale = step_scale(atol, rtol, y, &y_last, wrk);
+            let scale = step_scale(atol, rtol, y, &cur[k], wrk);
             if step_ok(&err, &scale) {
-                return Ok(Some(y_last));
+                // cur[k] is the last entry: move it out as the result.
+                return Ok(Some(cur.swap_remove(k)));
             }
             // If the column error has grown twice in a row, this H will
             // not meet the tolerance: shrink it rather than filling the
@@ -895,7 +895,6 @@ where
         }
         row = cur;
     }
-    let _ = y_last;
     Ok(None)
 }
 
