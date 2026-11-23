@@ -684,9 +684,7 @@ fn struve_asym(z: &ExactNum, nu: &ExactNum, wp: usize, cc: &mut Consts) -> Optio
             first_omitted = ExactNum::new(wp);
             break;
         }
-        let next = term
-            .clone()
-            .mul(&num, wp, N)
+        let next = ExactNum::mul_ref(&term, &num, wp, N)
             .mul(&den_shift, wp, N)
             .div(&z2, wp, N);
         // If |next| > |term| we have passed the useful region before m_min.
@@ -749,9 +747,7 @@ fn struve_asym(z: &ExactNum, nu: &ExactNum, wp: usize, cc: &mut Consts) -> Optio
                 break;
             }
             prev = term;
-            term = prev
-                .clone()
-                .mul(&num, wp, N)
+            term = ExactNum::mul_ref(&prev, &num, wp, N)
                 .mul(&den_shift, wp, N)
                 .div(&z2, wp, N);
             first_omitted = term.clone();
@@ -829,10 +825,8 @@ fn k_tail(
         return None;
     }
     // f(T) = exp(-z T + μ ln(1+T^2)), upper bound.
-    let expo_up = mu
-        .clone()
-        .mul(&ln_u, wp, UP)
-        .sub(&ExactNum::mul_ref(z, t, wp, DN), wp, UP);
+    let expo_up =
+        ExactNum::mul_ref(mu, &ln_u, wp, UP).sub(&ExactNum::mul_ref(z, t, wp, DN), wp, UP);
     let f_up = expo_up.exp(wp, UP, cc);
     if !finite(&f_up) {
         return None;
@@ -1768,9 +1762,7 @@ fn panel_integral(
             cc,
         );
         let fac = factorial_rm(k + 1, wp, N);
-        let term = jet[k]
-            .clone()
-            .mul(&pow, wp, N)
+        let term = ExactNum::mul_ref(&jet[k], &pow, wp, N)
             .div(&fac, wp, N)
             .mul(&two(wp), wp, N);
         integ = integ.add(&term, wp, N);
@@ -2120,12 +2112,10 @@ fn anger_a_laplace(
         }
         let term = if n.is_multiple_of(2) {
             // F_p / (π z^{2p+1})
-            f.clone()
-                .div(&ExactNum::mul_ref(&pi, &zpow_term, wp, N), wp, N)
+            ExactNum::div_ref(&f, &ExactNum::mul_ref(&pi, &zpow_term, wp, N), wp, N)
         } else {
             // -ν G_p / (π z^{2p+2})
-            nu.clone()
-                .neg()
+            nu.neg_ref()
                 .mul(&g, wp, N)
                 .div(&ExactNum::mul_ref(&pi, &zpow_term, wp, N), wp, N)
         };
@@ -2187,9 +2177,7 @@ fn anger_a_laplace(
             return None;
         }
         if n < ik.len() {
-            let piece = m_maj
-                .clone()
-                .mul(&ik[n], wp, UP)
+            let piece = ExactNum::mul_ref(&m_maj, &ik[n], wp, UP)
                 .div(&rho_k, wp, UP)
                 .div(&pi, wp, UP);
             r_poly = r_poly.add(&piece, wp, UP);
@@ -2611,9 +2599,7 @@ fn derivs_w_alpha(
     for n in 1..nmax {
         let nn = ExactNum::from_u64(n as u64, wp);
         let n1 = ExactNum::from_u64(n as u64 - 1, wp);
-        let t1 = alpha
-            .clone()
-            .sub(&nn, wp, N)
+        let t1 = ExactNum::sub_ref(alpha, &nn, wp, N)
             .mul(&two(wp), wp, N)
             .mul(mid, wp, N)
             .mul(&d[n], wp, N);
@@ -2675,9 +2661,7 @@ fn h_taylor_coeffs(
         let term_s = nu.neg_ref().mul(&w_half[n - 1], wp, N);
         let n1 = ExactNum::from_u64(n as u64 - 1, wp);
         let term_u =
-            mid.clone()
-                .mul(&w_inv[n - 1], wp, N)
-                .add(&n1.mul(&w_inv[n - 2], wp, N), wp, N);
+            ExactNum::mul_ref(mid, &w_inv[n - 1], wp, N).add(&n1.mul(&w_inv[n - 2], wp, N), wp, N);
         let ln = term_s.sub(&term_u, wp, N);
         if !finite(&ln) {
             return None;
@@ -2690,10 +2674,7 @@ fn h_taylor_coeffs(
     for n in 1..=nmax {
         let mut un = ExactNum::new(wp);
         for j in 0..n {
-            let term = binom_row[j]
-                .clone()
-                .mul(&ld[n - j], wp, N)
-                .mul(&hd[j], wp, N);
+            let term = ExactNum::mul_ref(&binom_row[j], &ld[n - j], wp, N).mul(&hd[j], wp, N);
             un = un.add(&term, wp, N);
         }
         if !finite(&un) {

@@ -199,10 +199,11 @@ fn rising_block_coeffs(k: usize, l: usize) -> Vec<ExactNum> {
         let mut nxt = alloc::vec![ExactNum::new(p); c.len() + 1];
         nxt[0] = ExactNum::mul_ref(&c[0], &a, p, RoundingMode::None);
         for i in 1..c.len() {
-            nxt[i] =
-                c[i].clone()
-                    .mul(&a, p, RoundingMode::None)
-                    .add(&c[i - 1], p, RoundingMode::None);
+            nxt[i] = ExactNum::mul_ref(&c[i], &a, p, RoundingMode::None).add(
+                &c[i - 1],
+                p,
+                RoundingMode::None,
+            );
         }
         nxt[c.len()] = c[c.len() - 1].clone();
         c = nxt;
@@ -284,9 +285,7 @@ fn rising_block_eval(
     }
     let mut dp = ExactComplex::zero(wp);
     for i in 1..=l {
-        let ci = c[i]
-            .clone()
-            .mul(&exact_from_usize(i, wp), wp, RoundingMode::None);
+        let ci = ExactNum::mul_ref(&c[i], &exact_from_usize(i, wp), wp, RoundingMode::None);
         let ci = ExactComplex::from_real(ci, wp);
         dp = dp.add(
             &xpow[i - 1].mul(&ci, wp, RoundingMode::None),

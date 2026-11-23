@@ -1065,8 +1065,7 @@ fn int_abs_mod8(n: &ExactNum) -> Option<u8> {
         return None;
     }
     let eight = ExactNum::from_u8(8, 64);
-    n.clone()
-        .abs()
+    n.abs_ref()
         .rem(&eight)
         .to_u64(RoundingMode::ToZero)
         .ok()
@@ -1154,17 +1153,16 @@ fn kelvin_jb_at_zero(
     }
     // ν < 0, non-integer: (z/2)^ν / Γ(ν+1) with z = x e^{3πi/4} → ±Inf.
     let wrk = work_p(p);
-    let theta = nu
-        .clone()
-        .mul(&ExactNum::from_u8(3, wrk), wrk, RoundingMode::None)
+    let theta = ExactNum::mul_ref(nu, &ExactNum::from_u8(3, wrk), wrk, RoundingMode::None)
         .mul(&cc.pi(wrk, RoundingMode::None), wrk, RoundingMode::None)
         .ldexp(-2, wrk, RoundingMode::None);
     let mut c = theta.cos(wrk, RoundingMode::None, cc);
     let mut s = theta.sin(wrk, RoundingMode::None, cc);
-    let g = nu
-        .clone()
-        .add(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None)
-        .gamma(wrk, RoundingMode::None, cc);
+    let g = ExactNum::add_ref(nu, &ExactNum::from_u8(1, wrk), wrk, RoundingMode::None).gamma(
+        wrk,
+        RoundingMode::None,
+        cc,
+    );
     if g.is_nan() {
         return cat_nan();
     }
@@ -1206,9 +1204,7 @@ fn kelvin_k_at_zero(
     let pi = cc.pi(wrk, RoundingMode::None);
     let (c, s) = if nu.is_positive() {
         // ker ~ cos(3νπ/4), kei ~ −sin(3νπ/4)
-        let theta = nu
-            .clone()
-            .mul(&ExactNum::from_u8(3, wrk), wrk, RoundingMode::None)
+        let theta = ExactNum::mul_ref(nu, &ExactNum::from_u8(3, wrk), wrk, RoundingMode::None)
             .mul(&pi, wrk, RoundingMode::None)
             .ldexp(-2, wrk, RoundingMode::None);
         let c = theta.cos(wrk, RoundingMode::None, cc);
@@ -1366,9 +1362,7 @@ fn kelvin_asymp_trig_neg(
     let xi = ExactNum::div_ref(x, &sqrt2, wrk, RoundingMode::None);
     let pi = cc.pi(wrk, RoundingMode::None);
     let half_pi_nu =
-        nu.clone()
-            .mul(&pi, wrk, RoundingMode::None)
-            .ldexp(-1, wrk, RoundingMode::None);
+        ExactNum::mul_ref(nu, &pi, wrk, RoundingMode::None).ldexp(-1, wrk, RoundingMode::None);
     let eighth = pi.ldexp(-3, wrk, RoundingMode::None);
     // ber/bei: x/√2 + (ν/2 − 1/8)π; ker/kei: x/√2 + (ν/2 + 1/8)π.
     let theta =
@@ -2944,19 +2938,13 @@ mod tests {
                 "Hi(100) should be a huge positive or +∞, got {:?}",
                 hi_big
             );
-            let gi_mbig = big
-                .clone()
-                .neg()
-                .scorer_gi(p, RoundingMode::ToEven, &mut cc);
+            let gi_mbig = big.neg_ref().scorer_gi(p, RoundingMode::ToEven, &mut cc);
             assert!(
                 !gi_mbig.is_nan() && !gi_mbig.is_inf() && !gi_mbig.is_zero(),
                 "Gi(−100) should be a finite oscillation, got {:?}",
                 gi_mbig
             );
-            let hi_mbig = big
-                .clone()
-                .neg()
-                .scorer_hi(p, RoundingMode::ToEven, &mut cc);
+            let hi_mbig = big.neg_ref().scorer_hi(p, RoundingMode::ToEven, &mut cc);
             assert!(
                 !hi_mbig.is_nan() && hi_mbig.is_positive() && !hi_mbig.is_zero(),
                 "Hi(−100) should be a tiny positive, got {:?}",
@@ -3037,10 +3025,7 @@ mod tests {
                 bits >= (p as i32) - 16 || d.is_zero(),
                 "G(1/2) p={p} only {bits} bits"
             );
-            let gm = half
-                .clone()
-                .neg()
-                .barnes_g(p, RoundingMode::ToEven, &mut cc);
+            let gm = half.neg_ref().barnes_g(p, RoundingMode::ToEven, &mut cc);
             let wantn = ExactNum::parse(
                 gneg,
                 crate::Radix::Dec,

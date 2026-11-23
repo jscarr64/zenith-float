@@ -509,10 +509,7 @@ where
     let mut h = h0;
     let mut acc = tanh_sinh_sum(&mut f, a, b, &h, false, p, cc)?;
     let estimate = |acc: &ExactNum, h: &ExactNum| {
-        half_len
-            .clone()
-            .mul(h, wde, RoundingMode::None)
-            .mul(acc, wde, RoundingMode::None)
+        ExactNum::mul_ref(&half_len, h, wde, RoundingMode::None).mul(acc, wde, RoundingMode::None)
     };
     let mut prev = estimate(&acc, &h);
     let mut prev_err: Option<ExactNum> = None;

@@ -408,14 +408,11 @@ fn rd_series_arb(
         .add(&yy.mul(&zz, p, rm()), p, rm())
         .sub(&c_u32(3, p).mul(&pp.mul(&pp, p, rm()), p, rm()), p, rm());
     let xyz = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
-    let e3 = xyz
-        .clone()
-        .add(&two.mul(&e2, p, rm()).mul(&pp, p, rm()), p, rm())
-        .add(
-            &four.mul(&pp.mul(&pp, p, rm()).mul(&pp, p, rm()), p, rm()),
-            p,
-            rm(),
-        );
+    let e3 = ExactComplex::add_ref(&xyz, &two.mul(&e2, p, rm()).mul(&pp, p, rm()), p, rm()).add(
+        &four.mul(&pp.mul(&pp, p, rm()).mul(&pp, p, rm()), p, rm()),
+        p,
+        rm(),
+    );
     let e4 = two
         .mul(&xyz, p, rm())
         .add(&e2.mul(&pp, p, rm()), p, rm())
@@ -632,8 +629,8 @@ fn shift_n(
     let n_re = if rx.is_negative() { one.sub(&rx, p, rm()) } else { one };
     let n_real = ExactComplex::from_real(n_re.clone(), p);
     let half_im = ExactComplex::new(zero, ExactNum::from_u8(1, p).ldexp(-1, p, rm()));
-    let n_up = n_real.clone().add(&half_im, p, rm());
-    let n_dn = n_real.clone().sub(&half_im, p, rm());
+    let n_up = ExactComplex::add_ref(&n_real, &half_im, p, rm());
+    let n_dn = ExactComplex::sub_ref(&n_real, &half_im, p, rm());
     let origin = ExactComplex::zero(p);
     if !path_hits_sings(&origin, &n_real, x, y, z, pv, p) {
         (n_real, None)
@@ -836,7 +833,7 @@ fn quad_shift_series(
     p: usize,
 ) -> [ExactComplex; 3] {
     let c2 = c.mul(c, p, rm());
-    let w0 = val.clone().add(&lam.mul(&c2, p, rm()), p, rm());
+    let w0 = ExactComplex::add_ref(val, &lam.mul(&c2, p, rm()), p, rm());
     let w1 = c_u32(2, p).mul(lam, p, rm()).mul(c, p, rm());
     [w0, w1, lam.clone()]
 }
@@ -867,10 +864,7 @@ fn rj_u2_rho(
     if labs.is_zero() || rho_t.is_zero() || rho_t.is_negative() {
         return ExactNum::new(p);
     }
-    let disc = uabs
-        .clone()
-        .mul(&uabs, p, rm())
-        .add(&rho_t.div(&labs, p, rm()), p, rm());
+    let disc = ExactNum::mul_ref(&uabs, &uabs, p, rm()).add(&rho_t.div(&labs, p, rm()), p, rm());
     let sqrt_disc = ExactComplex::from_real(disc, p).sqrt(p, rm(), cc);
     ExactNum::sub_ref(sqrt_disc.re(), &uabs, p, rm())
 }
@@ -953,7 +947,7 @@ fn rj_u2_segment(
     let tiny = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) + 16), p, rm());
     let mut prev_abs: Option<ExactNum> = None;
     loop {
-        let rem = u_end.clone().sub(&u, p, rm());
+        let rem = ExactComplex::sub_ref(&u_end, &u, p, rm());
         let rem_abs = c_abs(&rem, p);
         if matches!(rem_abs.compare(&tiny), Some(c) if c < 0) {
             return acc;
@@ -1009,7 +1003,7 @@ fn rj_line_integral(
     let tiny = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) + 16), p, rm());
     let mut prev_abs: Option<ExactNum> = None;
     loop {
-        let rem = to.clone().sub(&a, p, rm());
+        let rem = ExactComplex::sub_ref(to, &a, p, rm());
         let rem_abs = c_abs(&rem, p);
         if matches!(rem_abs.compare(&tiny), Some(c) if c < 0) {
             return acc;
@@ -1121,9 +1115,7 @@ fn carlson_rj_dupe(
                 .add(&yy.mul(&zz, p, rm()), p, rm())
                 .sub(&c_u32(3, p).mul(&pp.mul(&pp, p, rm()), p, rm()), p, rm());
             let xyz = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
-            let e3 = xyz
-                .clone()
-                .add(&two.mul(&e2, p, rm()).mul(&pp, p, rm()), p, rm())
+            let e3 = ExactComplex::add_ref(&xyz, &two.mul(&e2, p, rm()).mul(&pp, p, rm()), p, rm())
                 .add(
                     &four.mul(&pp.mul(&pp, p, rm()).mul(&pp, p, rm()), p, rm()),
                     p,
@@ -1341,7 +1333,7 @@ fn pi_complete_agm(
     for _ in 0..=p {
         let ag = a.mul(&g, p, rm());
         let pn2 = pn.mul(&pn, p, rm());
-        let den = pn2.clone().add(&ag, p, rm());
+        let den = ExactComplex::add_ref(&pn2, &ag, p, rm());
         if is_c_zero(&den) {
             return nan_pair(Error::InvalidArgument);
         }

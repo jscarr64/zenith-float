@@ -1066,7 +1066,7 @@ impl ExactComplex {
             |pw, cc| {
                 let two_x = ExactNum::from_u8(2, WORD_BIT_SIZE).add(x, pw, RoundingMode::None);
                 let t = ExactNum::mul_ref(x, &two_x, pw, RoundingMode::None).add(
-                    &y.clone().sqr(pw, RoundingMode::None),
+                    &y.sqr(pw, RoundingMode::None),
                     pw,
                     RoundingMode::None,
                 );
@@ -1817,10 +1817,7 @@ impl ExactComplex {
             return None;
         }
         let pi = cc.pi(p, n);
-        let theta = pi
-            .clone()
-            .ldexp(-1, p, n)
-            .mul(&ExactNum::from_i32(m, p), p, n);
+        let theta = pi.ldexp_ref(-1, p, n).mul(&ExactNum::from_i32(m, p), p, n);
         let mag = if m == 0 || b.is_zero() {
             ra
         } else {

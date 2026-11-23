@@ -71,10 +71,7 @@ fn const_c_step_count_exceeds(remain: &ExactNum, h: &ExactNum, wrk: usize) -> bo
     if !finite(remain) || !finite(h) || h.is_zero() || h.is_negative() || remain.is_zero() {
         return false;
     }
-    let n = remain
-        .clone()
-        .abs()
-        .div(&h.abs_ref(), wrk, RoundingMode::None);
+    let n = remain.abs_ref().div(&h.abs_ref(), wrk, RoundingMode::None);
     if !finite(&n) {
         return true;
     }
@@ -747,8 +744,7 @@ where
                 let grew = match stable_h0.as_ref() {
                     Some(h0) => {
                         let mark =
-                            h0.clone()
-                                .ldexp(ODE_DP_STABILITY_GROW_BITS, wrk, RoundingMode::None);
+                            h0.ldexp_ref(ODE_DP_STABILITY_GROW_BITS, wrk, RoundingMode::None);
                         matches!(h_used.compare(&mark), Some(c) if c >= 0)
                     }
                     None => true,

@@ -1108,7 +1108,7 @@ impl ExactComplex {
         let nn = ExactComplex::from_real(ExactNum::from_u32(n, np), np);
         let nu0 = ExactComplex::sub_ref(nu, &nn, np, RoundingMode::None);
         let one = ExactComplex::one(np);
-        let mut mu = nu0.clone().add(&one, np, RoundingMode::None);
+        let mut mu = ExactComplex::add_ref(&nu0, &one, np, RoundingMode::None);
         let mut km = self.bessel_k_at(&nu0, wp, dest_p, cc);
         let mut k = self.bessel_k_at(&mu, wp, dest_p, cc);
         if km.is_nan() {

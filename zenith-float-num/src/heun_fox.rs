@@ -1714,10 +1714,7 @@ fn ub64(x: &ExactNum) -> ExactNum {
     let up = RoundingMode::Up;
     let mut y = x.abs_ref();
     let _ = y.set_precision(64, up);
-    let slack = y
-        .clone()
-        .add(&ExactNum::from_u8(1, 64), 64, up)
-        .ldexp(-60, 64, up);
+    let slack = ExactNum::add_ref(&y, &ExactNum::from_u8(1, 64), 64, up).ldexp(-60, 64, up);
     y.add(&slack, 64, up)
 }
 
@@ -3062,17 +3059,13 @@ fn taylor_step(
         c_kp1 = c_kp2;
         tn = tn.mul(&theta, 64, up);
         let n = (k as u64) + 2;
-        let rem_y = m_bound
-            .clone()
-            .mul(&tn, 64, up)
+        let rem_y = ExactNum::mul_ref(&m_bound, &tn, 64, up)
             .mul(&theta, 64, up)
             .div(&geo, 64, up);
         let np1 = ExactNum::from_u64(n + 1, 64);
         let nn = ExactNum::from_u64(n, 64);
         let num = np1.sub(&nn.mul(&theta, 64, dn), 64, up);
-        let rem_d = m_bound
-            .clone()
-            .div(&rho, 64, up)
+        let rem_d = ExactNum::div_ref(&m_bound, &rho, 64, up)
             .mul(&tn, 64, up)
             .mul(&num, 64, up)
             .div(&ExactNum::mul_ref(&geo, &geo, 64, dn), 64, up);
@@ -3132,10 +3125,13 @@ fn taylor_step(
             );
             let den_h = ExactNum::mul_ref(&rho, &geo, 64, dn);
             let my = ub_rel(&m_bound);
-            let myp = if den_h.is_positive() { my.clone().div(&den_h, 64, up) } else { my.clone() };
-            let mypp = if den_h.is_positive() {
+            let myp = if den_h.is_positive() {
+                ExactNum::div_ref(&my, &den_h, 64, up)
+            } else {
                 my.clone()
-                    .ldexp(1, 64, up)
+            };
+            let mypp = if den_h.is_positive() {
+                my.ldexp_ref(1, 64, up)
                     .div(&ExactNum::mul_ref(&den_h, &den_h, 64, dn), 64, up)
             } else {
                 my.clone()

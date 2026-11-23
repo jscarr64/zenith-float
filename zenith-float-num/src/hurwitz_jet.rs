@@ -324,9 +324,8 @@ fn em_sum(s: &ExactNum, a: &ExactNum, n: u64, m: u64, p: usize, cc: &mut Consts)
             NR,
         );
         term = term.mul_cpx(&splus0, p);
-        let splus1 = s
-            .clone()
-            .add(&ExactNum::from_u64((2 * r) as u64, WORD_BIT_SIZE), p, NR);
+        let splus1 =
+            ExactNum::add_ref(s, &ExactNum::from_u64((2 * r) as u64, WORD_BIT_SIZE), p, NR);
         term = term.mul_cpx(&splus1, p);
         let den = ExactNum::mul_ref(
             &na2,

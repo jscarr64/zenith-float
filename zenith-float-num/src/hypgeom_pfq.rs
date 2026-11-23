@@ -20,7 +20,7 @@ fn ui(k: usize, p: usize) -> ExactComplex {
 }
 
 fn add_ui(x: &ExactComplex, k: usize, p: usize) -> ExactComplex {
-    x.clone().add(&ui(k, p), p, RoundingMode::None)
+    ExactComplex::add_ref(x, &ui(k, p), p, RoundingMode::None)
 }
 
 /// `log2(|z|)` rounded up to an integer, in `Q32`: `|z|` in `[2^(e-1), 2^e)` at 64 bits gives `e`. Overestimating by at
@@ -151,9 +151,9 @@ fn bsplit(
         let b_out = if bb - m == 1 {
             // B2 = C2
             let sum = if m - aa == 1 {
-                a1.clone().add(&c1, p, RoundingMode::None)
+                ExactComplex::add_ref(&a1, &c1, p, RoundingMode::None)
             } else {
-                a1.clone().add(&b1, p, RoundingMode::None)
+                ExactComplex::add_ref(&a1, &b1, p, RoundingMode::None)
             };
             sum.mul(&c2, p, RoundingMode::None)
         } else {
@@ -218,10 +218,9 @@ mod tests {
     use super::*;
     use crate::Consts;
     use crate::Error;
-    use core::ops::Neg;
 
     fn near(a: &ExactComplex, b: &ExactComplex, p: usize, slack: i64) -> bool {
-        let d = a.clone().sub(b, p, RoundingMode::None);
+        let d = ExactComplex::sub_ref(a, b, p, RoundingMode::None);
         if d.is_nan() {
             return false;
         }
@@ -250,7 +249,7 @@ mod tests {
                 p,
                 RoundingMode::ToEven,
             );
-            let w = ExactComplex::new(ExactNum::new(p), half.re().clone().neg()); // -i/2
+            let w = ExactComplex::new(ExactNum::new(p), half.re().neg_ref()); // -i/2
             let n = choose_n_0f1(&two, &w, p).ok_or(Error::PrecisionRetryExhausted)?;
             let fwd = sum_forward(&two, &w, n.max(1), p).0;
             // force the bsplit path even at p=64 by calling bsplit+close for p>=4
