@@ -1075,6 +1075,13 @@ def _callees(f, by_name, types):
                          or g["arity"] - (1 if dot and g["self"] else 0) == na
                          or (not dot and g["self"] and g["arity"] == na)]
         if path:
+            mq = re.match(r"<\s*&?\s*(?:mut\s+)?\$(\w+)\s*>", path)
+            if mq:  # <$t>::f inside macro_rules!: the types $t is instantiated with (mk!(A, B)), else every method f
+                mac = f["ty"][1:].split(".", 1)[0] if f["ty"] and f["ty"].startswith("$") else None
+                inst = _macro_types("$%s.%s" % (mac, mq.group(1))) if mac else None
+                inst = {_norm_type(x) for x in inst} if inst else set()
+                res += [g for g in cands if g["ty"] in inst] or [g for g in cands if not g["free"]]
+                continue
             bare = path
             while re.search(r"<[^<>]*>", bare):  # drop turbofish generics: Vec::<T>::new is Vec::new
                 bare = re.sub(r"(?:::\s*)?<[^<>]*>", "", bare)

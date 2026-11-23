@@ -20,3 +20,9 @@
 - nan_error_kinds: the nine `ln_gamma` pins now follow the P20 contract of f0d0b47 (a NaN in either part of a complex
   log-Gamma input gives a typed NaN in both parts: real part's kind, else imaginary part's, else InvalidArgument). The
   test was stale (it still pinned per-part kinds and typeless `None`); the code is right. Test-only change.
+- rules_scan: the borrow call graph no longer dies with IndexError in `_callees` on a macro metavariable as qualified
+  self type (`<$bits>::add_lanes(..)`, ieee_soft/array.rs). `<$t>::f` now resolves through the macro's invocations
+  (`impl_ieee_array!(.., u32)` -> `u32::f`), else every method `f`. Selftest fixture v-macro-metavar-qself (red: IndexError;
+  fixture totals 30 -> 31 / 74 -> 75). The traceback hid the whole borrow check: with it fixed the gate form reports
+  52 unlisted copy sites (reach 246 -> 450 fns since 25e2d82); those and the clone / test-panic / neg_via_mul counts
+  above baseline are escalated, not baselined.

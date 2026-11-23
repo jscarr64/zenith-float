@@ -244,6 +244,9 @@ hx v-closure-in-let 1 "$K:1 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k
 hx v-trait-default-method 1 "$K:1 in fn dup: \`.clone(\` (add_ref -> dup)" 'a.dup()' 'trait Dup { fn dup(&self) -> N { self.clone() } }\nimpl Dup for N {}'
 hx v-nested-macros 1 "$K:1 in fn inner!: \`.clone(\` (add_ref -> k -> outer! -> inner!)" 'k(a, b)' 'macro_rules! inner { ($x:expr) => { $x.clone() } }\nmacro_rules! outer { ($x:expr) => { inner!($x) } }\nfn k(a: &N, b: &N) -> N { outer!(a) }'
 hx v-map-clone-path 1 "$K:1 in fn k: \`::clone\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(Clone::clone).collect(); N(v.len()) }'
+# a macro metavariable as the qualified self type (`<$bits>::add_lanes(..)` in ieee_soft/array.rs, 6c61fd6): an unknown
+# resolves through the macro's invocations (mk!(A, B): only B::k2, not C::k2); it used to raise IndexError in _callees
+hx v-macro-metavar-qself 1/1 "$K:11 in fn k2: \`.clone(\` (add_ref -> k -> k2)" 'A::k(a, b)' 'macro_rules! mk {\n    ($a:ident, $b:ty) => {\n        impl $a {\n            pub fn k(a: &N, b: &N) -> N {\n                <$b>::k2(a, b)\n            }\n        }\n    };\n}\nmk!(A, B);\nimpl B { fn k2(a: &N, b: &N) -> N { a.clone() } }\nimpl C { fn k2(a: &N, b: &N) -> N { a.clone() } }'
 # named exceptions, site-keyed (tools/borrow_exceptions.tsv: file, impl, fn, line anchor, allowance). Rusty's
 # exception-exact / over-allowance / moved-impl / token-swap / shift-same-name cover those cases; these add a second
 # copy on an identical line, another token beside a listed site, another file, and a listed site that is removed
@@ -267,7 +270,7 @@ rm -f tools/borrow_exceptions.tsv
 hx x-fallback-copy-free 0 - 'k(a, b)' 'fn k<T: Fro>(t: &T, b: &N) -> N { t.frob() }\nimpl M { fn frob(&self) -> N { N(1) } }' 'ops/h.rs:impl Z { fn frob(&self) -> N { N(0) } }'
 scan --borrow-reach | grep -q "ops/h.rs:1 frob" || fail "same-name fallback did not reach ops/h.rs frob"
 rm -rf zenith-float-num/src/ops; echo 0 > tools/helper_copy_count_baseline.txt
-[ "$bx_n" = 30 ] || fail "BORROW fixtures: ran $bx_n, want 30"
+[ "$bx_n" = 31 ] || fail "BORROW fixtures: ran $bx_n, want 31"
 echo "rules_scan selftest: BORROW per-op fixtures ok ($bx_n)"
 rm -f zenith-float-num/src/mantissa/kern.rs
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ext.rs; echo 0 > tools/clone_count_baseline.txt
@@ -379,7 +382,7 @@ rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ops/h.rs zenith-float-
 echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
 [ -z "$bred" ] || fail "BORROW fixtures red:$bred"
 [ "$bc_n" = 44 ] && [ "$bp_n" = 19 ] || fail "BORROW fixtures: ran $bc_n bcase + $bp_n bpin, want 44 + 19"
-[ $((bx_n + bc_n)) = 74 ] || fail "BORROW fixtures total: $((bx_n + bc_n)), want 74"
+[ $((bx_n + bc_n)) = 75 ] || fail "BORROW fixtures total: $((bx_n + bc_n)), want 75"
 # ---- test code is counted by the clone count (cfg(test) items, tests.rs, test dirs) ----
 rm -f zenith-float-num/src/x.rs; mkdir -p zenith-float-num/src/ops zenith-float-num/tests nostd-tests/src
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(x: &S) { let y = x.clone(); }\n}\n' > zenith-float-num/src/x.rs
