@@ -48,9 +48,11 @@ fn stirling_choose_param(z: &ExactComplex, p: usize, digamma: bool) -> (usize, u
         .max(1);
     let w2 = ExactNum::from_u32(w_ceil, wp).sqr(wp, RoundingMode::None);
     let one = ExactComplex::one(wp);
-    let mut t = ExactComplex::new(z.re().clone(), z.im().clone());
+    // `z + r`; `None` while r = 0 (z read in place).
+    let mut shifted: Option<ExactComplex> = None;
     let mut r = 0usize;
     loop {
+        let t = shifted.as_ref().unwrap_or(z);
         let re_lt_one = t.re().is_negative()
             || t.re().is_zero()
             || matches!(t.re().compare(&ExactNum::from_u8(1, wp)), Some(c) if c < 0);
@@ -64,16 +66,18 @@ fn stirling_choose_param(z: &ExactComplex, p: usize, digamma: bool) -> (usize, u
             break;
         }
         r = r.saturating_add(1);
-        t = ExactComplex::add_ref(&t, &one, wp, RoundingMode::None);
+        let next = ExactComplex::add_ref(t, &one, wp, RoundingMode::None);
+        shifted = Some(next);
         if r > prec.saturating_mul(2).saturating_add(16) {
             break;
         }
     }
+    let t = shifted.as_ref().unwrap_or(z);
     let log2z = match t.abs(wp, RoundingMode::None).exponent() {
         Some(e) => i128::from(e).saturating_sub(1).saturating_mul(ONE),
         None => 0,
     };
-    let argf = argf_log2(&t);
+    let argf = argf_log2(t);
     let n = stirling_choose_n(log2z, argf, digamma, prec);
     (r, n.max(1))
 }
@@ -224,17 +228,18 @@ fn rising2_ui_rs(x: &ExactComplex, n: usize, p: usize) -> (ExactComplex, ExactCo
     }
     let m = rs_block_len(n, p);
     let wp = round_p(p.saturating_add((usize::BITS - n.leading_zeros()) as usize));
-    let mut xpow: Vec<ExactComplex> = Vec::with_capacity(m + 1);
-    xpow.push(ExactComplex::one(wp));
-    let xc = ExactComplex::new(x.re().clone(), x.im().clone());
-    // Re-widen x to wp.
-    let xw = ExactComplex::new(xc.re().clone(), xc.im().clone());
-    xpow.push(xw.clone());
-    let mut accp = xw.clone();
-    for _ in 2..=m {
-        accp = accp.mul(&xw, wp, RoundingMode::None);
-        xpow.push(accp.clone());
+    // x^0 and x^2..x^m; x^1 is x itself, read in place.
+    let mut owned: Vec<ExactComplex> = Vec::with_capacity(m + 1);
+    owned.push(ExactComplex::one(wp));
+    for j in 2..=m {
+        let prev = if j == 2 { x } else { &owned[j - 2] };
+        let next = prev.mul(x, wp, RoundingMode::None);
+        owned.push(next);
     }
+    let mut xpow: Vec<&ExactComplex> = Vec::with_capacity(m + 1);
+    xpow.push(&owned[0]);
+    xpow.push(x);
+    xpow.extend(owned[1..].iter());
     // (t, dt): the product so far and its derivative, set together.
     let mut acc: Option<(ExactComplex, ExactComplex)> = None;
     let mut k = 0usize;
@@ -259,14 +264,14 @@ fn rising2_ui_rs(x: &ExactComplex, n: usize, p: usize) -> (ExactComplex, ExactCo
 }
 
 fn rising_block_eval(
-    xpow: &[ExactComplex],
+    xpow: &[&ExactComplex],
     k: usize,
     l: usize,
     wp: usize,
 ) -> (ExactComplex, ExactComplex) {
     if l == 1 {
         let xk = ExactComplex::add_ref(
-            &xpow[1],
+            xpow[1],
             &ExactComplex::from_real(exact_from_usize(k, wp), wp),
             wp,
             RoundingMode::None,
@@ -606,17 +611,20 @@ fn c_pow_ui(base: &ExactComplex, exp: usize, p: usize) -> ExactComplex {
     if exp == 0 {
         return acc;
     }
-    let mut b = ExactComplex::new(base.re().clone(), base.im().clone());
+    // base^(2^i); `None` while it is still `base` (read in place).
+    let mut squared: Option<ExactComplex> = None;
     let mut e = exp;
     loop {
+        let b = squared.as_ref().unwrap_or(base);
         if e & 1 == 1 {
-            acc = acc.mul(&b, p, RoundingMode::None);
+            acc = acc.mul(b, p, RoundingMode::None);
         }
         e >>= 1;
         if e == 0 {
             return acc;
         }
-        b = b.mul(&b, p, RoundingMode::None);
+        let next = b.mul(b, p, RoundingMode::None);
+        squared = Some(next);
     }
 }
 
@@ -651,14 +659,16 @@ fn stirling_log_sum_horner(z: &ExactComplex, terms: usize, p: usize) -> ExactCom
         Err(e) => return nan_pair(e),
     };
     let mut s = ExactComplex::new(ExactNum::new(p), ExactNum::new(p));
-    let mut zpow = ExactComplex::new(z.re().clone(), z.im().clone());
+    // z^(2k-1); `None` while it is z itself (read in place).
+    let mut zpow_owned: Option<ExactComplex> = None;
     let mut prev_e = Exponent::MIN;
     for (k, b) in bs.iter().enumerate() {
         let k = k + 1;
         let two_k = ExactNum::from_u32((2 * k) as u32, p);
         let two_k_m1 = ExactNum::from_u32((2 * k - 1) as u32, p);
         let den_r = two_k.mul(&two_k_m1, p, RoundingMode::None);
-        let den = ExactComplex::from_real(den_r, p).mul(&zpow, p, RoundingMode::None);
+        let zpow = zpow_owned.as_ref().unwrap_or(z);
+        let den = ExactComplex::from_real(den_r, p).mul(zpow, p, RoundingMode::None);
         let term = ExactComplex::from_real(b.clone(), p).div(&den, p, RoundingMode::None);
         s = s.add(&term, p, RoundingMode::None);
         let e = term
@@ -672,9 +682,10 @@ fn stirling_log_sum_horner(z: &ExactComplex, terms: usize, p: usize) -> ExactCom
             break;
         }
         prev_e = e;
-        zpow = zpow
+        let next = zpow
             .mul(z, p, RoundingMode::None)
             .mul(z, p, RoundingMode::None);
+        zpow_owned = Some(next);
     }
     s
 }
@@ -732,11 +743,9 @@ fn stirling_sum_s3(
     let wp = round_p(usize::try_from(wp_i).unwrap_or(10));
     let pi = pi_c(wp, cc);
     // u = -1 / (2 π z)^2
-    let two_pi_z = two_c(wp).mul(&pi, wp, RoundingMode::None).mul(
-        &ExactComplex::new(z.re().clone(), z.im().clone()),
-        wp,
-        RoundingMode::None,
-    );
+    let two_pi_z = two_c(wp)
+        .mul(&pi, wp, RoundingMode::None)
+        .mul(z, wp, RoundingMode::None);
     let mut u = ExactComplex::one(wp).div(
         &two_pi_z.mul(&two_pi_z, wp, RoundingMode::None),
         wp,
@@ -1774,16 +1783,19 @@ impl ExactComplex {
         }
         let (acc, _) = rising2_ui_rs(self, r, p);
         let one = ExactComplex::one(p);
-        let mut z = ExactComplex::new(self.re().clone(), self.im().clone());
+        // self + k; `None` while k = 0 (self read in place).
+        let mut shifted: Option<ExactComplex> = None;
         let mut arg_sum = ExactNum::new(p);
         for _ in 0..r {
+            let z = shifted.as_ref().unwrap_or(self);
             arg_sum = ExactNum::add_ref(
                 &arg_sum,
                 &z.im().atan2(z.re(), p, RoundingMode::None, cc),
                 p,
                 RoundingMode::None,
             );
-            z = ExactComplex::add_ref(&z, &one, p, RoundingMode::None);
+            let next = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
+            shifted = Some(next);
         }
         lg.sub(
             &Self::ln_rising_from_product(&acc, &arg_sum, p, cc),
