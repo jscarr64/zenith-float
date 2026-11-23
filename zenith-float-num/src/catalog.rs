@@ -244,20 +244,17 @@ fn pfq_series(z: &ExactNum, a: &[ExactNum], b: &[ExactNum], p: usize) -> ExactNu
     let az = abs_up(z);
     let aa: Vec<ExactNum> = a.iter().map(abs_up).collect();
     let ab: Vec<ExactNum> = b.iter().map(abs_up).collect();
-    let bmax = ab.iter().fold(ExactNum::new(64), |m, x| {
-        if x.compare(&m) == Some(1) {
-            x.clone()
-        } else {
-            m
-        }
-    });
+    let zero64 = ExactNum::new(64);
+    let bmax = ab
+        .iter()
+        .fold(&zero64, |m, x| if x.compare(m) == Some(1) { x } else { m });
     // For p = q+1 one a pairs with (K+1) (the largest |a|); the rest pair with b's.
     let pair_first = a.len() == b.len() + 1;
     let mut wrk = work_p(p);
     let one_lp = ExactNum::from_u8(1, 64);
     loop {
         let mut term = ExactNum::from_u8(1, wrk);
-        let mut sum = term.clone();
+        let mut sum = ExactNum::from_u8(1, wrk);
         let mut emax: i128 = 1;
         let mut nterms: u64 = 1;
         let mut km1 = ExactNum::new(128); // k - 1, exact
@@ -288,7 +285,7 @@ fn pfq_series(z: &ExactNum, a: &[ExactNum], b: &[ExactNum], p: usize) -> ExactNu
             }
             // Ratio bound for every step after this index K = km1 (= k).
             let kk = &km1;
-            if kk.compare(&ExactNum::add_ref(&bmax, &one_lp, 64, up)) != Some(1) {
+            if kk.compare(&ExactNum::add_ref(bmax, &one_lp, 64, up)) != Some(1) {
                 continue;
             }
             let mut bound = az.clone();
@@ -672,12 +669,18 @@ fn clausen_reduce(x: &ExactNum, wrk: usize, cc: &mut Consts) -> Option<(ExactNum
     let reduced = x.exponent().is_some_and(|e| e > 1);
     let mut pr = word_p(wrk.saturating_add(128));
     loop {
-        let th = if reduced { reduce_clausen_angle(x, pr, cc) } else { x.clone() };
+        let th_red;
+        let th: &ExactNum = if reduced {
+            th_red = reduce_clausen_angle(x, pr, cc);
+            &th_red
+        } else {
+            x
+        };
         if th.is_nan() {
             return None;
         }
         let pi = cc.pi(pr, RoundingMode::None);
-        let u = pi.sub(&ExactNum::clone(&th).abs(), pr, RoundingMode::None);
+        let u = pi.sub(&th.abs_ref(), pr, RoundingMode::None);
         let small = |v: &ExactNum| -> Option<usize> {
             if v.is_zero() {
                 None
@@ -685,15 +688,14 @@ fn clausen_reduce(x: &ExactNum, wrk: usize, cc: &mut Consts) -> Option<(ExactNum
                 Some(v.exponent().unwrap_or(0).min(0).unsigned_abs() as usize)
             }
         };
-        let lost = match (if reduced { small(&th) } else { Some(0) }, small(&u)) {
+        let lost = match (if reduced { small(th) } else { Some(0) }, small(&u)) {
             (Some(a), Some(b)) => Some(a.max(b)),
             _ => None,
         };
         match lost {
             Some(l) if pr >= wrk.saturating_add(128).saturating_add(l) => {
-                let mut th = th;
+                let th = th.rounded_to(word_p(wrk.saturating_add(64)), RoundingMode::None);
                 let mut u = u;
-                let _ = th.set_precision(word_p(wrk.saturating_add(64)), RoundingMode::None);
                 let _ = u.set_precision(word_p(wrk.saturating_add(64)), RoundingMode::None);
                 return Some((th, u));
             }
