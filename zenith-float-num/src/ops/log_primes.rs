@@ -1420,9 +1420,21 @@ const ATANH_24_C: &[i64] = &[
 ];
 
 fn cmp_abs(a: &ExactInt, b: &ExactInt) -> Ordering {
-    let aa = if a.is_negative() { a.neg() } else { a.clone() };
-    let bb = if b.is_negative() { b.neg() } else { b.clone() };
-    aa.soft_cmp(&bb)
+    // |a| and |b|: a non-negative input is compared in place.
+    let (a_neg, b_neg);
+    let aa: &ExactInt = if a.is_negative() {
+        a_neg = a.neg();
+        &a_neg
+    } else {
+        a
+    };
+    let bb: &ExactInt = if b.is_negative() {
+        b_neg = b.neg();
+        &b_neg
+    } else {
+        b
+    };
+    aa.soft_cmp(bb)
 }
 
 /// Largest `k` with `p * 2^k <= q` for positive `p`, `q`.

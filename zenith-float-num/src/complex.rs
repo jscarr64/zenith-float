@@ -1955,7 +1955,7 @@ impl ExactComplex {
             };
             return Some(CB::from_parts(re, im));
         }
-        let ln_r = RB::exact(r.clone()).ln(p, cc)?;
+        let ln_r = RB::exact(r).ln(p, cc)?;
         let phi = RB::exact(b.clone())
             .mul(&ln_r, p)?
             .add(&RB::exact(a.clone()).mul(&theta_b, p)?, p)?;
