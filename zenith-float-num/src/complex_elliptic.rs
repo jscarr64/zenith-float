@@ -397,28 +397,29 @@ fn rd_series_arb(
     let xx = ExactComplex::sub_ref(an, x, p, rm()).div(an, p, rm());
     let yy = ExactComplex::sub_ref(an, y, p, rm()).div(an, p, rm());
     let zz = ExactComplex::sub_ref(an, z, p, rm()).div(an, p, rm());
-    let pp = zz.clone();
+    // P = Z here.
+    let pp = &zz;
     let e2 = xx
         .mul(&yy, p, rm())
         .add(&xx.mul(&zz, p, rm()), p, rm())
         .add(&yy.mul(&zz, p, rm()), p, rm())
-        .sub(&c_u32(3, p).mul(&pp.mul(&pp, p, rm()), p, rm()), p, rm());
+        .sub(&c_u32(3, p).mul(&pp.mul(pp, p, rm()), p, rm()), p, rm());
     let xyz = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
-    let e3 = ExactComplex::add_ref(&xyz, &two.mul(&e2, p, rm()).mul(&pp, p, rm()), p, rm()).add(
-        &four.mul(&pp.mul(&pp, p, rm()).mul(&pp, p, rm()), p, rm()),
+    let e3 = ExactComplex::add_ref(&xyz, &two.mul(&e2, p, rm()).mul(pp, p, rm()), p, rm()).add(
+        &four.mul(&pp.mul(pp, p, rm()).mul(pp, p, rm()), p, rm()),
         p,
         rm(),
     );
     let e4 = two
         .mul(&xyz, p, rm())
-        .add(&e2.mul(&pp, p, rm()), p, rm())
+        .add(&e2.mul(pp, p, rm()), p, rm())
         .add(
-            &c_u32(3, p).mul(&pp.mul(&pp, p, rm()).mul(&pp, p, rm()), p, rm()),
+            &c_u32(3, p).mul(&pp.mul(pp, p, rm()).mul(pp, p, rm()), p, rm()),
             p,
             rm(),
         )
-        .mul(&pp, p, rm());
-    let e5 = xyz.mul(&pp.mul(&pp, p, rm()), p, rm());
+        .mul(pp, p, rm());
+    let e5 = xyz.mul(&pp.mul(pp, p, rm()), p, rm());
     let series = carlson_taylor::rj_taylor_sum(&e2, &e3, &e4, &e5, order, p);
     series.div(&an.mul(&an.sqrt(p, rm(), cc), p, rm()), p, rm())
 }
@@ -435,9 +436,9 @@ fn one_minus(w: &ExactComplex, p: usize) -> ExactComplex {
     if !is_real_c(w) {
         return d;
     }
-    let mut im = w.im().clone();
-    im.set_sign(if w.im().is_negative() { Sign::Pos } else { Sign::Neg });
-    ExactComplex::new(d.re().clone(), im)
+    // Im w is a signed zero; its negation is the C99 side of 1 - w.
+    let (re, _) = d.into_parts();
+    ExactComplex::new(re, w.im().neg_ref())
 }
 
 /// If `z` lies on the open cut (−∞,0), move it off the cut by
@@ -497,7 +498,8 @@ fn flush_cut_bias(z: ExactComplex, dest: usize) -> ExactComplex {
             c
         }
     };
-    ExactComplex::new(flush(z.re().clone()), flush(z.im().clone()))
+    let (re, im) = z.into_parts();
+    ExactComplex::new(flush(re), flush(im))
 }
 
 fn min_num(a: ExactNum, b: ExactNum) -> ExactNum {
@@ -569,9 +571,9 @@ fn seg_hits_neg_ray(start: &ExactComplex, step: &ExactComplex, p: usize) -> bool
         // Real projection of the segment, including paths that run
         // parallel to the cut at a tiny Im (leave-cut ε). Those must
         // detour; a crawl of step 2^{-(dest+16)} along the cut hangs.
-        let a = start.re().clone();
+        let a = start.re();
         let b = ExactNum::add_ref(start.re(), step.re(), p, rm());
-        let (lo, hi) = if matches!(a.compare(&b), Some(c) if c <= 0) { (a, b) } else { (b, a) };
+        let (lo, hi) = if matches!(a.compare(&b), Some(c) if c <= 0) { (a, &b) } else { (&b, a) };
         // A mere touch of 0 at one endpoint (integrable 1/√t) is not a hit
         // provided the rest of the segment has Re > 0.
         if lo.is_zero() && hi.is_positive() {
@@ -713,15 +715,17 @@ fn rj_panel_kmax(wabs: &ExactNum, rho: &ExactNum, p: usize) -> usize {
         return cap;
     }
     let thresh = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) + 8), p, rm());
-    let mut uk = r.clone();
+    // r^k; `None` while k = 1 (r read in place).
+    let mut uk_slot: Option<ExactNum> = None;
     let mut k = 1usize;
     loop {
+        let uk = uk_slot.as_ref().unwrap_or(&r);
         match uk.compare(&thresh) {
             Some(c) if c >= 0 => {
                 if k >= cap {
                     return cap;
                 }
-                uk = uk.mul(&r, p, rm());
+                uk_slot = Some(ExactNum::mul_ref(uk, &r, p, rm()));
                 k += 1;
             }
             Some(_) => break,
@@ -756,40 +760,40 @@ fn rj_panel(
     let f = conv_series(&conv_series(&conv_series(&sx, &sy, p), &sz, p), &ip, p);
     // ∫_{-w}^{w} s^k ds = 0 (k odd), 2 w^{k+1}/(k+1) (k even).
     let mut acc = ExactComplex::zero(p);
-    let mut wpow = half.clone(); // w^{k+1} at k=0
+    // w^{k+1}; `None` at k = 0 (half read in place).
+    let mut wpow_slot: Option<ExactComplex> = None;
     for (k, fk) in f.iter().enumerate() {
+        let wpow = wpow_slot.as_ref().unwrap_or(&half);
         if k % 2 == 0 {
-            let term = fk.mul(&c_u32(2, p), p, rm()).mul(&wpow, p, rm()).div(
+            let term = fk.mul(&c_u32(2, p), p, rm()).mul(wpow, p, rm()).div(
                 &c_u64((k as u64).saturating_add(1), p),
                 p,
                 rm(),
             );
             acc = acc.add(&term, p, rm());
         }
-        wpow = wpow.mul(&half, p, rm());
+        wpow_slot = Some(wpow.mul(&half, p, rm()));
     }
     acc
 }
 
-fn series_coeff(w: &[ExactComplex], k: usize, p: usize) -> ExactComplex {
-    if k < w.len() {
-        w[k].clone()
-    } else {
-        ExactComplex::zero(p)
-    }
+/// `w[k]`, or `zero` past the end of the series.
+fn series_coeff<'a>(w: &'a [ExactComplex], k: usize, zero: &'a ExactComplex) -> &'a ExactComplex {
+    w.get(k).unwrap_or(zero)
 }
 
 /// Coefficients of 1/w(s) up to s^{kmax-1}.
 fn inv_of_series(w: &[ExactComplex], p: usize, kmax: usize) -> Vec<ExactComplex> {
-    let w0 = series_coeff(w, 0, p);
+    let zero = ExactComplex::zero(p);
+    let w0 = series_coeff(w, 0, &zero);
     let mut r = Vec::with_capacity(kmax);
-    r.push(c_u32(1, p).div(&w0, p, rm()));
+    r.push(c_u32(1, p).div(w0, p, rm()));
     for n in 1..kmax {
         let mut s = ExactComplex::zero(p);
         for (i, ri) in r.iter().enumerate() {
-            s = s.add(&ri.mul(&series_coeff(w, n - i, p), p, rm()), p, rm());
+            s = s.add(&ri.mul(series_coeff(w, n - i, &zero), p, rm()), p, rm());
         }
-        r.push(c_neg(&s, p).div(&w0, p, rm()));
+        r.push(c_neg(&s, p).div(w0, p, rm()));
     }
     r
 }
@@ -801,7 +805,8 @@ fn inv_sqrt_of_series(
     cc: &mut Consts,
     kmax: usize,
 ) -> Vec<ExactComplex> {
-    let w0 = series_coeff(w, 0, p);
+    let zero = ExactComplex::zero(p);
+    let w0 = series_coeff(w, 0, &zero);
     let mut r = Vec::with_capacity(kmax);
     r.push(c_u32(1, p).div(&w0.sqrt(p, rm(), cc), p, rm()));
     // Cache r*r so each new coefficient is O(n), not O(n²).
@@ -810,7 +815,7 @@ fn inv_sqrt_of_series(
     for n in 1..kmax {
         let mut known = ExactComplex::zero(p);
         for (i, rri) in rr.iter().enumerate() {
-            known = known.add(&rri.mul(&series_coeff(w, n - i, p), p, rm()), p, rm());
+            known = known.add(&rri.mul(series_coeff(w, n - i, &zero), p, rm()), p, rm());
         }
         // rr_n = 2 r0 r_n + Q, Q = sum_{j=1}^{n-1} r_j r_{n-j}.
         // (rr w)_n = (2 r0 r_n + Q) w0 + known = 0.
@@ -818,8 +823,8 @@ fn inv_sqrt_of_series(
         for j in 1..n {
             q = q.add(&r[j].mul(&r[n - j], p, rm()), p, rm());
         }
-        let rhs = known.add(&q.mul(&w0, p, rm()), p, rm());
-        let coef = c_u32(2, p).mul(&r[0], p, rm()).mul(&w0, p, rm());
+        let rhs = known.add(&q.mul(w0, p, rm()), p, rm());
+        let coef = c_u32(2, p).mul(&r[0], p, rm()).mul(w0, p, rm());
         r.push(c_neg(&rhs, p).div(&coef, p, rm()));
         let mut rrn = ExactComplex::zero(p);
         for j in 0..=n {
@@ -898,17 +903,19 @@ fn rj_u2_panel(
     let ip = inv_of_series(&wp, p, kmax);
     let f = conv_series(&conv_series(&sy, &sz, p), &ip, p);
     let mut acc = ExactComplex::zero(p);
-    let mut wpow = half.clone();
+    // w^{k+1}; `None` at k = 0 (half read in place).
+    let mut wpow_slot: Option<ExactComplex> = None;
     for (k, fk) in f.iter().enumerate() {
+        let wpow = wpow_slot.as_ref().unwrap_or(&half);
         if k % 2 == 0 {
             let term = two_sl
                 .mul(fk, p, rm())
                 .mul(&c_u32(2, p), p, rm())
-                .mul(&wpow, p, rm())
+                .mul(wpow, p, rm())
                 .div(&c_u64((k as u64).saturating_add(1), p), p, rm());
             acc = acc.add(&term, p, rm());
         }
-        wpow = wpow.mul(&half, p, rm());
+        wpow_slot = Some(wpow.mul(&half, p, rm()));
     }
     acc
 }
@@ -995,7 +1002,8 @@ fn rj_line_integral(
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let mut a = from.clone();
+    // The panel start; `None` while it is still `from`.
+    let mut a_slot: Option<ExactComplex> = None;
     let mut acc = ExactComplex::zero(p);
     // Integrable 1/√t at t=0: do the whole 0→to segment in the u²
     // coordinate so panels are O(1) instead of crawling out of 2^{-Θ(p)}.
@@ -1008,7 +1016,8 @@ fn rj_line_integral(
     let tiny = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) + 16), p, rm());
     let mut prev_abs: Option<ExactNum> = None;
     loop {
-        let rem = ExactComplex::sub_ref(to, &a, p, rm());
+        let a = a_slot.as_ref().unwrap_or(from);
+        let rem = ExactComplex::sub_ref(to, a, p, rm());
         let rem_abs = c_abs(&rem, p);
         if matches!(rem_abs.compare(&tiny), Some(c) if c < 0) {
             return acc;
@@ -1024,7 +1033,7 @@ fn rj_line_integral(
         // stretch can be large while the panel would pass through a nearby
         // singularity (t ≈ −y when y ≈ −1). |h| ≤ ρ(a)/2 keeps the
         // expansion disk inside the region of analyticity.
-        let rho = rj_sing_dist(&a, x, y, z, pv, p);
+        let rho = rj_sing_dist(a, x, y, z, pv, p);
         let half_rho = rho.ldexp_ref(-1, p, rm());
         let h = if rho.is_zero() || rho.is_negative() || rem_abs.is_zero() {
             return nan_pair(Error::InvalidArgument);
@@ -1037,8 +1046,8 @@ fn rj_line_integral(
                 rm(),
             )
         };
-        acc = acc.add(&rj_panel(&a, &h, x, y, z, pv, p, cc), p, rm());
-        a = a.add(&h, p, rm());
+        acc = acc.add(&rj_panel(a, &h, x, y, z, pv, p, cc), p, rm());
+        a_slot = Some(ExactComplex::add_ref(a, &h, p, rm()));
     }
 }
 
@@ -1332,7 +1341,7 @@ fn pi_complete_agm(
         return nan_pair(Error::InvalidArgument);
     }
     let mut q = ExactComplex::one(p);
-    let mut qsum = q.clone();
+    let mut qsum = ExactComplex::one(p);
     let thresh = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) + 32), p, rm());
     // Quadratic AGM: about log2(p) iterations.
     for _ in 0..=p {
@@ -1368,7 +1377,7 @@ fn pi_complete_agm(
     let inner = two.add(&n_over.mul(&qsum, p, rm()), p, rm());
     let val = pref.mul(&inner, p, rm());
     if is_real_c(n) && is_real_c(m) {
-        return ExactComplex::from_real(val.re().clone(), p);
+        return ExactComplex::from_real(val.into_parts().0, p);
     }
     val
 }
@@ -1608,7 +1617,13 @@ impl ExactComplex {
         // already places 1−m x² (and 1−n x²) on the same side. Bumping
         // m or n as well can overpower x. If 1−x² is off the cut, bump
         // m (and n) when their product term is on the cut.
-        let x = if cut_a && is_real_c(self) { bump_real(self, dest) } else { self.clone() };
+        let x_bumped;
+        let x: &ExactComplex = if cut_a && is_real_c(self) {
+            x_bumped = bump_real(self, dest);
+            &x_bumped
+        } else {
+            self
+        };
         let mm_bumped;
         let mm: &ExactComplex = if !cut_a && cut_b && is_real_c(m) {
             mm_bumped = bump_real(m, dest);
@@ -1617,7 +1632,7 @@ impl ExactComplex {
             m
         };
         let one = ExactComplex::one(wp);
-        let x2 = x.mul(&x, wp, rm());
+        let x2 = x.mul(x, wp, rm());
         let a = leave_cut(&one_minus(&x2, wp), dest);
         let b = leave_cut(&one_minus(&mm.mul(&x2, wp, rm()), wp), dest);
         let rf = carlson_rf(&a, &b, &one, wp, cc);
@@ -1831,7 +1846,13 @@ impl ExactComplex {
         let cut_n = on_nonpos_real(&pv_tmp);
         let on_cut = cut_a || cut_b || cut_n;
         let wp = if on_cut { rj_cut_work(dest, p) } else { p };
-        let xb = if cut_a && is_real_c(x) { bump_real(x, dest) } else { x.clone() };
+        let xb_bumped;
+        let xb: &ExactComplex = if cut_a && is_real_c(x) {
+            xb_bumped = bump_real(x, dest);
+            &xb_bumped
+        } else {
+            x
+        };
         let mm_bumped;
         let mm: &ExactComplex = if !cut_a && cut_b && is_real_c(m) {
             mm_bumped = bump_real(m, dest);
@@ -1848,7 +1869,7 @@ impl ExactComplex {
         };
         let one = ExactComplex::one(wp);
         let three = c_u32(3, wp);
-        let x2 = xb.mul(&xb, wp, rm());
+        let x2 = xb.mul(xb, wp, rm());
         let a = leave_cut(&one_minus(&x2, wp), dest);
         let b = leave_cut(&one_minus(&mm.mul(&x2, wp, rm()), wp), dest);
         let pv = leave_cut(&one_minus(&nn.mul(&x2, wp, rm()), wp), dest);
