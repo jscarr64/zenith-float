@@ -537,7 +537,10 @@ fn transform_1mz_log(
             z,
             p,
             cc,
-            seen,
+            // Euler maps c − a − b = m < 0 to c − a′ − b′ = −m > 0: the inner call needs this
+            // logarithmic connection again (now the m ≥ 0 branch, which does not recurse), so
+            // it must not see it as tried. Marking it sent |z| → 1 to the plain series (404a9b5).
+            seen & !(1 << 6),
         );
         return wm.mul(&f, p, rm());
     }

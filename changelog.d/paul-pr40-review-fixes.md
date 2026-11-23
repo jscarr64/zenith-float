@@ -26,3 +26,8 @@
   fixture totals 30 -> 31 / 74 -> 75). The traceback hid the whole borrow check: with it fixed the gate form reports
   52 unlisted copy sites (reach 246 -> 450 fns since 25e2d82); those and the clone / test-panic / neg_via_mul counts
   above baseline are escalated, not baselined.
+- Complex 2F1, integer c − a − b = m < 0 near z = 1: Euler's step to c − a′ − b′ = −m > 0 now lets the inner call use
+  the logarithmic 1 − z connection again. Since 404a9b5 (first bad commit by bisect be63db9..e6f439f) the connection
+  was marked tried before the Euler step, so the inner call ran the plain series at |z| = 1 − 1e-7 (~10^9 terms) and
+  c2f1_log_mpmath never finished (>10 min; 0.43 s at be63db9). Now 0.30 s, all 54 mpmath rows pass. New test
+  log_case_negative_m_near_one_returns (60 s budget; red: timed out).
