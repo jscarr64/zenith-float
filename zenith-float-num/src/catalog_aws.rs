@@ -1163,6 +1163,18 @@ fn rem_stalled(parent_re: Option<i64>, rem: Option<&ExactNum>) -> bool {
         _ => false,
     }
 }
+/// Panel endpoint `i` of an adaptive grid: an entry of `pts`, or the grid's end `end` (index
+/// [`END`]), so every panel refers to its endpoints in place.
+fn at<'a>(pts: &'a [ExactNum], end: &'a ExactNum, i: usize) -> &'a ExactNum {
+    if i == END {
+        end
+    } else {
+        &pts[i]
+    }
+}
+
+/// The index [`at`] reads as the grid's end.
+const END: usize = usize::MAX;
 
 /// DLMF 11.5.2: \(K_\nu(z)=\dfrac{2(z/2)^\nu}{\sqrt{\pi}\,\Gamma(\nu+1/2)}
 /// \int_0^\infty e^{-z t}(1+t^2)^{\nu-1/2}\,dt\), \(\Re z>0\).
@@ -1192,33 +1204,36 @@ fn struve_k_integral(
             h = ExactNum::div_ref(&t_end, &ExactNum::from_u32(65_536, wp), wp, UP);
         }
     }
-    let mut stack: Vec<(ExactNum, ExactNum, Option<i64>)> = Vec::new();
-    let mut left = ExactNum::new(wp);
+    // Panel endpoints: `pts` and `t_end` (index END); panels hold indices.
+    let mut pts: Vec<ExactNum> = Vec::new();
+    pts.push(ExactNum::new(wp));
+    let mut stack: Vec<(usize, usize, Option<i64>)> = Vec::new();
+    let mut li = 0usize;
     loop {
-        if ExactNum::sub_ref(&t_end, &left, wp, DN).is_negative()
-            || ExactNum::sub_ref(&t_end, &left, wp, DN).is_zero()
+        if ExactNum::sub_ref(&t_end, &pts[li], wp, DN).is_negative()
+            || ExactNum::sub_ref(&t_end, &pts[li], wp, DN).is_zero()
         {
             break;
         }
-        let mut right = ExactNum::add_ref(&left, &h, wp, UP);
+        let right = ExactNum::add_ref(&pts[li], &h, wp, UP);
         if right.abs_cmp(&t_end) != Some(-1) {
-            right = t_end.clone();
-        }
-        stack.push((left.clone(), right.clone(), None));
-        if right.abs_cmp(&t_end) != Some(-1) {
+            stack.push((li, END, None));
             break;
         }
-        left = right;
+        pts.push(right);
+        let ri = pts.len() - 1;
+        stack.push((li, ri, None));
+        li = ri;
     }
     let mut acc = ExactNum::new(wp);
-    let mut rem_acc = tb.clone();
+    let mut rem_acc = tb;
     let mut panels = 0usize;
-    while let Some((a, b, parent_re)) = stack.pop() {
+    while let Some((ia, ib, parent_re)) = stack.pop() {
         panels = panels.saturating_add(1);
         if panels > wp.saturating_add(32).saturating_mul(4).saturating_add(1) {
             return None;
         }
-        match k_panel(&a, &b, z, &mu, wp, cc) {
+        match k_panel(at(&pts, &t_end, ia), at(&pts, &t_end, ib), z, &mu, wp, cc) {
             Some((val, rem)) if rem.abs_cmp(&target) != Some(1) => {
                 acc = acc.add(&val, wp, N);
                 rem_acc = rem_acc.add(&rem, wp, UP);
@@ -1228,10 +1243,18 @@ fn struve_k_integral(
                 if rem_stalled(parent_re, rem_ref) {
                     return None;
                 }
-                let mid = panel_mid_or_stall(&a, &b, rem_ref, &target, wp)?;
+                let mid = panel_mid_or_stall(
+                    at(&pts, &t_end, ia),
+                    at(&pts, &t_end, ib),
+                    rem_ref,
+                    &target,
+                    wp,
+                )?;
                 let child_re = rem_ref.map(exp_of);
-                stack.push((mid.clone(), b, child_re));
-                stack.push((a, mid, child_re));
+                pts.push(mid);
+                let im = pts.len() - 1;
+                stack.push((im, ib, child_re));
+                stack.push((ia, im, child_re));
             }
         }
     }
@@ -1858,33 +1881,36 @@ fn anger_a_integral(
             h = ExactNum::div_ref(&t_end, &ExactNum::from_u32(65_536, wp), wp, UP);
         }
     }
-    let mut stack: Vec<(ExactNum, ExactNum, Option<i64>)> = Vec::new();
-    let mut left = ExactNum::new(wp);
+    // Panel endpoints: `pts` and `t_end` (index END); panels hold indices.
+    let mut pts: Vec<ExactNum> = Vec::new();
+    pts.push(ExactNum::new(wp));
+    let mut stack: Vec<(usize, usize, Option<i64>)> = Vec::new();
+    let mut li = 0usize;
     loop {
-        if ExactNum::sub_ref(&t_end, &left, wp, DN).is_negative()
-            || ExactNum::sub_ref(&t_end, &left, wp, DN).is_zero()
+        if ExactNum::sub_ref(&t_end, &pts[li], wp, DN).is_negative()
+            || ExactNum::sub_ref(&t_end, &pts[li], wp, DN).is_zero()
         {
             break;
         }
-        let mut right = ExactNum::add_ref(&left, &h, wp, UP);
+        let right = ExactNum::add_ref(&pts[li], &h, wp, UP);
         if right.abs_cmp(&t_end) != Some(-1) {
-            right = t_end.clone();
-        }
-        stack.push((left.clone(), right.clone(), None));
-        if right.abs_cmp(&t_end) != Some(-1) {
+            stack.push((li, END, None));
             break;
         }
-        left = right;
+        pts.push(right);
+        let ri = pts.len() - 1;
+        stack.push((li, ri, None));
+        li = ri;
     }
     let mut acc = ExactNum::new(wp);
-    let mut rem_acc = tb.clone();
+    let mut rem_acc = tb;
     let mut panels = 0usize;
-    while let Some((a, b, parent_re)) = stack.pop() {
+    while let Some((ia, ib, parent_re)) = stack.pop() {
         panels = panels.saturating_add(1);
         if panels > wp.saturating_add(32).saturating_mul(4).saturating_add(1) {
             return None;
         }
-        match panel_integral(&a, &b, nu, z, wp, cc) {
+        match panel_integral(at(&pts, &t_end, ia), at(&pts, &t_end, ib), nu, z, wp, cc) {
             Some((val, rem)) if rem.abs_cmp(&target) != Some(1) => {
                 acc = acc.add(&val, wp, N);
                 rem_acc = rem_acc.add(&rem, wp, UP);
@@ -1894,10 +1920,18 @@ fn anger_a_integral(
                 if rem_stalled(parent_re, rem_ref) {
                     return None;
                 }
-                let mid = panel_mid_or_stall(&a, &b, rem_ref, &target, wp)?;
+                let mid = panel_mid_or_stall(
+                    at(&pts, &t_end, ia),
+                    at(&pts, &t_end, ib),
+                    rem_ref,
+                    &target,
+                    wp,
+                )?;
                 let child_re = rem_ref.map(exp_of);
-                stack.push((mid.clone(), b, child_re));
-                stack.push((a, mid, child_re));
+                pts.push(mid);
+                let im = pts.len() - 1;
+                stack.push((im, ib, child_re));
+                stack.push((ia, im, child_re));
             }
         }
     }
@@ -2892,36 +2926,36 @@ fn anger_a_u_path(
     let (head, hrem) = anger_a_u_head(nu, z, &tau, wp, cc)?;
     let mut acc = head;
     let mut rem_acc = hrem;
-    let mut left = tau.clone();
     // If the tail past τ is already small, skip the middle panels.
-    let need_mid = ExactNum::sub_ref(&u_end, &left, wp, DN).is_positive();
+    let need_mid = ExactNum::sub_ref(&u_end, &tau, wp, DN).is_positive();
     let mut panels = 0usize;
     if need_mid {
         let target = one(wp).ldexp(-((wp as i64) + 8), wp, N);
-        let mut stack: Vec<(ExactNum, ExactNum, Option<i64>)> = Vec::new();
-        // Initial grid: width min(1/5, left) so mid > radius is possible.
+        // Initial grid from τ: width min(1/5, τ) so mid > radius is possible.
         let fifth = one(wp).div(&ExactNum::from_u8(5, wp), wp, N);
-        let mut h = if left.abs_cmp(&fifth) == Some(-1) { left.clone() } else { fifth.clone() };
-        if !h.is_positive() {
-            h = fifth;
-        }
+        let h = if tau.abs_cmp(&fifth) == Some(-1) && tau.is_positive() { &tau } else { &fifth };
+        // Panel endpoints: `pts` and `u_end` (index END); panels hold indices.
+        let mut pts: Vec<ExactNum> = Vec::new();
+        pts.push(one(wp).ldexp(-2, wp, N));
+        let mut stack: Vec<(usize, usize, Option<i64>)> = Vec::new();
+        let mut li = 0usize;
         loop {
-            if ExactNum::sub_ref(&u_end, &left, wp, DN).is_negative()
-                || ExactNum::sub_ref(&u_end, &left, wp, DN).is_zero()
+            if ExactNum::sub_ref(&u_end, &pts[li], wp, DN).is_negative()
+                || ExactNum::sub_ref(&u_end, &pts[li], wp, DN).is_zero()
             {
                 break;
             }
-            let mut right = ExactNum::add_ref(&left, &h, wp, UP);
+            let right = ExactNum::add_ref(&pts[li], h, wp, UP);
             if right.abs_cmp(&u_end) != Some(-1) {
-                right = u_end.clone();
-            }
-            stack.push((left.clone(), right.clone(), None));
-            if right.abs_cmp(&u_end) != Some(-1) {
+                stack.push((li, END, None));
                 break;
             }
-            left = right;
+            pts.push(right);
+            let ri = pts.len() - 1;
+            stack.push((li, ri, None));
+            li = ri;
         }
-        while let Some((a, b, parent_re)) = stack.pop() {
+        while let Some((ia, ib, parent_re)) = stack.pop() {
             panels = panels.saturating_add(1);
             if panels > wp.saturating_add(32).saturating_mul(4).saturating_add(1) {
                 return None;
@@ -2933,7 +2967,7 @@ fn anger_a_u_path(
                     return None;
                 }
             }
-            match anger_a_u_panel(nu, z, &a, &b, wp, cc) {
+            match anger_a_u_panel(nu, z, at(&pts, &u_end, ia), at(&pts, &u_end, ib), wp, cc) {
                 Some((val, rem)) if rem.abs_cmp(&target) != Some(1) => {
                     acc = acc.add(&val, wp, N);
                     rem_acc = rem_acc.add(&rem, wp, UP);
@@ -2943,10 +2977,18 @@ fn anger_a_u_path(
                     if rem_stalled(parent_re, rem_ref) {
                         return None;
                     }
-                    let mid = panel_mid_or_stall(&a, &b, rem_ref, &target, wp)?;
+                    let mid = panel_mid_or_stall(
+                        at(&pts, &u_end, ia),
+                        at(&pts, &u_end, ib),
+                        rem_ref,
+                        &target,
+                        wp,
+                    )?;
                     let child_re = rem_ref.map(exp_of);
-                    stack.push((mid.clone(), b, child_re));
-                    stack.push((a, mid, child_re));
+                    pts.push(mid);
+                    let im = pts.len() - 1;
+                    stack.push((im, ib, child_re));
+                    stack.push((ia, im, child_re));
                 }
             }
         }
