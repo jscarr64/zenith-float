@@ -157,7 +157,8 @@ fn f_table(q: u64) -> Vec<u64> {
 
 fn isqrt(n: &ExactInt) -> ExactInt {
     if n.is_zero() || n.is_one() || n.is_negative() {
-        return if n.is_negative() { ExactInt::zero() } else { n.clone() };
+        // n is 0, 1 or negative.
+        return if n.is_one() { ExactInt::one() } else { ExactInt::zero() };
     }
     let bits = n.bit_length();
     let mut hi = ExactInt::from_u64(2).pow((bits.div_ceil(2) + 1) as u64);
@@ -1402,17 +1403,20 @@ fn is_prime_jacobi(n: &ExactInt) -> Status {
 
 fn final_division(n: &ExactInt, s: &ExactInt, r: u64) -> bool {
     let nmul = rem(n, s);
-    let mut npow = nmul.clone();
+    // nmul^i mod s; `None` while i = 1 (nmul read in place).
+    let mut npow_owned: Option<ExactInt> = None;
     for _ in 1..=r {
+        let npow = npow_owned.as_ref().unwrap_or(&nmul);
         if npow.is_one() {
             break;
         }
-        if let Some((_, remn)) = n.div_rem(&npow) {
-            if remn.is_zero() && *n != npow && !npow.is_one() {
+        if let Some((_, remn)) = n.div_rem(npow) {
+            if remn.is_zero() && n != npow && !npow.is_one() {
                 return false;
             }
         }
-        npow = rem(&npow.mul(&nmul), s);
+        let next = rem(&npow.mul(&nmul), s);
+        npow_owned = Some(next);
     }
     true
 }
@@ -1567,7 +1571,7 @@ fn morrison(n: &ExactInt, pp1: &[u64]) -> Option<(ExactInt, ExactInt, bool)> {
         loop {
             let av = ExactInt::from_u64(a);
             d = av.mul(&av).sub(&ExactInt::from_u64(4 * b));
-            if jacobi(d.clone(), n.clone()) == -1 {
+            if jacobi(&d, n) == -1 {
                 break;
             }
             a = a.saturating_add(1);
@@ -1658,14 +1662,15 @@ fn combined_or_aprcl(n: &ExactInt, f1: &ExactInt, f2: &ExactInt) -> bool {
 
 fn trial_smooth_part(m: &ExactInt, primes: &[u64]) -> ExactInt {
     let mut f = ExactInt::one();
-    let mut rest = m.clone();
+    // The cofactor of m; `None` while it is still m.
+    let mut rest: Option<ExactInt> = None;
     for &p in primes {
         let pv = ExactInt::from_u64(p);
         loop {
-            match rest.div_rem(&pv) {
+            match rest.as_ref().unwrap_or(m).div_rem(&pv) {
                 Some((d, r)) if r.is_zero() => {
                     f = f.mul(&pv);
-                    rest = d;
+                    rest = Some(d);
                 }
                 _ => break,
             }

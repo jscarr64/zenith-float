@@ -22,7 +22,8 @@ pub(crate) fn trial_prime_factor(n: &ExactInt) -> Option<ExactInt> {
     for p in primes_upto(TRIAL_LIMIT).into_iter() {
         let q = ExactInt::from_u64(u64::from(p));
         if n.soft_cmp(&q) != Ordering::Greater {
-            return Some(n.clone());
+            // Every smaller prime failed to divide n, so n <= q forces n == q.
+            return Some(q);
         }
         if rem_nonneg(n, &q).is_some_and(|r| r.is_zero()) {
             return Some(q);
@@ -51,32 +52,35 @@ pub(crate) fn bpsw(n: &ExactInt) -> bool {
     strong_lucas_selfridge(&n)
 }
 
-pub(crate) fn jacobi(mut a: ExactInt, mut n: ExactInt) -> i8 {
-    if n.is_zero() || is_even(&n) || n.is_negative() {
+pub(crate) fn jacobi(a: &ExactInt, n: &ExactInt) -> i8 {
+    if n.is_zero() || is_even(n) || n.is_negative() {
         return 0;
     }
-    a = rem_nonneg(&a, &n).unwrap_or_else(ExactInt::zero);
+    let mut a = rem_nonneg(a, n).unwrap_or_else(ExactInt::zero);
+    // The running modulus; `None` while it is still `n`.
+    let mut m_owned: Option<ExactInt> = None;
     let mut t: i8 = 1;
     while !a.is_zero() {
+        let m = m_owned.as_ref().unwrap_or(n);
         while is_even(&a) {
             a = a
                 .div_rem(&two())
                 .map(|(q, _)| q)
                 .unwrap_or_else(ExactInt::zero);
-            let n8 = n.low_word() & 7;
+            let n8 = m.low_word() & 7;
             if n8 == 3 || n8 == 5 {
                 t = -t;
             }
         }
         // quadratic reciprocity
-        if a.low_word() & 3 == 3 && n.low_word() & 3 == 3 {
+        if a.low_word() & 3 == 3 && m.low_word() & 3 == 3 {
             t = -t;
         }
-        let r = rem_nonneg(&n, &a).unwrap_or_else(ExactInt::zero);
-        n = a;
+        let r = rem_nonneg(m, &a).unwrap_or_else(ExactInt::zero);
+        m_owned = Some(a);
         a = r;
     }
-    if n.is_one() {
+    if m_owned.as_ref().unwrap_or(n).is_one() {
         t
     } else {
         0
@@ -86,11 +90,12 @@ pub(crate) fn jacobi(mut a: ExactInt, mut n: ExactInt) -> i8 {
 /// Selfridge's method: the first `D` in 5, −7, 9, −11, … with `(D/n) = −1`.
 /// `P = 1`, `Q = (1−D)/4`. Returns `None` if a proper factor of `n` is found.
 fn selfridge_params(n: &ExactInt) -> Option<(ExactInt, ExactInt, ExactInt)> {
-    let mut d = ExactInt::from_i64(5);
+    // |D|: 5, 7, 9, ... (i64 is far beyond any reachable D).
+    let mut dmag: i64 = 5;
     let mut sign = 1i8;
     loop {
-        let dd = if sign < 0 { d.neg() } else { d.clone() };
-        let j = jacobi(dd.clone(), n.clone());
+        let dd = ExactInt::from_i64(if sign < 0 { -dmag } else { dmag });
+        let j = jacobi(&dd, n);
         if j == 0 {
             let g = abs_int(&dd).gcd(n);
             if g.is_one() || g == *n {
@@ -109,7 +114,7 @@ fn selfridge_params(n: &ExactInt) -> Option<(ExactInt, ExactInt, ExactInt)> {
             })?;
             return Some((dd, ExactInt::one(), q));
         }
-        d = d.add(&ExactInt::from_u64(2));
+        dmag = dmag.saturating_add(2);
         sign = -sign;
     }
 }
