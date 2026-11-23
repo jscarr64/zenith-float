@@ -209,7 +209,7 @@ fn cball_golden_rows_contained_mul_div() -> Result<(), String> {
 /// RREF omits (`re`: rA_re·rB_re + rA_im·rB_im; `im`: rA_re·rB_im + rA_im·rB_re). Same reason
 /// `sqr` uses RREF + S2 (Spence 2026-10-25): a first-order RREF cannot cover the product when
 /// an input radius is not small. One gold mul row at prec=2 has S2_re larger than RREF_re.
-fn mul_ref(r: &GoldRow) -> Result<[ExactNum; 2], String> {
+fn four_product_rref(r: &GoldRow) -> Result<[ExactNum; 2], String> {
     let b =
         r.b.as_ref()
             .ok_or_else(|| "mul gold missing b".to_string())?;
@@ -237,7 +237,7 @@ fn cball_tightness_factors_mul_div() -> Result<(), String> {
         };
         let k = factor_log2(&r.op)?;
         if r.op == "mul" {
-            let [bre, bim] = mul_ref(r)?;
+            let [bre, bim] = four_product_rref(r)?;
             want_tight(&format!("mul p={} re", r.prec), z.re(), &bre, k)?;
             want_tight(&format!("mul p={} im", r.prec), z.im(), &bim, k)?;
         } else {

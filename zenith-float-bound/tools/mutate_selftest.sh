@@ -260,8 +260,27 @@ grep -q '^rc=0$' <<< "$out" || fail "err-quiet zf_special: --list --slice zf_spe
 [ -f "$lg" ] || fail "err-quiet zf_special: no run log: $out"
 grep -q ' ERR ' "$lg" && fail "err-quiet zf_special: --list --slice zf_special logged ERR trap lines: $(grep ' ERR ' "$lg")"
 rm -rf "$r/tools/mutants/manifest.d"; cm
+# Workspace layout (Spence PR #40 B2, 2026-11-22: green/mutate-cball.log ended `FAIL FETCH: cargo fetch left no Cargo.lock in
+# .../zenith-float-bound`). The crate under test is a member of a cargo workspace inside a larger git repo: Cargo.lock is the
+# workspace root's, the worktree is of the whole repo, the patch (paths relative to the crate) applies inside the member, and cargo
+# runs from the member dir. The real mutant must be KILLED, and no Cargo.lock may appear in the member dir.
+printf 'x\n' >> "$t/cases"
+w="$t/wsfix"; mkdir -p "$w/member/src" "$w/member/tests" "$w/member/tools/mutants"
+printf 'pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n' > "$w/member/src/lib.rs"
+printf 'use toyfix::add;\n#[test]\nfn add_works() {\n    assert_eq!(add(2, 3), 5);\n}\n' > "$w/member/tests/toy.rs"
+printf '[package]\nname = "toyfix"\nversion = "0.0.0"\nedition = "2021"\n[dependencies]\n' > "$w/member/Cargo.toml"
+printf '[workspace]\nmembers = ["member"]\nresolver = "2"\n' > "$w/Cargo.toml"
+printf '/Cargo.lock\n/target\n' > "$w/.gitignore"
+printf 'src/lib.rs:add\t001-add-mul\t001-add-mul.patch\ttoy\n' > "$w/member/tools/mutants/manifest.txt"
+printf '# header only\n' > "$w/member/tools/mutants/EQUIVALENT.txt"
+printf 'diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,3 +1,3 @@\n pub fn add(a: u32, b: u32) -> u32 {\n-    a + b\n+    a * b\n }\n' > "$w/member/tools/mutants/001-add-mul.patch"
+(cd "$w" && git init -q . && git config user.email a@b && git config user.name t && git add -A && git commit -qm wsfixture) || fail "workspace layout: fixture repo"
+out="$(MUTATE_REPO="$w/member" MUTATE_FLOOR_ZERO_OK=1 MUTATE_FLOOR="$t/mfloor.txt" MUTATE_MANIFEST="$w/member/tools/mutants/manifest.txt" "$here/mutate.sh" 2>&1)" || fail "workspace layout: killable mutant not accepted: $out"
+grep -q "^KILLED 001-add-mul" <<< "$out" || fail "workspace layout: wrong report: $out"
+[ ! -e "$w/member/Cargo.lock" ] || fail "workspace layout: a Cargo.lock was written into the member dir"
+[ "$(git -C "$w" worktree list | grep -c 'zb-mutate\.')" = 0 ] || fail "workspace layout: leftover worktree"
 # every worktree and target dir was removed, in every case above
 n="$(leftovers)"; [ "$(printf '%s' "$n" | tr -d '\n 0')" = "" ] || fail "leftover worktrees or dirs: $n"
-want_cases=43; ncases=$(grep -c x "$t/cases" 2>/dev/null || echo 0)
+want_cases=44; ncases=$(grep -c x "$t/cases" 2>/dev/null || echo 0)
 [ "$ncases" = "$want_cases" ] || fail "ran $ncases cases, expected $want_cases (a case was skipped or added without updating want_cases)"
 echo "mutate selftest: ok ($ncases cases)"

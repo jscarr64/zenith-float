@@ -10,12 +10,21 @@
 use super::*;
 
 const ARB_ROWS: usize = 646;
+/// R1 edge rows (Spence PR #40): cball_arb_edge_rows.txt, same generator. Exponents at ±(2^62−1) and the lagom edge 2^60−1±1,
+/// arb_div accuracy 19..22, p = 256/257/258 short exact divisors of 128/129 bits, p = 25..28 (acb_inv hprec floor), numerator
+/// rad = |mid| ± 1 Arb ulp, per-part exponent shifts through acb_inv's mag_add_lower fallback, and every p-bit mantissa for
+/// p = 2..8 against three partners. `OUT` marks a FLINT part outside zf's exponent range (containment only).
+const EDGE_ROWS: usize = 1766;
+/// Edge parts marked `OUT` (FLINT finite, zf cannot hold its exponents).
+const EDGE_OUT_PARTS: usize = 76;
 
 enum Part {
     /// The whole line: an unbounded or undefined image, or a non-finite FLINT part.
     All,
     /// Two values: (lo, hi) for an image, (mid, rad) for FLINT.
     Two(ExactNum, ExactNum),
+    /// FLINT finite with an exponent outside zf's range (edge rows only): containment is the whole check.
+    Out,
 }
 
 struct ArbRow {
@@ -40,16 +49,21 @@ fn take_part(f: &[&str], i: &mut usize, all: &str) -> Result<Part, String> {
         *i += 1;
         return Ok(Part::All);
     }
+    if all == "INF" && f.get(*i) == Some(&"OUT") {
+        *i += 1;
+        return Ok(Part::Out);
+    }
     let a = take_val(f, i)?;
     let b = take_val(f, i)?;
     Ok(Part::Two(a, b))
 }
 
 fn arb_rows() -> Result<Vec<ArbRow>, String> {
-    let path = golden_dir()
-        .join("slices")
-        .join("cball")
-        .join("cball_arb_rows.txt");
+    rows_from("cball_arb_rows.txt", ARB_ROWS)
+}
+
+fn rows_from(name: &str, want: usize) -> Result<Vec<ArbRow>, String> {
+    let path = golden_dir().join("slices").join("cball").join(name);
     let text = fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
     let mut rows = Vec::new();
     for line in text
@@ -85,8 +99,13 @@ fn arb_rows() -> Result<Vec<ArbRow>, String> {
             flint,
         });
     }
-    if rows.len() != ARB_ROWS {
-        return Err(format!("want {} Arb rows, got {}", ARB_ROWS, rows.len()));
+    if rows.len() != want {
+        return Err(format!(
+            "want {} rows in {}, got {}",
+            want,
+            name,
+            rows.len()
+        ));
     }
     Ok(rows)
 }
@@ -129,12 +148,21 @@ fn want_image(what: &str, b: &Ball, image: &Part) -> Result<(), String> {
             want_contains(&format!("{} image lo", what), b, lo)?;
             want_contains(&format!("{} image hi", what), b, hi)
         }
+        Part::Out => Err(format!("{}: OUT is a FLINT marker, not an image", what)),
     }
 }
 
-fn want_vs_flint(what: &str, b: &Ball, flint: &Part) -> Result<(), String> {
+/// No looser than FLINT: finite where FLINT is, radius at most 2× FLINT's, or at most (1 + 2^-4)× with `tight` (the R1
+/// branch rows, where the port's radius equals FLINT's up to the acb_inv hprec rounding, so a wrong branch shows).
+fn want_vs_flint(what: &str, b: &Ball, flint: &Part, tight: bool) -> Result<(), String> {
     match flint {
-        Part::All => Ok(()),
+        Part::All | Part::Out => Ok(()),
+        // CONTRACT 10.4: an inexact midpoint in zf's top binade counts as overflow (all reals), conservatively.
+        Part::Two(mid, _)
+            if b.rad().is_infinity() && mid.exponent() == Some(zenith_float_num::EXPONENT_MAX) =>
+        {
+            Ok(())
+        }
         Part::Two(_, rad) => {
             if b.rad().is_infinity() {
                 return Err(format!(
@@ -142,12 +170,18 @@ fn want_vs_flint(what: &str, b: &Ball, flint: &Part) -> Result<(), String> {
                     what, rad
                 ));
             }
-            let bound = Mag::from_exact_num(&rad.mul_full_prec(&num(2)));
+            let factor = if tight {
+                num(17).ldexp(-4, 64, zenith_float_num::RoundingMode::None)
+            } else {
+                num(2)
+            };
+            let bound = Mag::from_exact_num(&rad.mul_full_prec(&factor));
             if b.rad() > &bound {
                 return Err(format!(
-                    "{}: rad {:?} > 2× FLINT rad {:?}",
+                    "{}: rad {:?} > {}× FLINT rad {:?}",
                     what,
                     b.rad(),
+                    if tight { "17/16" } else { "2" },
                     rad
                 ));
             }
@@ -157,14 +191,25 @@ fn want_vs_flint(what: &str, b: &Ball, flint: &Part) -> Result<(), String> {
 }
 
 fn arb_check(want_flint: bool) -> Result<(), String> {
+    check_rows(&arb_rows()?, want_flint, false)
+}
+
+fn check_rows(rows: &[ArbRow], want_flint: bool, tight_edges: bool) -> Result<(), String> {
     let mut bad = Vec::new();
-    for r in arb_rows()?.iter() {
+    for r in rows {
         let what = format!("{} p={} {}", r.op, r.prec, r.class);
-        let z = arb_eval(r)?;
+        let z = match arb_eval(r) {
+            Ok(z) => z,
+            Err(e) => {
+                bad.push(format!("{}: {}", what, e));
+                continue;
+            }
+        };
         for (k, part) in [z.re(), z.im()].into_iter().enumerate() {
             let name = format!("{} {}", what, if k == 0 { "re" } else { "im" });
             let res = if want_flint {
-                want_vs_flint(&name, part, r.flint.get(k).ok_or("part index")?)
+                let tight = tight_edges && !r.class.starts_with("exh_");
+                want_vs_flint(&name, part, r.flint.get(k).ok_or("part index")?, tight)
             } else {
                 want_image(&name, part, r.image.get(k).ok_or("part index")?)
             };
@@ -188,6 +233,29 @@ fn cball_arb_rows_contain_exact_image() -> Result<(), String> {
 #[test]
 fn cball_arb_rows_no_looser_than_flint() -> Result<(), String> {
     arb_check(true)
+}
+
+fn edge_rows() -> Result<Vec<ArbRow>, String> {
+    let rows = rows_from("cball_arb_edge_rows.txt", EDGE_ROWS)?;
+    let out = rows
+        .iter()
+        .flat_map(|r| r.flint.iter())
+        .filter(|p| matches!(p, Part::Out))
+        .count();
+    if out != EDGE_OUT_PARTS {
+        return Err(format!("want {} OUT parts, got {}", EDGE_OUT_PARTS, out));
+    }
+    Ok(rows)
+}
+
+#[test]
+fn cball_arb_edge_rows_contain_image() -> Result<(), String> {
+    check_rows(&edge_rows()?, false, false)
+}
+
+#[test]
+fn cball_arb_edge_rows_no_looser_than_flint() -> Result<(), String> {
+    check_rows(&edge_rows()?, true, true)
 }
 
 /// zf exponents stop at EXPONENT_MAX (Arb's do not): a part whose midpoint overflows is all reals (CONTRACT 10.4); the other part

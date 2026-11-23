@@ -228,10 +228,17 @@ fn acb_div(a: Ball, b: Ball, c: &Ball, d: &Ball, prec: Precision) -> BoundResult
         && fits_bits(c.mid(), prec / 2)
         && fits_bits(d.mid(), prec / 2)
     {
-        let t = arb_addmul(ball_again(c)?.mul(c, prec)?, d, d, prec, false)?;
-        let u = arb_addmul(ball_again(&a)?.mul(c, prec)?, &b, d, prec, false)?;
-        let v = arb_addmul(ball_again(&b)?.mul(c, prec)?, &a, d, prec, true)?;
-        Ok((arb_div(&u, &t, prec)?, arb_div(&v, &t, prec)?))
+        // (a + ib)/(c + id) = 2^-k (a + ib)/(c' + id') with c' = 2^-k c, d' = 2^-k d (exact scaling, k the larger part
+        // exponent), so t = c'^2 + d'^2 lies in [1/4, 2) and cannot leave zf's range (Arb has no range; B4).
+        let k = scale_exp(c, d);
+        let (c, d) = (scaled(c, k)?, scaled(d, k)?);
+        let t = arb_addmul(ball_again(&c)?.mul(&c, prec)?, &d, &d, prec, false)?;
+        let u = arb_addmul(ball_again(&a)?.mul(&c, prec)?, &b, &d, prec, false)?;
+        let v = arb_addmul(ball_again(&b)?.mul(&c, prec)?, &a, &d, prec, true)?;
+        Ok((
+            unscaled(arb_div(&u, &t, prec)?, k, prec)?,
+            unscaled(arb_div(&v, &t, prec)?, k, prec)?,
+        ))
     } else {
         let (ir, ii) = acb_inv(c, d, prec)?;
         acb_mul(a, b, &ir, &ii, prec)
@@ -300,15 +307,29 @@ fn classify(op: &'static str, raw: ExactNum) -> BoundResult<Option<ExactNum>> {
     Ok(Some(raw))
 }
 
-/// ε of a midpoint rounded to `wp` bits (CONTRACT 9.4, O19; Arb `arf_mag_add_ulp` under nearest rounding): 0 when
-/// exact, `half_ulp` above the bottom binade, `2^EXPONENT_MIN` there.
+/// ε of a midpoint rounded to `wp` bits (CONTRACT 9.4, 16.S1.2, O19; Arb `arf_mag_add_ulp` under nearest rounding): 0
+/// when exact, `half_ulp` above the bottom binade, `2^EXPONENT_MIN` there.
+///
+/// `lost` means a full-precision product inside the midpoint lost its value below zf's range (`mul_full_prec` returns 0
+/// inexact once the product is 2^60 or more binades below `EXPONENT_MIN`). The midpoint was then rounded from a sum
+/// that is off by that lost amount, so `half_ulp` alone does not cover it (a tie rounds away from the exact value;
+/// Arb has no exponent floor, so its proof does not carry over). Each lost product is below `2^EXPONENT_MIN · 2^-(2^60-2)`,
+/// so adding the bottom ε `2^EXPONENT_MIN` covers both lost products of a midpoint (16.S1.2).
 fn eps(mid: &ExactNum, wp: Precision, lost: bool) -> Mag {
     if !mid.inexact() && !lost {
         return Mag::zero();
     }
+    let bottom = Mag::ulp_mag(EXPONENT_MIN, 0);
     match mid.exponent() {
-        Some(e) if e > EXPONENT_MIN && !mid.is_zero() => Mag::half_ulp(e, wp),
-        Some(_) | None => Mag::ulp_mag(EXPONENT_MIN, 0),
+        Some(e) if e > EXPONENT_MIN && !mid.is_zero() => {
+            let half = Mag::half_ulp(e, wp);
+            if lost {
+                half.add_up(&bottom)
+            } else {
+                half
+            }
+        }
+        Some(_) | None => bottom,
     }
 }
 
@@ -409,19 +430,93 @@ fn mul_general(a: &Ball, b: &Ball, c: &Ball, d: &Ball, prec: Precision) -> Bound
         .add_up(&dm.mul_up(ar))
         .add_up(&br.mul_up(cr))
         .add_up(&ar.mul_up(dr));
-    let (ac, bd) = (
-        a.mid().mul_full_prec(c.mid()),
-        b.mid().mul_full_prec(d.mid()),
-    );
-    let (ad, bc) = (
-        a.mid().mul_full_prec(d.mid()),
-        b.mid().mul_full_prec(c.mid()),
-    );
-    let lost_re = ac.inexact() || bd.inexact();
-    let lost_im = ad.inexact() || bc.inexact();
-    let re = finish(ac.sub(&bd, prec, MID_RM), &er, prec, prec, lost_re)?;
-    let im = finish(ad.add(&bc, prec, MID_RM), &fr, prec, prec, lost_im)?;
+    let re = match fused_mid(a.mid(), c.mid(), b.mid(), d.mid(), true, prec)? {
+        Some((raw, lost)) => finish(raw, &er, prec, prec, lost)?,
+        None => Ball::all_reals(prec)?,
+    };
+    let im = match fused_mid(a.mid(), d.mid(), b.mid(), c.mid(), false, prec)? {
+        Some((raw, lost)) => finish(raw, &fr, prec, prec, lost)?,
+        None => Ball::all_reals(prec)?,
+    };
     Ok((re, im))
+}
+
+/// `x1·y1 − x2·y2` (`sub`) or `x1·y1 + x2·y2`, rounded once to `prec` (Arb `arf_complex_mul`'s fused midpoints), with
+/// the `lost` flag `eps` needs. A full-precision product of finite midpoints is ±Inf only past `EXPONENT_MAX`; Arb has
+/// no exponent ceiling, so the operands are then scaled by exact powers of two (`2^-kx`, `2^-ky`, their larger
+/// exponents), summed and rounded once, and shifted back by one `ldexp`, which overflows to Inf only when the part
+/// itself does (CONTRACT 10.4: all reals through `finish`). `None` (all reals) when a scaled operand or product would
+/// leave zf's range at the bottom, whose loss the bottom ε could not cover after the shift. The shifted midpoint is
+/// flagged `lost` when the scaled sum was rounded, so `eps` still adds its half ulp.
+fn fused_mid(
+    x1: &ExactNum,
+    y1: &ExactNum,
+    x2: &ExactNum,
+    y2: &ExactNum,
+    sub: bool,
+    prec: Precision,
+) -> BoundResult<Option<(ExactNum, bool)>> {
+    let sum = |p1: ExactNum, p2: &ExactNum| {
+        if sub {
+            p1.sub(p2, prec, MID_RM)
+        } else {
+            p1.add(p2, prec, MID_RM)
+        }
+    };
+    let (p1, p2) = (x1.mul_full_prec(y1), x2.mul_full_prec(y2));
+    if !p1.is_inf() && !p2.is_inf() {
+        let lost = p1.inexact() || p2.inexact();
+        return Ok(Some((sum(p1, &p2), lost)));
+    }
+    let top = |u: &ExactNum, v: &ExactNum| match (u.exponent(), v.exponent()) {
+        (Some(e), Some(f)) => e.max(f),
+        (Some(e), None) | (None, Some(e)) => e,
+        (None, None) => 0,
+    };
+    let (kx, ky) = (top(x1, x2), top(y1, y2));
+    // Exactness is decided by exponents, not by `inexact()` (which also reports the operands' accumulated flag, set on
+    // any rounded midpoint): a power-of-two scaling or a product of in-range values is exact while its result's
+    // exponent stays at or above EXPONENT_MIN.
+    let in_range = |e: Option<i64>| e.is_none_or(|e| e >= EXPONENT_MIN);
+    let scale = |v: &ExactNum, k: i64| -> Option<ExactNum> {
+        let e = match v.exponent() {
+            Some(e) => Some(e.checked_sub(k)?),
+            None => None,
+        };
+        let pow = ExactNum::from(1i64).ldexp(k.checked_neg()?, MAG_SUM_BITS, RoundingMode::None);
+        let s = v.mul_full_prec(&pow);
+        (in_range(e) && !pow.is_inf() && !s.is_nan() && !s.is_inf()).then_some(s)
+    };
+    let (Some(a1), Some(b1), Some(a2), Some(b2)) =
+        (scale(x1, kx), scale(y1, ky), scale(x2, kx), scale(y2, ky))
+    else {
+        return Ok(None);
+    };
+    // `e(u·v)` is `e(u) + e(v)` or one less.
+    let prod_ok = |u: &ExactNum, v: &ExactNum| match (u.exponent(), v.exponent()) {
+        (Some(e), Some(f)) => e
+            .checked_add(f)
+            .and_then(|s| s.checked_sub(1))
+            .is_some_and(|s| s >= EXPONENT_MIN),
+        (None, _) | (_, None) => true,
+    };
+    if !prod_ok(&a1, &b1) || !prod_ok(&a2, &b2) {
+        return Ok(None);
+    }
+    let (q1, q2) = (a1.mul_full_prec(&b1), a2.mul_full_prec(&b2));
+    let raw = sum(q1, &q2);
+    let rounded = raw.inexact();
+    let back = kx.checked_add(ky).unwrap_or(i64::MAX);
+    // `ldexp` takes a shift within the exponent range: past EXPONENT_MAX it goes in two steps. The first lands at
+    // most at exponent 0 whenever the result is in range (its exponent is the result's minus EXPONENT_MAX), so it
+    // cannot overflow early, and an in-range scaled value moves exactly.
+    let shifted = match back.checked_sub(EXPONENT_MAX) {
+        Some(rest) if rest > 0 => raw
+            .ldexp(rest, prec, MID_RM)
+            .ldexp(EXPONENT_MAX, prec, MID_RM),
+        _ => raw.ldexp(back, prec, MID_RM),
+    };
+    Ok(Some((shifted, rounded)))
 }
 
 /// Arb `arb_addmul` (`sub == false`) / `arb_submul`: `z ± x·y`, one midpoint rounding, radius
@@ -433,6 +528,10 @@ fn arb_addmul(z: Ball, x: &Ball, y: &Ball, prec: Precision, sub: bool) -> BoundR
         .add_up(&mag_of(y.mid()).mul_up(x.rad()))
         .add_up(&x.rad().mul_up(y.rad()));
     let p = x.mid().mul_full_prec(y.mid());
+    if p.is_inf() {
+        // the product overflowed (CONTRACT 10.4); see mul_general
+        return Ball::all_reals(prec);
+    }
     let lost = p.inexact();
     let raw = if sub {
         zm.sub(&p, prec, MID_RM)
@@ -633,10 +732,55 @@ fn acb_inv(c: &Ball, d: &Ball, prec: Precision) -> BoundResult<Parts> {
         let im = arb_div(&Ball::exact(ExactNum::from(1i64), prec)?, d, prec)?.negated();
         return Ok((zero_ball(prec)?, im));
     }
-    let all = || -> BoundResult<Parts> { Ok((Ball::all_reals(prec)?, Ball::all_reals(prec)?)) };
     if c.rad().is_infinity() || d.rad().is_infinity() {
-        return all();
+        return Ok((Ball::all_reals(prec)?, Ball::all_reals(prec)?));
     }
+    // 1/(c + id) = 2^-k / (c' + id') with c' = 2^-k c, d' = 2^-k d (exact scaling, k the larger midpoint exponent), so
+    // |b|^2 = c'^2 + d'^2 of the midpoints lies in [1/4, 2): it can neither underflow (where zf's bottom binade keeps only
+    // the bits above 2^(EXPONENT_MIN - hprec) and Arb's relative-error charge no longer holds) nor overflow (B4).
+    let k = scale_exp(c, d);
+    let (re, im) = acb_inv_scaled(&scaled(c, k)?, &scaled(d, k)?, prec)?;
+    Ok((unscaled(re, k, prec)?, unscaled(im, k, prec)?))
+}
+
+/// The larger midpoint exponent of `c` and `d` (0 when both midpoints are 0): `2^-k` brings the larger part into
+/// `[1/2, 1)`.
+fn scale_exp(c: &Ball, d: &Ball) -> i64 {
+    let e = |b: &Ball| {
+        if b.mid().is_zero() {
+            None
+        } else {
+            b.mid().exponent()
+        }
+    };
+    match (e(c), e(d)) {
+        (Some(x), Some(y)) => x.max(y),
+        (Some(x), None) | (None, Some(x)) => x,
+        (None, None) => 0,
+    }
+}
+
+/// `2^-k · b`, exact while the midpoint stays in zf's range (its full width is kept); a midpoint pushed below the range
+/// gets `Ball::mul_2exp`'s bottom ε (16.S1.10), so the scaled ball still encloses `2^-k · b`.
+fn scaled(b: &Ball, k: i64) -> BoundResult<Ball> {
+    if k == 0 {
+        return ball_again(b);
+    }
+    let wp = b.mid().precision().unwrap_or(1).max(b.prec());
+    ball_again(b)?.mul_2exp(k.checked_neg().unwrap_or(i64::MAX), wp)
+}
+
+/// `2^-k · b` at `prec` (`Ball::mul_2exp`: exact in range, overflow all reals, underflow the bottom ε).
+fn unscaled(b: Ball, k: i64, prec: Precision) -> BoundResult<Ball> {
+    if k == 0 {
+        return Ok(b);
+    }
+    b.mul_2exp(k.checked_neg().unwrap_or(i64::MAX), prec)
+}
+
+/// Arb `acb_inv`'s body (non-axis, finite radii) for a divisor scaled so its larger midpoint part is in `[1/2, 1)`.
+fn acb_inv_scaled(c: &Ball, d: &Ball, prec: Precision) -> BoundResult<Parts> {
+    let all = || -> BoundResult<Parts> { Ok((Ball::all_reals(prec)?, Ball::all_reals(prec)?)) };
     let hprec = prec
         .checked_add(3)
         .unwrap_or(prec)
@@ -725,14 +869,14 @@ fn ball_again(b: &Ball) -> BoundResult<Ball> {
     Ball::from_mid_rad(exact_from_parts(b.mid())?, mag_again(b.rad())?, b.prec())
 }
 
+/// A fresh `Mag` equal to `r`, rebuilt from its canonical parts (no `Clone`): exact for every finite `Mag`, including
+/// one outside zf's exponent range (an underflowed radius is the smallest positive `Mag`, CONTRACT 3.2), which an
+/// `ExactNum` round trip cannot hold.
 fn mag_again(r: &Mag) -> BoundResult<Mag> {
-    if r.is_infinity() {
-        return Ok(Mag::infinity());
+    match (r.mant(), r.exp()) {
+        (Some(m), Some(e)) => Mag::finite(m, e),
+        (None, _) | (_, None) => Ok(Mag::infinity()),
     }
-    if r.is_zero() {
-        return Ok(Mag::zero());
-    }
-    Ok(Mag::from_exact_num(&r.to_exact_num()?))
 }
 
 fn remap(err: BoundError, op: &'static str) -> BoundError {
@@ -762,5 +906,44 @@ impl Neg for CBall {
             re: self.re.negated(),
             im: self.im.negated(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// R1 (Spence PR #40): `mag_sub_upper`'s clamp at 0, which its only caller (`arb_div_wide`'s straddling branch,
+    /// entered only when rad > |mid|) cannot reach, and `mag_add_lower`'s fallback for an operand outside zf's range.
+    #[test]
+    fn mag_sub_upper_clamps_and_mag_add_lower_falls_back() -> Result<(), BoundError> {
+        let one = Mag::finite(MAG_HALF, 1)?;
+        let num = |v: i64, e: i64| ExactNum::from(v).ldexp(e, 64, RoundingMode::None);
+        assert!(
+            mag_sub_upper(&one, &num(2, 0))?.is_zero(),
+            "1 - 2 clamps to 0"
+        );
+        assert!(mag_sub_upper(&one, &num(1, 0))?.is_zero(), "1 - 1 is 0");
+        assert!(mag_sub_upper(&one, &num(-1, 0))?.is_zero(), "|m| is used");
+        assert!(mag_sub_upper(&Mag::infinity(), &num(2, 0))?.is_infinity());
+        let half = mag_sub_upper(&one, &num(1, -1))?;
+        assert_eq!(
+            (half.mant(), half.exp()),
+            (Some(MAG_HALF), Some(0)),
+            "1 - 1/2 = 1/2 exactly"
+        );
+        // 2^(EXPONENT_MIN - 200) has no ExactNum value: the lower bound of the sum is the larger operand.
+        let tiny = Mag::finite(MAG_HALF, EXPONENT_MIN - 200)?;
+        for (x, y) in [(&tiny, &one), (&one, &tiny)] {
+            let r = mag_add_lower(x, y)?;
+            assert_eq!((r.mant(), r.exp()), (one.mant(), one.exp()));
+        }
+        let both = mag_add_lower(&tiny, &tiny)?;
+        assert_eq!(
+            (both.mant(), both.exp()),
+            (tiny.mant(), tiny.exp()),
+            "max of two out-of-range operands"
+        );
+        Ok(())
     }
 }

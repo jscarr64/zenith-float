@@ -439,11 +439,21 @@ fn gold_val(sign: &str, exp: &str, hex: &str) -> Result<ExactNum, String> {
         let c = u64::from_str_radix(chunk, 16).map_err(|_| format!("bad hex {:?}", chunk))?;
         if c != 0 {
             let lz = i64::from(c.leading_zeros());
-            let part = ExactNum::from_mag_parts(c << lz, base + shift + 64 - lz, 64)
+            // Built at exponents relative to the lowest bit, then scaled once: a long mantissa whose top sits near
+            // EXPONENT_MIN has low chunks below it that only the whole value can hold.
+            let part = ExactNum::from_mag_parts(c << lz, shift + 64 - lz, 64)
                 .map_err(|e| format!("from_mag_parts: {:?}", e))?;
             acc = acc.add_full_prec(&part);
         }
         shift += 64;
+    }
+    // A value below 2^EXPONENT_MIN is a zf subnormal (top kept at EXPONENT_MIN): it needs the gap as extra width.
+    let below = zenith_float_num::EXPONENT_MIN.saturating_sub(e).max(0);
+    let bits = usize::try_from(bitlen.saturating_add(below).saturating_add(64))
+        .map_err(|_| "mantissa length")?;
+    let acc = acc.ldexp(base, bits, zenith_float_num::RoundingMode::None);
+    if acc.is_nan() || acc.inexact() {
+        return Err(format!("value {} {} {} not exact in zf", sign, exp, hex));
     }
     if sign == "0" {
         Ok(acc)
@@ -748,4 +758,5 @@ fn cball_tightness_factors_sqr() -> Result<(), String> {
 }
 
 mod arb_port_rows;
+mod exponent_floor_rows;
 mod held_mul_div_reds;

@@ -242,7 +242,18 @@ echo "mutate: testing committed HEAD $head_sha"
 if ! fout=$(cd "$repo" && timeout "$bttl" cargo fetch 2>&1 </dev/null); then
   echo "mutate: FAIL FETCH: cargo fetch failed in $repo; no mutant ran (a fetch failure is never a kill):"; printf '%s\n' "$fout" | tail -5 | sed 's/^/    /'; exit 2
 fi
-lock="$repo/Cargo.lock"; [ -f "$lock" ] || { echo "mutate: FAIL FETCH: cargo fetch left no Cargo.lock in $repo"; exit 2; }
+# Workspace layout (Spence PR #40 B2, 2026-11-22: mutate-cball.log ended `FAIL FETCH: cargo fetch left no Cargo.lock in
+# .../zenith-float-bound`): $repo may be a member of a cargo workspace inside a larger git repo (zenith-float-bound in the zenith-float
+# repo). The lock is then the WORKSPACE ROOT's, the worktree is of the whole git repo, the member sits at the same relative path in it
+# ($sub), patches (paths relative to the crate) apply under that path, and cargo runs from the member dir. A standalone crate repo has
+# sub="" and its own root lock, exactly as before.
+top=$(cd "$repo" && git rev-parse --show-toplevel 2>/dev/null) && top=$(realpath "$top") || { echo "mutate: FAIL cannot find the git top level of $repo"; exit 2; }
+rrepo=$(realpath "$repo")
+case "$rrepo/" in "$top"/*) sub=${rrepo#"$top"}; sub=${sub#/} ;; *) echo "mutate: FAIL $repo is not inside its git top level $top"; exit 2 ;; esac
+wsman=$(cd "$repo" && cargo locate-project --workspace --message-format plain 2>/dev/null </dev/null) || { echo "mutate: FAIL cargo locate-project --workspace failed in $repo"; exit 2; }
+wsroot=$(realpath "$(dirname "$wsman")")
+case "$wsroot/" in "$top"/*) wsrel=${wsroot#"$top"}; wsrel=${wsrel#/} ;; *) echo "mutate: FAIL workspace root $wsroot is outside the git repo $top"; exit 2 ;; esac
+lock="$wsroot/Cargo.lock"; [ -f "$lock" ] || { echo "mutate: FAIL FETCH: cargo fetch left no Cargo.lock in the workspace root $wsroot"; exit 2; }
 # Per-ID test output (Harper, 2026-10-29): each mutant's `cargo test` output is kept as $logdir/<slice>/<id>.out (it used to be one
 # run.log the next mutant overwrote), and a KILLED result is followed by ONE indented line naming the failing tests (cargo's
 # `---- NAME stdout ----` blocks, capped at 5 plus `+N more`; `(timed out)` for a timeout kill, so EVERY KILLED line has one). The result line and the summary line are unchanged; mutate_slice.sh counts
@@ -267,15 +278,15 @@ while IFS="$(printf '\t')" read -r fnpath id patch suite; do
   [ -f "$pfile" ] || { echo "INVALID $id: patch file $pfile not found"; ni=$((ni + 1)); continue; }
   newwork
   if ! git -C "$repo" worktree add --detach -q "$work" HEAD >/dev/null 2>&1; then echo "INVALID $id: cannot create worktree"; ni=$((ni + 1)); work=""; continue; fi
-  src=${fnpath%%:*}
-  if [ ! -f "$work/$src" ]; then echo "INVALID $id: $src does not exist at HEAD"; ni=$((ni + 1)); cleanup; newtgt; continue; fi
-  if ! git -C "$work" apply "$pfile" >/dev/null 2>&1; then echo "INVALID $id: patch does not apply"; ni=$((ni + 1)); cleanup; newtgt; continue; fi
-  cp "$lock" "$work/Cargo.lock" || { echo "INVALID $id: cannot copy Cargo.lock into the worktree"; ni=$((ni + 1)); cleanup; newtgt; continue; }
-  if ! (cd "$work" && CARGO_TARGET_DIR="$tgt" timeout "$bttl" cargo test --offline --frozen --test "$suite" --no-run >"$tgt/build.log" 2>&1 </dev/null); then
+  src=${fnpath%%:*}; wc="$work${sub:+/$sub}"   # the crate inside the worktree (the worktree itself for a standalone repo)
+  if [ ! -f "$wc/$src" ]; then echo "INVALID $id: $src does not exist at HEAD"; ni=$((ni + 1)); cleanup; newtgt; continue; fi
+  if ! git -C "$work" apply ${sub:+"--directory=$sub"} "$pfile" >/dev/null 2>&1; then echo "INVALID $id: patch does not apply"; ni=$((ni + 1)); cleanup; newtgt; continue; fi
+  cp "$lock" "$work${wsrel:+/$wsrel}/Cargo.lock" || { echo "INVALID $id: cannot copy Cargo.lock into the worktree"; ni=$((ni + 1)); cleanup; newtgt; continue; }
+  if ! (cd "$wc" && CARGO_TARGET_DIR="$tgt" timeout "$bttl" cargo test --offline --frozen --test "$suite" --no-run >"$tgt/build.log" 2>&1 </dev/null); then
     echo "INVALID $id: mutant does not build suite $suite (see: first lines below)"; head -5 "$tgt/build.log" | sed 's/^/    /'; ni=$((ni + 1))
   else
     # rc captured explicitly: a failing suite is the EXPECTED outcome for a mutant, so it must not trip the poplog ERR trap
-    rc=0; (cd "$work" && CARGO_TARGET_DIR="$tgt" timeout "$ttl" cargo test --offline --frozen --test "$suite" >"$tgt/run.log" 2>&1 </dev/null) || rc=$?
+    rc=0; (cd "$wc" && CARGO_TARGET_DIR="$tgt" timeout "$ttl" cargo test --offline --frozen --test "$suite" >"$tgt/run.log" 2>&1 </dev/null) || rc=$?
     cp "$tgt/run.log" "$logdir/$id.out" 2>/dev/null || :
     if [ "$rc" = 0 ]; then
       if [ "${#equivs[@]}" -gt 0 ] && awk -F'\t' -v id="$id" '!/^[[:space:]]*(#|$)/ && $1 == id { f = 1 } END { exit !f }' "${equivs[@]}"; then
