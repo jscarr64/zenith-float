@@ -214,31 +214,43 @@ fn rf_taylor_sum_checked(
     let xmax = nmax / 2;
     let den = universal_den(&RF_DEN_RATIO, nmax);
     // powers of E2
-    let mut e2pow: Vec<ExactComplex> = Vec::with_capacity(xmax + 1);
-    e2pow.push(c_u32(1, p));
-    if xmax >= 1 {
-        e2pow.push(e2.clone());
-        for i in 2..=xmax {
-            e2pow.push(e2pow[i - 1].mul(e2, p, rm()));
+    // owned holds E2^0 and E2^2..E2^xmax; E2^1 is `e2` read in place.
+    let mut owned: Vec<ExactComplex> = Vec::with_capacity(xmax);
+    owned.push(c_u32(1, p));
+    if xmax >= 2 {
+        owned.push(e2.mul(e2, p, rm()));
+        for i in 3..=xmax {
+            let next = owned[i - 2].mul(e2, p, rm());
+            owned.push(next);
         }
     }
-    let mut c = den.clone();
+    let mut e2pow: Vec<&ExactComplex> = Vec::with_capacity(xmax + 1);
+    e2pow.push(&owned[0]);
+    if xmax >= 1 {
+        e2pow.push(e2);
+        e2pow.extend(owned[1..].iter());
+    }
+    // The running coefficient; `None` while it is still `den`.
+    let mut c_owned: Option<ExactInt> = None;
     for y in 0..ymax {
-        c = mul_u(&c, (2 * y + 1) as u64);
-        c = try_divexact_u(&c, (2 * y + 2) as u64)?;
+        let c1 = mul_u(c_owned.as_ref().unwrap_or(&den), (2 * y + 1) as u64);
+        c_owned = Some(try_divexact_u(&c1, (2 * y + 2) as u64)?);
     }
     let mut res = ExactComplex::zero(p);
     for y in (0..=ymax).rev() {
         if y != ymax {
-            c = mul_u(&c, (2 * y + 2) as u64);
-            c = try_divexact_u(&c, (2 * y + 1) as u64)?;
+            let c1 = mul_u(c_owned.as_ref().unwrap_or(&den), (2 * y + 2) as u64);
+            c_owned = Some(try_divexact_u(&c1, (2 * y + 1) as u64)?);
         }
-        let mut d = c.clone();
+        let c = c_owned.as_ref().unwrap_or(&den);
+        // `None` while d is still c.
+        let mut d_owned: Option<ExactInt> = None;
         let mut s = ExactComplex::zero(p);
-        for (x, e2x) in e2pow.iter().enumerate() {
+        for (x, &e2x) in e2pow.iter().enumerate() {
             let n = 2 * x + 3 * y;
             if n <= nmax {
-                let mut e = try_divexact_u(&d, (2 * n + 1) as u64)?;
+                let d = d_owned.as_ref().unwrap_or(c);
+                let mut e = try_divexact_u(d, (2 * n + 1) as u64)?;
                 if x % 2 == 1 {
                     e = e.neg();
                 }
@@ -255,8 +267,8 @@ fn rf_taylor_sum_checked(
                 // nmax in 0..=499 (the clamp).
                 let next_n = 2 * (x + 1) + 3 * y;
                 if next_n <= nmax {
-                    d = mul_u(&d, (2 * x + 2 * y + 1) as u64);
-                    d = try_divexact_u(&d, (2 * x + 2) as u64)?;
+                    let d1 = mul_u(d, (2 * x + 2 * y + 1) as u64);
+                    d_owned = Some(try_divexact_u(&d1, (2 * x + 2) as u64)?);
                 }
             }
         }
@@ -264,6 +276,24 @@ fn rf_taylor_sum_checked(
     }
     let den_c = ExactComplex::from_real(den.to_exact_num(p, rm()), p);
     Some(res.div(&den_c, p, rm()).add(&c_u32(1, p), p, rm()))
+}
+
+/// `powtab[i]` = E2^{m2} E3^{m3} at `i = m3 * m2dim + m2`; the two single
+/// powers E2 (i = 1) and E3 (i = m2dim) are the inputs, read in place.
+fn pow_at<'a>(
+    powtab: &'a [ExactComplex],
+    i: usize,
+    m2dim: usize,
+    e2: &'a ExactComplex,
+    e3: &'a ExactComplex,
+) -> &'a ExactComplex {
+    if i == m2dim {
+        e3
+    } else if i == 1 {
+        e2
+    } else {
+        &powtab[i]
+    }
 }
 
 fn rj_fdiv(x: i32, y: i32) -> i32 {
@@ -311,16 +341,20 @@ fn rj_taylor_sum_checked(
         for m3 in 0..=m3cap as usize {
             let i = m3 * m2dim + m2;
             if m2 <= 1 && m3 <= 1 {
-                powtab[i] = match (m2, m3) {
-                    (0, 0) => c_u32(1, p),
-                    (0, 1) => e3.clone(),
-                    (1, 0) => e2.clone(),
-                    _ => e2.mul(e3, p, rm()),
-                };
+                // E2 and E3 themselves are read in place through `pow_at`.
+                if m2 + m3 == 1 {
+                    continue;
+                }
+                powtab[i] = if m2 == 0 { c_u32(1, p) } else { e2.mul(e3, p, rm()) };
             } else {
                 let j = (m3 / 2) * m2dim + (m2 / 2);
                 let k = (m3 - m3 / 2) * m2dim + (m2 - m2 / 2);
-                powtab[i] = powtab[j].mul(&powtab[k], p, rm());
+                let v = pow_at(&powtab, j, m2dim, e2, e3).mul(
+                    pow_at(&powtab, k, m2dim, e2, e3),
+                    p,
+                    rm(),
+                );
+                powtab[i] = v;
             }
         }
     }
@@ -337,11 +371,15 @@ fn rj_taylor_sum_checked(
             c5 = mul_u(&c5, (2 * m5 + 2) as u64);
             c5 = try_divexact_u(&c5, (2 * m5 + 1) as u64)?;
         }
-        let mut c4 = c5.clone();
+        // `None` while c4 is still c5.
+        let mut c4_owned: Option<ExactInt> = None;
         if m4start > 0 {
             for m4 in 0..m4start as usize {
-                c4 = mul_u(&c4, (2 * m5 + 2 * m4 + 1) as u64);
-                c4 = try_divexact_u(&c4, (2 * m4 + 2) as u64)?;
+                let t = mul_u(
+                    c4_owned.as_ref().unwrap_or(&c5),
+                    (2 * m5 + 2 * m4 + 1) as u64,
+                );
+                c4_owned = Some(try_divexact_u(&t, (2 * m4 + 2) as u64)?);
             }
         }
         let mut s4 = ExactComplex::zero(p);
@@ -351,35 +389,46 @@ fn rj_taylor_sum_checked(
             for m4 in (0..=m4_hi).rev() {
                 let m3start = rj_fdiv(nmax - 5 * m5 as i32 - 4 * m4 as i32, 3);
                 if m4 != m4_hi {
-                    c4 = mul_u(&c4, (2 * m4 + 2) as u64);
-                    c4 = try_divexact_u(&c4, (2 * m5 + 2 * m4 + 1) as u64)?;
+                    let t = mul_u(c4_owned.as_ref().unwrap_or(&c5), (2 * m4 + 2) as u64);
+                    c4_owned = Some(try_divexact_u(&t, (2 * m5 + 2 * m4 + 1) as u64)?);
                 }
-                let mut c3 = c4.clone();
+                let c4 = c4_owned.as_ref().unwrap_or(&c5);
+                // `None` while c3 is still c4.
+                let mut c3_owned: Option<ExactInt> = None;
                 let mut s3 = ExactComplex::zero(p);
                 if m3start >= 0 {
                     for m3 in 0..=m3start as usize {
                         let m2start =
                             rj_fdiv(nmax - 5 * m5 as i32 - 4 * m4 as i32 - 3 * m3 as i32, 2);
-                        let mut c2 = c3.clone();
+                        let c3 = c3_owned.as_ref().unwrap_or(c4);
+                        // `None` while c2 is still c3.
+                        let mut c2_owned: Option<ExactInt> = None;
                         if m2start >= 0 {
                             for m2 in 0..=m2start as usize {
                                 let mm = (m5 + m4 + m3 + m2) as i32;
                                 let nn =
                                     5 * m5 as i32 + 4 * m4 as i32 + 3 * m3 as i32 + 2 * m2 as i32;
-                                let mut t = try_divexact_u(&c2, (2 * nn + 3) as u64)?;
+                                let c2 = c2_owned.as_ref().unwrap_or(c3);
+                                let mut t = try_divexact_u(c2, (2 * nn + 3) as u64)?;
                                 if (mm + nn) % 2 != 0 {
                                     t = t.neg();
                                 }
-                                s3 = addmul_int(s3, &powtab[m3 * m2dim + m2], &t, p);
+                                s3 = addmul_int(
+                                    s3,
+                                    pow_at(&powtab, m3 * m2dim + m2, m2dim, e2, e3),
+                                    &t,
+                                    p,
+                                );
                                 if (m2 as i32) < m2start {
-                                    c2 = mul_u(&c2, (2 * m5 + 2 * m4 + 2 * m3 + 2 * m2 + 1) as u64);
-                                    c2 = try_divexact_u(&c2, (2 * m2 + 2) as u64)?;
+                                    let u =
+                                        mul_u(c2, (2 * m5 + 2 * m4 + 2 * m3 + 2 * m2 + 1) as u64);
+                                    c2_owned = Some(try_divexact_u(&u, (2 * m2 + 2) as u64)?);
                                 }
                             }
                         }
                         if (m3 as i32) < m3start {
-                            c3 = mul_u(&c3, (2 * m5 + 2 * m4 + 2 * m3 + 1) as u64);
-                            c3 = try_divexact_u(&c3, (2 * m3 + 2) as u64)?;
+                            let u = mul_u(c3, (2 * m5 + 2 * m4 + 2 * m3 + 1) as u64);
+                            c3_owned = Some(try_divexact_u(&u, (2 * m3 + 2) as u64)?);
                         }
                     }
                 }
