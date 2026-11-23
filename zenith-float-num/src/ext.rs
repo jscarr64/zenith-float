@@ -2433,7 +2433,27 @@ impl ExactNum {
                     return Self::nan(Some(e));
                 }
                 v.set_inexact(false);
-                Self::ldexp_value(v, inputs, n, p, rm)
+                Self::ldexp_value(v.is_zero(), inputs, p, rm, move |q, r| v.ldexp(n, q, r))
+            }
+        }
+    }
+
+    /// [`Self::ldexp`] of a borrowed `self`: the result is rounded straight from `self` into new
+    /// storage, bit-identical to the by-value form (which clears the operand's flags first).
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn ldexp_ref(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        let inputs = self.inexact_accumulated();
+        match &self.inner {
+            Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
+            Flavor::NaN(err) => Self::nan(*err),
+            Flavor::Value(v) => {
+                if let Err(e) = ExactNumNumber::prec_assertion(p) {
+                    return Self::nan(Some(e));
+                }
+                Self::ldexp_value(v.is_zero(), inputs, p, rm, |q, r| {
+                    v.ldexp_flags((false, None), n, q, r)
+                })
             }
         }
     }
@@ -2442,22 +2462,18 @@ impl ExactNum {
     /// Zero is handled first (its sign depends on the mode); every other operand takes one call at `p`
     /// bits, or one call at a wider width rounded toward zero followed by a round-to-odd step (see
     /// [`Self::round_exact`]).
-    fn ldexp_value(
-        v: ExactNumNumber,
-        inputs: bool,
-        n: Exponent,
-        p: usize,
-        rm: RoundingMode,
-    ) -> Self {
-        let zero = v.is_zero();
+    fn ldexp_value<F>(zero: bool, inputs: bool, p: usize, rm: RoundingMode, ldexp: F) -> Self
+    where
+        F: FnOnce(usize, RoundingMode) -> Result<ExactNumNumber, Error>,
+    {
         // `p` is a public precision here (`ldexp` checked it), so `wp` cannot overflow.
         let direct = rm == RoundingMode::None;
         let wide_p = round_p(p).checked_add(WORD_BIT_SIZE);
         let mut r = if direct || zero {
-            Self::result_to_ext_rm(v.ldexp(n, p, rm), zero, true, p, rm)
+            Self::result_to_ext_rm(ldexp(p, rm), zero, true, p, rm)
         } else if let Some(wp) = wide_p {
             let wide = Self::result_to_ext_rm(
-                v.ldexp(n, wp, RoundingMode::ToZero),
+                ldexp(wp, RoundingMode::ToZero),
                 false,
                 true,
                 wp,
@@ -2658,6 +2674,46 @@ impl ExactNum {
             self.inv_sign();
         }
         self
+    }
+
+    /// [`Self::abs`] of a borrowed `self`: the result's limbs are written straight from `self`.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn abs_ref(&self) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.abs(), false, true),
+            Flavor::Inf(_) => INF_POS,
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// `-self` of a borrowed `self` (the by-value form is [`core::ops::Neg`]): the result's limbs are
+    /// written straight from `self`.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn neg_ref(&self) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.neg(), false, true),
+            Flavor::Inf(s) => Self::inf_with_sign(!s.is_positive()),
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// [`Self::floor`] of a borrowed `self`: the integer part is written straight into the result.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn floor_ref(&self) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.floor_ref(), v.is_zero(), true),
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    INF_NEG
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
     }
 
     /// Returns a value with the magnitude of `self` and the sign of `sign`.
@@ -9436,6 +9492,45 @@ mod subnormal_copy_tests {
         let _ = ExactNum::from_u8(2, p).div(&sub, p, rm);
         assert_eq!(clones() - before, 0, "owned forms");
     }
+
+    /// The borrowed unary kernels write the result's limbs straight from the operand: no
+    /// `Mantissa::clone` for a normal, a subnormal or a zero operand, in any rounding mode, for an
+    /// exact or a rounding `ldexp`, a normal result or an underflow.
+    #[test]
+    fn borrowed_unary_kernels_make_no_copy() -> Result<(), String> {
+        let p = 192;
+        let rm = RoundingMode::ToEven;
+        let frac = -ExactNum::from_u8(11, p).div(&ExactNum::from_u8(7, p), p, rm);
+        let sub = subnormal(p);
+        let zero = -ExactNum::from_u8(0, p);
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        for (name, x) in [("fraction", &frac), ("subnormal", &sub), ("zero", &zero)] {
+            let before = clones();
+            let _ = x.abs_ref();
+            let _ = x.neg_ref();
+            let _ = x.floor_ref();
+            for rm in modes {
+                for (n, q) in [(-3, 53), (5, 256), (Exponent::MIN, 64), (-1, 192)] {
+                    let _ = x.ldexp_ref(n, q, rm);
+                }
+            }
+            if clones() != before {
+                return Err(format!(
+                    "{name}: {} Mantissa::clone calls",
+                    clones() - before
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -9688,4 +9783,171 @@ impl RawParts<'_> {
 fn with_prec<T>(p: usize, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
     ExactNumNumber::prec_assertion(p)?;
     f()
+}
+
+/// The number-layer borrowed kernels against their by-value forms, called directly: `ExactNum::ldexp`
+/// rounds through a toward-zero step and `round_odd_to`, so only these calls reach every rounding mode
+/// of `Mantissa::rounded_from` (ties, directed modes, a carry out of the top word).
+#[cfg(test)]
+mod unary_kernel_tests {
+    use super::{ExactNum, ExactNumNumber, Flavor, RawKind, RawParts};
+    use crate::{Error, Exponent, RoundingMode, Word, WORD_BIT_SIZE};
+    use serde_json::Value;
+
+    const GOLDS: &str = include_str!("../tests/oracle/goldens/unary_ref.jsonl");
+    const MODES: [RoundingMode; 7] = [
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::FromZero,
+        RoundingMode::None,
+    ];
+
+    /// The finite operands of the golds (each once), with flags `(inexact, op_inexact)`.
+    fn operands(flags: (bool, bool)) -> Result<Vec<ExactNumNumber>, String> {
+        let mut seen: Vec<String> = Vec::new();
+        let mut out = Vec::new();
+        for line in GOLDS.lines().filter(|l| !l.trim().is_empty()) {
+            let row: Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
+            let a = &row["args"][0];
+            if a["k"] != "f" || seen.contains(&a.to_string()) {
+                continue;
+            }
+            seen.push(a.to_string());
+            let limbs: Vec<Word> = a["m"]
+                .as_array()
+                .ok_or("m")?
+                .iter()
+                .map(|w| Word::from_str_radix(w.as_str().unwrap_or("?"), 16))
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?;
+            let zero = limbs.iter().all(|w| *w == 0);
+            let parts = RawParts {
+                kind: if zero { RawKind::Zero } else { RawKind::Finite },
+                words: &limbs,
+                precision: limbs.len() * WORD_BIT_SIZE,
+                negative: a["s"] == "-",
+                exponent: if zero { 0 } else { a["e"].as_i64().ok_or("e")? },
+                inexact: flags.0,
+                op_inexact: flags.1,
+            };
+            out.push(value_of(ExactNum::from_raw_parts(&parts))?);
+        }
+        Ok(out)
+    }
+
+    fn value_of(x: Result<ExactNum, Error>) -> Result<ExactNumNumber, String> {
+        match x.map_err(|e| format!("{e:?}"))?.inner {
+            Flavor::Value(v) => Ok(v),
+            other => Err(format!("not finite: {:?}", ExactNum { inner: other }.err())),
+        }
+    }
+
+    /// A fresh number equal to `v` bit for bit, to be moved into the by-value form.
+    fn fresh(v: &ExactNumNumber) -> Result<ExactNumNumber, String> {
+        let (words, n, s, e, inexact) = v.as_raw_parts();
+        let mut r = ExactNumNumber::from_raw_parts(words, n, s, e, inexact)
+            .map_err(|err| format!("fresh: {err:?}"))?;
+        if let Some(op) = v.op_inexact_raw() {
+            r.set_op_inexact(op);
+        }
+        Ok(r)
+    }
+
+    fn full(r: &Result<ExactNumNumber, Error>) -> String {
+        match r {
+            Ok(v) => format!(
+                "{:?} op={:?} prec={}",
+                v.as_raw_parts(),
+                v.op_inexact_raw(),
+                v.precision()
+            ),
+            Err(e) => format!("err {e:?}"),
+        }
+    }
+
+    #[test]
+    fn number_layer_ldexp_ref_is_bit_identical_in_every_mode() -> Result<(), String> {
+        let (mut runs, mut fails) = (0usize, Vec::new());
+        for flags in [(false, false), (true, false), (true, true)] {
+            for v in operands(flags)? {
+                let e = v.exponent();
+                let ns: [Exponent; 9] = [
+                    0,
+                    1,
+                    -1,
+                    37,
+                    -1000,
+                    Exponent::MAX,
+                    Exponent::MIN,
+                    crate::EXPONENT_MAX.saturating_sub(e),
+                    crate::EXPONENT_MIN.saturating_sub(e).saturating_sub(5),
+                ];
+                for n in ns {
+                    for p in [64, 128, 192, 320] {
+                        for rm in MODES {
+                            let got = v.ldexp_ref(n, p, rm);
+                            let want = fresh(&v)?.ldexp(n, p, rm);
+                            runs += 1;
+                            if full(&got) != full(&want) {
+                                fails.push(format!(
+                                    "{:?} n={n} p={p} {rm:?}: borrowed {} by-value {}",
+                                    v.as_raw_parts(),
+                                    full(&got),
+                                    full(&want)
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if fails.is_empty() && runs > 10_000 {
+            return Ok(());
+        }
+        Err(format!(
+            "runs={runs} fails={}: {:?}",
+            fails.len(),
+            fails.iter().take(4).collect::<Vec<_>>()
+        ))
+    }
+
+    #[test]
+    fn number_layer_abs_neg_floor_are_bit_identical() -> Result<(), String> {
+        let mut fails = Vec::new();
+        for flags in [(false, false), (true, false), (true, true)] {
+            for v in operands(flags)? {
+                let pairs = [
+                    ("abs", v.abs(), fresh(&v)?.abs()),
+                    ("neg", v.neg(), {
+                        let mut w = fresh(&v)?;
+                        w.inv_sign();
+                        Ok(w)
+                    }),
+                    ("floor", v.floor_ref(), fresh(&v)?.floor()),
+                ];
+                for (name, got, want) in pairs {
+                    if full(&got) != full(&want) {
+                        fails.push(format!(
+                            "{name} {}: {} vs {}",
+                            full(&Ok(fresh(&v)?)),
+                            full(&got),
+                            full(&want)
+                        ));
+                    }
+                }
+            }
+        }
+        if fails.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "{} fails: {:?}",
+                fails.len(),
+                fails.iter().take(4).collect::<Vec<_>>()
+            ))
+        }
+    }
 }

@@ -310,9 +310,78 @@ impl ExactNumNumber {
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     pub fn neg(&self) -> Result<Self, Error> {
-        let mut ret = self.clone()?;
-        ret.s = ret.s.invert();
-        Ok(ret)
+        self.with_sign(self.s.invert())
+    }
+
+    /// A new number with the magnitude, storage and flags of `self` and the sign `s`; the result's
+    /// limbs are written straight from `self`.
+    fn with_sign(&self, s: Sign) -> Result<Self, Error> {
+        let mut unused = false;
+        let (m, _) = self.m.rounded_from(
+            0,
+            self.m.max_bit_len(),
+            RoundingMode::None,
+            true,
+            &mut unused,
+        )?;
+        Ok(ExactNumNumber {
+            e: self.e,
+            s,
+            m,
+            inexact: self.inexact,
+            op_inexact: self.op_inexact,
+        })
+    }
+
+    /// `self` with exponent `e` after a left shift of the mantissa by `shl` bits (at most its leading
+    /// zero bits), rounded to `p` bits (a whole number of words) with `rm` straight into a new number whose
+    /// flags start as `inexact` and `op_inexact`: the result of `set_precision(p, rm)` on an owned number
+    /// in that state. `self` is only read.
+    ///
+    /// ## Errors
+    ///
+    ///  - ExponentOverflow: rounding carried past `EXPONENT_MAX`.
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    pub(crate) fn rescaled(
+        &self,
+        shl: usize,
+        e: Exponent,
+        p: usize,
+        rm: RoundingMode,
+        flags: (bool, Option<bool>),
+    ) -> Result<Self, Error> {
+        let longer = self.mantissa_max_bit_len() > p;
+        let mut rounded = false;
+        let (m, ovf) = self.m.rounded_from(
+            shl,
+            p,
+            if longer { rm } else { RoundingMode::None },
+            self.is_positive(),
+            &mut rounded,
+        )?;
+        let mut r = ExactNumNumber {
+            e,
+            s: self.s,
+            m,
+            inexact: flags.0,
+            op_inexact: flags.1,
+        };
+        if longer {
+            r.inexact |= rounded;
+            r.op_inexact = None;
+            if ovf {
+                if r.e == EXPONENT_MAX {
+                    return Err(Error::ExponentOverflow(r.s));
+                }
+                r.e += 1;
+            } else if r.m.is_all_zero() {
+                r.m.set_bit_len(0);
+                r.e = 0;
+            } else if r.is_subnormal() {
+                r.m.update_bit_len();
+            }
+        }
+        Ok(r)
     }
 
     /// Adds `d2` to `self` and returns the result of the operation with precision `p` rounded according to `rm`.
@@ -1262,9 +1331,7 @@ impl ExactNumNumber {
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     pub fn abs(&self) -> Result<Self, Error> {
-        let mut ret = self.clone()?;
-        ret.s = Sign::Pos;
-        Ok(ret)
+        self.with_sign(Sign::Pos)
     }
 
     /// Constructs a number from the raw parts:
@@ -1417,6 +1484,36 @@ impl ExactNumNumber {
             return int.sub(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
         }
         Ok(int)
+    }
+
+    /// [`Self::floor`] of a borrowed `self`: the integer part is written straight into the result.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    pub fn floor_ref(&self) -> Result<Self, Error> {
+        let below = self.is_negative() && !self.is_int();
+        let int = self.int_ref()?;
+        if below {
+            return int.sub(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
+        }
+        Ok(int)
+    }
+
+    /// [`Self::int`] of a borrowed `self`, written straight into the result.
+    fn int_ref(&self) -> Result<Self, Error> {
+        let (keep, e) = if self.e > 0 {
+            ((self.e as usize).min(self.m.max_bit_len()), self.e)
+        } else {
+            (0, 0)
+        };
+        Ok(ExactNumNumber {
+            e,
+            s: self.s,
+            m: self.m.top_bits_from(keep)?,
+            inexact: self.inexact,
+            op_inexact: self.op_inexact,
+        })
     }
 
     /// Returns the smallest integer greater than or equal to `self`.
@@ -2062,6 +2159,11 @@ impl ExactNumNumber {
     /// Returns true if the operation that produced `self` rounded. Values whose producing
     /// operation does not record that report the accumulated flag, `inexact()`.
     #[inline]
+    /// The per-operation flag as stored: `None` falls back to the accumulated flag.
+    pub(crate) fn op_inexact_raw(&self) -> Option<bool> {
+        self.op_inexact
+    }
+
     pub fn op_inexact(&self) -> bool {
         self.op_inexact.unwrap_or(self.inexact)
     }

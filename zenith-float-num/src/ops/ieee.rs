@@ -67,6 +67,59 @@ impl ExactNumNumber {
         }
     }
 
+    /// [`Self::ldexp`] of a borrowed `self`: the result is rounded straight from `self` into new storage,
+    /// bit-identical to the by-value form.
+    pub fn ldexp_ref(&self, n: Exponent, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.ldexp_flags((self.inexact(), self.op_inexact_raw()), n, p, rm)
+    }
+
+    /// [`Self::ldexp_ref`] of `self` with its flags replaced by `flags` (accumulated, per-operation).
+    pub(crate) fn ldexp_flags(
+        &self,
+        flags: (bool, Option<bool>),
+        n: Exponent,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if self.is_zero() {
+            return self.rescaled(0, self.exponent(), p, rm, flags);
+        }
+        // A subnormal is normalized first (as `ldexp` does): its mantissa moves up by its leading zero
+        // bits while the exponent field stays at EXPONENT_MIN.
+        let lz = self.subnormal_leading_zeros();
+        let shl = lz as usize;
+        let n = n.saturating_sub(lz);
+        let e = self.exponent();
+        let sum = crate::exp::wide(e) + crate::exp::wide(n);
+        match Exponent::try_from(sum) {
+            Ok(sum) if (EXPONENT_MIN..=EXPONENT_MAX).contains(&sum) => {
+                self.rescaled(shl, sum, p, rm, flags)
+            }
+            _ => {
+                if n >= 0 {
+                    Err(Error::ExponentOverflow(self.sign()))
+                } else {
+                    // Below the range, as in `ldexp`: the normalized operand at the clamped exponent `s1`,
+                    // written once at its own width, times 2^EXPONENT_MIN rounds onto the subnormal grid.
+                    let s1 = crate::exp::narrow(sum - crate::exp::wide(EXPONENT_MIN));
+                    let s1 = s1.max(EXPONENT_MIN);
+                    let t = self.rescaled(
+                        shl,
+                        s1,
+                        self.mantissa_max_bit_len(),
+                        RoundingMode::None,
+                        flags,
+                    )?;
+                    let mut b = Self::from_word(1, WORD_BIT_SIZE)?;
+                    b.set_exponent(EXPONENT_MIN + 1);
+                    t.mul(&b, p, rm)
+                }
+            }
+        }
+    }
+
     /// Binary `logb`: `floor(log2(|self|))` as an integer-valued float.
     pub fn logb(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         let p = round_p(p);

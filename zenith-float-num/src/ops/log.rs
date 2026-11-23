@@ -593,7 +593,7 @@ mod tests {
         // numerator and skipped the exact-result flag.
         let p = 64;
         let two = ExactNumNumber::from_word(2, p)?;
-        let x = two.clone()?.ldexp(4096, p, RoundingMode::None)?; // 2 * 2^4096 = 2^4097
+        let x = two.ldexp_ref(4096, p, RoundingMode::None)?; // 2 * 2^4096 = 2^4097
         let r = ExactNumNumber::from_word(4097, p)?;
         assert!(log_is_exact_dyadic(&x, &two, &r)?);
         Ok(())

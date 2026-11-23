@@ -268,7 +268,7 @@ fn div_2expm1(z: &ExactNumNumber, n: usize, p: usize) -> Result<ExactNumNumber, 
     }
     // Large n: z/(2^n-1) = sum_{k>=1} z 2^{-k n}.
     let nexp = exp_as_exponent(n)?;
-    let mut term = z.clone()?.ldexp(-nexp, p, RoundingMode::ToEven)?;
+    let mut term = z.ldexp_ref(-nexp, p, RoundingMode::ToEven)?;
     let mut h = term.clone()?;
     let last = p / n + 1;
     for _ in 2..=last {
