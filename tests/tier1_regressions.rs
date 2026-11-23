@@ -846,18 +846,23 @@ fn zf_46_cball_ln_disk_across_cut_encloses_both_sides() -> Result<(), String> {
             ("-1p0", "1p-10", -8),
             ("-3p0", "-1p-20", -4),
         ] {
-            let mid = parse_complex(&format!("{re},{im}")).must("mid")?;
-            let rad = ExactNum::from_u8(1, p).ldexp(r, p, RoundingMode::None);
-            let b = ComplexBall::new(mid.clone(), rad.clone());
+            let b = ComplexBall::new(
+                parse_complex(&format!("{re},{im}")).must("mid")?,
+                ExactNum::from_u8(1, p).ldexp(r, p, RoundingMode::None),
+            );
+            let (mid, rad) = (b.mid(), b.rad());
             let w = b.ln(p, RoundingMode::ToEven, &mut cc);
             for s in [-1i8, 1] {
                 // a point of the disk on the far side of the cut, inside by a quarter of the radius
                 let dy = ExactNum::from_i8(s, p)
-                    .mul(&rad, p, RoundingMode::None)
+                    .mul(rad, p, RoundingMode::None)
                     .ldexp(-1, p, RoundingMode::None);
-                let pt = ExactComplex::new(
-                    mid.re().clone(),
-                    ExactNum::add_ref(mid.im(), &dy, p, RoundingMode::None),
+                // mid + i·dy
+                let pt = ExactComplex::add_ref(
+                    mid,
+                    &ExactComplex::new(ExactNum::new(p), dy),
+                    p,
+                    RoundingMode::None,
                 );
                 assert!(b.contains(&pt, p), "point not in source disk");
                 let v = pt.ln(p + 64, RoundingMode::ToEven, &mut cc);
@@ -894,14 +899,16 @@ fn zf_46_cball_ln_all_harper_disks() -> Result<(), String> {
     for row in include_str!("tier1/zf46.tsv").lines() {
         let t: Vec<_> = row.split('\t').collect();
         let p: usize = t[1].parse().must("p")?;
-        let mid = parse_complex(t[2]).must("mid")?;
-        let rad = parse_real(t[3]).must("rad")?;
-        let b = ComplexBall::new(mid.clone(), rad.clone());
+        let b = ComplexBall::new(
+            parse_complex(t[2]).must("mid")?,
+            parse_real(t[3]).must("rad")?,
+        );
+        let (mid, rad) = (b.mid(), b.rad());
         let w = b.ln(p, RoundingMode::ToEven, &mut cc);
         for (dx, dy) in [(0i8, 1i8), (0, -1), (1, 0), (-1, 0), (1, 1), (-1, -1), (1, -1), (-1, 1)] {
             let offset = |d: i8| {
                 ExactNum::from_i8(d, p)
-                    .mul(&rad, p, RoundingMode::None)
+                    .mul(rad, p, RoundingMode::None)
                     .ldexp(-1, p, RoundingMode::None)
             };
             let pt = ExactComplex::new(
@@ -1377,9 +1384,12 @@ fn zf_40_meijer_fox_at_zero() -> Result<(), String> {
             let sp = cc.pi(p + 128, RoundingMode::ToEven).sqrt(p, rm);
             let g = z.meijer_g(&[], &[], std::slice::from_ref(&z), &[], p, rm, &mut cc);
             assert_eq!(fmt_real(&g), fmt_real(&one), "G exp(-z) at 0 p={p}");
-            let f = z.fox_h(&[], &[], &[(z.clone(), one.clone())], &[], p, rm, &mut cc);
+            let zero = || ExactNum::new(p);
+            let one_v = || ExactNum::from_u8(1, p);
+            let half_v = || ExactNum::from_u8(1, p).ldexp(-1, p, rm);
+            let f = z.fox_h(&[], &[], &[(zero(), one_v())], &[], p, rm, &mut cc);
             assert_eq!(fmt_real(&f), fmt_real(&one), "H exp(-z) at 0 p={p}");
-            let g = z.meijer_g(&[], &[], &[z.clone(), half.clone()], &[], p, rm, &mut cc);
+            let g = z.meijer_g(&[], &[], &[zero(), half_v()], &[], p, rm, &mut cc);
             let d = ExactNum::sub_ref(&g, &sp, p + 128, rm).abs();
             assert!(
                 matches!(d.compare(&ExactNum::from_u8(1,p).ldexp(4-p as i64,p,rm)),Some(o) if o<0),
@@ -1389,14 +1399,14 @@ fn zf_40_meijer_fox_at_zero() -> Result<(), String> {
             let f = z.fox_h(
                 &[],
                 &[],
-                &[(z.clone(), one.clone()), (half.clone(), one.clone())],
+                &[(zero(), one_v()), (half_v(), one_v())],
                 &[],
                 p,
                 rm,
                 &mut cc,
             );
             assert_eq!(fmt_real(&f), fmt_real(&g), "H sqrt pi at 0 p={p}");
-            let f = z.fox_h(&[], &[], &[(z.clone(), half)], &[], p, rm, &mut cc);
+            let f = z.fox_h(&[], &[], &[(zero(), half)], &[], p, rm, &mut cc);
             assert_eq!(fmt_real(&f), fmt_real(&two), "H at 0 scale 1/2 p={p}");
         }
     }
@@ -1676,7 +1686,7 @@ fn zf_11_two_sum_wide_exact_sum() {
             "sub_full_prec p={p}"
         );
         for rm in MODES {
-            let (hi, lo) = one.clone().two_sum(&max, p, rm);
+            let (hi, lo) = ExactNum::from_u8(1, p).two_sum(&max, p, rm);
             let up = matches!(rm, RoundingMode::Up | RoundingMode::FromZero);
             if up {
                 assert!(hi.is_inf() && hi.is_positive(), "hi p={p} {rm:?}: {hi}");
@@ -1694,13 +1704,13 @@ fn zf_11_two_sum_wide_exact_sum() {
     let tiny = ExactNum::from_u8(1, 256).ldexp(-200, 256, RoundingMode::None);
     let b = ExactNum::add_ref(&ExactNum::from_u8(1, 256), &tiny, 256, RoundingMode::None);
     for rm in [RoundingMode::Down, RoundingMode::ToZero, RoundingMode::ToEven] {
-        let (hi, lo) = max.clone().two_sum(&b, p, rm);
+        let (hi, lo) = ExactNum::max_value(p).two_sum(&b, p, rm);
         assert_eq!(hi.compare(&max), Some(0), "hi {rm:?}");
         assert_eq!(lo.compare(&one), Some(0), "lo {rm:?}: {lo}");
         assert!(lo.inexact(), "lo inexact {rm:?}");
     }
     let nmax = max.neg_ref();
-    let (hi, lo) = nmax.clone().two_sum(&one, p, RoundingMode::Up);
+    let (hi, lo) = max.neg_ref().two_sum(&one, p, RoundingMode::Up);
     let want_hi = nmax.next_after(&INF_POS, p, RoundingMode::None);
     assert_eq!(hi.compare(&want_hi), Some(0), "hi -MAX+1 Up: {hi}");
     let ulp = ExactNum::sub_ref(&want_hi, &nmax, p, RoundingMode::None);
@@ -1742,7 +1752,7 @@ fn zf_11_bessel_j_at_min_exponent() -> Result<(), String> {
                 RoundingMode::Down | RoundingMode::ToZero | RoundingMode::None
             );
             // minpos/2 is the midpoint between 0 and minpos.
-            let want = if away { mp.clone() } else { zero.clone() };
+            let want = if away { ExactNum::min_positive(p) } else { ExactNum::new(p) };
             let j = mp.bessel_j(1, p, rm, &mut cc);
             assert_eq!(
                 j.compare(&want),
@@ -1762,19 +1772,31 @@ fn zf_11_bessel_j_at_min_exponent() -> Result<(), String> {
             assert!(j.is_negative(), "J1(-minpos) sign p={p} {rm:?}: {j}");
             // 2·minpos and minnorm: x/2 is on the grid.
             for (x, h) in [(&two_mp, &mp), (&mn, &half_mn)] {
-                let want = if toward { below(h) } else { h.clone() };
+                let below_h;
+                let want: &ExactNum = if toward {
+                    below_h = below(h);
+                    &below_h
+                } else {
+                    h
+                };
                 let j = x.bessel_j(1, p, rm, &mut cc);
                 assert_eq!(
-                    j.compare(&want),
+                    j.compare(want),
                     Some(0),
                     "J1({x}) p={p} {rm:?}: {j} want {want}"
                 );
             }
             // J0 = 1 − δ.
-            let want = if toward { below(&one) } else { one.clone() };
+            let below_one;
+            let want: &ExactNum = if toward {
+                below_one = below(&one);
+                &below_one
+            } else {
+                &one
+            };
             for x in [&mp, &mn] {
                 let j = x.bessel_j(0, p, rm, &mut cc);
-                assert_eq!(j.compare(&want), Some(0), "J0({x}) p={p} {rm:?}: {j}");
+                assert_eq!(j.compare(want), Some(0), "J0({x}) p={p} {rm:?}: {j}");
             }
         }
     }
@@ -1844,16 +1866,18 @@ fn zf_53_pollard_rho_proven_primality_uncapped() -> Result<(), String> {
             "rho({n}) = {f:?}"
         );
         // The factor is a product of the listed primes.
-        let mut g = f.clone();
+        // Cofactor of f; `None` while it is still f (read in place).
+        let mut cof: Option<_> = None;
         for &p in fs {
-            while let Some((d, r)) = g.div_rem(&int(p)) {
+            while let Some((d, r)) = cof.as_ref().unwrap_or(&f).div_rem(&int(p)) {
                 if !r.is_zero() {
                     break;
                 }
-                g = d;
+                cof = Some(d);
             }
         }
-        assert!(g == int(1), "rho({n}) = {f:?}, cofactor {q:?}");
+        let g = cof.as_ref().unwrap_or(&f);
+        assert!(*g == int(1), "rho({n}) = {f:?}, cofactor {q:?}");
     }
     for n in [0u128, 1, 4, 9, 15] {
         assert!(!is_prime(&int(n)), "{n}");
@@ -4832,7 +4856,7 @@ fn zf_78_hypergeom_2f1_cluster_body() -> Result<(), String> {
             !v.is_nan() && !v.re().is_inf() && !v.im().is_inf(),
             "ZF-78 2F1 {name} at p=2048: {v:?}"
         );
-        let mut rounded = v.clone();
+        let mut rounded = v;
         rounded
             .set_precision(p64, rm)
             .must("set_precision 2048 -> 64")?;
@@ -5072,7 +5096,7 @@ fn zf_78_elliptic_cut_signed_zeros_body() -> Result<(), String> {
             "0.5990701173677961037199599826009051310508626225268478439922876726089812428",
         ),
     ] {
-        let mut rounded = v.clone();
+        let mut rounded = v;
         rounded
             .set_precision(p, rm)
             .must("set_precision 8192 -> 64")?;
