@@ -1004,7 +1004,7 @@ fn meijer_zero_limit(
         let v = ExactNum::sub_ref(bj, &s, wp, RoundingMode::None);
         let t = if gamma_pole(&v) {
             let k = v.clone().neg();
-            let q = one.clone().div(&fact(&k, cc), wp, RoundingMode::None);
+            let q = ExactNum::div_ref(&one, &fact(&k, cc), wp, RoundingMode::None);
             if even(&k) {
                 q.neg()
             } else {
@@ -1034,8 +1034,11 @@ fn meijer_zero_limit(
                 q
             }
         } else {
-            one.clone()
-                .div(&v.gamma(wp, RoundingMode::None, cc), wp, RoundingMode::None)
+            ExactNum::from_u8(1, wp).div(
+                &v.gamma(wp, RoundingMode::None, cc),
+                wp,
+                RoundingMode::None,
+            )
         };
         c = c.mul(&t, wp, RoundingMode::None);
     }
@@ -1051,8 +1054,11 @@ fn meijer_zero_limit(
                 q.neg()
             }
         } else {
-            one.clone()
-                .div(&v.gamma(wp, RoundingMode::None, cc), wp, RoundingMode::None)
+            ExactNum::from_u8(1, wp).div(
+                &v.gamma(wp, RoundingMode::None, cc),
+                wp,
+                RoundingMode::None,
+            )
         };
         c = c.mul(&t, wp, RoundingMode::None);
     }
@@ -1833,12 +1839,12 @@ where
     let az = ub64(z);
     let mut az_dn = z.clone().abs();
     let _ = az_dn.set_precision(64, dn);
-    let slack = az_dn.clone().add(&one64, 64, up).ldexp(-60, 64, up);
+    let slack = ExactNum::add_ref(&az_dn, &one64, 64, up).ldexp(-60, 64, up);
     az_dn = az_dn.sub(&slack, 64, dn);
     if az_dn.is_negative() || az_dn.is_zero() {
         az_dn = ExactNum::new(64);
     }
-    let rho = one64.clone().div(&tail.lam_d, 64, dn);
+    let rho = ExactNum::div_ref(&one64, &tail.lam_d, 64, dn);
     let r = ExactNum::add_ref(&az, &rho, 64, dn).ldexp(-1, 64, dn);
     if !matches!(az.compare(&r), Some(c) if c < 0) {
         return None;
@@ -1898,7 +1904,8 @@ where
                 false
             } else {
                 // |tail of y'| ≤ bound/|z| · (j + 1/(1-t)); f(t)=j+1/(1-t) grows with t.
-                let fac = ExactNum::from_u64(j, 64).add(&one64.clone().div(&geo, 64, up), 64, up);
+                let fac =
+                    ExactNum::from_u64(j, 64).add(&ExactNum::div_ref(&one64, &geo, 64, up), 64, up);
                 let db = bound.div(&az_dn, 64, up).mul(&fac, 64, up);
                 let ed = dsum.exponent().unwrap_or(0);
                 db.is_zero()
@@ -2058,7 +2065,11 @@ fn heun_g_series(
         let opa = ExactNum::add_ref(&one, a, wp, nr);
         let inv_a = ExactNum::div_ref(&one, a, wp, nr);
         let big_a = matches!(a.abs_cmp(&one), Some(c) if c >= 0);
-        let (lam_d, lam_s) = if big_a { (one.clone(), inv_a) } else { (inv_a, one.clone()) };
+        let (lam_d, lam_s) = if big_a {
+            (ExactNum::from_u8(1, wp), inv_a)
+        } else {
+            (inv_a, ExactNum::from_u8(1, wp))
+        };
         // n1 j + n0 = Q_j + q - (1+a)(j+1)(j+γ); m1 j + m0 = P_j - (j+1)(j+γ).
         let n1 = ExactNum::mul_ref(a, delta, wp, nr).add(&eps, wp, nr).sub(
             &opa.clone().ldexp(1, wp, nr),
@@ -2206,7 +2217,11 @@ fn heun_g_jet(
         let opa = ExactNum::add_ref(&one, a, wp, nr);
         let inv_a = ExactNum::div_ref(&one, a, wp, nr);
         let big_a = matches!(a.abs_cmp(&one), Some(c) if c >= 0);
-        let (lam_d, lam_s) = if big_a { (one.clone(), inv_a) } else { (inv_a, one.clone()) };
+        let (lam_d, lam_s) = if big_a {
+            (ExactNum::from_u8(1, wp), inv_a)
+        } else {
+            (inv_a, ExactNum::from_u8(1, wp))
+        };
         let n1 = ExactNum::mul_ref(a, delta, wp, nr).add(&eps, wp, nr).sub(
             &opa.clone().ldexp(1, wp, nr),
             wp,
@@ -2640,8 +2655,8 @@ fn exp_up_bound(x: &ExactNum) -> Option<ExactNum> {
         return None;
     }
     // e^t = Σ_{k=0}^{24} t^k/k! + R with R ≤ (t^{24}/24!) t/(25-t) for t<1.
-    let mut term = one.clone();
-    let mut sum = one.clone();
+    let mut term = ExactNum::from_u8(1, 64);
+    let mut sum = ExactNum::from_u8(1, 64);
     for k in 1..=24u32 {
         term = term.mul(&t, 64, up).div(&ExactNum::from_u32(k, 64), 64, up);
         sum = sum.add(&term, 64, up);
@@ -3018,7 +3033,8 @@ fn taylor_step(
         if !finite(&c_kp2) {
             return None;
         }
-        let rbound = unit.clone().mul(
+        let rbound = ExactNum::mul_ref(
+            &unit,
             &ub_rel(&rhs).add(&ub_rel(&left).mul(&ub_rel(&c_kp2), 64, up), 64, up),
             64,
             up,
@@ -3086,7 +3102,8 @@ fn taylor_step(
             };
             // Perturbation of the working-precision OdePoly versus the exact
             // polynomial coefficients: |δA ỹ'' + δB ỹ' + δC ỹ| on the step disk.
-            let da = unit.clone().mul(
+            let da = ExactNum::mul_ref(
+                &unit,
                 &ub_rel(&ode.a0)
                     .add(&ub_rel(&ode.a1).mul(&rho, 64, up), 64, up)
                     .add(&ub_rel(&ode.a2).mul(&rho, 64, up).mul(&rho, 64, up), 64, up)
@@ -3101,14 +3118,16 @@ fn taylor_step(
                 64,
                 up,
             );
-            let db = unit.clone().mul(
+            let db = ExactNum::mul_ref(
+                &unit,
                 &ub_rel(&ode.b0)
                     .add(&ub_rel(&ode.b1).mul(&rho, 64, up), 64, up)
                     .add(&ub_rel(&ode.b2).mul(&rho, 64, up).mul(&rho, 64, up), 64, up),
                 64,
                 up,
             );
-            let dc = unit.clone().mul(
+            let dc = ExactNum::mul_ref(
+                &unit,
                 &ub_rel(&ode.c0).add(&ub_rel(&ode.c1).mul(&rho, 64, up), 64, up),
                 64,
                 up,
@@ -3127,7 +3146,7 @@ fn taylor_step(
             def = def.add(&db.mul(&myp, 64, up), 64, up);
             def = def.add(&dc.mul(&my, 64, up), 64, up);
             let nterm = ExactNum::from_u64((k as u64).saturating_add(4), 64);
-            let sum_rnd = unit.clone().mul(&nterm, 64, up).mul(
+            let sum_rnd = ExactNum::mul_ref(&unit, &nterm, 64, up).mul(
                 &ub_rel(&sum).add(&ub_rel(&dsum), 64, up).add(&my, 64, up),
                 64,
                 up,
@@ -3596,11 +3615,9 @@ fn fox_term_ratio(
     if !finite(pref) || !finite(zp) || !finite(&ratio) {
         return Err(());
     }
-    Ok(Some(pref.clone().mul(&ratio, p, RoundingMode::None).mul(
-        zp,
-        p,
-        RoundingMode::None,
-    )))
+    Ok(Some(
+        ExactNum::mul_ref(pref, &ratio, p, RoundingMode::None).mul(zp, p, RoundingMode::None),
+    ))
 }
 
 /// Mellin–Barnes residue series at the exact scales. No term cap: the sum
@@ -3641,7 +3658,7 @@ fn fox_h_residue(
             if !bh_s.is_positive() {
                 return GEval::Bad;
             }
-            let inv_b = one.clone().div(bh_s, p, RoundingMode::None);
+            let inv_b = ExactNum::div_ref(&one, bh_s, p, RoundingMode::None);
             if !finite(&inv_b) {
                 return GEval::Bad;
             }
@@ -3656,7 +3673,7 @@ fn fox_h_residue(
             if !finite(&zp) || !finite(&z_step) {
                 return GEval::Bad;
             }
-            let mut pref = one.clone().div(bh_s, p, RoundingMode::None);
+            let mut pref = ExactNum::div_ref(&one, bh_s, p, RoundingMode::None);
             let mut k: u64 = 0;
             let mut grew = 0u32;
             let mut prev_exp: Option<i64> = None;
@@ -3739,7 +3756,7 @@ fn fox_h_residue(
             if !ak_s.is_positive() {
                 return GEval::Bad;
             }
-            let inv_a = one.clone().div(ak_s, p, RoundingMode::None);
+            let inv_a = ExactNum::div_ref(&one, ak_s, p, RoundingMode::None);
             if !finite(&inv_a) {
                 return GEval::Bad;
             }
@@ -3754,7 +3771,7 @@ fn fox_h_residue(
             if !finite(&zp) || !finite(&z_step) {
                 return GEval::Bad;
             }
-            let mut pref = one.clone().div(ak_s, p, RoundingMode::None);
+            let mut pref = ExactNum::div_ref(&one, ak_s, p, RoundingMode::None);
             let mut ell: u64 = 0;
             let mut grew = 0u32;
             let mut prev_exp: Option<i64> = None;
@@ -4460,9 +4477,14 @@ mod tests {
             let one = ExactNum::from_u8(1, p);
             let two = ExactNum::from_u8(2, p);
             let half = ExactNum::from_u8(1, p).div(&two, p, RoundingMode::ToEven);
-            let an1 = [one.clone()];
-            let bm0 = [zero.clone()];
-            let zs = [zero.clone(), half.clone(), one.clone(), two.clone()];
+            let an1 = [ExactNum::from_u8(1, p)];
+            let bm0 = [ExactNum::new(p)];
+            let zs = [
+                ExactNum::new(p),
+                ExactNum::from_u8(1, p).div(&two, p, RoundingMode::ToEven),
+                ExactNum::from_u8(1, p),
+                ExactNum::from_u8(2, p),
+            ];
             for z in &zs {
                 for rm in modes {
                     let g = z.meijer_g(&an1, &[], &bm0, &[], p, rm, &mut cc);

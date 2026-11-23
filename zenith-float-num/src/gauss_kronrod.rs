@@ -1191,9 +1191,9 @@ where
         );
     }
     if b_pos && finite(a) {
-        let end = a.clone();
+        let end = a;
         return integrate_adaptive_gk_estimate(
-            |t, wp, wrm, cc| semi_infinite_sample(&mut f, &end, true, t, wp, wrm, cc),
+            |t, wp, wrm, cc| semi_infinite_sample(&mut f, end, true, t, wp, wrm, cc),
             &zero,
             &one,
             tol_rel,
@@ -1204,9 +1204,9 @@ where
         );
     }
     if a_neg && finite(b) {
-        let end = b.clone();
+        let end = b;
         return integrate_adaptive_gk_estimate(
-            |t, wp, wrm, cc| semi_infinite_sample(&mut f, &end, false, t, wp, wrm, cc),
+            |t, wp, wrm, cc| semi_infinite_sample(&mut f, end, false, t, wp, wrm, cc),
             &zero,
             &one,
             tol_rel,

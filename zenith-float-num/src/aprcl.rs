@@ -1482,7 +1482,7 @@ fn pocklington(n: &ExactInt, pm1: &[u64]) -> Option<(ExactInt, ExactInt, bool)> 
     let mut fac: Vec<(ExactInt, u32)> = Vec::new();
     remove_primes(&mut r, pm1, &mut fac);
     if bpsw(&r) && prove_if_prime(&r) {
-        fac.push((r.clone(), 1));
+        fac.push((r, 1));
         r = ExactInt::one();
     }
     let f = product_fac(&fac);
@@ -1534,7 +1534,7 @@ fn morrison(n: &ExactInt, pp1: &[u64]) -> Option<(ExactInt, ExactInt, bool)> {
     let mut fac: Vec<(ExactInt, u32)> = Vec::new();
     remove_primes(&mut r, pp1, &mut fac);
     if bpsw(&r) && prove_if_prime(&r) {
-        fac.push((r.clone(), 1));
+        fac.push((r, 1));
         r = ExactInt::one();
     }
     let f = product_fac(&fac);

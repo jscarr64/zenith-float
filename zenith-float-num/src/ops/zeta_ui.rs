@@ -76,7 +76,7 @@ fn zeta_ui_euler_product(n: u64, p: usize) -> ExactNum {
     // Stop when q^n ≥ 2^{wp+8}.
     let pmax = euler_prime_limit(n, wp);
     let primes = primes_upto(pmax);
-    let mut z = one.clone();
+    let mut z = ExactNum::from_u8(1, wp);
     for q in primes {
         let qn = pow_ui(&ExactNum::from_u64(q, wp), n, wp);
         let den = ExactNum::sub_ref(&qn, &one, wp, NR);
@@ -144,7 +144,7 @@ fn pow_ui(base: &ExactNum, exp: u64, p: usize) -> ExactNum {
         if e == 0 {
             return acc;
         }
-        b = b.clone().mul(&b, p, NR);
+        b = ExactNum::mul_ref(&b, &b, p, NR);
     }
 }
 
@@ -173,7 +173,7 @@ fn zeta_coeff_k(k: u64, n: u64, s: u64, wp: usize) -> ZetaSplit {
         }
         (a, pow_ui(&ExactNum::from_u64(k, wp), s, wp))
     };
-    let q3 = q1.clone().mul(&q2, wp, NR);
+    let q3 = ExactNum::mul_ref(&q1, &q2, wp, NR);
     ZetaSplit {
         a,
         b: ExactNum::new(wp),
@@ -195,16 +195,10 @@ fn zeta_bsplit(a: u64, b: u64, n: u64, s: u64, cont: bool, wp: usize) -> ZetaSpl
     // B = (B*D + A*C) * Q2  +  R.B * Q3   [L and R as in FLINT]
     l.b =
         l.b.mul(&r.d, wp, NR)
-            .add(&l.a.clone().mul(&r.c, wp, NR), wp, NR);
-    l.b =
-        l.b.mul(&r.q2, wp, NR)
-            .add(&r.b.clone().mul(&l.q3, wp, NR), wp, NR);
-    l.a =
-        l.a.mul(&r.q3, wp, NR)
-            .add(&r.a.clone().mul(&l.q3, wp, NR), wp, NR);
-    l.c =
-        l.c.mul(&r.d, wp, NR)
-            .add(&r.c.clone().mul(&l.q1, wp, NR), wp, NR);
+            .add(&ExactNum::mul_ref(&l.a, &r.c, wp, NR), wp, NR);
+    l.b = l.b.mul(&r.q2, wp, NR).add(&r.b.mul(&l.q3, wp, NR), wp, NR);
+    l.a = l.a.mul(&r.q3, wp, NR).add(&r.a.mul(&l.q3, wp, NR), wp, NR);
+    l.c = l.c.mul(&r.d, wp, NR).add(&r.c.mul(&l.q1, wp, NR), wp, NR);
     if cont {
         l.d = l.d.mul(&r.d, wp, NR);
         l.q2 = l.q2.mul(&r.q2, wp, NR);

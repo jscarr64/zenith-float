@@ -408,9 +408,8 @@ impl ExactNumPoly {
             return None;
         }
         let mut vals = vec![ExactNum::new(p); n * n];
-        let one = ExactNum::from_u8(1, p);
         for i in 1..n {
-            vals[i * n + (i - 1)] = one.clone();
+            vals[i * n + (i - 1)] = ExactNum::from_u8(1, p);
         }
         for i in 0..n {
             let a = self.coeff(i).div(&lc, p, rm);

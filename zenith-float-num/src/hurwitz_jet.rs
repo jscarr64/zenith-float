@@ -157,7 +157,7 @@ fn em_bound1(s: &ExactNum, a: &ExactNum, n: u64, m: u64, cc: &mut Consts) -> Opt
     let mut f0 = ExactNum::from_u8(1, wp);
     let mut harm = ExactNum::new(wp);
     for i in 0..two_m {
-        let term = sabs.clone().add(&ExactNum::from_u64(i, wp), wp, UP);
+        let term = ExactNum::add_ref(&sabs, &ExactNum::from_u64(i, wp), wp, UP);
         if !term.is_positive() || term.is_zero() {
             // A zero factor makes the |s|-rising vanish; the length-2 jet
             // of the true rising factorial does not. Treat as "bound failed".
@@ -286,11 +286,11 @@ fn em_sum(s: &ExactNum, a: &ExactNum, n: u64, m: u64, p: usize, cc: &mut Consts)
     // t = (N+a)^{-(s+x)}
     let tjet = invpow_jet(&na, s, p, cc);
     // u = (N+a)^{1-(s+x)} / ((s-1)+x)
-    let sm1 = s.clone().sub(&one, p, NR);
+    let sm1 = ExactNum::sub_ref(s, &one, p, NR);
     if sm1.is_zero() {
         return None;
     }
-    let v = s.clone().sub(&ExactNum::from_u8(1, p), p, NR);
+    let v = ExactNum::sub_ref(s, &ExactNum::from_u8(1, p), p, NR);
     let u_pow = invpow_jet(&na, &v, p, cc);
     // divide by (s-1)+x: u0 = w0/(s-1), u1 = (w1 - u0)/(s-1)
     let u0 = ExactNum::div_ref(&u_pow.c0, &sm1, p, NR);
@@ -318,7 +318,8 @@ fn em_sum(s: &ExactNum, a: &ExactNum, n: u64, m: u64, p: usize, cc: &mut Consts)
         // term *= ((s+x)+2r-1)((s+x)+2r) / ((N+a)^2 (2r+1)(2r+2))
         // Integer factors as one-word values (FLINT fmpz / arb_mul_ui). Building
         // them at dest `p` made each of the ~10^4 tail steps a full-width mul.
-        let splus0 = s.clone().add(
+        let splus0 = ExactNum::add_ref(
+            s,
             &ExactNum::from_u64((2 * r - 1) as u64, WORD_BIT_SIZE),
             p,
             NR,
@@ -328,7 +329,8 @@ fn em_sum(s: &ExactNum, a: &ExactNum, n: u64, m: u64, p: usize, cc: &mut Consts)
             .clone()
             .add(&ExactNum::from_u64((2 * r) as u64, WORD_BIT_SIZE), p, NR);
         term = term.mul_cpx(&splus1, p);
-        let den = na2.clone().mul(
+        let den = ExactNum::mul_ref(
+            &na2,
             &ExactNum::from_u64((2 * r + 1) as u64 * (2 * r + 2) as u64, WORD_BIT_SIZE),
             p,
             NR,
@@ -427,7 +429,7 @@ pub(crate) fn log_barnes_g_zeta(z: &ExactNum, p: usize, cc: &mut Consts) -> Exac
         zp
     };
     let lng = z.ln_gamma(p, NR, cc);
-    let zm1 = z.clone().sub(&ExactNum::from_u8(1, p), p, NR);
+    let zm1 = ExactNum::sub_ref(z, &ExactNum::from_u8(1, p), p, NR);
     zm1.mul(&lng, p, NR).sub(&zp, p, NR).add(&c, p, NR)
 }
 
@@ -811,7 +813,7 @@ mod tests {
         let mut acc = ExactNum::new(p);
         for k in 1..=n {
             let kf = ExactNum::from_u64(k, p);
-            acc = acc.add(&kf.clone().mul(&kf.ln(p, NR, cc), p, NR), p, NR);
+            acc = acc.add(&ExactNum::mul_ref(&kf, &kf.ln(p, NR, cc), p, NR), p, NR);
         }
         acc
     }
@@ -845,7 +847,7 @@ mod tests {
             // Closed form: ζ'(-1, 1/2) = -ln2/24 - ζ'(-1)/2.
             let ln2 = cc.ln_2(p, NR);
             let c = ln2.div(&ExactNum::from_u32(24, p), p, NR).neg().sub(
-                &fast1.1.clone().ldexp(-1, p, NR),
+                &fast1.1.ldexp(-1, p, NR),
                 p,
                 NR,
             );
@@ -917,9 +919,12 @@ mod tests {
 
         // ζ(0) = -1/2.
         let z0 = ExactNum::new(p).riemann_zeta(p, RoundingMode::ToEven, &mut cc);
-        let d0 = ExactNum::sub_ref(&z0, &half.clone().neg(), p, NR).abs();
+        let d0 =
+            ExactNum::sub_ref(&z0, &ExactNum::from_u8(1, p).ldexp(-1, p, NR).neg(), p, NR).abs();
         assert!(
-            d0.is_zero() || agree_bits(&z0, &half.clone().neg(), p) >= (p as i32) - 8,
+            d0.is_zero()
+                || agree_bits(&z0, &ExactNum::from_u8(1, p).ldexp(-1, p, NR).neg(), p)
+                    >= (p as i32) - 8,
             "zeta(0) is not -1/2"
         );
 

@@ -321,7 +321,7 @@ pub(crate) fn ecm_curve(n: &ExactInt, b1: u64, b2: u64, sigma: u64) -> Option<Ex
 
     // Stage 1.
     let primes = primes_upto(b1.max(b2));
-    let mut qpt = p0.clone();
+    let mut qpt = p0;
     let mut acc = ExactInt::one();
     let mut since = 0u32;
     for &p in &primes {

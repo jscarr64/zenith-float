@@ -399,7 +399,7 @@ where
             e = m.clone();
         }
         a = b.clone();
-        fa = fb.clone();
+        fa = fb;
         b = if abs_lt(&tol1, &d) {
             b.add(&d, wrk, none)
         } else if m.is_positive() {

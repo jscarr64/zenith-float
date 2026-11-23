@@ -525,7 +525,7 @@ where
         // Agreement to 2^-(p-8) relative to max(|s|, 1).
         let sa = s.clone().abs();
         let lim = if sa.compare(&ExactNum::from_u8(1, wde)) == Some(1) {
-            guard.clone().mul(&sa, wde, RoundingMode::None)
+            ExactNum::mul_ref(&guard, &sa, wde, RoundingMode::None)
         } else {
             guard.clone()
         };
@@ -692,7 +692,7 @@ fn gauss_hermite_nodes(
         if !finite(&w0) {
             return None;
         }
-        nodes.push((zero.clone(), w0));
+        nodes.push((zero, w0));
     }
     for (a, b) in brackets {
         let x0 = bisect_zero(

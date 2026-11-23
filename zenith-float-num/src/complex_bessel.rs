@@ -1899,7 +1899,7 @@ mod tests {
             assert!(cnear_bits(&lhs, &rhs, p, 8), "Wronskian Y_1(-1+i) p={p}");
 
             let ym = z.bessel_y_int_via_jk(-1, p, p, &mut cc).must("Y_m1 JK")?;
-            assert!(cnear_bits(&ym, &neg_c(y1.clone()), p, 8), "Y_m1 p={p}");
+            assert!(cnear_bits(&ym, &neg_c(y1), p, 8), "Y_m1 p={p}");
         }
         Ok(())
     }

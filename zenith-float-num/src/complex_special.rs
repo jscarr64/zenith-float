@@ -197,7 +197,7 @@ fn rising_block_coeffs(k: usize, l: usize) -> Vec<ExactNum> {
     for j in 0..l {
         let a = exact_from_usize(k + j, p);
         let mut nxt = alloc::vec![ExactNum::new(p); c.len() + 1];
-        nxt[0] = c[0].clone().mul(&a, p, RoundingMode::None);
+        nxt[0] = ExactNum::mul_ref(&c[0], &a, p, RoundingMode::None);
         for i in 1..c.len() {
             nxt[i] =
                 c[i].clone()
@@ -595,7 +595,7 @@ fn num_pow_ui(base: usize, exp: usize, p: usize) -> ExactNum {
         if e == 0 {
             break;
         }
-        b = b.clone().mul(&b, wp, RoundingMode::None);
+        b = ExactNum::mul_ref(&b, &b, wp, RoundingMode::None);
     }
     if wp != p {
         let _ = acc.set_precision(p, RoundingMode::None);
@@ -1223,7 +1223,7 @@ impl ExactComplex {
             if im_neg {
                 im = im.neg();
             }
-            return ExactComplex::new(crate::INF_POS.clone(), im);
+            return ExactComplex::new(crate::INF_POS, im);
         }
         ziv_complex(round_p(p), rm, |pw| self.digamma_at(pw, cc))
     }
@@ -1854,7 +1854,8 @@ impl ExactComplex {
                                 let mut v = g.neg().sub(&two_ln2, p, RoundingMode::None);
                                 let two = ExactNum::from_u8(2, p);
                                 for k in 1..=n {
-                                    let t = two.clone().div(
+                                    let t = ExactNum::div_ref(
+                                        &two,
                                         &ExactNum::from_u32((2 * k - 1) as u32, p),
                                         p,
                                         RoundingMode::None,
@@ -2996,10 +2997,10 @@ mod tests {
             RoundingMode::None,
         ];
         for p in [64usize, 256, 2048] {
-            let pos = ExactComplex::from_real(crate::INF_POS.clone(), p);
-            let neg = ExactComplex::from_real(crate::INF_NEG.clone(), p);
-            let iinf = ExactComplex::new(ExactNum::from_u8(1, p), crate::INF_POS.clone());
-            let niinf = ExactComplex::new(ExactNum::from_u8(1, p), crate::INF_NEG.clone());
+            let pos = ExactComplex::from_real(crate::INF_POS, p);
+            let neg = ExactComplex::from_real(crate::INF_NEG, p);
+            let iinf = ExactComplex::new(ExactNum::from_u8(1, p), crate::INF_POS);
+            let niinf = ExactComplex::new(ExactNum::from_u8(1, p), crate::INF_NEG);
             for rm in modes {
                 for (lab, got) in [
                     ("gamma(+∞)", pos.gamma(p, rm, &mut cc)),
@@ -3047,7 +3048,7 @@ mod tests {
                         z
                     );
                 }
-                let nan = ExactComplex::new(crate::NAN.clone(), ExactNum::new(p));
+                let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
                 let gn = nan.gamma(p, rm, &mut cc);
                 assert!(gn.is_nan(), "gamma(NaN) p={p} {rm:?} {:?}", gn);
             }
@@ -3100,9 +3101,9 @@ mod tests {
             RoundingMode::None,
         ];
         for p in [64usize, 256, 2048] {
-            let nan_plus_i = ExactComplex::new(crate::NAN.clone(), ExactNum::from_u8(1, p));
-            let i_times_nan = ExactComplex::new(ExactNum::from_u8(1, p), crate::NAN.clone());
-            let nan_plus_nan = ExactComplex::new(crate::NAN.clone(), crate::NAN.clone());
+            let nan_plus_i = ExactComplex::new(crate::NAN, ExactNum::from_u8(1, p));
+            let i_times_nan = ExactComplex::new(ExactNum::from_u8(1, p), crate::NAN);
+            let nan_plus_nan = ExactComplex::new(crate::NAN, crate::NAN);
             let typed = ExactComplex::new(
                 ExactNum::nan(Some(Error::InvalidArgument)),
                 ExactNum::from_u8(1, p),

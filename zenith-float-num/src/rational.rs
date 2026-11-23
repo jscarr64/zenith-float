@@ -279,7 +279,7 @@ impl ExactRational {
         };
         let mut r = Self::from_ints(n, d);
         if neg {
-            r = Self::new(r.num.neg(), r.den.clone());
+            r = Self::new(r.num.neg(), r.den);
         }
         Some(r)
     }

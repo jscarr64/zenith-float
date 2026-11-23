@@ -258,7 +258,7 @@ fn pfq_series(z: &ExactNum, a: &[ExactNum], b: &[ExactNum], p: usize) -> ExactNu
         let mut km1 = ExactNum::new(128); // k - 1, exact
         let tail: ExactNum;
         loop {
-            let kf = km1.clone().add(&ExactNum::from_u8(1, 128), 128, n);
+            let kf = ExactNum::add_ref(&km1, &ExactNum::from_u8(1, 128), 128, n);
             let mut num = ExactNum::from_u8(1, wrk);
             for aj in a {
                 num = num.mul(&ExactNum::add_ref(&km1, aj, wrk, n), wrk, n);
@@ -284,7 +284,7 @@ fn pfq_series(z: &ExactNum, a: &[ExactNum], b: &[ExactNum], p: usize) -> ExactNu
             }
             // Ratio bound for every step after this index K = km1 (= k).
             let kk = &km1;
-            if kk.compare(&bmax.clone().add(&one_lp, 64, up)) != Some(1) {
+            if kk.compare(&ExactNum::add_ref(&bmax, &one_lp, 64, up)) != Some(1) {
                 continue;
             }
             let mut bound = az.clone();
@@ -325,7 +325,7 @@ fn pfq_series(z: &ExactNum, a: &[ExactNum], b: &[ExactNum], p: usize) -> ExactNu
                     let d = ExactNum::sub_ref(kk, y, 64, lo);
                     let f = match aa.get(j) {
                         Some(x) => ExactNum::add_ref(kk, x, 64, up).div(&d, 64, up),
-                        None => one_lp.clone().div(&d, 64, up),
+                        None => ExactNum::div_ref(&one_lp, &d, 64, up),
                     };
                     bound = bound.mul(&f, 64, up);
                 }
@@ -413,7 +413,8 @@ fn hurwitz_em_lengths(s: u64, p: usize) -> Option<(usize, usize)> {
                 .mul(&f1, 64, up)
                 .div(&den, 64, up);
             m += 1;
-            let r = prod.clone().div(
+            let r = ExactNum::div_ref(
+                &prod,
                 &ExactNum::from_u64(s.checked_add(2 * m as u64 - 1)?, 64),
                 64,
                 up,
@@ -526,7 +527,7 @@ fn zeta_prime_2(p: usize, cc: &mut Consts) -> ExactNum {
     sum = sum.add(&integral, p, nr).add(&mid, p, nr);
     let mut bs: Vec<ExactNum> = Vec::new();
     let mut invpower = invn;
-    let mut h = one.clone();
+    let mut h = ExactNum::from_u8(1, p);
     let mut j = 1usize;
     let mut last: Option<crate::Exponent> = None;
     loop {
@@ -1451,7 +1452,7 @@ fn kelvin_small_x(
     let mut v = match which {
         KelvinWhich::Ker => {
             let half = ExactNum::from_u8(1, wp).ldexp(-1, wp, RoundingMode::None);
-            let arg = x.clone().mul(&half, wp, RoundingMode::None);
+            let arg = ExactNum::mul_ref(x, &half, wp, RoundingMode::None);
             let ln = arg.ln(wp, RoundingMode::None, cc);
             let g = cc.euler_gamma(wp, RoundingMode::None);
             (-ln).sub(&g, wp, RoundingMode::None)
@@ -2902,8 +2903,8 @@ mod tests {
             RoundingMode::None,
         ];
         for p in [64usize, 256, 2048, 4096] {
-            let pos = crate::INF_POS.clone();
-            let neg = crate::INF_NEG.clone();
+            let pos = crate::INF_POS;
+            let neg = crate::INF_NEG;
             for rm in modes {
                 let gi_pos = pos.scorer_gi(p, rm, &mut cc);
                 assert!(

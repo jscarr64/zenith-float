@@ -1612,7 +1612,7 @@ fn zf_51_gk_adapt_success_meets_tolerance() -> Result<(), String> {
                     matches!(d.compare(&g.abs_err_est), Some(o) if o <= 0),
                     "f{id} p={p} n={maxsub}: error above abs_err_est"
                 );
-                let lim = tol.clone().mul(&w.abs(), 1152, RoundingMode::Up);
+                let lim = ExactNum::mul_ref(&tol, &w.abs(), 1152, RoundingMode::Up);
                 let floor = ExactNum::from_u8(1, p).ldexp(1 - p as i64, p, rm);
                 assert!(
                     matches!(d.compare(&lim), Some(o) if o <= 0)
@@ -2024,9 +2024,9 @@ fn zf_41_meijer_fox_ln1pz_at_unit() -> Result<(), String> {
         let one = ExactNum::from_u8(1, p);
         let zero = ExactNum::new(p);
         for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
-            for z in [one.clone(), -one.clone()] {
+            for z in [ExactNum::from_u8(1, p), -ExactNum::from_u8(1, p)] {
                 let g = z.meijer_g(
-                    &[one.clone(), one.clone()],
+                    &[ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)],
                     &[],
                     std::slice::from_ref(&one),
                     std::slice::from_ref(&zero),
@@ -2035,10 +2035,13 @@ fn zf_41_meijer_fox_ln1pz_at_unit() -> Result<(), String> {
                     &mut cc,
                 );
                 let h = z.fox_h(
-                    &[(one.clone(), one.clone()), (one.clone(), one.clone())],
+                    &[
+                        (ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
+                        (ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
+                    ],
                     &[],
-                    &[(one.clone(), one.clone())],
-                    &[(zero.clone(), one.clone())],
+                    &[(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p))],
+                    &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
                     p,
                     rm,
                     &mut cc,
@@ -5368,7 +5371,7 @@ fn zf_kelvin_in_domain_large_x_exp_range() -> Result<(), String> {
 fn ker0_small_z_leading(x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
     let wp = p + 256;
     let half = ExactNum::from_u8(1, wp).ldexp(-1, wp, RoundingMode::None);
-    let arg = x.clone().mul(&half, wp, RoundingMode::None);
+    let arg = ExactNum::mul_ref(x, &half, wp, RoundingMode::None);
     let ln = arg.ln(wp, RoundingMode::None, cc);
     let g = cc.euler_gamma(wp, RoundingMode::None);
     let mut v = (-ln).sub(&g, wp, RoundingMode::None);

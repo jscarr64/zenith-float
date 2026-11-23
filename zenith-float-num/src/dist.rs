@@ -364,8 +364,8 @@ fn binom_mul(n: &ExactNum, k: &ExactNum, pw: usize) -> ExactNum {
     if k.is_zero() {
         return one;
     }
-    let mut i = one.clone();
-    let mut c = one.clone();
+    let mut i = ExactNum::from_u8(1, pw);
+    let mut c = ExactNum::from_u8(1, pw);
     // `term` = n - k + i, stepped with `i` (integers, exact)
     let mut term = ExactNum::sub_ref(n, k, pw, none).add(&one, pw, none);
     loop {

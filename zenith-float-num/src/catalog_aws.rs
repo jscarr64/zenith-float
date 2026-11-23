@@ -216,7 +216,7 @@ fn gamma_real_sign(x: &ExactNum, wp: usize, cc: &mut Consts) -> Option<Sign> {
     if !x.is_negative() {
         return Some(Sign::Pos);
     }
-    let s = x.clone().mul(&cc.pi(wp, N), wp, N).sin(wp, N, cc);
+    let s = ExactNum::mul_ref(x, &cc.pi(wp, N), wp, N).sin(wp, N, cc);
     if !finite(&s) || s.is_zero() {
         return None;
     }
@@ -322,11 +322,7 @@ fn series_cheap(z: &ExactNum, nu: &ExactNum, p: usize) -> bool {
     if k > K_MAX {
         return false;
     }
-    let cancel = if nu.abs_cmp(&z.clone().abs()) != Some(-1) {
-        8i64
-    } else {
-        rem_bits_neg_exp(z).min(1 << 20)
-    };
+    let cancel = if nu.abs_cmp(z) != Some(-1) { 8i64 } else { rem_bits_neg_exp(z).min(1 << 20) };
     let work = i64::from(k).saturating_mul(1 + cancel.saturating_add(31) / 32);
     // Compare to a panel budget of about `p` panels: Maclaurin wins only
     // when it is clearly the cheaper option.
@@ -889,7 +885,7 @@ fn g_jet(
     if !finite(&ln) {
         return None;
     }
-    let g0 = mu.clone().mul(&ln, wp, rm).exp(wp, rm, cc);
+    let g0 = ExactNum::mul_ref(mu, &ln, wp, rm).exp(wp, rm, cc);
     if !finite(&g0) {
         return None;
     }
@@ -971,7 +967,7 @@ fn inc_exp_moments(
             return None;
         }
         let kp1 = ExactNum::from_u64((k as u64).saturating_add(1), wp);
-        let expo = kp1.clone().mul(ln_h, wp, N).sub(zh, wp, N);
+        let expo = ExactNum::mul_ref(&kp1, ln_h, wp, N).sub(zh, wp, N);
         let mut term = expo.exp(wp, N, cc).div(&kp1, wp, N);
         if !finite(&term) {
             return None;
@@ -1065,7 +1061,7 @@ fn k_panel(
         if fac.is_zero() || !finite(&fac) || !finite(&moments[k]) || !finite(&g[k]) {
             return None;
         }
-        let term = g[k].clone().div(&fac, wp, N).mul(&moments[k], wp, N);
+        let term = ExactNum::div_ref(&g[k], &fac, wp, N).mul(&moments[k], wp, N);
         integ = integ.add(&term, wp, N);
     }
     integ = integ.mul(&emza, wp, N);
@@ -1092,13 +1088,13 @@ fn k_panel(
             return None;
         }
         // (min)^μ with μ<0: smaller min gives a larger value.
-        mu.clone().mul(&ln, wp, UP).exp(wp, UP, cc)
+        ExactNum::mul_ref(mu, &ln, wp, UP).exp(wp, UP, cc)
     } else {
         let ln = max_abs.ln(wp, UP, cc);
         if !finite(&ln) {
             return None;
         }
-        mu.clone().mul(&ln, wp, UP).exp(wp, UP, cc)
+        ExactNum::mul_ref(mu, &ln, wp, UP).exp(wp, UP, cc)
     };
     if !finite(&m) {
         return None;
@@ -1108,7 +1104,7 @@ fn k_panel(
         return None;
     }
     let h_up = ExactNum::sub_ref(b, a, wp, UP);
-    let h_over_rho = h_up.clone().div(&rho, wp, UP);
+    let h_over_rho = ExactNum::div_ref(&h_up, &rho, wp, UP);
     let pow = h_over_rho.pow(&ExactNum::from_u64(n as u64, wp), wp, UP, cc);
     let np1 = ExactNum::from_u64((n as u64).saturating_add(1), wp);
     let rem = e_up
@@ -1156,7 +1152,7 @@ fn panel_mid_or_stall(
         // or Taylor jet (the ν=100, z=1000 hang).
         let half_h = w.ldexp(-1, wp, N);
         let nine_tenth = ExactNum::from_u8(9, wp).div(&ExactNum::from_u8(10, wp), wp, DN);
-        let r1 = mid.clone().mul(&nine_tenth, wp, DN);
+        let r1 = ExactNum::mul_ref(&mid, &nine_tenth, wp, DN);
         if r1.abs_cmp(&half_h) == Some(1) {
             return None;
         }
@@ -1198,7 +1194,7 @@ fn struve_k_integral(
     }
     if let Some(e) = ExactNum::div_ref(&t_end, &h, wp, UP).exponent() {
         if e > 16 {
-            h = t_end.clone().div(&ExactNum::from_u32(65_536, wp), wp, UP);
+            h = ExactNum::div_ref(&t_end, &ExactNum::from_u32(65_536, wp), wp, UP);
         }
     }
     let mut stack: Vec<(ExactNum, ExactNum, Option<i64>)> = Vec::new();
@@ -1209,7 +1205,7 @@ fn struve_k_integral(
         {
             break;
         }
-        let mut right = left.clone().add(&h, wp, UP);
+        let mut right = ExactNum::add_ref(&left, &h, wp, UP);
         if right.abs_cmp(&t_end) != Some(-1) {
             right = t_end.clone();
         }
@@ -1276,7 +1272,7 @@ fn struve_k_integral(
     if !finite(&c) {
         return None;
     }
-    let k = c.clone().mul(&acc, wp, N);
+    let k = ExactNum::mul_ref(&c, &acc, wp, N);
     if !finite(&k) {
         return None;
     }
@@ -1332,7 +1328,7 @@ fn struve_h_positive(
     // is gated at |ν| >= z/2) and the term count is not a hang.
     let nu_ge_half_z = {
         let halfz = zc.clone().ldexp(-1, 64, N);
-        nuc.clone().abs().abs_cmp(&halfz) != Some(-1)
+        nuc.abs_cmp(&halfz) != Some(-1)
     };
     let k_safe = maclaurin_k_est(&zc).is_some_and(|k| k <= 16_384);
     let use_series = series_cheap(&zc, &nuc, p) || (nu_ge_half_z && k_safe);
@@ -1511,7 +1507,7 @@ fn maclaurin_s(
         if !finite(&d) || d.is_zero() {
             return None;
         }
-        let nxt = t.clone().mul(&z2, wp, N).neg().div(&d, wp, N);
+        let nxt = ExactNum::mul_ref(t, &z2, wp, N).neg().div(&d, wp, N);
         finite(&nxt).then_some(nxt)
     };
     let three_half_s2 = ExactNum::from_u8(3, wp).div(&two(wp), wp, N);
@@ -1528,7 +1524,7 @@ fn maclaurin_s(
         if !finite(&d) || d.is_zero() {
             return None;
         }
-        let nxt = t.clone().mul(&z2, wp, N).neg().div(&d, wp, N);
+        let nxt = ExactNum::mul_ref(t, &z2, wp, N).neg().div(&d, wp, N);
         finite(&nxt).then_some(nxt)
     };
     let mut t1 = form_s1(0, cc).unwrap_or_else(|| ExactNum::new(wp));
@@ -1790,7 +1786,8 @@ fn panel_integral(
     // U_0 = max f on the panel. f is decreasing, so max is f(a), upper rounded.
     let (fa, _, _, _) = f_and_gprime(a, nu, z, wp, cc)?;
     // Slightly inflate fa to cover rounding in the sample.
-    let mut u0 = fa.clone().mul(
+    let mut u0 = ExactNum::mul_ref(
+        &fa,
         &one(wp).add(&one(wp).ldexp(-((wp as i64) / 2), wp, N), wp, UP),
         wp,
         UP,
@@ -1865,7 +1862,7 @@ fn anger_a_integral(
     }
     if let Some(e) = ExactNum::div_ref(&t_end, &h, wp, UP).exponent() {
         if e > 16 {
-            h = t_end.clone().div(&ExactNum::from_u32(65_536, wp), wp, UP);
+            h = ExactNum::div_ref(&t_end, &ExactNum::from_u32(65_536, wp), wp, UP);
         }
     }
     let mut stack: Vec<(ExactNum, ExactNum, Option<i64>)> = Vec::new();
@@ -1876,7 +1873,7 @@ fn anger_a_integral(
         {
             break;
         }
-        let mut right = left.clone().add(&h, wp, UP);
+        let mut right = ExactNum::add_ref(&left, &h, wp, UP);
         if right.abs_cmp(&t_end) != Some(-1) {
             right = t_end.clone();
         }
@@ -1988,7 +1985,7 @@ fn incgamma_tail_uk(
     let mut tau_pow = one(wp);
     for k in 1..=kmax {
         tau_pow = tau_pow.mul(tau, wp, UP);
-        let term1 = tau_pow.clone().mul(&e_over_z, wp, UP);
+        let term1 = ExactNum::mul_ref(&tau_pow, &e_over_z, wp, UP);
         let k_over_z = ExactNum::from_u64(k as u64, wp).div(&z_dn, wp, UP);
         let nxt = term1.add(&k_over_z.mul(&out[k - 1], wp, UP), wp, UP);
         if !finite(&nxt) {
@@ -2134,7 +2131,7 @@ fn anger_a_laplace(
         if !finite(&term) {
             return None;
         }
-        let grow = n > 0 && !prev_abs.is_zero() && term.clone().abs().abs_cmp(&prev_abs) == Some(1);
+        let grow = n > 0 && !prev_abs.is_zero() && term.abs_cmp(&prev_abs) == Some(1);
         if grow {
             break;
         }
@@ -2278,9 +2275,9 @@ fn exp_uk_0_tau_series_k(
         if ratio.compare(&one(wp)) == Some(-1) {
             let gap = ExactNum::sub_ref(&one(wp), &ratio, wp, DN);
             if gap.is_positive() {
-                let tb = u_hi.clone().mul(&ratio, wp, UP).div(&gap, wp, UP);
+                let tb = ExactNum::mul_ref(&u_hi, &ratio, wp, UP).div(&gap, wp, UP);
                 if tb.abs_cmp(target) != Some(1)
-                    && tb.abs_cmp(&s_hi.clone().mul(target, wp, UP)) != Some(1)
+                    && tb.abs_cmp(&ExactNum::mul_ref(&s_hi, target, wp, UP)) != Some(1)
                 {
                     s_hi = s_hi.add(&tb, wp, UP);
                     break;
@@ -2299,8 +2296,8 @@ fn exp_uk_0_tau_series_k(
             return None;
         }
     }
-    let j_lo = exp_dn.clone().mul(tau_pow_dn, wp, DN).mul(&s_lo, wp, DN);
-    let j_hi = exp_up.clone().mul(tau_pow_up, wp, UP).mul(&s_hi, wp, UP);
+    let j_lo = ExactNum::mul_ref(exp_dn, tau_pow_dn, wp, DN).mul(&s_lo, wp, DN);
+    let j_hi = ExactNum::mul_ref(exp_up, tau_pow_up, wp, UP).mul(&s_hi, wp, UP);
     if !finite(&j_lo) || !finite(&j_hi) || j_lo.abs_cmp(&j_hi) == Some(1) {
         return None;
     }
@@ -2313,11 +2310,11 @@ fn exp_uk_jk_tight(j_lo: &ExactNum, j_hi: &ExactNum, wp: usize) -> bool {
     if !finite(j_lo) || !finite(j_hi) || j_lo.abs_cmp(j_hi) == Some(1) {
         return false;
     }
-    let wid = j_hi.clone().sub(j_lo, wp, UP);
+    let wid = ExactNum::sub_ref(j_hi, j_lo, wp, UP);
     if !finite(&wid) || wid.is_negative() {
         return false;
     }
-    let mag = if j_hi.clone().abs().abs_cmp(&j_lo.clone().abs()) == Some(1) {
+    let mag = if j_hi.abs_cmp(j_lo) == Some(1) {
         j_hi.clone().abs()
     } else {
         j_lo.clone().abs()
@@ -2395,10 +2392,10 @@ fn exp_uk_0_tau(
             // DLMF 8.8.5 / integration by parts:
             // J_k = (k/z) J_{k-1} - e^{-zτ} τ^k / z.
             let kk = ExactNum::from_u64(k as u64, wp);
-            let k_z_lo = kk.clone().div(&z_up, wp, DN);
+            let k_z_lo = ExactNum::div_ref(&kk, &z_up, wp, DN);
             let k_z_hi = kk.div(&z_dn, wp, UP);
-            let term_lo = exp_dn.clone().mul(&tau_pow_k_dn, wp, DN).div(&z_up, wp, DN);
-            let term_hi = exp_up.clone().mul(&tau_pow_k_up, wp, UP).div(&z_dn, wp, UP);
+            let term_lo = ExactNum::mul_ref(&exp_dn, &tau_pow_k_dn, wp, DN).div(&z_up, wp, DN);
+            let term_hi = ExactNum::mul_ref(&exp_up, &tau_pow_k_up, wp, UP).div(&z_dn, wp, UP);
             if finite(&term_lo) && finite(&term_hi) {
                 let lo = k_z_lo.mul(&j_lo, wp, DN).sub(&term_hi, wp, DN);
                 let hi = k_z_hi.mul(&j_hi, wp, UP).sub(&term_lo, wp, UP);
@@ -2421,9 +2418,9 @@ fn exp_uk_0_tau(
             );
         }
         let (lo, hi) = got?;
-        let s = lo.clone().add(&hi, wp, N);
+        let s = ExactNum::add_ref(&lo, &hi, wp, N);
         mid.push(s.ldexp(-1, wp, N));
-        wid.push(hi.clone().sub(&lo, wp, UP));
+        wid.push(ExactNum::sub_ref(&hi, &lo, wp, UP));
         j_lo = lo;
         j_hi = hi;
         have = true;
@@ -2473,7 +2470,7 @@ fn anger_a_u_head(
         if !finite(&ak_num) || fac.is_zero() {
             return None;
         }
-        let term = ak_num.clone().div(&fac, wp, N).mul(&jk[n], wp, N);
+        let term = ExactNum::div_ref(&ak_num, &fac, wp, N).mul(&jk[n], wp, N);
         if !finite(&term) {
             return None;
         }
@@ -2662,11 +2659,11 @@ fn h_taylor_coeffs(
     let w_half = derivs_w_alpha(mid, &half(wp).neg(), nmax, wp)?;
     let w_inv = derivs_w_alpha(mid, &one(wp).neg(), nmax, wp)?;
     let mut ld = vec![ExactNum::new(wp)];
-    let lp = nu
-        .clone()
-        .neg()
-        .mul(&w_half[0], wp, N)
-        .sub(&mid.clone().mul(&w_inv[0], wp, N), wp, N);
+    let lp = ExactNum::mul_ref(nu, &w_half[0], wp, N).neg().sub(
+        &ExactNum::mul_ref(mid, &w_inv[0], wp, N),
+        wp,
+        N,
+    );
     if !finite(&lp) {
         return None;
     }
@@ -2703,7 +2700,7 @@ fn h_taylor_coeffs(
         let mut next = Vec::with_capacity(n + 1);
         next.push(one(wp));
         for j in 1..n {
-            next.push(binom_row[j - 1].clone().add(&binom_row[j], wp, N));
+            next.push(ExactNum::add_ref(&binom_row[j - 1], &binom_row[j], wp, N));
         }
         if n >= 1 {
             next.push(one(wp));
@@ -2752,8 +2749,8 @@ fn exp_uk_panel(
     if !width.is_positive() {
         return None;
     }
-    let e_a = a.clone().mul(z, wp, N).neg().exp(wp, N, cc);
-    let e_w = width.clone().mul(z, wp, N).neg().exp(wp, N, cc);
+    let e_a = ExactNum::mul_ref(a, z, wp, N).neg().exp(wp, N, cc);
+    let e_w = ExactNum::mul_ref(&width, z, wp, N).neg().exp(wp, N, cc);
     if !finite(&e_a) || !finite(&e_w) {
         return None;
     }
@@ -2766,7 +2763,7 @@ fn exp_uk_panel(
     let mut a_pow = one(wp);
     let mut b_pow = one(wp);
     let mut out = Vec::with_capacity(kmax + 1);
-    out.push(e_a.clone().mul(&l, wp, N));
+    out.push(ExactNum::mul_ref(&e_a, &l, wp, N));
     let mut peak = out[0].clone().abs();
     for k in 1..=kmax {
         a_pow = a_pow.mul(&alpha, wp, N);
@@ -2776,18 +2773,18 @@ fn exp_uk_panel(
         }
         let kk = ExactNum::from_u64(k as u64, wp);
         // L_k = (α^k - e^{-z(b-a)} β^k)/z + (k/z) L_{k-1}
-        let num = a_pow.clone().sub(&e_w.clone().mul(&b_pow, wp, N), wp, N);
+        let num = ExactNum::sub_ref(&a_pow, &ExactNum::mul_ref(&e_w, &b_pow, wp, N), wp, N);
         l = num
             .div(z, wp, N)
             .add(&kk.div(z, wp, N).mul(&l, wp, N), wp, N);
         if !finite(&l) {
             return None;
         }
-        let ik = e_a.clone().mul(&l, wp, N);
+        let ik = ExactNum::mul_ref(&e_a, &l, wp, N);
         if !finite(&ik) {
             return None;
         }
-        if ik.clone().abs().abs_cmp(&peak) == Some(1) {
+        if ik.abs_cmp(&peak) == Some(1) {
             peak = ik.clone().abs();
         }
         out.push(ik);
@@ -2843,7 +2840,7 @@ fn anger_a_u_panel(
     // R = min(0.9 mid, 0.75 d). Need R > half_h.
     // 0.9 = 9/10
     let nine_tenth = ExactNum::from_u8(9, wp).div(&ExactNum::from_u8(10, wp), wp, DN);
-    let r1 = mid.clone().mul(&nine_tenth, wp, DN);
+    let r1 = ExactNum::mul_ref(&mid, &nine_tenth, wp, DN);
     let three_fourth = ExactNum::from_u8(3, wp).div(&ExactNum::from_u8(4, wp), wp, DN);
     let r2 = d.mul(&three_fourth, wp, DN);
     let rho = if r1.abs_cmp(&r2) == Some(-1) { r1 } else { r2 };
@@ -2874,7 +2871,7 @@ fn anger_a_u_panel(
     let (iks, mrem) = exp_uk_panel(z, a, b, &mid, nmax, wp, cc)?;
     let mut acc = ExactNum::new(wp);
     for k in 0..=nmax {
-        acc = acc.add(&coeffs[k].clone().mul(&iks[k], wp, N), wp, N);
+        acc = acc.add(&ExactNum::mul_ref(&coeffs[k], &iks[k], wp, N), wp, N);
     }
     if !finite(&acc) {
         return None;
@@ -2942,7 +2939,7 @@ fn anger_a_u_path(
             {
                 break;
             }
-            let mut right = left.clone().add(&h, wp, UP);
+            let mut right = ExactNum::add_ref(&left, &h, wp, UP);
             if right.abs_cmp(&u_end) != Some(-1) {
                 right = u_end.clone();
             }
@@ -3198,7 +3195,7 @@ fn anger_weber_positive(
     // 11.10.8–11 series is entire; start Ziv with the Bessel-like
     // cancellation of about |z|/ln 2 bits already in the working
     // precision so it does not climb there from work_p(p).
-    let cancel = if nuc.abs_cmp(&zc.clone().abs()) != Some(-1) {
+    let cancel = if nuc.abs_cmp(&zc) != Some(-1) {
         8i64
     } else {
         rem_bits_neg_exp(&zc).min(1 << 20)
@@ -3342,7 +3339,7 @@ mod aws_bounds {
         // Word-level value at 64 bits must match a 192-bit evaluation rounded
         // to 64 (Ziv consistency), and beat the old relative error.
         let word = struve_h_word(&z, &nu, 64, RoundingMode::ToEven, &mut cc);
-        let mut rounded = h.clone();
+        let mut rounded = h;
         let _ = rounded.set_precision(64, RoundingMode::ToEven);
         assert_eq!(
             word.compare(&rounded),
@@ -3520,7 +3517,7 @@ mod aws_bounds {
         ];
         let mut bad = Vec::new();
         for &p in &[64usize, 256] {
-            let z = crate::ext::INF_POS.clone();
+            let z = crate::ext::INF_POS;
             let zero = signed_zero(false, p);
             for &rm in &modes {
                 let want0 = finish(zero.clone(), p, rm);
@@ -3754,7 +3751,7 @@ mod aws_bounds {
             let z = one(p);
             let nu = ExactNum::from_i32(-2, p);
             let rm = RoundingMode::ToEven;
-            let want = finish(gold_m2.clone(), p, rm);
+            let want = finish(gold_m2, p, rm);
             let got = z.struve_h(&nu, p, rm, &mut cc);
             if got.compare(&want) != Some(0) {
                 bad.push(format!("H_{{-2}}(1) p={p} {rm:?} got {got} want {want}"));

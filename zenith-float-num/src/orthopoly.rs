@@ -167,7 +167,7 @@ impl ExactNum {
                 rm,
             );
         }
-        let mut prev = one.clone();
+        let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = one
             .add(alpha, wrk, RoundingMode::None)
             .sub(self, wrk, RoundingMode::None);
@@ -309,7 +309,7 @@ impl ExactNum {
                 rm,
             );
         }
-        let mut prev = one.clone();
+        let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = ExactNum::from_u8(2, wrk)
             .mul(lambda, wrk, RoundingMode::None)
             .mul(self, wrk, RoundingMode::None);
@@ -404,7 +404,7 @@ impl ExactNum {
         if n == 1 {
             return finish(p1, p, rm);
         }
-        let mut prev = one.clone();
+        let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = p1;
         for k in 1..n {
             let k1 = ExactNum::from_u32((k + 1) as u32, wrk);

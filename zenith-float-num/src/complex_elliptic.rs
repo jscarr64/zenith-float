@@ -568,7 +568,7 @@ fn seg_hits_neg_ray(start: &ExactComplex, step: &ExactComplex, p: usize) -> bool
         // parallel to the cut at a tiny Im (leave-cut ε). Those must
         // detour; a crawl of step 2^{-(dest+16)} along the cut hangs.
         let a = start.re().clone();
-        let b = start.re().clone().add(step.re(), p, rm());
+        let b = ExactNum::add_ref(start.re(), step.re(), p, rm());
         let (lo, hi) = if matches!(a.compare(&b), Some(c) if c <= 0) { (a, b) } else { (b, a) };
         // A mere touch of 0 at one endpoint (integrable 1/√t) is not a hit
         // provided the rest of the segment has Re > 0.
@@ -583,7 +583,7 @@ fn seg_hits_neg_ray(start: &ExactComplex, step: &ExactComplex, p: usize) -> bool
             return false;
         }
         let s_re = s_num.mul(step.re(), p, rm()).div(step.im(), p, rm());
-        let re = start.re().clone().add(&s_re, p, rm());
+        let re = ExactNum::add_ref(start.re(), &s_re, p, rm());
         !re.is_positive()
     }
 }
@@ -705,7 +705,7 @@ fn rj_panel_kmax(wabs: &ExactNum, rho: &ExactNum, p: usize) -> usize {
     if den.is_zero() {
         return cap;
     }
-    let r = wabs.clone().div(&den, p, rm());
+    let r = ExactNum::div_ref(wabs, &den, p, rm());
     let one = ExactNum::from_u8(1, p);
     if r.is_zero() || r.is_negative() || matches!(r.compare(&one), Some(c) if c >= 0) {
         return cap;
@@ -872,7 +872,7 @@ fn rj_u2_rho(
         .mul(&uabs, p, rm())
         .add(&rho_t.div(&labs, p, rm()), p, rm());
     let sqrt_disc = ExactComplex::from_real(disc, p).sqrt(p, rm(), cc);
-    sqrt_disc.re().clone().sub(&uabs, p, rm())
+    ExactNum::sub_ref(sqrt_disc.re(), &uabs, p, rm())
 }
 
 fn rj_u2_panel(
@@ -1240,10 +1240,10 @@ fn carlson_rj(
     } else {
         rj_line_integral(&origin, &n_end, &x, &y, &z, &pv, p, cc)
     };
-    let xs = x.clone().add(&n_end, p, rm());
-    let ys = y.clone().add(&n_end, p, rm());
-    let zs = z.clone().add(&n_end, p, rm());
-    let ps = pv.clone().add(&n_end, p, rm());
+    let xs = x.add(&n_end, p, rm());
+    let ys = y.add(&n_end, p, rm());
+    let zs = z.add(&n_end, p, rm());
+    let ps = pv.add(&n_end, p, rm());
     let rest = carlson_rj_dupe(&xs, &ys, &zs, &ps, p, cc);
     three_halves.mul(&integ, p, rm()).add(&rest, p, rm())
 }
@@ -1525,11 +1525,7 @@ impl ExactComplex {
             }
             // Finite real m>1 already returns +0 · π/(4√m) with Im of opposite
             // sign to the signed zero (lower side at +0, matching the m>1 cut).
-            let im = if self.im().is_negative() {
-                crate::INF_POS.clone()
-            } else {
-                crate::INF_NEG.clone()
-            };
+            let im = if self.im().is_negative() { crate::INF_POS } else { crate::INF_NEG };
             return ExactComplex::new(crate::complex::compact_signed_zero(false), im);
         }
         if is_c_one(self, dest) {
@@ -2046,7 +2042,10 @@ mod tests {
 
             let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
             let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
-            let m = ExactComplex::new(half.clone(), half.clone());
+            let m = ExactComplex::new(
+                ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r),
+                ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r),
+            );
             let got = n.elliptic_pi_complete(&m, p, r, &mut cc);
             check(
                 p,
@@ -2057,8 +2056,14 @@ mod tests {
             )?;
 
             let n = ExactComplex::zero(p);
-            let x = ExactComplex::from_real(half.clone(), p);
-            let m = ExactComplex::new(half.clone(), half);
+            let x = ExactComplex::from_real(
+                ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r),
+                p,
+            );
+            let m = ExactComplex::new(
+                ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r),
+                half,
+            );
             let got = n.elliptic_pi(&x, &m, p, r, &mut cc);
             check(
                 p,
@@ -2114,8 +2119,14 @@ mod tests {
             run("Pi(0;1/2|1/2+i/2)", p, &|p, cc| {
                 let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
                 let n = ExactComplex::zero(p);
-                let x = ExactComplex::from_real(half.clone(), p);
-                let m = ExactComplex::new(half.clone(), half);
+                let x = ExactComplex::from_real(
+                    ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r),
+                    p,
+                );
+                let m = ExactComplex::new(
+                    ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r),
+                    half,
+                );
                 n.elliptic_pi(&x, &m, p, r, cc)
             });
         }
@@ -2124,7 +2135,10 @@ mod tests {
             run("Pi(1+i,1/2+i/2)", p, &|p, cc| {
                 let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
                 let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
-                let m = ExactComplex::new(half.clone(), half);
+                let m = ExactComplex::new(
+                    ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r),
+                    half,
+                );
                 n.elliptic_pi_complete(&m, p, r, cc)
             });
         }
@@ -2182,7 +2196,7 @@ mod tests {
         let mut cc = Consts::new()?;
         for p in [64usize, 256, 1024] {
             let one = ExactNum::from_u8(1, p);
-            let half = one.clone().div(&ExactNum::from_u8(2, p), p, r);
+            let half = ExactNum::div_ref(&one, &ExactNum::from_u8(2, p), p, r);
             let cases: &[(&str, ExactComplex, ExactComplex)] = &[
                 (
                     "Pi(-2,1/2)",
@@ -2191,17 +2205,17 @@ mod tests {
                 ),
                 (
                     "Pi(1+i,-1)",
-                    ExactComplex::new(one.clone(), one.clone()),
-                    ExactComplex::from_real(one.clone().neg(), p),
+                    ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
+                    ExactComplex::from_real(ExactNum::from_u8(1, p).neg(), p),
                 ),
                 (
                     "Pi(1+i,0)",
-                    ExactComplex::new(one.clone(), one.clone()),
+                    ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
                     ExactComplex::zero(p),
                 ),
                 (
                     "Pi(1+i,1/2+i/2)",
-                    ExactComplex::new(one.clone(), one.clone()),
+                    ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
                     ExactComplex::new(half.clone(), half.clone()),
                 ),
             ];
@@ -2241,16 +2255,16 @@ mod tests {
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
         let four = ExactNum::from_u8(4, p);
-        let half = one.clone().div(&two, p, r);
-        let qtr = one.clone().div(&four, p, r);
+        let half = ExactNum::div_ref(&one, &two, p, r);
+        let qtr = ExactNum::div_ref(&one, &four, p, r);
         let centers: [(ExactComplex, ExactComplex, &str); 2] = [
             (
-                ExactComplex::new(one.clone(), one.clone()),
-                ExactComplex::from_real(one.clone().neg(), p),
+                ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
+                ExactComplex::from_real(ExactNum::from_u8(1, p).neg(), p),
                 "Pi(1+i,-1)",
             ),
             (
-                ExactComplex::new(one.clone(), one.clone()),
+                ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
                 ExactComplex::new(half.clone(), half.clone()),
                 "Pi(1+i,1/2+i/2)",
             ),
@@ -2271,12 +2285,12 @@ mod tests {
                         ExactNum::add_ref(n0.re(), dre, p, r),
                         ExactNum::add_ref(n0.im(), dim, p, r),
                     );
-                    let m = m0.clone();
-                    if !pi_complete_agm_applicable(&n, &m, p) {
+                    let m = m0;
+                    if !pi_complete_agm_applicable(&n, m, p) {
                         continue;
                     }
-                    let agm = pi_complete_agm(&n, &m, p, p, &mut cc);
-                    let rj = pi_complete_via_rf_rj(&n, &m, p, p, &mut cc, false);
+                    let agm = pi_complete_agm(&n, m, p, p, &mut cc);
+                    let rj = pi_complete_via_rf_rj(&n, m, p, p, &mut cc, false);
                     assert!(
                         !agm.is_nan()
                             && !rj.is_nan()
@@ -2291,16 +2305,16 @@ mod tests {
             }
             for dre in &offs {
                 for dim in &offs {
-                    let n = n0.clone();
+                    let n = n0;
                     let m = ExactComplex::new(
                         ExactNum::add_ref(m0.re(), dre, p, r),
                         ExactNum::add_ref(m0.im(), dim, p, r),
                     );
-                    if !pi_complete_agm_applicable(&n, &m, p) {
+                    if !pi_complete_agm_applicable(n, &m, p) {
                         continue;
                     }
-                    let agm = pi_complete_agm(&n, &m, p, p, &mut cc);
-                    let rj = pi_complete_via_rf_rj(&n, &m, p, p, &mut cc, false);
+                    let agm = pi_complete_agm(n, &m, p, p, &mut cc);
+                    let rj = pi_complete_via_rf_rj(n, &m, p, p, &mut cc, false);
                     assert!(
                         !agm.is_nan()
                             && !rj.is_nan()
@@ -2326,8 +2340,8 @@ mod tests {
         let mut cc = Consts::new()?;
         let p = 8192usize;
         let one = ExactNum::from_u8(1, p);
-        let n = ExactComplex::new(one.clone(), one.clone());
-        let m1 = ExactComplex::from_real(one.clone().neg(), p);
+        let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+        let m1 = ExactComplex::from_real(ExactNum::from_u8(1, p).neg(), p);
         let half = one.div(&ExactNum::from_u8(2, p), p, r);
         let m2 = ExactComplex::new(half.clone(), half);
         for (lab, m) in [("Pi(1+i,-1)", &m1), ("Pi(1+i,1/2+i/2)", &m2)] {
@@ -2556,7 +2570,7 @@ mod tests {
         let r = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
         for p in [64usize, 8192] {
-            let n = ExactComplex::from_real(INF_POS.clone(), p);
+            let n = ExactComplex::from_real(INF_POS, p);
             let m_half = ExactComplex::new(
                 ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None),
                 ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None),
@@ -2717,8 +2731,8 @@ mod tests {
                 );
                 // n=+∞ and n=−∞ at m=1 stay 0 (existing |n|→∞ path)
                 for (ninf, lab) in [
-                    (ExactComplex::from_real(INF_POS.clone(), p), "+∞"),
-                    (ExactComplex::from_real(INF_NEG.clone(), p), "−∞"),
+                    (ExactComplex::from_real(INF_POS, p), "+∞"),
+                    (ExactComplex::from_real(INF_NEG, p), "−∞"),
                 ] {
                     let got = ninf.elliptic_pi_complete(&m1, p, rm, &mut cc);
                     assert!(!got.is_nan(), "Π({lab}, 1) p={p} {rm:?} is NaN");
@@ -2858,8 +2872,7 @@ mod tests {
             let z0 = ExactComplex::zero(p);
             let one = ExactComplex::from_real(ExactNum::from_u8(1, p), p);
             for rm in modes {
-                let epos =
-                    ExactComplex::from_real(INF_POS.clone(), p).elliptic_e_complete(p, rm, &mut cc);
+                let epos = ExactComplex::from_real(INF_POS, p).elliptic_e_complete(p, rm, &mut cc);
                 assert!(
                     !epos.is_nan()
                         && epos.re().is_zero()
@@ -2868,9 +2881,8 @@ mod tests {
                     "E(+∞+0i) p={p} {rm:?} {:?}",
                     epos
                 );
-                let epos_m =
-                    ExactComplex::new(INF_POS.clone(), crate::complex::compact_signed_zero(true))
-                        .elliptic_e_complete(p, rm, &mut cc);
+                let epos_m = ExactComplex::new(INF_POS, crate::complex::compact_signed_zero(true))
+                    .elliptic_e_complete(p, rm, &mut cc);
                 assert!(
                     !epos_m.is_nan()
                         && epos_m.re().is_zero()
@@ -2879,8 +2891,7 @@ mod tests {
                     "E(+∞-0i) p={p} {rm:?} {:?}",
                     epos_m
                 );
-                let eneg =
-                    ExactComplex::from_real(INF_NEG.clone(), p).elliptic_e_complete(p, rm, &mut cc);
+                let eneg = ExactComplex::from_real(INF_NEG, p).elliptic_e_complete(p, rm, &mut cc);
                 assert!(
                     !eneg.is_nan() && eneg.re().is_inf_pos() && eneg.im().is_zero(),
                     "E(−∞) p={p} {rm:?} {:?}",
@@ -2933,8 +2944,7 @@ mod tests {
                     }
                 }
                 // W4: E(∞, 1) stays +∞+0i
-                let ew4 =
-                    ExactComplex::from_real(INF_POS.clone(), p).elliptic_e(&one, p, rm, &mut cc);
+                let ew4 = ExactComplex::from_real(INF_POS, p).elliptic_e(&one, p, rm, &mut cc);
                 assert!(
                     !ew4.is_nan() && ew4.re().is_inf_pos() && ew4.im().is_zero(),
                     "E(+∞, 1) p={p} {rm:?} should stay +∞+0i, got {:?}",

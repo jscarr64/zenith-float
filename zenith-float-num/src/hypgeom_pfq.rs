@@ -162,11 +162,7 @@ fn bsplit(
             } else {
                 b1.mul(&c2, p, RoundingMode::None)
             };
-            t.add(
-                &a1.clone().mul(&b2, p, RoundingMode::None),
-                p,
-                RoundingMode::None,
-            )
+            t.add(&a1.mul(&b2, p, RoundingMode::None), p, RoundingMode::None)
         };
         let a_out = a1.mul(&a2, p, RoundingMode::None);
         let c_out = c1.mul(&c2, p, RoundingMode::None);

@@ -607,7 +607,7 @@ where
     if !finite(&root) || root.is_zero() || root.is_negative() {
         return Ok(false);
     }
-    let h_req = h0.clone().mul(&root, wrk, RoundingMode::None);
+    let h_req = ExactNum::mul_ref(h0, &root, wrk, RoundingMode::None);
     if !finite(&h_req) || h_req.is_zero() || h_req.is_negative() {
         return Ok(false);
     }
@@ -937,7 +937,7 @@ where
     while t.compare(t1) == Some(-1) {
         let remain = ExactNum::sub_ref(t1, &t, wrk, rm);
         if h.compare(&remain) == Some(1) {
-            h = remain.clone();
+            h = remain;
         }
         if !finite(&h) || h.is_zero() || h.is_negative() || h.compare(&hmin) == Some(-1) {
             return Err(OdeError::ToleranceUnreachable);
@@ -1227,24 +1227,24 @@ mod tests {
         let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
-        let t1 = one.clone().ldexp(400, p, RoundingMode::None);
+        let t1 = ExactNum::from_u8(1, p).ldexp(400, p, RoundingMode::None);
         let lam = ExactNum::from_u32(256, p);
-        let atol = one.clone().ldexp(-16, p, RoundingMode::None);
+        let atol = ExactNum::from_u8(1, p).ldexp(-16, p, RoundingMode::None);
         let rtol = ExactNum::new(p); // zero: scale stays at atol
         let wrk = super::work_p(p);
         let tab = super::Dp45::new(wrk, RoundingMode::None);
         let span = ExactNum::sub_ref(&t1, &zero, wrk, RoundingMode::None);
         let h0 = span.clone().ldexp(-4, wrk, RoundingMode::None);
-        let mut y0 = zero.clone();
+        let mut y0 = ExactNum::new(p);
         let _ = y0.set_precision(wrk, RoundingMode::None);
-        let mut t0 = zero.clone();
+        let mut t0 = ExactNum::new(p);
         let _ = t0.set_precision(wrk, RoundingMode::None);
         let mut lam_w = lam.clone();
         let _ = lam_w.set_precision(wrk, RoundingMode::None);
         let mut pulse =
             |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
                 let nt = ExactNum::mul_ref(&lam_w, tt, q, r).neg();
-                lam_w.clone().mul(&nt.exp(q, r, c), q, r)
+                ExactNum::mul_ref(&lam_w, &nt.exp(q, r, c), q, r)
             };
         let decided = super::a_priori_trajectory_unrepresentable(
             &tab, &mut pulse, &t0, &y0, &h0, &span, &atol, &rtol, wrk, &mut cc,
@@ -1261,7 +1261,7 @@ mod tests {
             |tt, _y, q, r, c| {
                 evals += 1;
                 let nt = ExactNum::mul_ref(&lam, tt, q, r).neg();
-                lam.clone().mul(&nt.exp(q, r, c), q, r)
+                ExactNum::mul_ref(&lam, &nt.exp(q, r, c), q, r)
             },
             &zero,
             &zero,
@@ -1286,7 +1286,7 @@ mod tests {
         assert_eq!(tend.compare(&t1), Some(0), "must land on t1; evals={evals}");
         // Exact y(t) = 1 - exp(-λ t) → 1 at t = 2^{400}.
         let err = ExactNum::sub_ref(yend, &one, p, rm).abs();
-        let band = one.clone().ldexp(-12, p, RoundingMode::None);
+        let band = one.ldexp(-12, p, RoundingMode::None);
         assert!(
             err.is_zero() || err.compare(&band) != Some(1),
             "y(t1) must be 1 within a generous multiple of atol; evals={evals}"
@@ -1337,7 +1337,7 @@ mod tests {
         let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(tend.compare(&one), Some(0));
-        let expect = one.clone().add(&one.sin(p, rm, &mut cc), p, rm);
+        let expect = ExactNum::add_ref(&one, &one.sin(p, rm, &mut cc), p, rm);
         let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
         // The accepted local scale is atol + rtol |y| ≈ 2^{-47}. Allow a
         // generous global multiple of that scale, still far below 2^{-40}.
@@ -1389,7 +1389,7 @@ mod tests {
         let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
-        let tol = one.clone().ldexp(tol_exp, p, RoundingMode::None);
+        let tol = ExactNum::from_u8(1, p).ldexp(tol_exp, p, RoundingMode::None);
         let t0 = std::time::Instant::now();
         let mut evals = 0u32;
         let got = rk45_adaptive(
@@ -1418,7 +1418,7 @@ mod tests {
             Some(0),
             "{label} must land on t=1; {ms} ms"
         );
-        let expect = one.clone().add(&one.sin(p, rm, &mut cc), p, rm);
+        let expect = ExactNum::add_ref(&one, &one.sin(p, rm, &mut cc), p, rm);
         let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
         let bits = if err.is_zero() {
             10_000
@@ -1510,7 +1510,7 @@ mod tests {
         let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
-        let tol = one.clone().ldexp(-16, p, RoundingMode::None);
+        let tol = ExactNum::from_u8(1, p).ldexp(-16, p, RoundingMode::None);
         let mut evals = 0u32;
         let got = rk45_adaptive(
             |_t, _y, _q, _r, _cc| {
@@ -1541,7 +1541,7 @@ mod tests {
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
-        let tol = one.clone().ldexp(-16, p, RoundingMode::None);
+        let tol = ExactNum::from_u8(1, p).ldexp(-16, p, RoundingMode::None);
         let mut evals = 0u32;
         let got = rk45_adaptive(
             |_t, _y, _q, _r, _cc| {
@@ -1576,7 +1576,7 @@ mod tests {
         let wrk = super::work_p(p);
         // wrk_supports_tol requires scale > 2^{-(wrk-8)}. Use 2^{-(wrk-9)}.
         let exp = -i64::try_from(wrk.saturating_sub(9)).must("i64::try_from")?;
-        let atol = one.clone().ldexp(exp, p, RoundingMode::None);
+        let atol = ExactNum::from_u8(1, p).ldexp(exp, p, RoundingMode::None);
         assert!(
             super::wrk_supports_tol(&atol, &ExactNum::new(p), &one, wrk),
             "this atol must sit just inside the wrk floor"
@@ -1605,9 +1605,9 @@ mod tests {
         let yend = ys.get(ys.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         let tend = ts.get(ts.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(tend.compare(&one), Some(0));
-        let expect = one.clone().add(&one.sin(p, rm, &mut cc), p, rm);
+        let expect = ExactNum::add_ref(&one, &one.sin(p, rm, &mut cc), p, rm);
         let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
-        let band = one.clone().ldexp(-20, p, RoundingMode::None);
+        let band = one.ldexp(-20, p, RoundingMode::None);
         assert!(
             err.is_zero() || err.compare(&band) != Some(1),
             "y(1) vs 1+sin(1) at the wrk floor; {ms} ms"
@@ -1633,7 +1633,7 @@ mod tests {
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
         let lam = ExactNum::from_u32(40, p);
-        let atol = one.clone().ldexp(-24, p, RoundingMode::None);
+        let atol = ExactNum::from_u8(1, p).ldexp(-24, p, RoundingMode::None);
         let mut evals = 0u32;
         let wall = std::time::Instant::now();
         let got = rk45_adaptive(
@@ -1664,7 +1664,7 @@ mod tests {
         assert_eq!(tend.compare(&one), Some(0));
         let expect = lam.neg().exp(p, rm, &mut cc);
         let err = ExactNum::sub_ref(yend, &expect, p, rm).abs();
-        let band = one.clone().ldexp(-16, p, RoundingMode::None);
+        let band = one.ldexp(-16, p, RoundingMode::None);
         assert!(
             err.is_zero() || err.compare(&band) != Some(1),
             "y(1) vs e^{{-40}}; evals={evals} in {ms} ms"
@@ -1694,12 +1694,12 @@ mod tests {
             let mut cc = Consts::new()?;
             let zero = ExactNum::new(wrk);
             let one = ExactNum::from_u8(1, wrk);
-            let atol = one.clone().ldexp(atol_exp, wrk, rm);
+            let atol = ExactNum::from_u8(1, wrk).ldexp(atol_exp, wrk, rm);
             let rtol = ExactNum::new(wrk);
             let tab = super::Dp45::new(wrk, rm);
-            let h = one.clone().div(&ExactNum::from_u32(n_dp, wrk), wrk, rm);
-            let mut t = zero.clone();
-            let mut y = one.clone();
+            let h = ExactNum::div_ref(&one, &ExactNum::from_u32(n_dp, wrk), wrk, rm);
+            let mut t = ExactNum::new(wrk);
+            let mut y = ExactNum::from_u8(1, wrk);
             let wall = std::time::Instant::now();
             let mut evals = 0u32;
             for i in 0..n_dp {

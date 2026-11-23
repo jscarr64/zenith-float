@@ -744,7 +744,7 @@ impl ExactComplex {
             let two_e = e.clone().ldexp(1, pw, n);
             let e2 = e.sqr(pw, n);
             let den = ExactNum::from_u8(1, pw)
-                .add(&c2y.clone().mul(&two_e, pw, n), pw, n)
+                .add(&ExactNum::mul_ref(&c2y, &two_e, pw, n), pw, n)
                 .add(&e2, pw, n);
             let delta = c2y.add(&e, pw, n).mul(&two_e, pw, n).div(&den, pw, n);
             // When delta is below the pw grid around 1, keep only its sign: 1 - sgn·2^-(pw+4)
@@ -1888,7 +1888,7 @@ impl ExactComplex {
             .scale2(-1)?
             .mul(&RB::exact(ExactNum::from_i32(m, p)), p)?;
         let ra = if r_is_one {
-            RB::exact(one.clone())
+            RB::exact(ExactNum::from_u8(1, p))
         } else {
             RB::exact(r.clone())
                 .ln(p, cc)?
@@ -2133,11 +2133,7 @@ impl ExactComplex {
             let re = signed(self.re.is_negative(), &mut |m| {
                 cc.pi(p, m).ldexp(-1, p, RoundingMode::None)
             });
-            let im = if self.im.is_negative() {
-                crate::ext::INF_NEG.clone()
-            } else {
-                crate::ext::INF_POS.clone()
-            };
+            let im = if self.im.is_negative() { crate::ext::INF_NEG } else { crate::ext::INF_POS };
             return Self::new(re, im);
         }
         let below = self.asin_below_cut();
