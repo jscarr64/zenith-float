@@ -166,7 +166,7 @@ fn isqrt(n: &ExactInt) -> ExactInt {
     while hi.sub(&lo).soft_cmp(&one) == Ordering::Greater {
         let mid = lo.add(&hi).shr_towards_zero(1);
         if mid.is_zero() {
-            lo = one.clone();
+            lo = ExactInt::one();
             continue;
         }
         let sq = mid.mul(&mid);
@@ -207,7 +207,7 @@ fn nth_root(n: &ExactInt, k: u32) -> ExactInt {
     while hi.sub(&lo).soft_cmp(&one) == Ordering::Greater {
         let mid = lo.add(&hi).shr_towards_zero(1);
         if mid.is_zero() {
-            lo = one.clone();
+            lo = ExactInt::one();
             continue;
         }
         let pow = mid.pow(k as u64);

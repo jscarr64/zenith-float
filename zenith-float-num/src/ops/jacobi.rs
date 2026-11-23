@@ -555,7 +555,7 @@ fn jacobi_agm(
     let mut b = om.sqrt(p, RoundingMode::None)?;
     let mut aa = Vec::new();
     let mut cc_seq = Vec::new();
-    aa.push(one.clone()?);
+    aa.push(ExactNumNumber::from_word(1, p)?);
     cc_seq.push(m.sqrt(p, RoundingMode::None)?);
     let mut n = 0u32;
     loop {

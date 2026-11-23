@@ -1322,9 +1322,8 @@ fn pi_complete_agm(
     _dest: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let one = ExactComplex::one(p);
     let two = c_u32(2, p);
-    let mut a = one.clone();
+    let mut a = ExactComplex::one(p);
     let om = one_minus(m, p);
     let on = one_minus(n, p);
     if is_c_zero(&on) {
@@ -1335,7 +1334,7 @@ fn pi_complete_agm(
     if is_c_zero(&pn) || g.is_nan() || pn.is_nan() {
         return nan_pair(Error::InvalidArgument);
     }
-    let mut q = one.clone();
+    let mut q = ExactComplex::one(p);
     let mut qsum = q.clone();
     let thresh = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) + 32), p, rm());
     // Quadratic AGM: about log2(p) iterations.

@@ -1099,7 +1099,6 @@ impl ExactNumNumber {
             .mantissa_max_bit_len()
             .saturating_add(WORD_BIT_SIZE * 4);
         let b = Self::from_usize(base as usize)?;
-        let one = Self::from_usize(1)?;
         let lb = b.log2(q_log, RoundingMode::None, cc)?;
         let lx = x.log2(q_log, RoundingMode::None, cc)?;
         let lxb = lx.div(&lb, q_log, RoundingMode::Down)?;
@@ -1149,7 +1148,11 @@ impl ExactNumNumber {
             )?;
             let y = Self::from_scaled_limbs(&sy.a, sy.exp_a, sy.err_ulps.is_some())?;
             let bn = b.powi(n, p_wrk, RoundingMode::None)?;
-            let bn1 = if n == 0 { one.clone()? } else { b.powi(n - 1, p_wrk, RoundingMode::None)? };
+            let bn1 = if n == 0 {
+                Self::from_usize(1)?
+            } else {
+                b.powi(n - 1, p_wrk, RoundingMode::None)?
+            };
             // e is floor(log_b |x|)+1; it can be off by one. A wrong scale
             // exponent must not loop forever: after a few adjustments, grow
             // the working precision instead (get_str.c increments g similarly).

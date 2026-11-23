@@ -4351,7 +4351,7 @@ impl ExactNumNumber {
         }
         if n == 0 {
             let one = Self::from_word(1, WORD_BIT_SIZE)?;
-            return Ok(Some((one.clone()?, one)));
+            return Ok(Some((Self::from_word(1, WORD_BIT_SIZE)?, one)));
         }
         // The stored inputs are exact values; their inexact flags are ORed in by the caller.
         let exact = |x: &Self| -> Result<Self, Error> {
@@ -4431,7 +4431,10 @@ impl ExactNumNumber {
                 }
                 let n0 = sub(&ec, m_src)?;
                 let d0 = sub(&n0, other)?;
-                let (mut num, mut den) = (one.clone()?, one.clone()?);
+                let (mut num, mut den) = (
+                    Self::from_word(1, WORD_BIT_SIZE)?,
+                    Self::from_word(1, WORD_BIT_SIZE)?,
+                );
                 for k in 0..m {
                     let kw = Self::from_word(k as Word, WORD_BIT_SIZE)?;
                     num = exact_mul_num(&num, &exact_add_num(&n0, &kw)?)?;
@@ -4490,7 +4493,10 @@ impl ExactNumNumber {
             }
         }
         let (num, q) = if n == 0 {
-            (one.clone()?, one.clone()?)
+            (
+                Self::from_word(1, WORD_BIT_SIZE)?,
+                Self::from_word(1, WORD_BIT_SIZE)?,
+            )
         } else {
             let Some(r) = ca.hyp2f1_terminating_ratio(&cb, &ec, &ez)? else {
                 return Ok(None);
@@ -4499,7 +4505,7 @@ impl ExactNumNumber {
         };
         let d = sub(&sub(&ec, &ea)?, &eb)?;
         let pw = if d.is_zero() {
-            one.clone()?
+            Self::from_word(1, WORD_BIT_SIZE)?
         } else {
             let d_up = if d.exponent() <= 0 {
                 1
@@ -4691,8 +4697,8 @@ impl ExactNumNumber {
                 .mantissa_max_bit_len()
                 .saturating_mul(alpha_up)
                 .saturating_add(WORD_BIT_SIZE);
-            let mut pk = one.clone()?;
-            let mut wk = one.clone()?;
+            let mut pk = Self::from_word(1, WORD_BIT_SIZE)?;
+            let mut wk = Self::from_word(1, WORD_BIT_SIZE)?;
             for k in (1..n).rev() {
                 let kw = Self::from_word(k as Word, WORD_BIT_SIZE)?;
                 pk = exact_mul_num(&pk, &kw)?;
@@ -4819,7 +4825,7 @@ fn betainc_cf(
     };
     let apb = a.add(b, p, RoundingMode::None)?;
     let ap1 = a.add(&one, p, RoundingMode::None)?;
-    let mut c = one.clone()?;
+    let mut c = ExactNumNumber::from_word(1, p)?;
     let mut d = floor_tiny(
         one.sub(
             &apb.mul(x, p, RoundingMode::None)?
@@ -4859,7 +4865,7 @@ fn betainc_cf(
                 RoundingMode::None,
             )?
             .neg()?;
-        let mut delta = one.clone()?;
+        let mut delta = ExactNumNumber::from_word(1, p)?;
         for coef in [even, odd] {
             d = floor_tiny(one.add(
                 &coef.mul(&d, p, RoundingMode::None)?,
@@ -5412,7 +5418,7 @@ fn hyp2f1_log_case(
     let mut s1 = ExactNumNumber::new2(p, Sign::Pos, false)?;
     let mut l1 = 0;
     if m > 0 {
-        let mut t = one.clone()?;
+        let mut t = ExactNumNumber::from_word(1, p)?;
         let mut mag = Exponent::MIN;
         for n in 0..m {
             s1 = s1.add(&t, p, RoundingMode::None)?;
@@ -6454,7 +6460,7 @@ fn bessel_ji_scaled(
             if lam.exponent() > 62 {
                 // |Λ| ≥ 2^62: certainly outside the range whatever g is.
                 let n = if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 };
-                (one.clone()?, n, false)
+                (N::from_word(1, WORD_BIT_SIZE)?, n, false)
             } else {
                 let fl = lam.floor_ref()?;
                 let fr = lam.sub(&fl, q, RoundingMode::None)?;
@@ -6482,7 +6488,7 @@ fn bessel_ji_scaled(
         // S and its relative error 2^s_err: S = 1 while the whole correction (< 2^(lr+1)) is
         // below the working precision, else the series.
         let (s, s_err) = if lr <= -(w as i128) - 16 {
-            (one.clone()?, lr + 1)
+            (N::from_word(1, WORD_BIT_SIZE)?, lr + 1)
         } else {
             let ws = w + WORD_BIT_SIZE;
             let half = m.div(&two, ws, RoundingMode::None)?;
@@ -6611,7 +6617,7 @@ fn bessel_yk_scaled(
         // |1 - μ|; μ ≥ 1 integer: μ - 1.
         if a.cmp(&one) <= 0 {
             // μ = 1: relative next term is O(x^2 log x), still ~ 2^(2 ex).
-            one.clone()?
+            N::from_word(1, WORD_BIT_SIZE)?
         } else {
             a.sub(&one, pa, RoundingMode::None)?
         }
@@ -6709,7 +6715,7 @@ fn bessel_yk_scaled(
             };
             if lam.exponent() > 62 {
                 let n = if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 };
-                (one.clone()?, n, false)
+                (N::from_word(1, WORD_BIT_SIZE)?, n, false)
             } else {
                 let fl = lam.floor_ref()?;
                 let fr = lam.sub(&fl, q, RoundingMode::None)?;
@@ -6755,14 +6761,14 @@ fn bessel_yk_scaled(
         // opposite-power term (x/2)^{2μ}) sits below the working precision.
         let opp_maybe = !int && a.exponent() <= 16;
         let (s, s_err) = if lr <= -(w as i128) - 16 && !opp_maybe {
-            (one.clone()?, lr + 1)
+            (N::from_word(1, WORD_BIT_SIZE)?, lr + 1)
         } else if int && a.cmp(&one) <= 0 {
             // μ = 1: K_1 has S = 1 + (x^2/2)(ln(x/2) + γ − 1/2); Y_1 has S = 1 − that
             // (the log term increases |Y_1|). Remainder O(x^4 ln x).
             let ws = w + WORD_BIT_SIZE;
             let e_m1 = ex as i128 - 1;
             if e_m1.unsigned_abs() > Word::MAX as u128 {
-                (one.clone()?, lr + 1)
+                (N::from_word(1, WORD_BIT_SIZE)?, lr + 1)
             } else {
                 let ln2 = cc.ln_2_num(ws, RoundingMode::None)?;
                 let lm = m.ln(ws, RoundingMode::None, cc)?;
@@ -7092,7 +7098,7 @@ pub(crate) fn even_bernoulli(n: usize, p: usize) -> Result<Vec<ExactNumNumber>, 
     let mut out = Vec::with_capacity(n);
     for (k, tk) in t.iter().enumerate().skip(1) {
         let num = tk.mul(&word(2 * k)?, pi, exact)?;
-        let mut four_k = one.clone()?;
+        let mut four_k = word(1)?;
         four_k.set_exponent(four_k.exponent() + 2 * k as Exponent);
         let den = four_k.sub(&one, pi, exact)?;
         let mut b = num.div(&den, p, RoundingMode::ToEven)?;
@@ -7192,7 +7198,7 @@ fn zeta_inv_euler_product(s: usize, wp: usize) -> Result<ExactNumNumber, Error> 
     let pmax = euler_product_limit(s, wp)?;
     let primes = primes_upto(pmax);
     let one = ExactNumNumber::from_word(1, wp)?;
-    let mut inv = one.clone()?;
+    let mut inv = ExactNumNumber::from_word(1, wp)?;
     for q in primes {
         let qn = pow_ui(&from_usize_p(q as usize, wp)?, s, wp)?;
         let term = one.sub(
@@ -7208,7 +7214,7 @@ fn zeta_inv_euler_product(s: usize, wp: usize) -> Result<ExactNumNumber, Error> 
 #[cfg(test)]
 fn zeta_ui_asymp(s: usize, wp: usize) -> Result<ExactNumNumber, Error> {
     let one = ExactNumNumber::from_word(1, wp)?;
-    let mut z = one.clone()?;
+    let mut z = ExactNumNumber::from_word(1, wp)?;
     let lim = Exponent::try_from(wp.saturating_add(8)).unwrap_or(Exponent::MAX);
     let mut j = 2usize;
     loop {
@@ -7404,7 +7410,7 @@ fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<Exact
                 }
             }
             let mut b = if use_euler {
-                let mut inv = one.clone()?;
+                let mut inv = ExactNumNumber::from_word(1, wp)?;
                 for t in &terms {
                     if t.is_zero() || t.exponent() < -tiny {
                         continue;
@@ -7414,7 +7420,7 @@ fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<Exact
                 }
                 f.div(&inv, wp, RoundingMode::None)?
             } else {
-                let mut z = one.clone()?;
+                let mut z = ExactNumNumber::from_word(1, wp)?;
                 for t in &terms {
                     if t.is_zero() || t.exponent() < -tiny {
                         continue;
@@ -9858,7 +9864,7 @@ mod tests {
 
         // ν = -1 + 2^{-300}: 256-bit rounding of ν+1 is 0, a pole of Γ.
         let eps = pow2(-300, 384)?;
-        let mut nu_pole = one.clone()?;
+        let mut nu_pole = ExactNumNumber::from_word(1, p64)?;
         nu_pole.set_precision(384, RoundingMode::None)?;
         nu_pole = eps.sub(&nu_pole, 384, RoundingMode::None)?; // 2^{-300} - 1
 

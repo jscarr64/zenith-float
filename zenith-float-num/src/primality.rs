@@ -175,12 +175,11 @@ pub(crate) fn lucas_uv(
     if k.is_zero() {
         return Some((ExactInt::zero(), ExactInt::from_u64(2), ExactInt::one()));
     }
-    let one = ExactInt::one();
     let two = two();
     let inv2 = mod_inv(&two, n)?;
     // Start at k's highest bit: U=1, V=P, Qk=Q after processing the MSB (which is 1).
     let bits = k.bit_length();
-    let mut u = one.clone();
+    let mut u = ExactInt::one();
     let mut v = rem_nonneg(p, n)?;
     let mut qk = rem_nonneg(q, n)?;
     let dm = rem_nonneg(d, n)?;

@@ -706,7 +706,7 @@ fn pfq_jet(
         let mut bnd = ax.clone();
         for (a, c) in hn {
             let al = up64(a).add(&crho(*c), 64, up);
-            let al = if lt(&al, &one64) { one64.clone() } else { al };
+            let al = if lt(&al, &one64) { ExactNum::from_u8(1, 64) } else { al };
             bnd = bnd.mul(&ExactNum::add_ref(&kk, &al, 64, up), 64, up);
         }
         let mut d = ExactNum::from_u64(k_bound, 64);

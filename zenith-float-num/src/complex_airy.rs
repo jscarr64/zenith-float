@@ -245,7 +245,7 @@ impl ExactComplex {
             .mul(self, p, RoundingMode::None)
             .mul(self, p, RoundingMode::None);
         let one = ExactComplex::one(p);
-        let mut tf = one.clone();
+        let mut tf = ExactComplex::one(p);
         let mut f = one;
         let mut tg = self.clone();
         let mut g = self.clone();
@@ -342,7 +342,7 @@ impl ExactComplex {
 
     fn airy_u_sum(&self, xi: &ExactComplex, p: usize, alt: bool) -> ExactComplex {
         let one = ExactComplex::one(p);
-        let mut u = one.clone();
+        let mut u = ExactComplex::one(p);
         let mut sum = one;
         let mut prev_abs = ExactNum::from_u8(1, p);
         let mut xi_pow = xi.clone();

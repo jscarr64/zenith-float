@@ -223,9 +223,8 @@ fn rising2_ui_rs(x: &ExactComplex, n: usize, p: usize) -> (ExactComplex, ExactCo
     }
     let m = rs_block_len(n, p);
     let wp = round_p(p.saturating_add((usize::BITS - n.leading_zeros()) as usize));
-    let one_w = ExactComplex::one(wp);
     let mut xpow: Vec<ExactComplex> = Vec::with_capacity(m + 1);
-    xpow.push(one_w.clone());
+    xpow.push(ExactComplex::one(wp));
     let xc = ExactComplex::new(x.re().clone(), x.im().clone());
     // Re-widen x to wp.
     let xw = ExactComplex::new(xc.re().clone(), xc.im().clone());
@@ -3103,7 +3102,6 @@ mod tests {
         for p in [64usize, 256, 2048] {
             let nan_plus_i = ExactComplex::new(crate::NAN, ExactNum::from_u8(1, p));
             let i_times_nan = ExactComplex::new(ExactNum::from_u8(1, p), crate::NAN);
-            let nan_plus_nan = ExactComplex::new(crate::NAN, crate::NAN);
             let typed = ExactComplex::new(
                 ExactNum::nan(Some(Error::InvalidArgument)),
                 ExactNum::from_u8(1, p),
@@ -3112,7 +3110,10 @@ mod tests {
                 for (lab, z) in [
                     ("nan+i typeless", nan_plus_i.clone()),
                     ("i*nan typeless", i_times_nan.clone()),
-                    ("nan+nan typeless", nan_plus_nan.clone()),
+                    (
+                        "nan+nan typeless",
+                        ExactComplex::new(crate::NAN, crate::NAN),
+                    ),
                     ("nan+i typed IA", typed.clone()),
                 ] {
                     assert_typed_ia(lab, p, rm, z.gamma(p, rm, &mut cc));
