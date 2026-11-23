@@ -1557,7 +1557,7 @@ impl ExactComplex {
         let mu2 = ub.mul(&ub, p)?.neg();
         let u_abs = ub.abs_ub();
         let two_u2 = u_abs.mul(u_abs).mul_pow2(1);
-        let mut term = ub.clone();
+        let mut term = CB::exact(u);
         let mut sum = ub;
         let mut n: usize = 1;
         loop {

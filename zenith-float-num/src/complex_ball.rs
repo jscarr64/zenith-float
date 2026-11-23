@@ -124,14 +124,14 @@ impl Mag {
 }
 
 /// Real ball: `|true − v| ≤ r`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct RB {
     pub(crate) v: ExactNum,
     pub(crate) r: Mag,
 }
 
 /// Complex ball: one real ball per part.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct CB {
     pub(crate) re: RB,
     pub(crate) im: RB,
@@ -234,9 +234,10 @@ impl RB {
         }
     }
 
-    pub(crate) fn abs(self) -> RB {
+    /// `|self|` of a borrowed ball (the value is written by `ExactNum::abs_ref`).
+    pub(crate) fn abs_ref(&self) -> RB {
         RB {
-            v: self.v.abs(),
+            v: self.v.abs_ref(),
             r: self.r,
         }
     }
@@ -245,6 +246,13 @@ impl RB {
     pub(crate) fn scale2(self, k: Exponent) -> Option<RB> {
         let pv = self.v.mantissa_max_bit_len().unwrap_or(WORD_BIT_SIZE);
         let v = self.v.ldexp(k, pv, N);
+        ball(v, self.r.mul_pow2(k))
+    }
+
+    /// [`Self::scale2`] of a borrowed ball (`ExactNum::ldexp_ref`, bit-identical).
+    pub(crate) fn scale2_ref(&self, k: Exponent) -> Option<RB> {
+        let pv = self.v.mantissa_max_bit_len().unwrap_or(WORD_BIT_SIZE);
+        let v = self.v.ldexp_ref(k, pv, N);
         ball(v, self.r.mul_pow2(k))
     }
 
@@ -550,8 +558,8 @@ impl CB {
 
     /// Principal `ln`: `ln|big| + ½ log1p((small/big)²) + i atan2(im, re)`.
     pub(crate) fn ln(&self, q: usize, cc: &mut Consts) -> Option<CB> {
-        let are = self.re.clone().abs();
-        let aim = self.im.clone().abs();
+        let are = self.re.abs_ref();
+        let aim = self.im.abs_ref();
         let re_big = match (ex(&are.v), ex(&aim.v)) {
             (Some(a), Some(b)) => a >= b,
             (Some(_), None) => true,
@@ -587,14 +595,14 @@ impl CB {
             return None; // the ball may straddle the cut
         }
         let a = x.hypot(y, q)?;
-        let ax = x.clone().abs();
+        let ax = x.abs_ref();
         let h = a.add(&ax, q)?.scale2(-1)?;
         let t = h.sqrt(q)?;
-        let ay = y.clone().abs();
+        let ay = y.abs_ref();
         let u = if ay.v.is_zero() && ay.r.is_zero() {
             RB::exact(ExactNum::new(WORD_BIT_SIZE))
         } else {
-            ay.div(&t.clone().scale2(1)?, q)?
+            ay.div(&t.scale2_ref(1)?, q)?
         };
         let swap = if !x.r.is_zero() && x.may_be_zero() {
             let et = t.lo_exp()?;

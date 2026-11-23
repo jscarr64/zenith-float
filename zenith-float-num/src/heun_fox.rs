@@ -366,7 +366,6 @@ struct JetW {
 
 /// Truncated Laurent series in \(\varepsilon\): `c[i]` is the coefficient of
 /// \(\varepsilon^{i+\mathrm{lo}}\).
-#[derive(Clone)]
 struct Jet {
     c: Vec<ExactNum>,
 }
@@ -506,7 +505,7 @@ impl JetW {
     /// \(\exp(s)\) for `s` with no terms below order 1.
     fn exp0(&self, s: &Jet) -> Jet {
         let mut r = self.scalar(&ExactNum::from_u8(1, self.wp));
-        let mut t = r.clone();
+        let mut t = self.scalar(&ExactNum::from_u8(1, self.wp));
         for n in 1..=self.hi.max(0) {
             let inv_n = ExactNum::from_u8(1, self.wp).div(
                 &ExactNum::from_i32(n, self.wp),
@@ -664,7 +663,7 @@ fn pfq_jet(
         .to_u64(RoundingMode::Up)
         .ok()?;
     let mut t = w.scalar(&ExactNum::from_u8(1, wp));
-    let mut sum = t.clone();
+    let mut sum = w.scalar(&ExactNum::from_u8(1, wp));
     let mut mk = ExactNum::from_u8(1, 64);
     let mut k: u64 = 0;
     loop {

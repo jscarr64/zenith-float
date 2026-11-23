@@ -29,7 +29,6 @@ const NR: RoundingMode = RoundingMode::None;
 const UP: RoundingMode = RoundingMode::Up;
 
 /// Length-2 jet `c0 + c1 x` of a function of the series variable `x`.
-#[derive(Clone)]
 struct Jet {
     c0: ExactNum,
     c1: ExactNum,
@@ -571,7 +570,7 @@ fn powsum_sieved(s: &ExactNum, a: &ExactNum, n: u64, p: usize, cc: &mut Consts) 
 
     // Stored odd powers for k <= n/3, indexed by (k-1)/2 (FLINT `POWER`).
     let n_store = n_us / 6 + 1;
-    let mut powers = vec![Jet::zero(p); n_store];
+    let mut powers: Vec<Jet> = (0..n_store).map(|_| Jet::zero(p)).collect();
     let mut z = Jet::zero(p);
     let mut u = Jet::zero(p);
 
@@ -623,13 +622,13 @@ fn powsum_sieved(s: &ExactNum, a: &ExactNum, n: u64, p: usize, cc: &mut Consts) 
             }
             term
         };
+        u = u.add(&t, p);
         if k.saturating_mul(3) <= n {
             let idx = (ku - 1) / 2;
             if idx < powers.len() {
-                powers[idx] = t.clone();
+                powers[idx] = t;
             }
         }
-        u = u.add(&t, p);
 
         while k == horner_point && power_of_two != 1 {
             #[cfg(all(test, feature = "std"))]
