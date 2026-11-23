@@ -3095,7 +3095,7 @@ mod tests {
                 "G({sign}1/2) p={p} only {bits} bits after {ms} ms"
             );
             assert!(
-                ms < 90_000,
+                crate::test_time::within_ms(ms, 90_000),
                 "G({sign}1/2) p={p} must finish under 90 s; took {ms} ms"
             );
         }

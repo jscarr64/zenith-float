@@ -748,7 +748,10 @@ mod tests {
         let y = n.to_exact_num(1 << 18, RoundingMode::ToEven);
         let ms = t0.elapsed().as_millis();
         assert!(!y.is_nan() && !y.is_zero(), "wide conversion failed");
-        assert!(ms < 200, "to_exact_num of a 2^18-bit integer took {ms} ms");
+        assert!(
+            crate::test_time::within_ms(ms, 200),
+            "to_exact_num of a 2^18-bit integer took {ms} ms"
+        );
         let slow = n.to_exact_num_accum(256, RoundingMode::ToEven);
         let fast = n.to_exact_num(256, RoundingMode::ToEven);
         assert_eq!(fast, slow);

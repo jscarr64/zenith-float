@@ -399,7 +399,7 @@ mod tests {
             let t0 = std::time::Instant::now();
             let r = chebyshev_coeffs(f, 30, a.clone(), &b, p, RoundingMode::ToEven, &mut cc);
             assert!(
-                t0.elapsed().as_secs() < 2,
+                crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(2)),
                 "chebyshev_coeffs dest {p} took {:?}",
                 t0.elapsed()
             );

@@ -55,3 +55,8 @@
   ignored rather than committed Cargo.lock (NOT A GATE: tree dirty at start), and mutate_selftest.sh ended inside the fixture dir
   (its own run log: NOT A GATE: cwd changed mid-run). The fixtures now unset POPLOG_OUTER_*, commit a generated Cargo.lock, and
   the selftest returns to its start dir before exit. Red at fcb2ec6 in a clean clone; mutate_selftest 44 cases ok, PASS footer.
+- Every remaining wall-clock bound in the library's unit tests (50 asserts in 11 files) and the five ZF-78 child-process
+  BUDGETs in tests/tier1_regressions.rs now go through `test_time::within` / `within_ms` (tier1 includes the same module by
+  `#[path]`, one implementation). Native budgets are unchanged; under qemu-aarch64 they scale by `ZF_TIME_FACTOR`. Red at
+  4c83e93 under qemu (ZF_TIME_FACTOR 6.50): Π(n,0) p=65536 2.4 s > 2 s, gamma(3/4) 63 s > 60 s, E_1001 72 s > 60 s raw
+  asserts. Green: zenith-float-num --lib 463 passed / 0 failed and tier1_regressions 114 passed / 0 failed on qemu-aarch64.

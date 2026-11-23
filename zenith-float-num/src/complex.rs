@@ -3051,7 +3051,7 @@ mod tests {
 
     fn assert_dest_oom_fast(name: &str, z: ExactComplex, start: std::time::Instant) {
         assert!(
-            start.elapsed().as_secs() < 2,
+            crate::test_time::within(start.elapsed(), std::time::Duration::from_secs(2)),
             "{name} at dest 2^59 took {:?}",
             start.elapsed()
         );

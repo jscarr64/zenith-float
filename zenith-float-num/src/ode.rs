@@ -1291,7 +1291,7 @@ mod tests {
             "the tail must grow, not crawl; evals={evals}"
         );
         assert!(
-            ms < 2_000,
+            crate::test_time::within_ms(ms, 2_000),
             "the finishable run must be quick; took {ms} ms, evals={evals}"
         );
         let _ = ts;
@@ -1602,7 +1602,10 @@ mod tests {
             err.is_zero() || err.compare(&band) != Some(1),
             "y(1) vs 1+sin(1) at the wrk floor; {ms} ms"
         );
-        assert!(ms < 5_000, "floor-tol run must be quick; took {ms} ms");
+        assert!(
+            crate::test_time::within_ms(ms, 5_000),
+            "floor-tol run must be quick; took {ms} ms"
+        );
         let _ = ts;
         Ok(())
     }
@@ -1655,7 +1658,7 @@ mod tests {
         assert!(evals > 16, "must actually integrate; evals={evals}");
         assert!(evals < 10_000, "must not crawl; evals={evals}");
         assert!(
-            ms < 2_000,
+            crate::test_time::within_ms(ms, 2_000),
             "stiff-ish run must be quick; took {ms} ms, evals={evals}"
         );
         let _ = ts;

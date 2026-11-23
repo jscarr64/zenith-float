@@ -2546,7 +2546,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let psi = z.digamma_at(p, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 5,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(5)),
             "digamma(1) at p=65536 took {:?}",
             t0.elapsed()
         );
@@ -2573,7 +2573,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let psi = z.digamma(p, RoundingMode::ToEven, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 60,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(60)),
             "digamma(1/2) at p=65536 took {:?}",
             t0.elapsed()
         );
@@ -2795,7 +2795,7 @@ mod tests {
         let tg = t0.elapsed();
         eprintln!("gamma(10i) p={p} {:?} nan={}", tg, g.is_nan());
         assert!(
-            tg < std::time::Duration::from_secs(600),
+            crate::test_time::within(tg, std::time::Duration::from_secs(600)),
             "gamma 64k over 10min"
         );
         assert!(!g.is_nan());
@@ -2807,7 +2807,7 @@ mod tests {
         let td = t1.elapsed();
         eprintln!("digamma(-i) p={p} {:?} nan={}", td, d.is_nan());
         assert!(
-            td < std::time::Duration::from_secs(600),
+            crate::test_time::within(td, std::time::Duration::from_secs(600)),
             "digamma 64k over 10min"
         );
         assert!(!d.is_nan());
@@ -2932,7 +2932,7 @@ mod tests {
             let t0 = std::time::Instant::now();
             let g = zg.gamma(p, rm, &mut cc);
             assert!(
-                t0.elapsed().as_secs() < 30,
+                crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(30)),
                 "gamma(10i) p={p} took {:?}",
                 t0.elapsed()
             );
@@ -2940,7 +2940,7 @@ mod tests {
             let t0 = std::time::Instant::now();
             let d = zd.digamma(p, rm, &mut cc);
             assert!(
-                t0.elapsed().as_secs() < 30,
+                crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(30)),
                 "digamma(-i) p={p} took {:?}",
                 t0.elapsed()
             );
@@ -2950,7 +2950,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let g = zg.gamma(p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 60,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(60)),
             "gamma(10i) p=32768 took {:?}",
             t0.elapsed()
         );
@@ -2959,7 +2959,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let d = zd.digamma(p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 60,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(60)),
             "digamma(-i) p=32768 took {:?}",
             t0.elapsed()
         );

@@ -1944,7 +1944,7 @@ mod tests {
             assert!(!y.is_nan(), "Y_1(1+i) p={p} NaN");
             assert!(cnear_bits(&y, &y64, 64, 4), "Y_1(1+i) p={p} vs p=64");
             assert!(
-                tjk < std::time::Duration::from_secs(60),
+                crate::test_time::within(tjk, std::time::Duration::from_secs(60)),
                 "Y_1(1+i) p={p} took {tjk:?}"
             );
         }
@@ -2206,7 +2206,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let j = z0.bessel_j_nu(&nm2, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "J_(-2)(0) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2218,7 +2218,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let i = z0.bessel_i(&nm2, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "I_(-2)(0) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2230,7 +2230,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let j0 = z0.bessel_j_nu(&n0, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "J_0(0) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2242,7 +2242,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let i0 = z0.bessel_i(&n0, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "I_0(0) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2254,7 +2254,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let y = z0.bessel_y(&nm2, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "Y_(-2)(0) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2266,7 +2266,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let ym = z0m.bessel_y(&nm2, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "Y_(-2)(0-0i) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2278,7 +2278,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let k = z0.bessel_k(&nm2, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "K_(-2)(0) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2290,7 +2290,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let km = z0m.bessel_k(&nm2, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "K_(-2)(0-0i) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2303,7 +2303,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let ii = zinf.bessel_i(&n0, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "I_0(+∞) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2315,7 +2315,7 @@ mod tests {
 
     fn assert_dest_oom_fast(name: &str, z: ExactComplex, start: std::time::Instant) {
         assert!(
-            start.elapsed().as_secs() < 2,
+            crate::test_time::within(start.elapsed(), std::time::Duration::from_secs(2)),
             "{name} at dest 2^59 took {:?}",
             start.elapsed()
         );
@@ -2361,7 +2361,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let j = z0.bessel_j_nu(&nmh, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "J_-1/2(0) at dest 2^59 took {:?}",
             t0.elapsed()
         );
@@ -2372,7 +2372,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let jm = z0m.bessel_j_nu(&nmh, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "J_-1/2(0-0i) took {:?}",
             t0.elapsed()
         );
@@ -2383,7 +2383,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let i = z0.bessel_i(&nmh, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "I_-1/2(0) took {:?}",
             t0.elapsed()
         );
@@ -2396,7 +2396,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let y = z0.bessel_y(&nmh, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "Y_-1/2(0) took {:?}",
             t0.elapsed()
         );
@@ -2407,7 +2407,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let ym = z0m.bessel_y(&nmh, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "Y_-1/2(0-0i) took {:?}",
             t0.elapsed()
         );
@@ -2423,7 +2423,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let k = z0.bessel_k(&ph, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "K_1/2(0) took {:?}",
             t0.elapsed()
         );
@@ -2434,7 +2434,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let km = z0m.bessel_k(&nmh, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "K_-1/2(0-0i) took {:?}",
             t0.elapsed()
         );
@@ -2447,7 +2447,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let kc = z0.bessel_k(&n1i, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "K_1+i(0) took {:?}",
             t0.elapsed()
         );
@@ -2489,7 +2489,7 @@ mod tests {
         let _ = z0.bessel_y(&nmh, p, rm, &mut cc);
         let _ = z0.bessel_k(&ph, p, rm, &mut cc);
         assert!(
-            t0.elapsed().as_secs() < 1,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
             "compact J/Y/K limits at dest 2^59 took {:?}",
             t0.elapsed()
         );

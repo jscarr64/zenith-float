@@ -3695,7 +3695,7 @@ mod aws_bounds {
             }
         }
         assert!(
-            t0.elapsed().as_secs() < 120,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(120)),
             "J_{{1/2}}/E_0(1000) p=1024 (all modes) and p=2048 ToEven took {:?} (budget 120s)",
             t0.elapsed()
         );
@@ -3846,7 +3846,7 @@ mod aws_bounds {
         let tripped = super::aws_test_hooks::u_tripped();
         super::aws_test_hooks::stop();
         assert!(
-            t0.elapsed().as_secs() < 5,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(5)),
             "u-path took {:?}; a stall must return",
             t0.elapsed()
         );
@@ -3902,12 +3902,12 @@ mod aws_bounds {
                 "E_{n}(1000) p={p} got {got} want {want}"
             );
             assert!(
-                dt.as_secs() < 60,
+                crate::test_time::within(dt, std::time::Duration::from_secs(60)),
                 "E_{n}(1000) p={p} took {dt:?}; must stay under the 120 s case wall"
             );
         }
         assert!(
-            t_all.elapsed().as_secs() < 120,
+            crate::test_time::within(t_all.elapsed(), std::time::Duration::from_secs(120)),
             "E_100/E_1001(1000) high-p checks took {:?}",
             t_all.elapsed()
         );
@@ -3941,7 +3941,7 @@ mod aws_bounds {
         }
         let dt = t0.elapsed();
         assert!(
-            dt.as_secs() < 2,
+            crate::test_time::within(dt, std::time::Duration::from_secs(2)),
             "p=2^59 / MAX closed forms took {dt:?}; must refuse before Consts::pi"
         );
         Ok(())

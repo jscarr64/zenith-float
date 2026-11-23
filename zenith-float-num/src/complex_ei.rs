@@ -743,7 +743,7 @@ mod tests {
             let t0 = std::time::Instant::now();
             let s = z.fresnel_s(p, rm, &mut cc);
             assert!(
-                t0.elapsed().as_secs() < 1,
+                crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
                 "fresnel_s at dest 2^59 took {:?}",
                 t0.elapsed()
             );
@@ -761,7 +761,7 @@ mod tests {
             let t0 = std::time::Instant::now();
             let c = z.fresnel_c(p, rm, &mut cc);
             assert!(
-                t0.elapsed().as_secs() < 1,
+                crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
                 "fresnel_c at dest 2^59 took {:?}",
                 t0.elapsed()
             );
@@ -779,7 +779,7 @@ mod tests {
             let t0 = std::time::Instant::now();
             let si = z.si(p, rm, &mut cc);
             assert!(
-                t0.elapsed().as_secs() < 1,
+                crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
                 "si at dest 2^59 took {:?}",
                 t0.elapsed()
             );

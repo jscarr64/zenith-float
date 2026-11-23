@@ -11,6 +11,11 @@
 //! Every test here fails on 5227f77 (the Tier 1 base) and passes on the land39 head; the red run is logged in
 //! `~/pop-logs/paul/2026-11-15/land39/b2/`.
 
+// Wall-clock budgets scale with ZF_TIME_FACTOR under qemu (Jeff 2026-11-22 ~11:58 PM CT); one implementation,
+// shared with the library's unit tests.
+#[allow(dead_code)]
+#[path = "../zenith-float-num/src/test_time.rs"]
+mod test_time;
 use zenith_float::{
     Consts, Error, ExactComplex, ExactInt, ExactNum, ExactRational, Ieee32, Ieee64, Radix, RawKind,
     RawParts, RoundingMode, Sign, INF_NEG, INF_POS, NAN, WORD_BIT_SIZE,
@@ -4109,7 +4114,7 @@ fn zf_78_format_max_value_general_radix() {
                 );
                 return;
             }
-            None if start.elapsed() > BUDGET => {
+            None if !test_time::within(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 panic!(
@@ -4201,7 +4206,7 @@ fn zf_78_bessel_kelvin_high_prec() {
                 );
                 return;
             }
-            None if start.elapsed() > BUDGET => {
+            None if !test_time::within(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 panic!(
@@ -4491,7 +4496,7 @@ fn zf_78_k_recur_scales_with_nu() {
                 );
                 return;
             }
-            None if start.elapsed() > BUDGET => {
+            None if !test_time::within(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 panic!(
@@ -4551,7 +4556,7 @@ fn zf_78_hypergeom_2f1_cluster() {
                 );
                 return;
             }
-            None if start.elapsed() > BUDGET => {
+            None if !test_time::within(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 panic!(
@@ -4763,7 +4768,7 @@ fn zf_78_elliptic_cut_signed_zeros() {
                 );
                 return;
             }
-            None if start.elapsed() > BUDGET => {
+            None if !test_time::within(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 panic!(

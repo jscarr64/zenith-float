@@ -59,6 +59,19 @@ pub(crate) fn budget(native: Duration) -> Result<Duration, String> {
     scaled(native, milli)
 }
 
+/// `elapsed` is under this run's budget for `native` (see [`budget`]). Every wall-clock bound in the
+/// library's unit tests goes through here or [`within_ms`] (Jeff 2026-11-22 ~11:58 PM CT: qemu limits
+/// scale with the time factor). An invalid `ZF_TIME_FACTOR` counts as over budget, so it fails the test.
+pub(crate) fn within(elapsed: Duration, native: Duration) -> bool {
+    budget(native).is_ok_and(|b| elapsed < b)
+}
+
+/// [`within`] for a test that keeps its time as `Duration::as_millis()`.
+pub(crate) fn within_ms(elapsed_ms: u128, native_ms: u64) -> bool {
+    u64::try_from(elapsed_ms)
+        .is_ok_and(|ms| within(Duration::from_millis(ms), Duration::from_millis(native_ms)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,5 +98,19 @@ mod tests {
             Duration::from_secs(1)
         );
         Ok(())
+    }
+
+    #[test]
+    fn within_is_strict_and_matches_the_old_native_comparisons() {
+        // Natively (factor 1) `d.as_secs() < n` and `ms < n` read exactly as before.
+        let one = Duration::from_secs(1);
+        if std::env::var_os("ZF_TIME_FACTOR").is_none() {
+            assert!(within(Duration::from_millis(999), one));
+            assert!(!within(one, one));
+            assert!(within_ms(199, 200));
+            assert!(!within_ms(200, 200));
+        }
+        assert!(!within_ms(u128::MAX, 200));
+        assert!(!within(Duration::MAX, one));
     }
 }

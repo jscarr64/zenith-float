@@ -8173,7 +8173,7 @@ mod tests {
         let t0 = std::time::Instant::now();
         let g = x.gamma(p, RoundingMode::ToEven, &mut cc)?;
         assert!(
-            t0.elapsed().as_secs() < 60,
+            crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(60)),
             "gamma(3/4) at p=2^14 took {:?}",
             t0.elapsed()
         );

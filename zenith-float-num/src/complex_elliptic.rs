@@ -2166,7 +2166,7 @@ mod tests {
             "Π(-2,1/2) p=16384 disagree with dest 64"
         );
         assert!(
-            elapsed < std::time::Duration::from_secs(5),
+            crate::test_time::within(elapsed, std::time::Duration::from_secs(5)),
             "Π(-2,1/2) p=16384 took {elapsed:?}"
         );
         Ok(())
@@ -2335,7 +2335,7 @@ mod tests {
             let dt = t0.elapsed();
             assert!(!got.is_nan(), "{lab} p=8192 NaN");
             assert!(
-                dt < std::time::Duration::from_secs(2),
+                crate::test_time::within(dt, std::time::Duration::from_secs(2)),
                 "{lab} p=8192 took {dt:?}"
             );
         }
@@ -2359,7 +2359,7 @@ mod tests {
         let elapsed = t0.elapsed();
         assert!(!g1.is_nan() && !g2.is_nan(), "Π(*,0) p=65536 NaN");
         assert!(
-            elapsed < std::time::Duration::from_secs(2),
+            crate::test_time::within(elapsed, std::time::Duration::from_secs(2)),
             "Π(n,0) p=65536 took {elapsed:?}"
         );
         let l1 = ExactComplex::from_real(ExactNum::from_u8(2, p64).neg(), p64)
@@ -2781,7 +2781,7 @@ mod tests {
 
     fn assert_dest_oom_fast(name: &str, z: ExactComplex, start: std::time::Instant) {
         assert!(
-            start.elapsed().as_secs() < 2,
+            crate::test_time::within(start.elapsed(), std::time::Duration::from_secs(2)),
             "{name} at dest 2^59 took {:?}",
             start.elapsed()
         );
@@ -2820,11 +2820,19 @@ mod tests {
         let one = crate::complex::compact_one();
         let t2 = std::time::Instant::now();
         let k1 = one.elliptic_k(p, rm, &mut cc);
-        assert!(t2.elapsed().as_secs() < 1, "K(1) took {:?}", t2.elapsed());
+        assert!(
+            crate::test_time::within(t2.elapsed(), std::time::Duration::from_secs(1)),
+            "K(1) took {:?}",
+            t2.elapsed()
+        );
         assert!(k1.re().is_inf_pos() && k1.im().is_zero(), "K(1) got {k1:?}");
         let t3 = std::time::Instant::now();
         let e1 = one.elliptic_e_complete(p, rm, &mut cc);
-        assert!(t3.elapsed().as_secs() < 1, "E(1) took {:?}", t3.elapsed());
+        assert!(
+            crate::test_time::within(t3.elapsed(), std::time::Duration::from_secs(1)),
+            "E(1) took {:?}",
+            t3.elapsed()
+        );
         assert_eq!(e1.re().compare(&ExactNum::from_u8(1, 64)), Some(0));
         assert!(e1.im().is_zero(), "E(1) im {:?}", e1.im());
     }
