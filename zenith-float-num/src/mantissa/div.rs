@@ -216,7 +216,7 @@ impl Mantissa {
     ) -> Result<(), Error> {
         while a.sign() < 0 && !a.is_zero() {
             q.decrement_abs()?;
-            a.add_assign(&step);
+            SliceWithSign::add_assign(a, &step);
         }
         Ok(())
     }
