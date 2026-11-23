@@ -6,6 +6,7 @@
 #   2. the gate's no-clone-progress step fails on any rise (tools/no_clone.sh --progress); a planted clone fails it.
 #   3. rules-scan, no-clone-progress, fmt lead the gate (then target-dir, clippy); a planted clone or a crash fails rules-scan.
 #   4. the committed pre-commit hook stops a planted clone, a count rise, a crash, red fmt and red clippy.
+#   5. .github/workflows/rules-scan.yml runs the library rules on every push; its commands fail a planted clone.
 # usage: tools/test_rules_enforcement.sh [ROOT]   (ROOT: a checkout, default this one; text and fixture checks, no cargo)
 set -u
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -101,6 +102,29 @@ else
   bad "no executable .githooks/pre-commit"
 fi
 grep -q 'core.hooksPath .githooks' "$root/CONTRIBUTING.md" || bad "CONTRIBUTING.md does not say how to enable the hook (git config core.hooksPath .githooks)"
+
+# 5. GitHub Actions runs the library rules on every push (all branches) and PR: .github/workflows/rules-scan.yml. Its own
+#    `run:` commands are executed in the part-3 fixture: they pass on the clean tree and fail on a planted clone.
+wf="$root/.github/workflows/rules-scan.yml"
+if [ -f "$wf" ]; then
+  grep -qE "^  push:$" "$wf" && grep -qE "^    branches: \[ '\*\*' \]$" "$wf" || bad "rules-scan.yml does not run on a push to every branch"
+  grep -qE "^  pull_request:$" "$wf" || bad "rules-scan.yml does not run on pull requests"
+  grep -q 'fetch-depth: 0' "$wf" || bad "rules-scan.yml checkout is shallow (the range scan needs history)"
+  mapfile -t runs < <(sed -nE 's/^ +- run: (.*)$/\1/p' "$wf")
+  [ ${#runs[@]} -ge 3 ] || bad "rules-scan.yml has fewer than 3 run steps"
+  printf '%s\n' "${runs[@]}" | grep -q 'tools/rules_scan.sh ' || bad "rules-scan.yml does not run tools/rules_scan.sh"
+  printf '%s\n' "${runs[@]}" | grep -q 'no_clone.sh --progress' || bad "rules-scan.yml does not run tools/no_clone.sh --progress"
+  printf '%s\n' "${runs[@]}" | grep -q 'zenith-float-bound' && bad "rules-scan.yml runs the bound scanner as the rules scan"
+  cp "$root"/tools/no_clone.sh "$root"/tools/no_clone_selftest.sh "$g/tools/"
+  printf 'clone()\t0\nto_vec()\t0\ncloned()\t0\nClone::clone\t0\nclone_from\t0\nimpl Clone\t0\nderive(Clone)\t0\ntotal\t0\nhelper_copies\t0\n' > "$g/tools/no_clone_progress_baseline.txt"
+  ( cd "$g" && git add -A && git commit -qm ci-tools )
+  wfrun() { local r=0 c; for c in "${runs[@]}"; do (cd "$g" && RATCHET_BASE=$gb bash -o pipefail -c "$c") >> "$t/wf.out" 2>&1 || r=1; done; return $r; }
+  : > "$t/wf.out"; wfrun || bad "rules-scan.yml commands failed a clean tree: $(tail -5 "$t/wf.out")"
+  printf 'fn a() {}\nfn b(x: &S) -> S { x.clone() }\n' > "$g/zenith-float-num/src/x.rs"; ( cd "$g" && git add -A && git commit -qm planted-ci )
+  : > "$t/wf.out"; wfrun && bad "rules-scan.yml commands passed a planted clone"
+else
+  bad "no .github/workflows/rules-scan.yml"
+fi
 
 [ $fail -eq 0 ] && echo "test_rules_enforcement: ok"
 exit $fail

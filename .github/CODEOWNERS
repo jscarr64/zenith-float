@@ -26,3 +26,10 @@
 /zenith-float-bound/tools/digest_targets.txt @jscarr64
 /zenith-float-bound/tools/tightness_report.py @jscarr64
 /zenith-float-bound/tools/tightness_baseline.txt @jscarr64
+# Rules enforcement (Jeff 2026-11-23 07:43 CT): the pre-commit hook, the CI rules job, their test and the no-clone-progress baseline.
+/.githooks/ @jscarr64
+/.github/workflows/rules-scan.yml @jscarr64
+/tools/test_rules_enforcement.sh @jscarr64
+/tools/no_clone_progress_baseline.txt @jscarr64
+/zenith-float-bound/tools/bound_layer_scan.py @jscarr64
+/zenith-float-bound/tools/bound_layer_scan.sh @jscarr64

@@ -80,3 +80,7 @@
   CONTRIBUTING.md): `tools/rules_scan.sh --working`, `--count-only --no-rise HEAD`, `cargo fmt --check`, `cargo clippy -D
   warnings`; all four run and report, any FAIL refuses the commit. tools/test_rules_enforcement.sh part 4: planted clone,
   count rise, crash, red fmt and red clippy are each refused; a no-op hook fails the test.
+- New GitHub Actions job `.github/workflows/rules-scan.yml`: on every push to any branch and every PR it runs the
+  rules_scan selftest, the library `tools/rules_scan.sh` range scan with all count checks, and `no_clone.sh --progress`.
+  tools/test_rules_enforcement.sh part 5 runs its `run:` commands in a fixture: clean passes, a planted clone fails.
+  CODEOWNERS covers the hook, the workflow, the test, the new baseline and the renamed bound scanner.
