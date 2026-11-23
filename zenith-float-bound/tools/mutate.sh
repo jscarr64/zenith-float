@@ -250,7 +250,7 @@ fi
 top=$(cd "$repo" && git rev-parse --show-toplevel 2>/dev/null) && top=$(realpath "$top") || { echo "mutate: FAIL cannot find the git top level of $repo"; exit 2; }
 rrepo=$(realpath "$repo")
 case "$rrepo/" in "$top"/*) sub=${rrepo#"$top"}; sub=${sub#/} ;; *) echo "mutate: FAIL $repo is not inside its git top level $top"; exit 2 ;; esac
-wsman=$(cd "$repo" && cargo locate-project --workspace --message-format plain 2>/dev/null </dev/null) || { echo "mutate: FAIL cargo locate-project --workspace failed in $repo"; exit 2; }
+wsman=$(cd "$repo" && cargo locate-project --offline --frozen --workspace --message-format plain 2>/dev/null </dev/null) || { echo "mutate: FAIL cargo locate-project --workspace failed in $repo"; exit 2; }
 wsroot=$(realpath "$(dirname "$wsman")")
 case "$wsroot/" in "$top"/*) wsrel=${wsroot#"$top"}; wsrel=${wsrel#/} ;; *) echo "mutate: FAIL workspace root $wsroot is outside the git repo $top"; exit 2 ;; esac
 lock="$wsroot/Cargo.lock"; [ -f "$lock" ] || { echo "mutate: FAIL FETCH: cargo fetch left no Cargo.lock in the workspace root $wsroot"; exit 2; }
