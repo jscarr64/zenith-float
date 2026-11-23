@@ -26,7 +26,7 @@ fn abs_of(x: &ExactNum) -> ExactNum {
     ExactNum::from_i8(sign, p).mul(x, p, RoundingMode::None)
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 enum Canon {
     Finite {
         sign: String,

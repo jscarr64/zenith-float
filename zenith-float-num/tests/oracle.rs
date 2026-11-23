@@ -85,7 +85,7 @@ const FB_NONE_OVERFLOW_HELD: &[&str] = &[
     "div-1024-None-3142",
 ];
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 enum Canon {
     Finite {
         sign: String,
