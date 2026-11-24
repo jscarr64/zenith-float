@@ -3291,8 +3291,6 @@ pub(super) fn weber_e_word(
     anger_weber_word(true, z, nu, p, rm, cc)
 }
 
-// Silence a helper kept for structure; bits_good is the real one.
-#[allow(dead_code)]
 #[cfg(test)]
 mod aws_bounds {
     use super::*;
