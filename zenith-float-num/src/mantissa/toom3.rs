@@ -9,6 +9,12 @@ use crate::defs::Error;
 use crate::defs::Word;
 use crate::mantissa::Mantissa;
 
+// 3 as a nonzero divisor for `div_by_word`.
+const THREE: core::num::NonZero<crate::defs::Word> = match core::num::NonZero::new(3) {
+    Some(v) => v,
+    None => core::num::NonZero::<crate::defs::Word>::MIN,
+};
+
 impl Mantissa {
     fn toom3_get_splits(m: &[Word], l: usize) -> (SliceRef<'_>, SliceRef<'_>, SliceRef<'_>) {
         let b11 = l.min(m.len());
@@ -108,9 +114,15 @@ impl Mantissa {
 
         let (q0, q1, q2, q3, q4) = Self::toom3_factors(params1, &mut x1, q1buf, q2buf, q3buf)?;
 
-        debug_assert!(p1.len() + q1.len() == s1.len());
-        debug_assert!(p2.len() + q2.len() == s2.len());
-        debug_assert!(p3.len() + q3.len() == s3.len());
+        if !(p1.len() + q1.len() == s1.len()) {
+            return Err(Error::InvalidArgument);
+        }
+        if !(p2.len() + q2.len() == s2.len()) {
+            return Err(Error::InvalidArgument);
+        }
+        if !(p3.len() + q3.len() == s3.len()) {
+            return Err(Error::InvalidArgument);
+        }
 
         Self::mul_unbalanced(&p0, &q0, &mut s0)?;
         Self::mul_unbalanced(&p1, &q1, &mut s1)?;
@@ -123,7 +135,7 @@ impl Mantissa {
         s3.set_sign(p3.sign() * q3.sign());
 
         s3.sub(&s1, &mut w3)?;
-        w3.div_by_word(3);
+        w3.div_by_word(THREE);
         s1.sub(&s2, &mut w1)?;
         w1.shift_right(1);
         s2.sub(&s0, &mut w2)?;

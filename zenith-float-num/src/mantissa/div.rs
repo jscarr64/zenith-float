@@ -17,8 +17,12 @@ use crate::mantissa::Mantissa;
 impl Mantissa {
     // Basic integer division.
     pub(super) fn div_basic(m1: &[Word], m2: &[Word]) -> Result<(WordBuf, WordBuf), Error> {
-        debug_assert!(m1.len() >= m2.len());
-        debug_assert!(!m2.is_empty());
+        if !(m1.len() >= m2.len()) {
+            return Err(Error::InvalidArgument);
+        }
+        if !(!m2.is_empty()) {
+            return Err(Error::InvalidArgument);
+        }
 
         let l1 = m1.len();
         let l2 = m2.len();
@@ -144,7 +148,9 @@ impl Mantissa {
                     {
                         c = add_carry(*a, *b, c as Word, b) as DoubleWord;
                     }
-                    debug_assert!(c > 0);
+                    if !(c > 0) {
+                        return Err(Error::InvalidArgument);
+                    }
                 }
 
                 if let Some(v) = m3iter.next() {
@@ -224,7 +230,9 @@ impl Mantissa {
     // Recursive integer division divides m1 by m2, returns quotinent and remainder.
     // prereq: m <= n, m2 is normalized
     fn div_recursive(m1: &[Word], m2: &[Word]) -> Result<(WordBuf, WordBuf), Error> {
-        debug_assert!(m2[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
+        if !(m2[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0) {
+            return Err(Error::InvalidArgument);
+        }
 
         if m1.len() < m2.len() {
             let mut q = WordBuf::new(1)?;
@@ -238,7 +246,9 @@ impl Mantissa {
 
         let m = m1.len() - m2.len();
 
-        debug_assert!(m <= m2.len());
+        if !(m <= m2.len()) {
+            return Err(Error::InvalidArgument);
+        }
 
         if m < 70 {
             Self::div_basic(m1, m2)
@@ -403,6 +413,26 @@ mod tests {
 
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+
+    /// Jeff 2026-11-24 4:40 PM CT item 5: the division preconditions were debug-only asserts; they refuse in every build.
+    #[test]
+    fn div_preconditions_refuse_in_every_build() {
+        let top = WORD_SIGNIFICANT_BIT;
+        assert!(matches!(
+            Mantissa::div_basic(&[1], &[]),
+            Err(Error::InvalidArgument)
+        ));
+        assert!(matches!(
+            Mantissa::div_basic(&[1], &[1, top]),
+            Err(Error::InvalidArgument)
+        ));
+        // div_recursive needs a normalized divisor (top bit set).
+        assert!(matches!(
+            Mantissa::div_recursive(&[1, 2, 3, 4], &[1, 1]),
+            Err(Error::InvalidArgument)
+        ));
+        assert!(Mantissa::div_basic(&[0, 0, top], &[3, top]).is_ok());
+    }
 
     #[test]
     fn test_div_unbalanced() -> Result<(), crate::Error> {

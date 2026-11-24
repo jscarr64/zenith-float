@@ -41,6 +41,9 @@ pub(crate) struct ExactNumNumber {
     op_inexact: Option<bool>,
 }
 
+// `int_as_usize` reads a whole Word into a usize (Jeff 2026-11-24 4:40 PM CT item 5: was a debug_assert, now checked at compile time).
+const _: () = assert!(core::mem::size_of::<usize>() >= core::mem::size_of::<Word>());
+
 impl ExactNumNumber {
     #[inline]
     pub(crate) fn is_subnormal(&self) -> bool {
@@ -900,7 +903,9 @@ impl ExactNumNumber {
             #[cfg(not(target_pointer_width = "32"))]
             {
                 // A shift is at most the mantissa length (< 2^60), so the result stays far inside i64.
-                debug_assert!(shift <= MAX_PRECISION);
+                if !(shift <= MAX_PRECISION) {
+                    return Err(Error::InvalidArgument);
+                }
             }
 
             Ok((
@@ -1114,7 +1119,9 @@ impl ExactNumNumber {
 
         #[cfg(not(target_pointer_width = "32"))]
         {
-            debug_assert!(shift <= i64::MAX / 2 && e >= -exp::WIDE_LIMIT);
+            if !(shift <= i64::MAX / 2 && e >= -exp::WIDE_LIMIT) {
+                return Err(Error::InvalidArgument);
+            }
         }
         let mut ret = Self::finish_sum(
             d3,
@@ -1180,8 +1187,9 @@ impl ExactNumNumber {
     }
 
     /// Make `self` subnormal
+    /// Sets the exponent to `EXPONENT_MIN` itself (every caller already did; Jeff 2026-11-24 4:40 PM CT item 5: was a debug_assert that it was).
     pub(crate) fn subnormalize(&mut self, e: i64, rm: RoundingMode) {
-        debug_assert_eq!(self.exponent(), EXPONENT_MIN);
+        self.e = EXPONENT_MIN;
 
         if self.is_zero() {
             return;
@@ -1634,7 +1642,6 @@ impl ExactNumNumber {
     /// Returns integer part of a number as built-in integer.
     pub(super) fn int_as_usize(&self) -> Result<usize, Error> {
         if self.e > 0 {
-            debug_assert!(core::mem::size_of::<usize>() >= core::mem::size_of::<Word>());
             if (self.e as usize) <= WORD_BIT_SIZE {
                 let shift = WORD_BIT_SIZE - self.e as usize;
                 let ret = self.m.most_significant_word() as usize;

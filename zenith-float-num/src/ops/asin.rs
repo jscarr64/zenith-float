@@ -41,7 +41,9 @@ impl ExactNumNumber {
             pi.set_exponent(pi.exponent() - 1);
             pi.set_sign(self.sign());
 
-            debug_assert!(pi.inexact());
+            if !(pi.inexact()) {
+                return Err(Error::InvalidArgument);
+            }
 
             return Ok(pi);
         }

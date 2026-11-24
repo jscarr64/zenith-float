@@ -136,7 +136,9 @@ impl Mantissa {
         input: &[u8],
         tenpowers: &[(WordBuf, WordBuf, usize)],
     ) -> Result<Self, Error> {
-        debug_assert!(input[0] != 0);
+        if !(input[0] != 0) {
+            return Err(Error::InvalidArgument);
+        }
 
         let mut chunks = Vec::new();
         chunks.try_reserve_exact(input.len().div_ceil(WORD_TENPOWER_LEN))?;

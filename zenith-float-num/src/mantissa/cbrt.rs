@@ -14,6 +14,12 @@ use crate::mantissa::util::RightShiftedSlice;
 use crate::mantissa::Mantissa;
 use crate::Word;
 
+// 3 as a nonzero divisor for `div_by_word`.
+const THREE: core::num::NonZero<crate::defs::Word> = match core::num::NonZero::new(3) {
+    Some(v) => v,
+    None => core::num::NonZero::<crate::defs::Word>::MIN,
+};
+
 impl Mantissa {
     // normalize for division
     fn crbt_normalize_div(
@@ -70,7 +76,7 @@ impl Mantissa {
 
             // (q + w) / 3
             q.add_assign(&w);
-            q.div_by_word(3);
+            q.div_by_word(THREE);
 
             // compare with previous
             if q.cmp(&s) >= 0 {
@@ -83,7 +89,9 @@ impl Mantissa {
 
                 Self::cbrt_remainder(&mut tmpbuf, &mut sbuf, &mut r)?;
 
-                debug_assert!(r.sign() >= 0);
+                if !(r.sign() >= 0) {
+                    return Err(Error::InvalidArgument);
+                }
 
                 break Ok((sbuf, rbuf));
             }

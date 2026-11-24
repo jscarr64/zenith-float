@@ -223,8 +223,8 @@ impl<T: AsRef<[Word]>> SliceWithSign<T> {
         for a in iter1 {
             c = sub_borrow(*a, 0, c, a);
         }
-
-        debug_assert!(c == 0);
+        // No final borrow: the only caller, `add_sub_assign`, calls this only when `abs_cmp(s1, s2) > 0`
+        // (Jeff 2026-11-24 4:40 PM CT item 5; was a debug_assert).
     }
 
     // prereq: val of s2 > val of s1
@@ -234,8 +234,8 @@ impl<T: AsRef<[Word]>> SliceWithSign<T> {
         for (a, b) in s2.iter().zip(s1.iter_mut()) {
             c = sub_borrow(*a, *b, c, b);
         }
-
-        debug_assert!(c == 0);
+        // No final borrow: the only caller, `add_sub_assign`, calls this only when `abs_cmp(s1, s2) < 0`
+        // (Jeff 2026-11-24 4:40 PM CT item 5; was a debug_assert).
     }
 }
 
@@ -299,10 +299,9 @@ impl<T: AsRef<[Word]> + AsMut<[Word]>> SliceWithSign<T> {
         shift_slice_right(self, shift);
     }
 
-    pub fn div_by_word(&mut self, d: Word) {
-        debug_assert!(d != 0);
-
-        let d = d as DoubleWord;
+    /// Divide by a nonzero word; `NonZero` makes a zero divisor unrepresentable (Jeff 2026-11-24 4:40 PM CT item 5; was a debug_assert).
+    pub fn div_by_word(&mut self, d: core::num::NonZero<Word>) {
+        let d = d.get() as DoubleWord;
         let mut rh = 0;
         let m = self.deref_mut();
         let mut iter = m.iter_mut().rev();

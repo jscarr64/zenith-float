@@ -108,10 +108,9 @@ fn selfridge_params(n: &ExactInt) -> Option<(ExactInt, ExactInt, ExactInt)> {
             let one = ExactInt::one();
             let four = ExactInt::from_u64(4);
             let num = one.sub(&dd);
-            let q = num.div_rem(&four).map(|(q, r)| {
-                debug_assert!(r.is_zero());
-                q
-            })?;
+            // D runs 5, -7, 9, -11, ...: always 1 mod 4, so 1 - D divides by 4 exactly (Jeff 2026-11-24 4:40 PM CT item 5; was a
+            // debug_assert that the remainder is zero).
+            let (q, _) = num.div_rem(&four)?;
             return Some((dd, ExactInt::one(), q));
         }
         dmag = dmag.saturating_add(2);

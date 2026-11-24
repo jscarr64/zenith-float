@@ -186,15 +186,15 @@ impl ExactInt {
         out
     }
 
+    /// |a| - |b| for |a| >= |b|. Every caller (`add`, `div_rem_abs`) checks `cmp_abs(a, b) != Less` first, so there is
+    /// no final borrow (Jeff 2026-11-24 4:40 PM CT item 5; were two debug_asserts).
     fn sub_abs(a: &[Word], b: &[Word]) -> Vec<Word> {
-        debug_assert!(Self::cmp_abs(a, b) != Ordering::Less);
         let mut out = vec![0; a.len()];
         let mut c = 0;
         for i in 0..a.len() {
             let y = b.get(i).copied().unwrap_or(0);
             c = sub_borrow(a[i], y, c, &mut out[i]);
         }
-        debug_assert!(c == 0);
         out
     }
 
@@ -373,8 +373,9 @@ impl ExactInt {
         }
     }
 
+    /// `b` is nonzero: the only non-test caller, `div_rem`, returns `None` for a zero divisor first (Jeff 2026-11-24 4:40 PM CT item 5; was a
+    /// debug_assert).
     fn div_rem_abs(a: &[Word], b: &[Word]) -> (Vec<Word>, Vec<Word>) {
-        debug_assert!(!b.is_empty());
         if Self::cmp_abs(a, b) == Ordering::Less {
             return (Vec::new(), a.to_vec());
         }

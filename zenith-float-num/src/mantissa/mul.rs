@@ -32,7 +32,9 @@ impl Mantissa {
     }
 
     fn mul_slices(m1: &[Word], m2: &[Word], m3: &mut [Word]) -> Result<(), Error> {
-        debug_assert!(m1.len() <= m2.len());
+        if !(m1.len() <= m2.len()) {
+            return Err(Error::InvalidArgument);
+        }
 
         if m1.len() <= 32 || m2.len() <= 32 {
             Self::mul_basic(m1, m2, m3);
@@ -116,6 +118,19 @@ mod tests {
 
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+
+    /// Jeff 2026-11-24 4:40 PM CT item 5: mul_slices needs the shorter operand first; it refuses otherwise, in every
+    /// build (was a debug-only assert).
+    #[test]
+    fn mul_slices_refuses_longer_first_operand() {
+        let mut out = [0 as Word; 3];
+        assert!(matches!(
+            Mantissa::mul_slices(&[1, 2], &[3], &mut out),
+            Err(Error::InvalidArgument)
+        ));
+        assert!(Mantissa::mul_slices(&[3], &[1, 2], &mut out).is_ok());
+        assert_eq!(out, [3, 6, 0]);
+    }
 
     #[test]
     fn test_mul_unbalanced() -> Result<(), crate::Error> {

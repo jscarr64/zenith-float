@@ -516,8 +516,10 @@ fn add_raw(dest: &mut [u64], src: &[u64]) {
         carry = t >> 64;
         i += 1;
     }
+    // No overflow past `dest` (Jeff 2026-11-24 4:40 PM CT item 5, was a debug_assert): the only caller,
+    // `UnityZp::mul`, adds fewer than 2^64 products a*b with a, b < n < 2^(64*nl) into a slot of 2*nl + 2 limbs, so
+    // the sum is below 2^(64*(2*nl + 1)) and the carry stops inside `dest`.
     while carry > 0 {
-        debug_assert!(i < dest.len(), "add_raw overflowed dest");
         let t = dest[i] as u128 + carry;
         dest[i] = t as u64;
         carry = t >> 64;
@@ -648,8 +650,8 @@ fn rem_by_u64(u: &[u64], v: u64) -> u64 {
 /// Remainder `u mod v` for unsigned little-endian limbs (`v` nonzero). The
 /// result is padded or truncated to `v.len()`.
 fn rem_limbs(u: &[u64], v: &[u64]) -> Vec<u64> {
+    // `v` is never zero: every caller passes a `UnityZp::n`, which `UnityZp::new` refuses when zero.
     let n = limb_len(v);
-    debug_assert!(n > 0);
     let mut r = vec![0u64; v.len()];
     let ulen = limb_len(u);
     if ulen == 0 {
@@ -720,17 +722,22 @@ struct UnityZp<'a> {
 }
 
 impl<'a> UnityZp<'a> {
-    fn new(p: u64, exp: u32, n: &'a ExactInt) -> Self {
+    /// `None` when `n` is zero: every reduction below is mod `n`, so `n != 0` is checked once here and
+    /// [`rem_limbs`] can rely on it (Jeff 2026-11-24 4:40 PM CT item 5, was a debug_assert there).
+    fn new(p: u64, exp: u32, n: &'a ExactInt) -> Option<Self> {
         let n_limbs = limbs_of(n);
+        if limb_len(n_limbs) == 0 {
+            return None;
+        }
         let slots = pow_u64(p, exp).unwrap_or(1) as usize;
         let nlen = n_limbs.len();
-        Self {
+        Some(Self {
             p,
             exp,
             n: n_limbs,
             c: vec![0; slots.max(1) * nlen],
             slots: slots.max(1),
-        }
+        })
     }
 
     fn zeroed(&self) -> Self {
@@ -1072,30 +1079,30 @@ fn jacobi_sum_general(f: &mut UnityZp<'_>, table: &[u64], p: u64, q: u64, k: u32
     }
 }
 
-fn jacobi_sum_pq(n: &ExactInt, q: u64, p: u64) -> UnityZp<'_> {
+fn jacobi_sum_pq(n: &ExactInt, q: u64, p: u64) -> Option<UnityZp<'_>> {
     let table = f_table(q);
     let k = p_power_in_q(q - 1, p);
-    let mut f = UnityZp::new(p, k, n);
+    let mut f = UnityZp::new(p, k, n)?;
     jacobi_sum_general(&mut f, &table, p, q, k, 1, 1);
-    f
+    Some(f)
 }
 
-fn jacobi_sum_2q_one(n: &ExactInt, q: u64) -> UnityZp<'_> {
+fn jacobi_sum_2q_one(n: &ExactInt, q: u64) -> Option<UnityZp<'_>> {
     let table = f_table(q);
     let k = p_power_in_q(q - 1, 2);
-    let mut f = UnityZp::new(2, k, n);
+    let mut f = UnityZp::new(2, k, n)?;
     jacobi_sum_general(&mut f, &table, 2, q, k, 2, 1);
-    f
+    Some(f)
 }
 
-fn jacobi_sum_2q_two(n: &ExactInt, q: u64) -> UnityZp<'_> {
+fn jacobi_sum_2q_two(n: &ExactInt, q: u64) -> Option<UnityZp<'_>> {
     let table = f_table(q);
     let k = p_power_in_q(q - 1, 2);
     let b = pow_u64(2, k.saturating_sub(3)).unwrap_or(1);
     let a = 3 * b;
-    let mut f = UnityZp::new(2, k, n);
+    let mut f = UnityZp::new(2, k, n)?;
     jacobi_sum_general(&mut f, &table, 2, q, k, a, b);
-    f
+    Some(f)
 }
 
 fn check_pk(j: &UnityZp<'_>, u: &ExactInt, v: u64) -> i64 {
@@ -1226,7 +1233,9 @@ fn additional_test(n: &ExactInt, p: u64) -> u8 {
             result = 2;
         } else {
             let k = p_power_in_q(q - 1, p);
-            let jacobi_sum = jacobi_sum_pq(n, q, p);
+            let Some(jacobi_sum) = jacobi_sum_pq(n, q, p) else {
+                return 0;
+            };
             let r = pow_u64(p, k).unwrap_or(1);
             let u = n
                 .div_rem(&ExactInt::from_u64(r))
@@ -1336,7 +1345,9 @@ fn is_prime_jacobi(n: &ExactInt) -> Status {
                 .map(|(d, _)| d)
                 .unwrap_or_else(ExactInt::zero);
             let v = rem_u64(n, r);
-            let jacobi_sum = jacobi_sum_pq(n, q, p);
+            let Some(jacobi_sum) = jacobi_sum_pq(n, q, p) else {
+                return Status::Unknown;
+            };
             if p == 2 && k == 1 {
                 let h = check_21(q, n);
                 if h < 0 {
@@ -1356,8 +1367,10 @@ fn is_prime_jacobi(n: &ExactInt) -> Status {
                 }
             }
             if p == 2 && k >= 3 {
-                let j31 = jacobi_sum_2q_one(n, q);
-                let j2 = jacobi_sum_2q_two(n, q);
+                let (Some(j31), Some(j2)) = (jacobi_sum_2q_one(n, q), jacobi_sum_2q_two(n, q))
+                else {
+                    return Status::Unknown;
+                };
                 let h = check_2k(&jacobi_sum, &j31, &j2, &u, v);
                 if h < 0 {
                     result = Status::Composite;
@@ -1813,7 +1826,11 @@ mod tests {
         );
 
         // zeta_{32}^{16} == -1 in Z[x]/(x^{16}+1, n)
-        let mut z = UnityZp::new(2, 5, &n);
+        // A zero modulus is refused once, at construction (was a debug_assert in rem_limbs).
+        assert!(UnityZp::new(2, 5, &ExactInt::zero()).is_none());
+        let z = UnityZp::new(2, 5, &n);
+        assert!(z.is_some(), "UnityZp::new refused a nonzero modulus");
+        let Some(mut z) = z else { return };
         z.set_ui(1, 1);
         let z16 = z.pow_ui(16);
         // expect coeff 0 = n-1

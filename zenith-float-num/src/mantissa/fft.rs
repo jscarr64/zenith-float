@@ -51,8 +51,10 @@ impl Mantissa {
         b: &mut SliceMut<'_>,
         n1: usize,
         modulus: &SliceMut<'_>,
-    ) {
-        debug_assert!(a.sign() > 0 && b.sign() > 0);
+    ) -> Result<(), Error> {
+        if a.sign() <= 0 || b.sign() <= 0 {
+            return Err(Error::InvalidArgument);
+        }
 
         // cmp
         let mut b_gt_a = false;
@@ -79,7 +81,9 @@ impl Mantissa {
 
             c2 = sub_borrow(v1, v2, c2, b);
         }
-        debug_assert!(c1 == 0 && c2 == 0);
+        if c1 != 0 || c2 != 0 {
+            return Err(Error::InvalidArgument);
+        }
 
         if b_gt_a {
             b.set_sign(-b.sign());
@@ -87,6 +91,7 @@ impl Mantissa {
 
         Self::fft_normalize(a, n1, modulus);
         Self::fft_normalize(b, n1, modulus);
+        Ok(())
     }
 
     fn fft_forward(
@@ -103,7 +108,7 @@ impl Mantissa {
             let (Some(a), Some(b)) = (a.first_mut(), b.first_mut()) else {
                 return Err(Error::InvalidArgument); // parts holds k1 = 2 strided entries
             };
-            Self::fft_butterfly(a, b, n1, modulus);
+            Self::fft_butterfly(a, b, n1, modulus)?;
         } else {
             let k2 = k1 / 2;
             let kk = k - 1;
@@ -155,7 +160,7 @@ impl Mantissa {
 
                 Self::fft_mul_mod(b, w_shift, n1, modulus, tmp_buf)?;
 
-                Self::fft_butterfly(a, b, n1, modulus);
+                Self::fft_butterfly(a, b, n1, modulus)?;
             }
         }
         Ok(())
@@ -176,7 +181,7 @@ impl Mantissa {
             let (Some(a), Some(b)) = (a.first_mut(), b.first_mut()) else {
                 return Err(Error::InvalidArgument); // parts holds k1 = 2 entries
             };
-            Self::fft_butterfly(a, b, n1, modulus);
+            Self::fft_butterfly(a, b, n1, modulus)?;
         } else {
             let k2 = k1 / 2;
 
@@ -192,14 +197,14 @@ impl Mantissa {
             let mut iter = p1.iter_mut().zip(p2.iter_mut());
 
             if let Some((a, b)) = iter.next() {
-                Self::fft_butterfly(a, b, n1, modulus);
+                Self::fft_butterfly(a, b, n1, modulus)?;
 
                 for (j, (a, b)) in iter.enumerate() {
                     let w_shift = w * (k1 - j - 1);
 
                     Self::fft_mul_mod(b, w_shift, n1, modulus, tmp_buf)?;
 
-                    Self::fft_butterfly(a, b, n1, modulus);
+                    Self::fft_butterfly(a, b, n1, modulus)?;
                 }
             }
         }
@@ -223,7 +228,9 @@ impl Mantissa {
 
     // decompose in parts.len() = k1 parts, each of size m
     fn fft_decompose(d: &[Word], m: usize, parts: &mut [SliceMut]) -> Result<(), Error> {
-        debug_assert!(!parts.is_empty());
+        if !(!parts.is_empty()) {
+            return Err(Error::InvalidArgument);
+        }
 
         let mut parts_iter = parts.iter_mut();
 
@@ -352,7 +359,9 @@ impl Mantissa {
         modulus: &SliceMut<'_>,
         tmp_buf: &mut [Word],
     ) -> Result<(), Error> {
-        debug_assert!(n.is_multiple_of(WORD_BIT_SIZE));
+        if !(n.is_multiple_of(WORD_BIT_SIZE)) {
+            return Err(Error::InvalidArgument);
+        }
 
         let (work_buf, ext_buf) = tmp_buf.split_at_mut(num.len());
 
@@ -388,7 +397,9 @@ impl Mantissa {
         modulus: &SliceMut<'_>,
         tmp_buf: &mut [Word],
     ) -> Result<(), Error> {
-        debug_assert!(n.is_multiple_of(WORD_BIT_SIZE));
+        if !(n.is_multiple_of(WORD_BIT_SIZE)) {
+            return Err(Error::InvalidArgument);
+        }
 
         let n2 = n * 2;
         let mut shift = j.div_ceil(n2) * n2 - j;

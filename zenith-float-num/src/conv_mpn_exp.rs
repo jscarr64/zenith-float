@@ -42,9 +42,11 @@ pub(crate) fn mpn_scan1(a: &[Word]) -> Option<usize> {
     None
 }
 
-/// Schoolbook `out = a * b`. `out` must be at least `a.len() + b.len()` limbs.
-pub(crate) fn mpn_mul(a: &[Word], b: &[Word], out: &mut [Word]) {
-    debug_assert!(out.len() >= a.len() + b.len());
+/// Schoolbook `out = a * b`. `out` must be at least `a.len() + b.len()` limbs, else `Err(InvalidArgument)`.
+pub(crate) fn mpn_mul(a: &[Word], b: &[Word], out: &mut [Word]) -> Result<(), Error> {
+    if out.len() < a.len() + b.len() {
+        return Err(Error::InvalidArgument);
+    }
     out.fill(0);
     for (i, &ai) in a.iter().enumerate() {
         if ai == 0 {
@@ -59,10 +61,14 @@ pub(crate) fn mpn_mul(a: &[Word], b: &[Word], out: &mut [Word]) {
         }
         out[i + b.len()] = k as Word;
     }
+    Ok(())
 }
 
-fn mpn_mul_1(src: &[Word], b: Word, dst: &mut [Word]) -> Word {
-    debug_assert!(dst.len() >= src.len());
+/// `dst = src * b`; returns the carry limb. `dst` shorter than `src` is `Err(InvalidArgument)`.
+fn mpn_mul_1(src: &[Word], b: Word, dst: &mut [Word]) -> Result<Word, Error> {
+    if dst.len() < src.len() {
+        return Err(Error::InvalidArgument);
+    }
     let mut k: DoubleWord = 0;
     let b = b as DoubleWord;
     for (s, d) in src.iter().zip(dst.iter_mut()) {
@@ -70,18 +76,21 @@ fn mpn_mul_1(src: &[Word], b: Word, dst: &mut [Word]) -> Word {
         *d = t as Word;
         k = t >> WORD_BIT_SIZE;
     }
-    k as Word
+    Ok(k as Word)
 }
 
-/// Left-shift `src` by one bit into `dest`. Returns the bit shifted out of the top.
-fn mpn_lshift1(dest: &mut [Word], src: &[Word]) -> Word {
-    debug_assert_eq!(dest.len(), src.len());
+/// Left-shift `src` by one bit into `dest`. Returns the bit shifted out of the top. Unequal lengths are
+/// `Err(InvalidArgument)`.
+fn mpn_lshift1(dest: &mut [Word], src: &[Word]) -> Result<Word, Error> {
+    if dest.len() != src.len() {
+        return Err(Error::InvalidArgument);
+    }
     let mut carry = 0 as Word;
     for (d, &s) in dest.iter_mut().zip(src.iter()) {
         *d = (s << 1) | carry;
         carry = s >> (WORD_BIT_SIZE - 1);
     }
-    carry
+    Ok(carry)
 }
 
 fn bit_len(limbs: &[Word]) -> usize {
@@ -126,7 +135,7 @@ pub(crate) fn mpn_base_pow(base: u8, e: u64, n: usize) -> Result<BasePow, Error>
         };
         let n1 = (n * WORD_BIT_SIZE - bits) / WORD_BIT_SIZE;
         c.fill(0);
-        mpn_mul(&a[n1..], &a[n1..], &mut c[2 * n1..]);
+        mpn_mul(&a[n1..], &a[n1..], &mut c[2 * n1..])?;
 
         f = f.checked_mul(2).ok_or(Error::ExponentOverflow(Sign::Pos))?;
         f = f
@@ -134,7 +143,7 @@ pub(crate) fn mpn_base_pow(base: u8, e: u64, n: usize) -> Result<BasePow, Error>
             .ok_or(Error::ExponentOverflow(Sign::Pos))?;
 
         if c[2 * n - 1] & WORD_SIGNIFICANT_BIT == 0 {
-            let _ = mpn_lshift1(&mut a, &c[n..]);
+            let _ = mpn_lshift1(&mut a, &c[n..])?;
             a[0] |= c[n - 1] >> (WORD_BIT_SIZE - 1);
             f -= 1;
             if error != t {
@@ -154,12 +163,12 @@ pub(crate) fn mpn_base_pow(base: u8, e: u64, n: usize) -> Result<BasePow, Error>
 
         if ((e >> i) & 1) != 0 {
             c.fill(0);
-            c[2 * n - 1] = mpn_mul_1(&a, b_limb, &mut c[n - 1..2 * n - 1]);
+            c[2 * n - 1] = mpn_mul_1(&a, b_limb, &mut c[n - 1..2 * n - 1])?;
             f = f
                 .checked_add(h + i128::from(WORD_BIT_SIZE as u32))
                 .ok_or(Error::ExponentOverflow(Sign::Pos))?;
             if c[2 * n - 1] & WORD_SIGNIFICANT_BIT == 0 {
-                let _ = mpn_lshift1(&mut a, &c[n..]);
+                let _ = mpn_lshift1(&mut a, &c[n..])?;
                 a[0] |= c[n - 1] >> (WORD_BIT_SIZE - 1);
                 f -= 1;
             } else {
@@ -302,7 +311,7 @@ pub(crate) fn scale_x_base_pow(
         let x1 = take_high_limbs(x_limbs, n);
         let mut exact = pow.err_ulps.is_none() && !low_limbs_nonzero(x_limbs, n);
         let mut prod = WordBuf::new(pow.a.len() + x1.len())?;
-        mpn_mul(&pow.a, x1, &mut prod);
+        mpn_mul(&pow.a, x1, &mut prod)?;
         if mpn_scan1(&prod).is_some_and(|s| s < x1.len() * WORD_BIT_SIZE) {
             exact = false;
         }

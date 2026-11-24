@@ -155,7 +155,9 @@ impl Mantissa {
                 s.sub_assign(&one);
             }
 
-            debug_assert!(sbuf[sbuf.len() - 1] == 0);
+            if !(sbuf[sbuf.len() - 1] == 0) {
+                return Err(Error::InvalidArgument);
+            }
             sbuf.trunc_to_2((sbuf.len() - 1) * WORD_BIT_SIZE);
 
             Ok((sbuf, ubuf))

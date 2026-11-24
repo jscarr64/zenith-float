@@ -332,7 +332,9 @@ impl Mantissa {
             m3
         };
 
-        debug_assert!(c == 0);
+        if !(c == 0) {
+            return Err(Error::InvalidArgument);
+        }
 
         let mut shift = Self::maximize(&mut m3.m) as i64;
 
@@ -379,7 +381,9 @@ impl Mantissa {
         // first. The sum is exact, and `maximize` below renormalizes it before it is rounded to `p`.
         // A zero `m2` (with `m2_shift` > 0) sums `self` with nothing: the result is `self` written out and
         // rounded by the code below, which is how `add` and `sub` handle a zero operand.
-        debug_assert!(!m2.is_zero() || m2_shift > 0);
+        if !(!m2.is_zero() || m2_shift > 0) {
+            return Err(Error::InvalidArgument);
+        }
 
         let p = Self::bit_len_to_word_len(p);
         let mut c = 0;
@@ -397,7 +401,9 @@ impl Mantissa {
                 c = add_carry(a, b, c, d);
             }
 
-            debug_assert!(c == 0);
+            if !(c == 0) {
+                return Err(Error::InvalidArgument);
+            }
             c = 1;
 
             (m3, c)
@@ -529,7 +535,10 @@ impl Mantissa {
             m3.m.trunc_to(p * WORD_BIT_SIZE);
         }
 
-        debug_assert!(shift >= -1); // prevent exponent overflow
+        if !(shift >= -1) {
+            // prevent exponent overflow
+            return Err(Error::InvalidArgument);
+        }
 
         m3.n = m3.max_bit_len();
 
@@ -710,7 +719,9 @@ impl Mantissa {
 
     // self * m1 mod n
     pub fn mul_mod(&self, m1: &Self, n: &Self) -> Result<Self, Error> {
-        debug_assert!(n.m[n.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
+        if !(n.m[n.len() - 1] & WORD_SIGNIFICANT_BIT != 0) {
+            return Err(Error::InvalidArgument);
+        }
 
         let mut m = Self::reserve_new(self.len() + m1.len())?;
 
@@ -848,7 +859,10 @@ impl Mantissa {
         s: usize,
         inexact: &mut bool,
     ) -> bool {
-        debug_assert!(s.is_multiple_of(WORD_BIT_SIZE)); // assume s is aligned to the word size.
+        // The roundability scan below works on whole words of known bits. Claiming fewer correct bits is always
+        // sound (the check only gets stricter), so an unaligned `s` is rounded down to a word multiple, in every
+        // build (Jeff 2026-11-24 4:40 PM CT item 5; was a debug_assert that `s` is aligned).
+        let s = s - s % WORD_BIT_SIZE;
 
         // This function is so complex, because it combines rounding for all rounding modes
         // and checks for roundability at the same time.
@@ -1074,7 +1088,8 @@ impl Mantissa {
                 };
             }
 
-            debug_assert!(!(*check_roundable));
+            // `*check_roundable` is false here: both branches above end in `if *check_roundable { return false; }`
+            // (Jeff 2026-11-24 4:40 PM CT item 5; was a debug_assert).
 
             if c {
                 if i < self_len {
@@ -1293,7 +1308,9 @@ impl Mantissa {
     ) -> Result<(Self, bool, bool), Error> {
         let src: &[Word] = &self.m;
         let len = self.max_bit_len();
-        debug_assert!(0 < p && p < len);
+        if !(0 < p && p < len) {
+            return Err(Error::InvalidArgument);
+        }
         let drop = len - p;
         let (k, t) = (drop / WORD_BIT_SIZE, drop % WORD_BIT_SIZE);
         // Bit `i` (from the bottom) of `self`, and whether every bit below `i` is zero.
@@ -1411,8 +1428,11 @@ impl Mantissa {
 
     /// returns true if `self` represents odd integer.
     pub fn is_odd_int(&self, e: usize) -> bool {
+        // e == 0: the value is 0.m in [1/2, 1), not an integer (Jeff 2026-11-24 4:40 PM CT item 5; was a debug_assert that e > 0).
+        if e == 0 {
+            return false;
+        }
         let n = self.max_bit_len() - e;
-        debug_assert!(e > 0);
 
         if n == 0 {
             return self.m[0] & 1 > 0;
@@ -1526,7 +1546,9 @@ impl Mantissa {
         m1[l..].copy_from_slice(&self.m);
         m1[..l].fill(0);
 
-        debug_assert!(add_exp >= 0);
+        if !(add_exp >= 0) {
+            return Err(Error::InvalidArgument);
+        }
 
         shift_slice_right(&mut m1, add_exp as usize);
 

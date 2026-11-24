@@ -170,7 +170,9 @@ impl ExactNumNumber {
 
     // exp for positive argument
     fn exp_positive_arg(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        debug_assert!(!self.is_zero());
+        if !(!self.is_zero()) {
+            return Err(Error::InvalidArgument);
+        }
 
         if self.exponent() > WORD_BIT_SIZE as i64 {
             return Err(Error::ExponentOverflow(self.sign()));
@@ -690,7 +692,9 @@ impl ExactNumNumber {
 
     // e^self for |self| < 1.
     fn expf(self) -> Result<Self, Error> {
-        debug_assert!(!self.is_zero());
+        if !(!self.is_zero()) {
+            return Err(Error::InvalidArgument);
+        }
 
         let p = self.mantissa_max_bit_len();
 

@@ -267,7 +267,9 @@ fn series_rectangular<T: PolycoeffGen>(
     x_step: ExactNumNumber,
     polycoeff_gen: &mut T,
 ) -> Result<ExactNumNumber, Error> {
-    debug_assert!(niter >= 4);
+    if !(niter >= 4) {
+        return Err(Error::InvalidArgument);
+    }
 
     let p = add
         .mantissa_max_bit_len()
@@ -402,9 +404,15 @@ fn series_horner<T: PolycoeffGen>(
     x_step: ExactNumNumber,
     polycoeff_gen: &mut T,
 ) -> Result<ExactNumNumber, Error> {
-    debug_assert!(x_first.exponent() <= 0);
-    debug_assert!(x_step.exponent() <= 0);
-    debug_assert!(!polycoeff_gen.is_div());
+    if !(x_first.exponent() <= 0) {
+        return Err(Error::InvalidArgument);
+    }
+    if !(x_step.exponent() <= 0) {
+        return Err(Error::InvalidArgument);
+    }
+    if !(!polycoeff_gen.is_div()) {
+        return Err(Error::InvalidArgument);
+    }
 
     let p = add
         .mantissa_max_bit_len()
