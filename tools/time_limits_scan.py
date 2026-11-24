@@ -12,8 +12,8 @@ import sys
 
 ROOT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The helper itself (its unit tests use literal durations as test data, not budgets).
-SKIP = {"zenith-float-num/src/test_time.rs"}
-DIRS = ("zenith-float-num/src", "zenith-float-num/tests", "tests")
+SKIP = {"zenith-float-testkit/src/test_time.rs"}
+DIRS = ("zenith-float-num/src", "zenith-float-num/tests", "tests", "zenith-float-testkit/src")
 WATCHDOG_FACTOR = re.compile(r"const DEBUG_WATCHDOG_FACTOR: u32 = (\d+);")
 PATTERNS = [
     ("secs", re.compile(r"Duration::from_secs\(\s*([\d_]+)\s*\)")),

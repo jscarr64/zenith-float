@@ -4,7 +4,7 @@
 Jeff 2026-11-23 23:04 CT: "timing limits are enforced in the release step only; debug still runs every
 test for correctness". So no test may skip rows, return early, shrink a range, or be compiled out in a
 debug build. Any `debug_assertions` in code (cfg!, #[cfg], #[cfg_attr]) is listed, except:
-  - zenith-float-num/src/test_time.rs, the one shared timing switch (LIMITS_ENFORCED) and its tests;
+  - zenith-float-testkit/src/test_time.rs, the one shared timing switch (LIMITS_ENFORCED) and its tests;
   - hang-watchdog budgets, whose debug values are pinned in tools/time_limits.tsv:
       `const BUDGET: std::time::Duration = if cfg!(debug_assertions) {`
       `.saturating_mul(if cfg!(debug_assertions) { N } else { 1 });`
@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 ROOT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SWITCH = "zenith-float-num/src/test_time.rs"
+SWITCH = "zenith-float-testkit/src/test_time.rs"
 WATCHDOG = [
     re.compile(r"^\s*const BUDGET: std::time::Duration = if cfg!\(debug_assertions\) \{$"),
     re.compile(r"\.saturating_mul\(if cfg!\(debug_assertions\) \{ \d+ \} else \{ 1 \}\);$"),

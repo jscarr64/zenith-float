@@ -6,3 +6,11 @@
   only under `#[allow(dead_code)]`. Also removed the unused private caps (HYPERGEOM_TRANSFORM_MAX, GK_NEWTON_MAX,
   SVD_ITER_MAX, EIGEN_ITER_MAX, LOG_EXACT_MAX, QUADRATURE_NEWTON_MAX, QUADRATURE_BISECT_STEPS) and helpers
   (series_term_budget, series_term_cap; series_n_max moved into the one regression test that shows the old cap).
+
+### Changed (paul, same ruling)
+
+- Tests: the wall-clock budget helper `test_time` moved from `zenith-float-num/src/test_time.rs` (included by six test
+  binaries through `#[path]` under `#[allow(dead_code)]`) into the unpublished dev-only workspace crate
+  `zenith-float-testkit`. Its 5 unit tests now run once there instead of once per including binary (num lib 481 -> 476,
+  tier1 117 -> 112, c2f1 7 -> 2, oracle 12 -> 7, r9 20 -> 15, s9 17 -> 12, specials_oracle 27 -> 22; every other test
+  unchanged). check_zero_test_targets: 70 -> 71 workspace targets.

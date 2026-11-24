@@ -4,6 +4,7 @@ members = [
     "zenith-float-macro",
     "zenith-float-compare",
     "zenith-float-bound",
+    "zenith-float-testkit",
 ]
 exclude = ["nostd-tests"]
 resolver = "2"
@@ -34,6 +35,7 @@ exclude = [
     "zenith-float-macro",
     "zenith-float-compare",
     "zenith-float-bound",
+    "zenith-float-testkit",
     "scripts",
     "golds",
     "nostd-tests",
@@ -67,6 +69,8 @@ mpfr-tests = ["zenith-float-num/mpfr-tests"]
 
 [dev-dependencies]
 trybuild = "1.0"
+# Test-only helpers (wall-clock budgets); path only, stripped on publish.
+zenith-float-testkit = { path = "zenith-float-testkit" }
 
 [profile.release]
 opt-level = 3

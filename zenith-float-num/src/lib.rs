@@ -80,7 +80,7 @@ impl From<Error> for alloc::string::String {
     }
 }
 #[cfg(test)]
-mod test_time;
+use zenith_float_testkit::test_time;
 
 #[cfg(feature = "std")]
 mod for_3rd;

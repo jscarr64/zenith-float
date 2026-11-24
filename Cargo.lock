@@ -1260,6 +1260,7 @@ dependencies = [
  "zenith-float-bound",
  "zenith-float-macro",
  "zenith-float-num",
+ "zenith-float-testkit",
 ]
 
 [[package]]
@@ -1303,7 +1304,12 @@ dependencies = [
  "rug",
  "serde",
  "serde_json",
+ "zenith-float-testkit",
 ]
+
+[[package]]
+name = "zenith-float-testkit"
+version = "2.0.0"
 
 [[package]]
 name = "zerocopy"

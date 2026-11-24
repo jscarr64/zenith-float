@@ -2,7 +2,7 @@
 # Red test (Jeff 2026-11-23 23:04 CT: "debug still runs every test for correctness"): no test may branch on
 # debug_assertions to skip rows or tests, and no per-row wait may fail a debug row for being slow (raw recv_timeout /
 # wait_timeout; Spence R1 on 82e4afb) (tools/debug_skips_scan.py). Allowed: the shared timing switch in
-# zenith-float-num/src/test_time.rs and the hang-watchdog budgets. A fixture check proves the scan bites.
+# zenith-float-testkit/src/test_time.rs and the hang-watchdog budgets. A fixture check proves the scan bites.
 # usage: tools/test_no_debug_skips.sh
 set -uo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"

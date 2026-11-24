@@ -21,7 +21,7 @@ const MAX_TIME_FACTOR_MILLI: u64 = 8000;
 /// `ZF_TIME_FACTOR` in thousandths: unset is 1000; otherwise ASCII digits with at most 3 fraction
 /// digits and a value in [1, 8]. Anything else is `Err`, so a typo fails the test instead of
 /// silently changing the budget.
-pub(crate) fn time_factor_milli(raw: Option<&str>) -> Result<u64, String> {
+pub fn time_factor_milli(raw: Option<&str>) -> Result<u64, String> {
     let Some(s) = raw else { return Ok(1000) };
     let bad =
         || format!("ZF_TIME_FACTOR={s:?}: want a decimal in [1, 8] with at most 3 fraction digits");
@@ -49,7 +49,7 @@ pub(crate) fn time_factor_milli(raw: Option<&str>) -> Result<u64, String> {
 }
 
 /// `native` times the factor (exact: native ms times the milli-factor is µs).
-pub(crate) fn scaled(native: Duration, milli: u64) -> Result<Duration, String> {
+pub fn scaled(native: Duration, milli: u64) -> Result<Duration, String> {
     let ms = u64::try_from(native.as_millis()).map_err(|e| format!("budget {native:?}: {e}"))?;
     ms.checked_mul(milli)
         .map(Duration::from_micros)
@@ -57,7 +57,7 @@ pub(crate) fn scaled(native: Duration, milli: u64) -> Result<Duration, String> {
 }
 
 /// The budget for this run: `native` times `ZF_TIME_FACTOR` (unset: `native`).
-pub(crate) fn budget(native: Duration) -> Result<Duration, String> {
+pub fn budget(native: Duration) -> Result<Duration, String> {
     let milli = match std::env::var("ZF_TIME_FACTOR") {
         Err(std::env::VarError::NotPresent) => time_factor_milli(None)?,
         Err(e) => return Err(format!("ZF_TIME_FACTOR: {e}")),
@@ -67,29 +67,29 @@ pub(crate) fn budget(native: Duration) -> Result<Duration, String> {
 }
 
 /// Wall-clock limits fail a test only in a release build (Jeff 2026-11-23 23:04 CT).
-pub(crate) const LIMITS_ENFORCED: bool = !cfg!(debug_assertions);
+pub const LIMITS_ENFORCED: bool = !cfg!(debug_assertions);
 
 /// The result of a wall-clock comparison for this build: `ok` in a release build, `true` in a debug
 /// build. Every timing assert that is not a [`within`] / [`within_ms`] budget goes through here.
-pub(crate) fn limit_holds(ok: bool) -> bool {
+pub fn limit_holds(ok: bool) -> bool {
     ok || !LIMITS_ENFORCED
 }
 
 /// `elapsed` is under this run's budget for `native` (see [`budget`]), in every build. For hang
 /// watchdogs only; a timing assert uses [`within`]. An invalid `ZF_TIME_FACTOR` counts as over budget.
-pub(crate) fn under_budget(elapsed: Duration, native: Duration) -> bool {
+pub fn under_budget(elapsed: Duration, native: Duration) -> bool {
     budget(native).is_ok_and(|b| elapsed < b)
 }
 
 /// The timing assert: [`under_budget`] in a release build, `true` in a debug build ([`limit_holds`]).
 /// Every wall-clock bound in the library's unit tests goes through here or [`within_ms`] (Jeff
 /// 2026-11-22 ~11:58 PM CT: qemu limits scale with the time factor).
-pub(crate) fn within(elapsed: Duration, native: Duration) -> bool {
+pub fn within(elapsed: Duration, native: Duration) -> bool {
     limit_holds(under_budget(elapsed, native))
 }
 
 /// [`within`] for a test that keeps its time as `Duration::as_millis()`.
-pub(crate) fn within_ms(elapsed_ms: u128, native_ms: u64) -> bool {
+pub fn within_ms(elapsed_ms: u128, native_ms: u64) -> bool {
     limit_holds(
         u64::try_from(elapsed_ms).is_ok_and(|ms| {
             under_budget(Duration::from_millis(ms), Duration::from_millis(native_ms))
@@ -99,11 +99,11 @@ pub(crate) fn within_ms(elapsed_ms: u128, native_ms: u64) -> bool {
 
 /// A debug build waits this many times a row's release limit before it calls the row hung: the factor
 /// `tests/specials_oracle.rs` already gave its unoptimised rows, now shared (pinned in tools/time_limits.tsv).
-pub(crate) const DEBUG_WATCHDOG_FACTOR: u32 = 10;
+pub const DEBUG_WATCHDOG_FACTOR: u32 = 10;
 
 /// Why a row's result did not arrive.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum RowWait {
+pub enum RowWait {
     /// Release step: the row missed its wall-clock limit.
     Limit,
     /// Debug build: no result after the hang watchdog (`limit` x [`DEBUG_WATCHDOG_FACTOR`]).
@@ -115,10 +115,7 @@ pub(crate) enum RowWait {
 /// Waits for one row's result. Release step: the row fails at `limit`, as before ([`RowWait::Limit`]). Debug
 /// build: the limit is not enforced (Jeff 2026-11-23 23:04 CT); the wait stops only at the hang watchdog
 /// `limit` x [`DEBUG_WATCHDOG_FACTOR`] ([`RowWait::Hang`]), so a slow row still has its result checked.
-pub(crate) fn wait_row<T>(
-    rx: &std::sync::mpsc::Receiver<T>,
-    limit: Duration,
-) -> Result<T, RowWait> {
+pub fn wait_row<T>(rx: &std::sync::mpsc::Receiver<T>, limit: Duration) -> Result<T, RowWait> {
     use std::sync::mpsc::RecvTimeoutError;
     let (wait, missed) = if LIMITS_ENFORCED {
         (limit, RowWait::Limit)

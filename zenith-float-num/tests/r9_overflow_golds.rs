@@ -15,12 +15,10 @@
 
 // Per-row wall-clock limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the
 // library (test_time::wait_row).
-#[allow(dead_code)]
-#[path = "../src/test_time.rs"]
-mod test_time;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use zenith_float_testkit::test_time;
 
 use serde_json::Value;
 use zenith_float_num::{Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, Word};

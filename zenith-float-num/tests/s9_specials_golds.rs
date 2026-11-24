@@ -19,10 +19,8 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 // Timing limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the library.
-#[allow(dead_code)]
-#[path = "../src/test_time.rs"]
-mod test_time;
 use zenith_float_num::{Consts, Error, ExactNum, Exponent, RoundingMode, Sign, Word};
+use zenith_float_testkit::test_time;
 
 const GOLDS: &str = include_str!("oracle/goldens/s9_specials.jsonl");
 

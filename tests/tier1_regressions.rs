@@ -14,9 +14,7 @@
 // Wall-clock budgets scale with ZF_TIME_FACTOR under qemu (Jeff 2026-11-22 ~11:58 PM CT); one implementation,
 // shared with the library's unit tests. The ZF-78 child budgets are hang watchdogs (`under_budget`, every build);
 // timing asserts apply in the release step only (Jeff 2026-11-23 23:04 CT).
-#[allow(dead_code)]
-#[path = "../zenith-float-num/src/test_time.rs"]
-mod test_time;
+use zenith_float_testkit::test_time;
 // No panic in test code (P2): `x.must("what")?`, same helper as the library's unit tests.
 extern crate alloc;
 #[path = "../zenith-float-num/src/test_must.rs"]

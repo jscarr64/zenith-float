@@ -6,11 +6,9 @@
 
 // Per-row wall-clock limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the
 // library (test_time::wait_row).
-#[allow(dead_code)]
-#[path = "../src/test_time.rs"]
-mod test_time;
 use core::ops::Neg;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, Radix, RoundingMode};
+use zenith_float_testkit::test_time;
 
 const RM: RoundingMode = RoundingMode::ToEven;
 

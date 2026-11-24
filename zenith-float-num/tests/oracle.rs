@@ -8,13 +8,11 @@
 
 // Per-row wall-clock limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the
 // library (test_time::wait_row).
-#[allow(dead_code)]
-#[path = "../src/test_time.rs"]
-mod test_time;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use zenith_float_testkit::test_time;
 
 use zenith_float_num::{
     Consts, Error, ExactComplex, ExactNum, Exponent, Radix, RoundingMode, Sign, EXPONENT_MIN,
