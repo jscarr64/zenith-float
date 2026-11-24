@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Red test (official f17d6ee gate, 2026-11-17): debug workspace suites in
 # tools/full_gate.sh must default to 40m when STEP_TIMEOUT is unset (build-debug: 60m since
-# Jeff 2026-11-23 23:04 CT; features-random-serde stays 40m).
+# Jeff 2026-11-23 23:04 CT; features-random-serde and prepublish: 60m since Jeff 2026-11-24 12:58 AM CT).
 # features-random-serde runs `cargo test --workspace --features random,serde`
 # in debug (no --release), the same heavy suite as build-debug. Official
 # full_gate at f17d6ee was fail-fast killed at features-random-serde=124
@@ -34,7 +34,7 @@ timeout_for() {
 }
 
 # features-random-serde must stay a debug workspace suite: that is why it
-# shares build-debug's 40m default. build-release on this SHA finished in
+# shares build-debug's 60m default. build-release on this SHA finished in
 # 4m 40s under the 20m cap.
 feat="$(grep -E '^run features-random-serde ' "$root/tools/full_gate.sh" || true)"
 [[ -n "$feat" ]] || bad "no run features-random-serde line in tools/full_gate.sh"
@@ -49,13 +49,14 @@ unset MPFR_STEP_TIMEOUT || true
 # Jeff 2026-11-23 23:04 CT: "timing limits are enforced in the release step only; debug still runs every
 # test for correctness, and the debug step limit goes to 60 min". build-debug is the only limit that moved.
 [[ "$(timeout_for build-debug)" == 60m ]] || bad "build-debug default timeout is $(timeout_for build-debug), expected 60m (Jeff 2026-11-23 23:04 CT)"
-[[ "$(timeout_for features-random-serde)" == 40m ]] || bad "features-random-serde default timeout is $(timeout_for features-random-serde), expected 40m"
+# Jeff 2026-11-24 12:58 AM CT: "Go: features-random-serde and prepublish get the same 60 min limit as build-debug".
+[[ "$(timeout_for features-random-serde)" == 60m ]] || bad "features-random-serde default timeout is $(timeout_for features-random-serde), expected 60m (Jeff 2026-11-24 12:58 AM CT)"
 [[ "$(timeout_for build-release)" == 20m ]] || bad "build-release default timeout is $(timeout_for build-release), expected 20m"
 [[ "$(timeout_for oracle-fast)" == 20m ]] || bad "oracle-fast default timeout is $(timeout_for oracle-fast), expected 20m"
 [[ "$(timeout_for mpfr)" == 40m ]] || bad "mpfr default timeout is $(timeout_for mpfr), expected 40m"
 
 [[ "$(timeout_for oracle-deep)" == 20m ]] || bad "oracle-deep default timeout is $(timeout_for oracle-deep), expected 20m"
-[[ "$(timeout_for prepublish)" == 20m ]] || bad "prepublish default timeout is $(timeout_for prepublish), expected 20m"
+[[ "$(timeout_for prepublish)" == 60m ]] || bad "prepublish default timeout is $(timeout_for prepublish), expected 60m (Jeff 2026-11-24 12:58 AM CT)"
 [[ "$(timeout_for clippy-x86_64)" == 20m ]] || bad "clippy-x86_64 default timeout is $(timeout_for clippy-x86_64), expected 20m"
 
 # The gate sets no case wall: ZFS_WALL (120 s in the T2 runs) belongs to the T2 harness, not to full_gate.sh.
@@ -76,6 +77,7 @@ STEP_TIMEOUT=60s
 [[ "$(timeout_for build-debug)" == 60s ]] || bad "explicit STEP_TIMEOUT=60s not honored for build-debug: $(timeout_for build-debug)"
 [[ "$(timeout_for features-random-serde)" == 60s ]] || bad "explicit STEP_TIMEOUT=60s not honored for features-random-serde: $(timeout_for features-random-serde)"
 [[ "$(timeout_for build-release)" == 60s ]] || bad "explicit STEP_TIMEOUT=60s not honored for build-release: $(timeout_for build-release)"
+[[ "$(timeout_for prepublish)" == 60s ]] || bad "explicit STEP_TIMEOUT=60s not honored for prepublish: $(timeout_for prepublish)"
 unset STEP_TIMEOUT || true
 
 if [[ $fail -eq 0 ]]; then

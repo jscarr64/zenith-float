@@ -64,10 +64,10 @@ run() {
   # Debug workspace suites (no --release): post-985b100 tests are heavier;
   # 20m was not enough for build-debug at 6e2165e, nor for
   # features-random-serde at f17d6ee (exit 124, tests still passing).
-  [[ $name == features-random-serde && -z "${STEP_TIMEOUT:-}" ]] && to=40m
   # Jeff 2026-11-23 23:04 CT: "timing limits are enforced in the release step only; debug still runs every
   # test for correctness, and the debug step limit goes to 60 min" (measured ~44 min at f21c27e).
-  [[ $name == build-debug && -z "${STEP_TIMEOUT:-}" ]] && to=60m
+  # Jeff 2026-11-24 12:58 AM CT: "Go: features-random-serde and prepublish get the same 60 min limit as build-debug".
+  [[ $name =~ ^(build-debug|features-random-serde|prepublish)$ && -z "${STEP_TIMEOUT:-}" ]] && to=60m
   timeout "$to" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""
