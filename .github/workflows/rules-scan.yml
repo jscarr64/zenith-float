@@ -18,3 +18,6 @@ jobs:
       - run: tools/rules_scan_selftest.sh
       - run: tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..HEAD"
       - run: tools/no_clone_selftest.sh && tools/no_clone.sh --progress
+      # Whole-tree zero suppression (Jeff 2026-11-24 1:17 PM CT: no #[allow]/#[expect], clippy.toml at defaults, no
+      # unsafe outside tools/unsafe_pending.tsv). No allowlist.
+      - run: tools/no_suppress_selftest.sh && tools/no_suppress_scan.sh

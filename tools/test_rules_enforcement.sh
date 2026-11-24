@@ -6,7 +6,8 @@
 #   2. the gate's no-clone-progress step fails on any rise (tools/no_clone.sh --progress); a planted clone fails it.
 #   3. rules-scan, no-clone-progress, fmt lead the gate (then target-dir, clippy); a planted clone or a crash fails rules-scan.
 #   4. the committed pre-commit hook stops a planted clone, a count rise, a crash, red fmt and red clippy.
-#   5. .github/workflows/rules-scan.yml runs the library rules on every push; its commands fail a planted clone.
+#   5. .github/workflows/rules-scan.yml runs the library rules and no_suppress_scan on every push; its commands fail a
+#      planted clone.
 #   6. CONTRIBUTING.md's per-commit checklist runs the library scan and says a 'clean' claim cites its log at that commit.
 # usage: tools/test_rules_enforcement.sh [ROOT]   (ROOT: a checkout, default this one; text and fixture checks, no cargo)
 set -u
@@ -117,6 +118,9 @@ if [ -f "$wf" ]; then
   printf '%s\n' "${runs[@]}" | grep -q 'no_clone.sh --progress' || bad "rules-scan.yml does not run tools/no_clone.sh --progress"
   printf '%s\n' "${runs[@]}" | grep -q 'zenith-float-bound' && bad "rules-scan.yml runs the bound scanner as the rules scan"
   cp "$root"/tools/no_clone.sh "$root"/tools/no_clone_selftest.sh "$g/tools/"
+  printf '%s\n' "${runs[@]}" | grep -q 'tools/no_suppress_scan.sh' || bad "rules-scan.yml does not run tools/no_suppress_scan.sh"
+  cp "$root"/tools/no_suppress_scan.sh "$root"/tools/no_suppress_scan.py "$root"/tools/no_suppress_selftest.sh "$g/tools/"
+  printf '# path\tcount\tnote\n' > "$g/tools/unsafe_pending.tsv"
   printf 'clone()\t0\nto_vec()\t0\ncloned()\t0\nClone::clone\t0\nclone_from\t0\nimpl Clone\t0\nderive(Clone)\t0\ntotal\t0\nhelper_copies\t0\n' > "$g/tools/no_clone_progress_baseline.txt"
   ( cd "$g" && git add -A && git commit -qm ci-tools )
   wfrun() { local r=0 c; for c in "${runs[@]}"; do (cd "$g" && RATCHET_BASE=$gb bash -o pipefail -c "$c") >> "$t/wf.out" 2>&1 || r=1; done; return $r; }
