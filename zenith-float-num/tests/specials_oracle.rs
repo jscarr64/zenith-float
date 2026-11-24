@@ -16,8 +16,8 @@ use std::time::Duration;
 use zenith_float_testkit::test_time;
 
 use zenith_float_num::{
-    accuracy_of, Accuracy, Consts, Error, ExactComplex, ExactNum, Exponent, Radix, RoundingMode,
-    Sign, Word, INF_NEG, INF_POS,
+    accuracy_of, Accuracy, Consts, Error, ExactComplex, ExactNum, Exponent, FoxHParams,
+    HeunGParams, MeijerParams, Radix, RoundingMode, Sign, Word, INF_NEG, INF_POS,
 };
 
 /// `|x|` for an operand that stays borrowed: fresh `±1` times `x` at `x`'s own precision.
@@ -340,22 +340,44 @@ fn eval_real(
             let ap = json_nums(row.get("ap"), p, cc)?;
             let bm = json_nums(row.get("bm"), p, cc)?;
             let bq = json_nums(row.get("bq"), p, cc)?;
-            num(toks, 0)?.meijer_g(&an, &ap, &bm, &bq, p, rm, cc)
+            num(toks, 0)?.meijer_g(
+                MeijerParams {
+                    an: &an,
+                    ap: &ap,
+                    bm: &bm,
+                    bq: &bq,
+                },
+                p,
+                rm,
+                cc,
+            )
         }
         "fox_h" => {
             let an = json_pairs(row.get("an"), p, cc)?;
             let ap = json_pairs(row.get("ap"), p, cc)?;
             let bm = json_pairs(row.get("bm"), p, cc)?;
             let bq = json_pairs(row.get("bq"), p, cc)?;
-            num(toks, 0)?.fox_h(&an, &ap, &bm, &bq, p, rm, cc)
+            num(toks, 0)?.fox_h(
+                FoxHParams {
+                    an: &an,
+                    ap: &ap,
+                    bm: &bm,
+                    bq: &bq,
+                },
+                p,
+                rm,
+                cc,
+            )
         }
         "heun_g" => num(toks, 0)?.heun_g(
-            num(toks, 1)?,
-            num(toks, 2)?,
-            num(toks, 3)?,
-            num(toks, 4)?,
-            num(toks, 5)?,
-            num(toks, 6)?,
+            HeunGParams {
+                a: num(toks, 1)?,
+                q: num(toks, 2)?,
+                alpha: num(toks, 3)?,
+                beta: num(toks, 4)?,
+                gamma: num(toks, 5)?,
+                delta: num(toks, 6)?,
+            },
             p,
             rm,
             cc,

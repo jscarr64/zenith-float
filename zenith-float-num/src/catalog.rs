@@ -6,6 +6,7 @@
 
 use crate::common::util::bump_prec_retry;
 use crate::defs::{MAX_PRECISION, WORD_BIT_SIZE};
+use crate::heun_fox::MeijerParams;
 use crate::Consts;
 use crate::Error;
 use crate::ExactComplex;
@@ -207,7 +208,17 @@ fn pfq_continued(
         .map(|x| ExactNum::sub_ref(&one, x, wrk, n))
         .collect();
     let mz = z.neg_ref();
-    let g = mz.meijer_g(&an, &[], &[ExactNum::new(wrk)], &bq, wrk, n, cc);
+    let g = mz.meijer_g(
+        MeijerParams {
+            an: &an,
+            ap: &[],
+            bm: &[ExactNum::new(wrk)],
+            bq: &bq,
+        },
+        wrk,
+        n,
+        cc,
+    );
     if !finite(&g) {
         return cat_nan();
     }

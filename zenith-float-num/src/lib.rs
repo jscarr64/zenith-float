@@ -157,6 +157,7 @@ pub use crate::hash::constant_time_eq;
 pub use crate::hash::hmac_sha256;
 pub use crate::hash::sha256;
 pub use crate::hash::sha512;
+pub use crate::heun_fox::{FoxHParams, HeunCParams, HeunGParams, MeijerParams};
 pub use crate::ieee_soft::{
     check_alloc_bytes, Bfloat16, ExactNumArray, Ieee16, Ieee32, Ieee32Array, Ieee64, Ieee64Array,
     FFT_MAX_POINTS, IEEE_SIMD_LANE_WIDTH,

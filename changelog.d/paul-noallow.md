@@ -26,3 +26,7 @@
   tolerances are grouped. Same arithmetic and results.
 - `newton(f, df, x0, NewtonOptions { tol, max_iter }, p, rm, cc)`: the stop tolerance and iteration cap are grouped.
   Same arithmetic and results.
+- `ExactNum::meijer_g(MeijerParams { an, ap, bm, bq }, p, rm, cc)`, `ExactNum::fox_h(FoxHParams { an, ap, bm, bq }, p, rm, cc)`,
+  `ExactNum::heun_g(HeunGParams { a, q, alpha, beta, gamma, delta }, p, rm, cc)` and
+  `ExactNum::heun_c(HeunCParams { alpha, gamma, delta, eps, q }, p, rm, cc)`: the parameter groups are one struct, fields
+  in the old argument order. Same arithmetic and results.

@@ -21,8 +21,9 @@ extern crate alloc;
 mod test_must;
 use test_must::Must;
 use zenith_float::{
-    Consts, Error, ExactComplex, ExactInt, ExactNum, ExactRational, Ieee32, Ieee64, Radix, RawKind,
-    RawParts, RoundingMode, Sign, INF_NEG, INF_POS, NAN, WORD_BIT_SIZE,
+    Consts, Error, ExactComplex, ExactInt, ExactNum, ExactRational, FoxHParams, HeunCParams,
+    HeunGParams, Ieee32, Ieee64, MeijerParams, Radix, RawKind, RawParts, RoundingMode, Sign,
+    INF_NEG, INF_POS, NAN, WORD_BIT_SIZE,
 };
 
 const ROWS: &str = include_str!("tier1/rows.tsv");
@@ -186,13 +187,33 @@ fn meijer_fox(
         groups.push(g);
     }
     Ok(if fox {
-        z.fox_h(&groups[0], &groups[1], &groups[2], &groups[3], p, rm, cc)
+        z.fox_h(
+            FoxHParams {
+                an: &groups[0],
+                ap: &groups[1],
+                bm: &groups[2],
+                bq: &groups[3],
+            },
+            p,
+            rm,
+            cc,
+        )
     } else {
         let v: Vec<Vec<ExactNum>> = groups
             .into_iter()
             .map(|g| g.into_iter().map(|x| x.0).collect())
             .collect();
-        z.meijer_g(&v[0], &v[1], &v[2], &v[3], p, rm, cc)
+        z.meijer_g(
+            MeijerParams {
+                an: &v[0],
+                ap: &v[1],
+                bm: &v[2],
+                bq: &v[3],
+            },
+            p,
+            rm,
+            cc,
+        )
     })
 }
 
@@ -1392,14 +1413,44 @@ fn zf_40_meijer_fox_at_zero() -> Result<(), String> {
             let half = ExactNum::from_u8(1, p).ldexp(-1, p, rm);
             let two = ExactNum::from_u8(2, p);
             let sp = cc.pi(p + 128, RoundingMode::ToEven).sqrt(p, rm);
-            let g = z.meijer_g(&[], &[], std::slice::from_ref(&z), &[], p, rm, &mut cc);
+            let g = z.meijer_g(
+                MeijerParams {
+                    an: &[],
+                    ap: &[],
+                    bm: std::slice::from_ref(&z),
+                    bq: &[],
+                },
+                p,
+                rm,
+                &mut cc,
+            );
             assert_eq!(fmt_real(&g), fmt_real(&one), "G exp(-z) at 0 p={p}");
             let zero = || ExactNum::new(p);
             let one_v = || ExactNum::from_u8(1, p);
             let half_v = || ExactNum::from_u8(1, p).ldexp(-1, p, rm);
-            let f = z.fox_h(&[], &[], &[(zero(), one_v())], &[], p, rm, &mut cc);
+            let f = z.fox_h(
+                FoxHParams {
+                    an: &[],
+                    ap: &[],
+                    bm: &[(zero(), one_v())],
+                    bq: &[],
+                },
+                p,
+                rm,
+                &mut cc,
+            );
             assert_eq!(fmt_real(&f), fmt_real(&one), "H exp(-z) at 0 p={p}");
-            let g = z.meijer_g(&[], &[], &[zero(), half_v()], &[], p, rm, &mut cc);
+            let g = z.meijer_g(
+                MeijerParams {
+                    an: &[],
+                    ap: &[],
+                    bm: &[zero(), half_v()],
+                    bq: &[],
+                },
+                p,
+                rm,
+                &mut cc,
+            );
             let d = ExactNum::sub_ref(&g, &sp, p + 128, rm).abs();
             assert!(
                 matches!(d.compare(&ExactNum::from_u8(1,p).ldexp(4-p as i64,p,rm)),Some(o) if o<0),
@@ -1407,16 +1458,28 @@ fn zf_40_meijer_fox_at_zero() -> Result<(), String> {
                 fmt_real(&g)
             );
             let f = z.fox_h(
-                &[],
-                &[],
-                &[(zero(), one_v()), (half_v(), one_v())],
-                &[],
+                FoxHParams {
+                    an: &[],
+                    ap: &[],
+                    bm: &[(zero(), one_v()), (half_v(), one_v())],
+                    bq: &[],
+                },
                 p,
                 rm,
                 &mut cc,
             );
             assert_eq!(fmt_real(&f), fmt_real(&g), "H sqrt pi at 0 p={p}");
-            let f = z.fox_h(&[], &[], &[(zero(), half)], &[], p, rm, &mut cc);
+            let f = z.fox_h(
+                FoxHParams {
+                    an: &[],
+                    ap: &[],
+                    bm: &[(zero(), half)],
+                    bq: &[],
+                },
+                p,
+                rm,
+                &mut cc,
+            );
             assert_eq!(fmt_real(&f), fmt_real(&two), "H at 0 scale 1/2 p={p}");
         }
     }
@@ -2100,22 +2163,26 @@ fn zf_41_meijer_fox_ln1pz_at_unit() -> Result<(), String> {
         for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
             for z in [ExactNum::from_u8(1, p), -ExactNum::from_u8(1, p)] {
                 let g = z.meijer_g(
-                    &[ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)],
-                    &[],
-                    std::slice::from_ref(&one),
-                    std::slice::from_ref(&zero),
+                    MeijerParams {
+                        an: &[ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)],
+                        ap: &[],
+                        bm: std::slice::from_ref(&one),
+                        bq: std::slice::from_ref(&zero),
+                    },
                     p,
                     rm,
                     &mut cc,
                 );
                 let h = z.fox_h(
-                    &[
-                        (ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
-                        (ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
-                    ],
-                    &[],
-                    &[(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p))],
-                    &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
+                    FoxHParams {
+                        an: &[
+                            (ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
+                            (ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
+                        ],
+                        ap: &[],
+                        bm: &[(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p))],
+                        bq: &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
+                    },
                     p,
                     rm,
                     &mut cc,
@@ -3918,8 +3985,31 @@ fn zf_43_heun_series_rigorous_tail() -> Result<(), String> {
         let w = ExactNum::parse(t[n - 1], Radix::Dec, 8960, RoundingMode::ToEven, &mut cc);
         for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
             let v = match t[0] {
-                "r.heun_g" => x[0].heun_g(&x[1], &x[2], &x[3], &x[4], &x[5], &x[6], p, rm, &mut cc),
-                "r.heun_c" => x[0].heun_c(&x[1], &x[2], &x[3], &x[4], &x[5], p, rm, &mut cc),
+                "r.heun_g" => x[0].heun_g(
+                    HeunGParams {
+                        a: &x[1],
+                        q: &x[2],
+                        alpha: &x[3],
+                        beta: &x[4],
+                        gamma: &x[5],
+                        delta: &x[6],
+                    },
+                    p,
+                    rm,
+                    &mut cc,
+                ),
+                "r.heun_c" => x[0].heun_c(
+                    HeunCParams {
+                        alpha: &x[1],
+                        gamma: &x[2],
+                        delta: &x[3],
+                        eps: &x[4],
+                        q: &x[5],
+                    },
+                    p,
+                    rm,
+                    &mut cc,
+                ),
                 _ => return Err("function".into()),
             };
             let ok = !v.is_nan() && !v.is_inf() && !v.is_zero() && {

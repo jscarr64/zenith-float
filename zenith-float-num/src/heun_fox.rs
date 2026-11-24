@@ -1298,6 +1298,66 @@ fn pow_u64(base: &ExactNum, n: u64, p: usize, cc: &mut Consts) -> ExactNum {
     }
 }
 
+/// Parameter groups of [`ExactNum::meijer_g`], in mpmath `meijerg([[an],[ap]],[[bm],[bq]], z)` order
+/// (zenith-float 2.0: grouped so no public function takes more than 7 arguments).
+#[derive(Clone, Copy, Debug)]
+pub struct MeijerParams<'a> {
+    /// \(a_1,\ldots,a_n\).
+    pub an: &'a [ExactNum],
+    /// \(a_{n+1},\ldots,a_p\).
+    pub ap: &'a [ExactNum],
+    /// \(b_1,\ldots,b_m\).
+    pub bm: &'a [ExactNum],
+    /// \(b_{m+1},\ldots,b_q\).
+    pub bq: &'a [ExactNum],
+}
+
+/// Parameter groups of [`ExactNum::fox_h`]: `(a, alpha)` / `(b, beta)` pairs in the same order as
+/// [`MeijerParams`].
+#[derive(Clone, Copy, Debug)]
+pub struct FoxHParams<'a> {
+    /// \((a_j,\alpha_j)\), \(j\le n\).
+    pub an: &'a [(ExactNum, ExactNum)],
+    /// \((a_j,\alpha_j)\), \(n<j\le p\).
+    pub ap: &'a [(ExactNum, ExactNum)],
+    /// \((b_j,\beta_j)\), \(j\le m\).
+    pub bm: &'a [(ExactNum, ExactNum)],
+    /// \((b_j,\beta_j)\), \(m<j\le q\).
+    pub bq: &'a [(ExactNum, ExactNum)],
+}
+
+/// Parameters of [`ExactNum::heun_g`] (mpmath `heun(a, q, alpha, beta, gamma, delta, z)` order).
+#[derive(Clone, Copy, Debug)]
+pub struct HeunGParams<'a> {
+    /// Singular point \(a\).
+    pub a: &'a ExactNum,
+    /// Accessory parameter \(q\).
+    pub q: &'a ExactNum,
+    /// \(\alpha\).
+    pub alpha: &'a ExactNum,
+    /// \(\beta\).
+    pub beta: &'a ExactNum,
+    /// \(\gamma\).
+    pub gamma: &'a ExactNum,
+    /// \(\delta\).
+    pub delta: &'a ExactNum,
+}
+
+/// Parameters of [`ExactNum::heun_c`] (confluent Heun, same order as before 2.0).
+#[derive(Clone, Copy, Debug)]
+pub struct HeunCParams<'a> {
+    /// \(\alpha\).
+    pub alpha: &'a ExactNum,
+    /// \(\gamma\).
+    pub gamma: &'a ExactNum,
+    /// \(\delta\).
+    pub delta: &'a ExactNum,
+    /// \(\varepsilon\).
+    pub eps: &'a ExactNum,
+    /// \(q\).
+    pub q: &'a ExactNum,
+}
+
 impl ExactNum {
     /// Meijer \(G^{m,n}_{p,q}(\mathrm{self}\mid a_1,\ldots,a_n;a_{n+1},\ldots,a_p; b_1,\ldots,b_m;b_{m+1},\ldots,b_q)\).
     ///
@@ -1328,10 +1388,7 @@ impl ExactNum {
     /// Accuracy: unspecified
     pub fn meijer_g(
         &self,
-        an: &[Self],
-        ap: &[Self],
-        bm: &[Self],
-        bq: &[Self],
+        MeijerParams { an, ap, bm, bq }: MeijerParams<'_>,
         p: usize,
         rm: RoundingMode,
         cc: &mut Consts,
@@ -1397,10 +1454,7 @@ impl ExactNum {
     /// Accuracy: unspecified
     pub fn fox_h(
         &self,
-        an: &[(Self, Self)],
-        ap: &[(Self, Self)],
-        bm: &[(Self, Self)],
-        bq: &[(Self, Self)],
+        FoxHParams { an, ap, bm, bq }: FoxHParams<'_>,
         p: usize,
         rm: RoundingMode,
         cc: &mut Consts,
@@ -1531,12 +1585,14 @@ impl ExactNum {
     /// Accuracy: correctly-rounded outside the disk; unspecified inside the disk
     pub fn heun_g(
         &self,
-        a: &Self,
-        q: &Self,
-        alpha: &Self,
-        beta: &Self,
-        gamma: &Self,
-        delta: &Self,
+        HeunGParams {
+            a,
+            q,
+            alpha,
+            beta,
+            gamma,
+            delta,
+        }: HeunGParams<'_>,
         p: usize,
         rm: RoundingMode,
         cc: &mut Consts,
@@ -1661,11 +1717,13 @@ impl ExactNum {
     /// Accuracy: correctly-rounded outside the disk; unspecified inside the disk
     pub fn heun_c(
         &self,
-        alpha: &Self,
-        gamma: &Self,
-        delta: &Self,
-        eps: &Self,
-        q: &Self,
+        HeunCParams {
+            alpha,
+            gamma,
+            delta,
+            eps,
+            q,
+        }: HeunCParams<'_>,
         p: usize,
         rm: RoundingMode,
         cc: &mut Consts,
@@ -3854,15 +3912,27 @@ mod tests {
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
 
-        let g = z.meijer_g(&[], &[], core::slice::from_ref(&zero), &[], p, rm, &mut cc);
+        let g = z.meijer_g(
+            MeijerParams {
+                an: &[],
+                ap: &[],
+                bm: core::slice::from_ref(&zero),
+                bq: &[],
+            },
+            p,
+            rm,
+            &mut cc,
+        );
         let e = z.neg_via_mul().exp(p, rm, &mut cc);
         assert!(near(&g, &e, p), "G^{{1,0}}_{{0,1}}(1/2) = e^{{-1/2}}");
 
         let fox = z.fox_h(
-            &[],
-            &[],
-            &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
-            &[],
+            FoxHParams {
+                an: &[],
+                ap: &[],
+                bm: &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
+                bq: &[],
+            },
             p,
             rm,
             &mut cc,
@@ -3871,10 +3941,12 @@ mod tests {
 
         let a03 = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm);
         let g11 = z.meijer_g(
-            core::slice::from_ref(&a03),
-            &[],
-            core::slice::from_ref(&zero),
-            &[],
+            MeijerParams {
+                an: core::slice::from_ref(&a03),
+                ap: &[],
+                bm: core::slice::from_ref(&zero),
+                bq: &[],
+            },
             p,
             rm,
             &mut cc,
@@ -3904,7 +3976,19 @@ mod tests {
             .sub(&gamma, p, rm)
             .add(&one, p, rm);
         let qv = ExactNum::mul_ref(&aa, &alpha, p, rm).mul(&beta, p, rm);
-        let hg = zz.heun_g(&aa, &qv, &alpha, &beta, &gamma, &delta, p, rm, &mut cc);
+        let hg = zz.heun_g(
+            HeunGParams {
+                a: &aa,
+                q: &qv,
+                alpha: &alpha,
+                beta: &beta,
+                gamma: &gamma,
+                delta: &delta,
+            },
+            p,
+            rm,
+            &mut cc,
+        );
         let f = alpha.hypergeom_2f1(&beta, &gamma, &zz, p, rm, &mut cc);
         assert!(near(&hg, &f, p), "HeunG 2F1 reduction");
 
@@ -3913,11 +3997,13 @@ mod tests {
         let gam = ExactNum::from_u8(13, p).div(&ExactNum::from_u8(10, p), p, rm);
         let zc = ExactNum::from_u8(7, p).div(&ExactNum::from_u8(20, p), p, rm);
         let hc = zc.heun_c(
-            &al,
-            &gam,
-            &zero,
-            &ExactNum::from_i8(-1, p),
-            &al,
+            HeunCParams {
+                alpha: &al,
+                gamma: &gam,
+                delta: &zero,
+                eps: &ExactNum::from_i8(-1, p),
+                q: &al,
+            },
             p,
             rm,
             &mut cc,
@@ -3926,12 +4012,14 @@ mod tests {
         assert!(near(&hc, &f1, p), "HeunC 1F1 reduction");
 
         let h1 = zz.heun_g(
-            &ExactNum::from_u8(2, p),
-            &zero,
-            &zero,
-            &ExactNum::from_u8(1, p),
-            &half,
-            &half,
+            HeunGParams {
+                a: &ExactNum::from_u8(2, p),
+                q: &zero,
+                alpha: &zero,
+                beta: &ExactNum::from_u8(1, p),
+                gamma: &half,
+                delta: &half,
+            },
             p,
             rm,
             &mut cc,
@@ -3939,9 +4027,33 @@ mod tests {
         assert!(near(&h1, &one, p), "HeunG α=q=0 is 1");
 
         assert!(ExactNum::from_u8(2, p)
-            .heun_g(&aa, &qv, &alpha, &beta, &gamma, &delta, p, rm, &mut cc)
+            .heun_g(
+                HeunGParams {
+                    a: &aa,
+                    q: &qv,
+                    alpha: &alpha,
+                    beta: &beta,
+                    gamma: &gamma,
+                    delta: &delta
+                },
+                p,
+                rm,
+                &mut cc
+            )
             .is_nan());
-        assert!(z.meijer_g(&[], &[], &[], &[], p, rm, &mut cc).is_nan());
+        assert!(z
+            .meijer_g(
+                MeijerParams {
+                    an: &[],
+                    ap: &[],
+                    bm: &[],
+                    bq: &[]
+                },
+                p,
+                rm,
+                &mut cc
+            )
+            .is_nan());
         Ok(())
     }
 
@@ -4102,12 +4214,14 @@ mod tests {
                 for (z, a, q, al, be, ga, de, gold) in rows_g {
                     let w = dec(gold, 8960, &mut cc);
                     let v = rat(z, p, rm)?.heun_g(
-                        &rat(a, PARAM_WP, RoundingMode::ToEven)?,
-                        &rat(q, PARAM_WP, RoundingMode::ToEven)?,
-                        &rat(al, PARAM_WP, RoundingMode::ToEven)?,
-                        &rat(be, PARAM_WP, RoundingMode::ToEven)?,
-                        &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
-                        &rat(de, PARAM_WP, RoundingMode::ToEven)?,
+                        HeunGParams {
+                            a: &rat(a, PARAM_WP, RoundingMode::ToEven)?,
+                            q: &rat(q, PARAM_WP, RoundingMode::ToEven)?,
+                            alpha: &rat(al, PARAM_WP, RoundingMode::ToEven)?,
+                            beta: &rat(be, PARAM_WP, RoundingMode::ToEven)?,
+                            gamma: &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
+                            delta: &rat(de, PARAM_WP, RoundingMode::ToEven)?,
+                        },
                         p,
                         rm,
                         &mut cc,
@@ -4123,11 +4237,13 @@ mod tests {
                 for (z, al, ga, de, eps, q, gold) in rows_c {
                     let w = dec(gold, 8960, &mut cc);
                     let v = rat(z, p, rm)?.heun_c(
-                        &rat(al, PARAM_WP, RoundingMode::ToEven)?,
-                        &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
-                        &rat(de, PARAM_WP, RoundingMode::ToEven)?,
-                        &rat(eps, PARAM_WP, RoundingMode::ToEven)?,
-                        &rat(q, PARAM_WP, RoundingMode::ToEven)?,
+                        HeunCParams {
+                            alpha: &rat(al, PARAM_WP, RoundingMode::ToEven)?,
+                            gamma: &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
+                            delta: &rat(de, PARAM_WP, RoundingMode::ToEven)?,
+                            eps: &rat(eps, PARAM_WP, RoundingMode::ToEven)?,
+                            q: &rat(q, PARAM_WP, RoundingMode::ToEven)?,
+                        },
                         p,
                         rm,
                         &mut cc,
@@ -4175,7 +4291,17 @@ mod tests {
                 let z =
                     ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
                 let bm: Vec<ExactNum> = (0..9).map(|_| ExactNum::new(p)).collect();
-                let got = z.meijer_g(&[], &[], &bm, &[], p, rm, &mut cc);
+                let got = z.meijer_g(
+                    MeijerParams {
+                        an: &[],
+                        ap: &[],
+                        bm: &bm,
+                        bq: &[],
+                    },
+                    p,
+                    rm,
+                    &mut cc,
+                );
                 let want = crate::catalog::finish_ref(&gold, p, rm);
                 if got.compare(&want) != Some(0) {
                     bad.push(format!(
@@ -4425,7 +4551,17 @@ mod tests {
                 }
             }
             for &rm in &modes {
-                let got = z.fox_h(&[], &[], &bm, &[], *p, rm, &mut cc);
+                let got = z.fox_h(
+                    FoxHParams {
+                        an: &[],
+                        ap: &[],
+                        bm: &bm,
+                        bq: &[],
+                    },
+                    *p,
+                    rm,
+                    &mut cc,
+                );
                 if got.is_nan() {
                     bad.push(format!("{name} p={p} {rm:?} got NaN"));
                     continue;
@@ -4475,13 +4611,25 @@ mod tests {
             ];
             for z in &zs {
                 for rm in modes {
-                    let g = z.meijer_g(&an1, &[], &bm0, &[], p, rm, &mut cc);
+                    let g = z.meijer_g(
+                        MeijerParams {
+                            an: &an1,
+                            ap: &[],
+                            bm: &bm0,
+                            bq: &[],
+                        },
+                        p,
+                        rm,
+                        &mut cc,
+                    );
                     assert!(is_ia(&g), "G(1;0) z={z} p={p} {rm:?} got {g}");
                     let h = z.fox_h(
-                        &[(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p))],
-                        &[],
-                        &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
-                        &[],
+                        FoxHParams {
+                            an: &[(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p))],
+                            ap: &[],
+                            bm: &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
+                            bq: &[],
+                        },
                         p,
                         rm,
                         &mut cc,
@@ -4494,18 +4642,58 @@ mod tests {
             }
             let rm = RoundingMode::ToEven;
             // a-b = 2 is also a positive integer.
-            let g2 = zero.meijer_g(core::slice::from_ref(&two), &[], &bm0, &[], p, rm, &mut cc);
+            let g2 = zero.meijer_g(
+                MeijerParams {
+                    an: core::slice::from_ref(&two),
+                    ap: &[],
+                    bm: &bm0,
+                    bq: &[],
+                },
+                p,
+                rm,
+                &mut cc,
+            );
             assert!(is_ia(&g2), "G(2;0) at 0 p={p} got {g2}");
-            let g2z = one.meijer_g(core::slice::from_ref(&two), &[], &bm0, &[], p, rm, &mut cc);
+            let g2z = one.meijer_g(
+                MeijerParams {
+                    an: core::slice::from_ref(&two),
+                    ap: &[],
+                    bm: &bm0,
+                    bq: &[],
+                },
+                p,
+                rm,
+                &mut cc,
+            );
             assert!(is_ia(&g2z), "G(2;0) at 1 p={p} got {g2z}");
             // Sibling with no an-bm positive integer stays finite: G^{1,0}_{0,1}(0|;0)=1.
-            let sib = zero.meijer_g(&[], &[], core::slice::from_ref(&zero), &[], p, rm, &mut cc);
+            let sib = zero.meijer_g(
+                MeijerParams {
+                    an: &[],
+                    ap: &[],
+                    bm: core::slice::from_ref(&zero),
+                    bq: &[],
+                },
+                p,
+                rm,
+                &mut cc,
+            );
             assert!(
                 sib.compare(&one) == Some(0),
                 "sibling G^{{1,0}}_{{0,1}}(0) p={p} got {sib}"
             );
             // a-b = 1/2 is not an integer; the value is finite at z=1/2.
-            let ghalf = half.meijer_g(core::slice::from_ref(&half), &[], &bm0, &[], p, rm, &mut cc);
+            let ghalf = half.meijer_g(
+                MeijerParams {
+                    an: core::slice::from_ref(&half),
+                    ap: &[],
+                    bm: &bm0,
+                    bq: &[],
+                },
+                p,
+                rm,
+                &mut cc,
+            );
             assert!(
                 !ghalf.is_nan() && finite(&ghalf),
                 "G(1/2;0) at 1/2 should be finite p={p} got {ghalf}"
