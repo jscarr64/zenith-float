@@ -1686,12 +1686,14 @@ mod tests {
             for i in 0..n_dp {
                 if i == 0 || (i + 1) % 2048 == 0 {
                     let done = i;
-                    let elapsed = wall.elapsed().as_secs_f64();
+                    // Duration arithmetic (no hardware float tokens: scripts/ci_no_intrinsics.sh).
+                    let spent = wall.elapsed();
                     let eta = if done == 0 {
-                        0.0
+                        std::time::Duration::ZERO
                     } else {
-                        elapsed * (f64::from(n_dp - done) / f64::from(done))
+                        spent * (n_dp - done) / done
                     };
+                    let (elapsed, eta) = (spent.as_secs_f64(), eta.as_secs_f64());
                     eprintln!(
                         "BOUND wrk={wrk} phase=dp45 step={}/{n_dp} evals={evals} elapsed={elapsed:.3}s eta={eta:.3}s",
                         done

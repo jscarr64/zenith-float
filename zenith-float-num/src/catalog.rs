@@ -3190,8 +3190,15 @@ mod tests {
         );
 
         let inf = crate::ext::INF_POS;
-        for rm in [RoundingMode::Down, RoundingMode::ToZero, RoundingMode::Up, RoundingMode::ToEven]
-        {
+        for rm in [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ] {
             let g = inf.barnes_g(p, rm, &mut cc);
             assert!(
                 g.is_inf_pos(),
@@ -3226,8 +3233,15 @@ mod tests {
         let z = ExactNum::from_u8(2, p);
         let a = ExactNum::from_u8(1, p);
         let want = ExactNum::from_i8(-1, p);
-        for rm in [RoundingMode::Down, RoundingMode::ToZero, RoundingMode::Up, RoundingMode::ToEven]
-        {
+        for rm in [
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::None,
+        ] {
             let g = z.hypergeom_pfq(core::slice::from_ref(&a), &[], p, rm, &mut cc);
             assert!(
                 finite(&g) && g.compare(&want) == Some(0),

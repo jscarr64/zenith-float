@@ -136,12 +136,7 @@ fn zf_format_minpos_maxv_and_dense_round_trip() -> Result<(), Box<dyn std::error
     // minpos:128 radix 10 — official WRONG in Up, FromZero, ToEven, ToOdd.
     let minpos = ExactNum::min_positive(128);
     let dec = Radix::Dec;
-    for rm in [
-        RoundingMode::Up,
-        RoundingMode::FromZero,
-        RoundingMode::ToEven,
-        RoundingMode::ToOdd,
-    ] {
+    for rm in modes {
         let s = minpos.format(dec, rm, &mut cc)?;
         let back = ExactNum::parse(&s, dec, 128, rm, &mut cc);
         assert!(
@@ -169,7 +164,7 @@ fn zf_format_minpos_maxv_and_dense_round_trip() -> Result<(), Box<dyn std::error
     words[0] = 0xaaaaaaaaaaaaaaab as Word;
     let n = ExactNum::from_words(&words, Sign::Pos, -1);
     assert!(!n.is_nan(), "dense a..abp-1025 construction");
-    for rm in [RoundingMode::Down, RoundingMode::ToZero, RoundingMode::None] {
+    for rm in modes {
         let s = n.format(r3, rm, &mut cc)?;
         let back = ExactNum::parse(&s, r3, 1024, rm, &mut cc);
         assert!(

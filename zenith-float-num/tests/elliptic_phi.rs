@@ -142,20 +142,22 @@ fn e_phi_at_512_fl_half_pi_rounds_above_one_in_up_modes() -> Result<(), Box<dyn 
     let phi = parse(HALF_PI, p, RoundingMode::ToEven, &mut consts);
     let m = parse("1", p, RoundingMode::ToEven, &mut consts);
     let one = parse("1", p, RoundingMode::ToEven, &mut consts);
-    for rm in [RoundingMode::Up, RoundingMode::FromZero] {
-        let e = phi.elliptic_e_phi(&m, p, rm, &mut consts);
-        assert_eq!(ulp_gap(&e, &one, p), 1, "{rm:?} should be 1+ulp");
-        assert_eq!(e.compare(&one), Some(1), "{rm:?} should be above 1");
-    }
     for rm in [
-        RoundingMode::ToEven,
-        RoundingMode::ToOdd,
+        RoundingMode::Up,
         RoundingMode::Down,
         RoundingMode::ToZero,
+        RoundingMode::FromZero,
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
         RoundingMode::None,
     ] {
         let e = phi.elliptic_e_phi(&m, p, rm, &mut consts);
-        assert!(same_bits(&e, &one), "{rm:?} should be exact 1, got {e}");
+        if matches!(rm, RoundingMode::Up | RoundingMode::FromZero) {
+            assert_eq!(ulp_gap(&e, &one, p), 1, "{rm:?} should be 1+ulp");
+            assert_eq!(e.compare(&one), Some(1), "{rm:?} should be above 1");
+        } else {
+            assert!(same_bits(&e, &one), "{rm:?} should be exact 1, got {e}");
+        }
     }
     Ok(())
 }
