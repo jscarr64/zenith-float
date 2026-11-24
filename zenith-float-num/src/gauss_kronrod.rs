@@ -1009,7 +1009,6 @@ where
 /// `abs_err_est` meets the requested tolerance. Otherwise
 /// [`QuadratureError::NotConverged`]. Use the `_estimate` form to read the best
 /// estimate and its bound when the tolerance is missed (QUADPACK's `ier != 0`).
-#[allow(clippy::too_many_arguments)]
 pub fn integrate_adaptive_gk<F>(
     f: F,
     a: &ExactNum,
@@ -1155,7 +1154,6 @@ where
 
 /// [`integrate_adaptive_gk_infinite`] returning `(result, tolerance_met)` like
 /// [`integrate_adaptive_gk_estimate`] (ZF-51).
-#[allow(clippy::too_many_arguments)]
 pub fn integrate_adaptive_gk_infinite_estimate<F>(
     mut f: F,
     a: &ExactNum,
