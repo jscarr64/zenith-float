@@ -430,223 +430,223 @@ fn macro_run_basic_tests() -> Result<(), Box<dyn std::error::Error>> {
     let y = ExactNum::from(5); // Change 4.56 to 5
 
     let res: ExactNum = expr!(-1, &mut ctx);
-    debug_assert_eq!(res, ExactNum::from(-1));
+    assert_eq!(res, ExactNum::from(-1));
 
     let res: ExactNum = expr!(2 + 3, &mut ctx);
-    debug_assert_eq!(res, ExactNum::from(5));
+    assert_eq!(res, ExactNum::from(5));
 
     let res: ExactNum = expr!(3 - 4, &mut ctx);
-    debug_assert_eq!(res, ExactNum::from(-1));
+    assert_eq!(res, ExactNum::from(-1));
 
     let res: ExactNum = expr!(4 * 5, &mut ctx);
-    debug_assert_eq!(res, ExactNum::from(20));
+    assert_eq!(res, ExactNum::from(20));
 
     let res: ExactNum = expr!(5 / 6, &mut ctx);
-    debug_assert_eq!(res, ExactNum::from(5).div(&ExactNum::from(6), p, rm));
+    assert_eq!(res, ExactNum::from(5).div(&ExactNum::from(6), p, rm));
 
     let res: ExactNum = expr!(6 % 7, &mut ctx);
-    debug_assert_eq!(res, ExactNum::from(6));
+    assert_eq!(res, ExactNum::from(6));
 
     let res: ExactNum = expr!(ln(x), &mut ctx);
-    debug_assert_eq!(res, x.ln(p, rm, &mut cc));
+    assert_eq!(res, x.ln(p, rm, &mut cc));
 
     let res: ExactNum = expr!(log2(x), &mut ctx);
-    debug_assert_eq!(res, x.log2(p, rm, &mut cc));
+    assert_eq!(res, x.log2(p, rm, &mut cc));
 
     let res: ExactNum = expr!(log10(x), &mut ctx);
-    debug_assert_eq!(res, x.log10(p, rm, &mut cc));
+    assert_eq!(res, x.log10(p, rm, &mut cc));
 
     let res: ExactNum = expr!(log(x, y), &mut ctx);
-    debug_assert_eq!(res, x.log(&y, p, rm, &mut cc));
+    assert_eq!(res, x.log(&y, p, rm, &mut cc));
 
     let res: ExactNum = expr!(exp(x), &mut ctx);
-    debug_assert_eq!(res, x.exp(p, rm, &mut cc));
+    assert_eq!(res, x.exp(p, rm, &mut cc));
 
     let res: ExactNum = expr!(exp2(x), &mut ctx);
-    debug_assert_eq!(res, x.exp2(p, rm, &mut cc));
+    assert_eq!(res, x.exp2(p, rm, &mut cc));
 
     let res: ExactNum = expr!(exp10(x), &mut ctx);
-    debug_assert_eq!(res, x.exp10(p, rm, &mut cc));
+    assert_eq!(res, x.exp10(p, rm, &mut cc));
 
     let res: ExactNum = expr!(rem_pi(x), &mut ctx);
-    debug_assert_eq!(res, x.rem_pi(p, rm, &mut cc));
+    assert_eq!(res, x.rem_pi(p, rm, &mut cc));
 
     let res: ExactNum = expr!(pow(x, y), &mut ctx);
-    debug_assert_eq!(res, x.pow(&y, p, rm, &mut cc));
+    assert_eq!(res, x.pow(&y, p, rm, &mut cc));
 
     let res: ExactNum = expr!(sin(x), &mut ctx);
-    debug_assert_eq!(res, x.sin(p, rm, &mut cc));
+    assert_eq!(res, x.sin(p, rm, &mut cc));
 
     let res: ExactNum = expr!(cos(x), &mut ctx);
-    debug_assert_eq!(res, x.cos(p, rm, &mut cc));
+    assert_eq!(res, x.cos(p, rm, &mut cc));
 
     let (ps, pc) = x.sin_cos(p, rm, &mut cc);
-    debug_assert_eq!(ps, x.sin(p, rm, &mut cc));
-    debug_assert_eq!(pc, x.cos(p, rm, &mut cc));
+    assert_eq!(ps, x.sin(p, rm, &mut cc));
+    assert_eq!(pc, x.cos(p, rm, &mut cc));
 
     let res: ExactNum = expr!(tan(x), &mut ctx);
-    debug_assert_eq!(res, x.tan(p, rm, &mut cc));
+    assert_eq!(res, x.tan(p, rm, &mut cc));
 
     let x = ExactNum::from(1);
 
     let res: ExactNum = expr!(asin(x), &mut ctx);
-    debug_assert_eq!(res, x.asin(p, rm, &mut cc));
+    assert_eq!(res, x.asin(p, rm, &mut cc));
 
     let res: ExactNum = expr!(acos(x), &mut ctx);
-    debug_assert_eq!(res, x.acos(p, rm, &mut cc));
+    assert_eq!(res, x.acos(p, rm, &mut cc));
 
     let res: ExactNum = expr!(atan(x), &mut ctx);
-    debug_assert_eq!(res, x.atan(p, rm, &mut cc));
+    assert_eq!(res, x.atan(p, rm, &mut cc));
 
     let x = ExactNum::from(2);
 
     let res: ExactNum = expr!(sinh(x), &mut ctx);
-    debug_assert_eq!(res, x.sinh(p, rm, &mut cc));
+    assert_eq!(res, x.sinh(p, rm, &mut cc));
 
     let res: ExactNum = expr!(cosh(x), &mut ctx);
-    debug_assert_eq!(res, x.cosh(p, rm, &mut cc));
+    assert_eq!(res, x.cosh(p, rm, &mut cc));
 
     let (psh, pch) = x.sinh_cosh(p, rm, &mut cc);
-    debug_assert_eq!(psh, x.sinh(p, rm, &mut cc));
-    debug_assert_eq!(pch, x.cosh(p, rm, &mut cc));
+    assert_eq!(psh, x.sinh(p, rm, &mut cc));
+    assert_eq!(pch, x.cosh(p, rm, &mut cc));
 
     let res: ExactNum = expr!(tanh(x), &mut ctx);
-    debug_assert_eq!(res, x.tanh(p, rm, &mut cc));
+    assert_eq!(res, x.tanh(p, rm, &mut cc));
 
     let res: ExactNum = expr!(asinh(x), &mut ctx);
-    debug_assert_eq!(res, x.asinh(p, rm, &mut cc));
+    assert_eq!(res, x.asinh(p, rm, &mut cc));
 
     let res: ExactNum = expr!(acosh(x), &mut ctx);
-    debug_assert_eq!(res, x.acosh(p, rm, &mut cc));
+    assert_eq!(res, x.acosh(p, rm, &mut cc));
 
     let x = ExactNum::from(1);
 
     let res: ExactNum = expr!(atanh(x), &mut ctx);
-    debug_assert_eq!(res, x.atanh(p, rm, &mut cc));
+    assert_eq!(res, x.atanh(p, rm, &mut cc));
 
     let y = ExactNum::from(3);
     let x = ExactNum::from(4);
     let res: ExactNum = expr!(hypot(x, y), &mut ctx);
-    debug_assert_eq!(res, x.hypot(&y, p, rm));
+    assert_eq!(res, x.hypot(&y, p, rm));
 
     let z = ExactNum::from(2);
     let res: ExactNum = expr!(fma(x, y, z), &mut ctx);
-    debug_assert_eq!(res, x.fma(&y, &z, p, rm));
+    assert_eq!(res, x.fma(&y, &z, p, rm));
 
     let res: ExactNum = expr!(mul_add(x, y, z), &mut ctx);
-    debug_assert_eq!(res, x.mul_add(&y, &z, p, rm));
+    assert_eq!(res, x.mul_add(&y, &z, p, rm));
 
     let res: ExactNum = expr!(root(x, 5), &mut ctx);
-    debug_assert_eq!(res, x.nth_root(5, p, rm));
+    assert_eq!(res, x.nth_root(5, p, rm));
 
     let res: ExactNum = expr!(atan2(y, x), &mut ctx);
-    debug_assert_eq!(res, y.atan2(&x, p, rm, &mut cc));
+    assert_eq!(res, y.atan2(&x, p, rm, &mut cc));
 
     let x = ExactNum::from(1);
     let res: ExactNum = expr!(log1p(x), &mut ctx);
-    debug_assert_eq!(res, x.log1p(p, rm, &mut cc));
+    assert_eq!(res, x.log1p(p, rm, &mut cc));
 
     let res: ExactNum = expr!(expm1(x), &mut ctx);
-    debug_assert_eq!(res, x.expm1(p, rm, &mut cc));
+    assert_eq!(res, x.expm1(p, rm, &mut cc));
 
     let res: ExactNum = expr!(erf(x), &mut ctx);
-    debug_assert_eq!(res, x.erf(p, rm, &mut cc));
+    assert_eq!(res, x.erf(p, rm, &mut cc));
 
     let res: ExactNum = expr!(erfc(x), &mut ctx);
-    debug_assert_eq!(res, x.erfc(p, rm, &mut cc));
+    assert_eq!(res, x.erfc(p, rm, &mut cc));
 
     let res: ExactNum = expr!(gamma(x), &mut ctx);
-    debug_assert_eq!(res, x.gamma(p, rm, &mut cc));
+    assert_eq!(res, x.gamma(p, rm, &mut cc));
 
     let res: ExactNum = expr!(ln_gamma(x), &mut ctx);
-    debug_assert_eq!(res, x.ln_gamma(p, rm, &mut cc));
+    assert_eq!(res, x.ln_gamma(p, rm, &mut cc));
 
     let res: ExactNum = expr!(digamma(x), &mut ctx);
-    debug_assert_eq!(res, x.digamma(p, rm, &mut cc));
+    assert_eq!(res, x.digamma(p, rm, &mut cc));
 
     let res: ExactNum = expr!(gammainc(x, x), &mut ctx);
-    debug_assert_eq!(res, x.gammainc(&x, p, rm, &mut cc));
+    assert_eq!(res, x.gammainc(&x, p, rm, &mut cc));
 
     let res: ExactNum = expr!(bessel_j(x, 0), &mut ctx);
-    debug_assert_eq!(res, x.bessel_j(0, p, rm, &mut cc));
+    assert_eq!(res, x.bessel_j(0, p, rm, &mut cc));
 
     let nu0 = ExactNum::from(0);
     let res: ExactNum = expr!(bessel_j_nu(x, nu0), &mut ctx);
-    debug_assert_eq!(res, x.bessel_j_nu(&nu0, p, rm, &mut cc));
+    assert_eq!(res, x.bessel_j_nu(&nu0, p, rm, &mut cc));
     let res: ExactNum = expr!(bessel_i(x, nu0), &mut ctx);
-    debug_assert_eq!(res, x.bessel_i(&nu0, p, rm, &mut cc));
+    assert_eq!(res, x.bessel_i(&nu0, p, rm, &mut cc));
 
     let mh = ExactNum::from(1).div(&ExactNum::from(2), p, rm);
     let res: ExactNum = expr!(elliptic_k(mh), &mut ctx);
-    debug_assert_eq!(res, mh.elliptic_k(p, rm, &mut cc));
+    assert_eq!(res, mh.elliptic_k(p, rm, &mut cc));
     let res: ExactNum = expr!(elliptic_e(mh), &mut ctx);
-    debug_assert_eq!(res, mh.elliptic_e_complete(p, rm, &mut cc));
+    assert_eq!(res, mh.elliptic_e_complete(p, rm, &mut cc));
     let res: ExactNum = expr!(elliptic_f(mh, mh), &mut ctx);
-    debug_assert_eq!(res, mh.elliptic_f(&mh, p, rm, &mut cc));
+    assert_eq!(res, mh.elliptic_f(&mh, p, rm, &mut cc));
     let res: ExactNum = expr!(elliptic_e_inc(mh, mh), &mut ctx);
-    debug_assert_eq!(res, mh.elliptic_e(&mh, p, rm, &mut cc));
+    assert_eq!(res, mh.elliptic_e(&mh, p, rm, &mut cc));
     let res: ExactNum = expr!(elliptic_pi(mh, mh), &mut ctx);
-    debug_assert_eq!(res, mh.elliptic_pi_complete(&mh, p, rm, &mut cc));
+    assert_eq!(res, mh.elliptic_pi_complete(&mh, p, rm, &mut cc));
     let res: ExactNum = expr!(elliptic_pi_inc(mh, mh, mh), &mut ctx);
-    debug_assert_eq!(res, mh.elliptic_pi(&mh, &mh, p, rm, &mut cc));
+    assert_eq!(res, mh.elliptic_pi(&mh, &mh, p, rm, &mut cc));
     let res: ExactNum = expr!(jacobi_sn(mh, mh), &mut ctx);
-    debug_assert_eq!(res, mh.jacobi_sn(&mh, p, rm, &mut cc));
+    assert_eq!(res, mh.jacobi_sn(&mh, p, rm, &mut cc));
     let res: ExactNum = expr!(jacobi_cn(mh, mh), &mut ctx);
-    debug_assert_eq!(res, mh.jacobi_cn(&mh, p, rm, &mut cc));
+    assert_eq!(res, mh.jacobi_cn(&mh, p, rm, &mut cc));
     let res: ExactNum = expr!(jacobi_dn(mh, mh), &mut ctx);
-    debug_assert_eq!(res, mh.jacobi_dn(&mh, p, rm, &mut cc));
+    assert_eq!(res, mh.jacobi_dn(&mh, p, rm, &mut cc));
     let res: ExactNum = expr!(jacobi_am(mh, mh), &mut ctx);
-    debug_assert_eq!(res, mh.jacobi_am(&mh, p, rm, &mut cc));
+    assert_eq!(res, mh.jacobi_am(&mh, p, rm, &mut cc));
     let res: ExactNum = expr!(jacobi_cd(mh, mh), &mut ctx);
-    debug_assert_eq!(res, mh.jacobi_cd(&mh, p, rm, &mut cc));
+    assert_eq!(res, mh.jacobi_cd(&mh, p, rm, &mut cc));
 
     let res: ExactNum = expr!(legendre_p(x, 2), &mut ctx);
-    debug_assert_eq!(res, x.legendre_p(2, p, rm));
+    assert_eq!(res, x.legendre_p(2, p, rm));
     let res: ExactNum = expr!(legendre_p_assoc(mh, 1, 1), &mut ctx);
-    debug_assert_eq!(res, mh.assoc_legendre_p(1, 1, p, rm));
+    assert_eq!(res, mh.assoc_legendre_p(1, 1, p, rm));
     let res: ExactNum = expr!(hypergeom_2f1(mh, mh, x, mh), &mut ctx);
-    debug_assert_eq!(res, mh.hypergeom_2f1(&mh, &x, &mh, p, rm, &mut cc));
+    assert_eq!(res, mh.hypergeom_2f1(&mh, &x, &mh, p, rm, &mut cc));
     let res: ExactNum = expr!(betainc(x, x, mh), &mut ctx);
-    debug_assert_eq!(res, x.betainc(&x, &mh, p, rm, &mut cc));
+    assert_eq!(res, x.betainc(&x, &mh, p, rm, &mut cc));
     let res: ExactNum = expr!(normal_pdf(x, x, x), &mut ctx);
-    debug_assert_eq!(res, x.normal_pdf(&x, &x, p, rm, &mut cc));
+    assert_eq!(res, x.normal_pdf(&x, &x, p, rm, &mut cc));
     let z0 = ExactNum::from(0);
     let res: ExactNum = expr!(poisson_pmf(z0, x), &mut ctx);
-    debug_assert_eq!(res, z0.poisson_pmf(&x, p, rm, &mut cc));
+    assert_eq!(res, z0.poisson_pmf(&x, p, rm, &mut cc));
 
     let res: ExactNum = expr!(ei(x), &mut ctx);
-    debug_assert_eq!(res, x.ei(p, rm, &mut cc));
+    assert_eq!(res, x.ei(p, rm, &mut cc));
 
     let res: ExactNum = expr!(si(x), &mut ctx);
-    debug_assert_eq!(res, x.si(p, rm, &mut cc));
+    assert_eq!(res, x.si(p, rm, &mut cc));
 
     let res: ExactNum = expr!(ci(x), &mut ctx);
-    debug_assert_eq!(res, x.ci(p, rm, &mut cc));
+    assert_eq!(res, x.ci(p, rm, &mut cc));
 
     let ee = ExactNum::from(1).exp(p, rm, &mut cc);
     let res: ExactNum = expr!(li(ee), &mut ctx);
-    debug_assert_eq!(res, ee.li(p, rm, &mut cc));
+    assert_eq!(res, ee.li(p, rm, &mut cc));
 
     let res: ExactNum = expr!(fresnel_s(x), &mut ctx);
-    debug_assert_eq!(res, x.fresnel_s(p, rm, &mut cc));
+    assert_eq!(res, x.fresnel_s(p, rm, &mut cc));
 
     let res: ExactNum = expr!(fresnel_c(x), &mut ctx);
-    debug_assert_eq!(res, x.fresnel_c(p, rm, &mut cc));
+    assert_eq!(res, x.fresnel_c(p, rm, &mut cc));
 
     let res: ExactNum = expr!(ai(x), &mut ctx);
-    debug_assert_eq!(res, x.ai(p, rm, &mut cc));
+    assert_eq!(res, x.ai(p, rm, &mut cc));
 
     let res: ExactNum = expr!(bi(x), &mut ctx);
-    debug_assert_eq!(res, x.bi(p, rm, &mut cc));
+    assert_eq!(res, x.bi(p, rm, &mut cc));
 
     let res: ExactNum = expr!(ldexp(x, 3), &mut ctx);
-    debug_assert_eq!(res, ExactNum::from(1).ldexp(3, p, rm));
+    assert_eq!(res, ExactNum::from(1).ldexp(3, p, rm));
 
     let res: ExactNum = expr!(scalb(x, -1), &mut ctx);
-    debug_assert_eq!(res, ExactNum::from(1).scalb(-1, p, rm));
+    assert_eq!(res, ExactNum::from(1).scalb(-1, p, rm));
 
     let res: ExactNum = expr!(logb(x), &mut ctx);
-    debug_assert_eq!(res, x.logb(p, rm));
+    assert_eq!(res, x.logb(p, rm));
     Ok(())
 }
 
