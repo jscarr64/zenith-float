@@ -208,7 +208,7 @@ fn pfq_continued(
         .map(|x| ExactNum::sub_ref(&one, x, wrk, n))
         .collect();
     let mz = z.neg_ref();
-    let g = mz.meijer_g(
+    let g = match mz.meijer_g(
         MeijerParams {
             an: &an,
             ap: &[],
@@ -218,10 +218,10 @@ fn pfq_continued(
         wrk,
         n,
         cc,
-    );
-    if !finite(&g) {
-        return cat_nan();
-    }
+    ) {
+        Ok(g) if finite(&g) => g,
+        _ => return cat_nan(),
+    };
     let mut c = one;
     for x in b {
         c = c.mul(&x.gamma(wrk, n, cc), wrk, n);

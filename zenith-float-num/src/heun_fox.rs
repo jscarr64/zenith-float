@@ -7,7 +7,7 @@
 //! Frobenius solution of DLMF 31.12.1.
 
 use crate::catalog::{cat_nan, finish, finite, small_int, work_p};
-use crate::defs::Exponent;
+use crate::defs::{Error, Exponent};
 use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
@@ -1358,6 +1358,16 @@ pub struct HeunCParams<'a> {
     pub q: &'a ExactNum,
 }
 
+/// P2 correct-or-refuse for the public Meijer G / Fox H / Heun entry points: a NaN result is never returned as a value.
+/// It becomes `Err` with the error it carries, or `InvalidArgument` when it carries none (a NaN input).
+fn refuse_nan(v: ExactNum) -> Result<ExactNum, Error> {
+    if v.is_nan() {
+        Err(v.err().unwrap_or(Error::InvalidArgument))
+    } else {
+        Ok(v)
+    }
+}
+
 impl ExactNum {
     /// Meijer \(G^{m,n}_{p,q}(\mathrm{self}\mid a_1,\ldots,a_n;a_{n+1},\ldots,a_p; b_1,\ldots,b_m;b_{m+1},\ldots,b_q)\).
     ///
@@ -1373,12 +1383,12 @@ impl ExactNum {
     ///
     /// # Limitations
     ///
-    /// - Real line only. \(\mathrm{self}<0\) is `NaN` unless every used power is an integer.
-    ///   At a coincident pole a negative argument is always `NaN`.
+    /// - Real line only. \(\mathrm{self}<0\) is `Err(Error::InvalidArgument)` unless every used power is an integer.
+    ///   At a coincident pole a negative argument is always `Err(Error::InvalidArgument)`.
     /// - Coincident poles (integer differences among the active \(b_1,\ldots,b_m\) or
     ///   \(a_1,\ldots,a_n\), and cancelling numerator \(\Gamma\) poles): if some
     ///   \(a_k-b_h\) (\(k\le n\), \(h\le m\)) is a positive integer the Mellin–Barnes
-    ///   contour does not exist and the result is `NaN(InvalidArgument)` (DLMF 16.17).
+    ///   contour does not exist and the result is `Err(Error::InvalidArgument)` (DLMF 16.17).
     ///   Otherwise \(z=0\) is the \(z\to0^+\) limit from the leftmost pole (signed
     ///   zero, finite, or signed infinity for a logarithmic or negative-power pole),
     ///   and \(z>0\) is the constant term of the Laurent expansion in a parameter
@@ -1387,6 +1397,17 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn meijer_g(
+        &self,
+        params: MeijerParams<'_>,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        refuse_nan(self.meijer_g_value(params, p, rm, cc))
+    }
+
+    /// [`Self::meijer_g`] as a value; a refusal is a NaN that [`refuse_nan`] turns into its `Err`.
+    fn meijer_g_value(
         &self,
         MeijerParams { an, ap, bm, bq }: MeijerParams<'_>,
         p: usize,
@@ -1448,11 +1469,22 @@ impl ExactNum {
     ///   not at \(2/17\). A Gauss lift that does not fit in memory or in a
     ///   `usize` index is not attempted; the residue series is used instead.
     /// - Coincident poles after a lift use the same limit as [`meijer_g`].
-    ///   Coincident poles of the residue series are `NaN`.
+    ///   Coincident poles of the residue series are `Err(Error::InvalidArgument)`.
     /// - Real \(\mathrm{self}>0\) when a scale is not 1 (fractional \(z^{1/B}\)).
     ///
     /// Accuracy: unspecified
     pub fn fox_h(
+        &self,
+        params: FoxHParams<'_>,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        refuse_nan(self.fox_h_value(params, p, rm, cc))
+    }
+
+    /// [`Self::fox_h`] as a value; a refusal is a NaN that [`refuse_nan`] turns into its `Err`.
+    fn fox_h_value(
         &self,
         FoxHParams { an, ap, bm, bq }: FoxHParams<'_>,
         p: usize,
@@ -1561,7 +1593,7 @@ impl ExactNum {
     ///   the distance to \(\{0,1,a\}\). Each step carries a midpoint and a
     ///   radius from the 2×2 local transition and a majorant remainder. Working
     ///   precision is raised until that enclosure uniquely determines the dest-p
-    ///   rounding in the requested mode. A walk that meets a cut is `NaN`.
+    ///   rounding in the requested mode. A walk that meets a cut is `Err(Error::InvalidArgument)`.
     /// - Bound (inside the disk): working precision `p + 2 WORD_BIT_SIZE`; not
     ///   Ziv-certified. Bound (outside the disk): the ball enclosure; Ziv on
     ///   working precision until unique rounding.
@@ -1570,7 +1602,7 @@ impl ExactNum {
     ///
     /// - The value outside the disk is the real-analytic continuation along the
     ///   component of \(\mathbb{R}\setminus\{1,a\}\) that contains \(0\). A singular
-    ///   point on the segment (including the endpoint) is `NaN(InvalidArgument)`.
+    ///   point on the segment (including the endpoint) is `Err(Error::InvalidArgument)`.
     /// - When \(q=a\alpha\beta\) and \(\delta=\alpha+\beta-\gamma+1\) hold as exact
     ///   dyadics, or the two sides agree to one ulp of `p`, this is
     ///   \({}_2F_1(\alpha,\beta;\gamma;z)\) and uses that function's domain
@@ -1579,11 +1611,22 @@ impl ExactNum {
     /// - Two consecutive power-series coefficients that are exact zeros make a
     ///   polynomial, returned for every finite \(z\).
     /// - A Taylor walk that cannot advance (step does not change the
-    ///   abscissa, or a remainder bound cannot be formed) is `NaN(InvalidArgument)`.
-    /// - \(a=0\) or \(\gamma\in\{0,-1,-2,\ldots\}\) (recurrence pole) is `NaN`.
+    ///   abscissa, or a remainder bound cannot be formed) is `Err(Error::InvalidArgument)`.
+    /// - \(a=0\) or \(\gamma\in\{0,-1,-2,\ldots\}\) (recurrence pole) is `Err(Error::InvalidArgument)`.
     ///
     /// Accuracy: correctly-rounded outside the disk; unspecified inside the disk
     pub fn heun_g(
+        &self,
+        params: HeunGParams<'_>,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        refuse_nan(self.heun_g_value(params, p, rm, cc))
+    }
+
+    /// [`Self::heun_g`] as a value; a refusal is a NaN that [`refuse_nan`] turns into its `Err`.
+    fn heun_g_value(
         &self,
         HeunGParams {
             a,
@@ -1692,19 +1735,19 @@ impl ExactNum {
     ///   the distance to \(\{0,1\}\). Each step carries a midpoint and a radius
     ///   from the 2×2 local transition and a majorant remainder. Working precision
     ///   is raised until that enclosure uniquely determines the dest-p rounding
-    ///   in the requested mode. A walk that meets a cut is `NaN`.
+    ///   in the requested mode. A walk that meets a cut is `Err(Error::InvalidArgument)`.
     /// - Bound (inside the disk): working precision `p + 2 WORD_BIT_SIZE`; not
     ///   Ziv-certified. Bound (outside the disk): the ball enclosure; Ziv on
     ///   working precision until unique rounding.
     ///
     /// # Limitations
     ///
-    /// - \(z\ge 1\) meets the branch point at \(1\) and is `NaN(InvalidArgument)`
+    /// - \(z\ge 1\) meets the branch point at \(1\) and is `Err(Error::InvalidArgument)`
     ///   unless two consecutive series coefficients are exact zeros (a polynomial,
     ///   returned for every finite \(z\)) or the \({}_1F_1\) reduction applies.
     /// - A Taylor walk that cannot advance (step does not change the
-    ///   abscissa, or a remainder bound cannot be formed) is `NaN(InvalidArgument)`.
-    /// - \(\gamma\in\{0,-1,-2,\ldots\}\) is `NaN`.
+    ///   abscissa, or a remainder bound cannot be formed) is `Err(Error::InvalidArgument)`.
+    /// - \(\gamma\in\{0,-1,-2,\ldots\}\) is `Err(Error::InvalidArgument)`.
     /// - When \(\delta=0\), \(\varepsilon=-1\), \(q=\alpha\) hold as exact dyadics,
     ///   or agree to one ulp of `p`, this is \({}_1F_1(-\alpha;\gamma;z)\),
     ///   entire, including \(\lvert z\rvert\ge 1\). A gap of several ulps stays
@@ -1716,6 +1759,17 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded outside the disk; unspecified inside the disk
     pub fn heun_c(
+        &self,
+        params: HeunCParams<'_>,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        refuse_nan(self.heun_c_value(params, p, rm, cc))
+    }
+
+    /// [`Self::heun_c`] as a value; a refusal is a NaN that [`refuse_nan`] turns into its `Err`.
+    fn heun_c_value(
         &self,
         HeunCParams {
             alpha,
@@ -3902,6 +3956,92 @@ mod tests {
         d.is_zero() || d.exponent().is_some_and(|e| e < -((p as Exponent) / 4))
     }
 
+    /// P2 (Jeff 2026-11-24 4:40 PM CT item 7): a refusal from meijer_g / fox_h / heun_g / heun_c is an `Err`, never a NaN
+    /// value. Each refusal row from the docs, plus a NaN argument, plus one valid row per function that must stay `Ok`.
+    #[test]
+    fn meijer_fox_heun_refusals_are_err_not_nan() -> Result<(), crate::Error> {
+        fn hg<'a>(a: &'a ExactNum, g: &'a ExactNum, one: &'a ExactNum) -> HeunGParams<'a> {
+            HeunGParams {
+                a,
+                q: one,
+                alpha: one,
+                beta: one,
+                gamma: g,
+                delta: one,
+            }
+        }
+        fn hc<'a>(g: &'a ExactNum, one: &'a ExactNum) -> HeunCParams<'a> {
+            HeunCParams {
+                alpha: one,
+                gamma: g,
+                delta: one,
+                eps: one,
+                q: one,
+            }
+        }
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let inv = Some(crate::Error::InvalidArgument);
+        let mut cc = Consts::new()?;
+        let n = |k: i64| ExactNum::from_i64(k, p);
+        let half = n(1).ldexp(-1, p, rm);
+        let nan = ExactNum::nan(None);
+        // Meijer G^{1,1}_{1,1}: a_1 - b_1 = 2 is a positive integer, so the Mellin-Barnes contour does not exist (DLMF 16.17).
+        let (a2, b0) = ([n(2)], [n(0)]);
+        let no_contour = MeijerParams {
+            an: &a2,
+            ap: &[],
+            bm: &b0,
+            bq: &[],
+        };
+        assert_eq!(half.meijer_g(no_contour, p, rm, &mut cc).err(), inv);
+        assert_eq!(nan.meijer_g(no_contour, p, rm, &mut cc).err(), inv);
+        // G^{1,0}_{0,1}(z | -; 0) = e^{-z}: valid, finite.
+        let g_ok = MeijerParams {
+            an: &[],
+            ap: &[],
+            bm: &b0,
+            bq: &[],
+        };
+        assert!(half
+            .meijer_g(g_ok, p, rm, &mut cc)
+            .is_ok_and(|g| !g.is_nan() && !g.is_zero()));
+        // Fox H with unit scales is Meijer G: the same missing contour refuses.
+        let (a2s, b0s) = ([(n(2), n(1))], [(n(0), n(1))]);
+        let fox_bad = FoxHParams {
+            an: &a2s,
+            ap: &[],
+            bm: &b0s,
+            bq: &[],
+        };
+        assert_eq!(half.fox_h(fox_bad, p, rm, &mut cc).err(), inv);
+        let fox_ok = FoxHParams {
+            an: &[],
+            ap: &[],
+            bm: &b0s,
+            bq: &[],
+        };
+        assert!(half
+            .fox_h(fox_ok, p, rm, &mut cc)
+            .is_ok_and(|h| !h.is_nan()));
+        assert_eq!(nan.fox_h(fox_ok, p, rm, &mut cc).err(), inv);
+        // Heun G: a = 0 is the recurrence pole; gamma = 0 too.
+        let (z0, one, two) = (n(0), n(1), n(2));
+        assert_eq!(half.heun_g(hg(&z0, &one, &one), p, rm, &mut cc).err(), inv);
+        assert_eq!(half.heun_g(hg(&two, &z0, &one), p, rm, &mut cc).err(), inv);
+        assert_eq!(nan.heun_g(hg(&two, &one, &one), p, rm, &mut cc).err(), inv);
+        assert!(half
+            .heun_g(hg(&two, &one, &one), p, rm, &mut cc)
+            .is_ok_and(|h| !h.is_nan()));
+        // Heun C: gamma in {0, -1, ...} is a pole; a non-finite argument refuses.
+        assert_eq!(half.heun_c(hc(&z0, &one), p, rm, &mut cc).err(), inv);
+        assert_eq!(nan.heun_c(hc(&one, &one), p, rm, &mut cc).err(), inv);
+        assert!(half
+            .heun_c(hc(&one, &one), p, rm, &mut cc)
+            .is_ok_and(|h| !h.is_nan()));
+        Ok(())
+    }
+
     #[test]
     fn test_meijer_heun_identities() -> Result<(), crate::Error> {
         let p = 128;
@@ -3922,7 +4062,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        );
+        )?;
         let e = z.neg_via_mul().exp(p, rm, &mut cc);
         assert!(near(&g, &e, p), "G^{{1,0}}_{{0,1}}(1/2) = e^{{-1/2}}");
 
@@ -3936,7 +4076,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        );
+        )?;
         assert!(near(&fox, &e, p), "H with A=B=1 is G");
 
         let a03 = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm);
@@ -3950,7 +4090,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        );
+        )?;
         let want = ExactNum::from_u8(1, p)
             .sub(&a03, p, rm)
             .gamma(p, rm, &mut cc)
@@ -3988,7 +4128,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        );
+        )?;
         let f = alpha.hypergeom_2f1(&beta, &gamma, &zz, p, rm, &mut cc);
         assert!(near(&hg, &f, p), "HeunG 2F1 reduction");
 
@@ -4007,7 +4147,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        );
+        )?;
         let f1 = zc.hypergeom_1f1(&al.neg(), &gam, p, rm, &mut cc);
         assert!(near(&hc, &f1, p), "HeunC 1F1 reduction");
 
@@ -4023,7 +4163,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        );
+        )?;
         assert!(near(&h1, &one, p), "HeunG α=q=0 is 1");
 
         assert!(ExactNum::from_u8(2, p)
@@ -4040,7 +4180,7 @@ mod tests {
                 rm,
                 &mut cc
             )
-            .is_nan());
+            .is_err());
         assert!(z
             .meijer_g(
                 MeijerParams {
@@ -4053,7 +4193,7 @@ mod tests {
                 rm,
                 &mut cc
             )
-            .is_nan());
+            .is_err());
         Ok(())
     }
 
@@ -4213,19 +4353,21 @@ mod tests {
             for rm in modes {
                 for (z, a, q, al, be, ga, de, gold) in rows_g {
                     let w = dec(gold, 8960, &mut cc);
-                    let v = rat(z, p, rm)?.heun_g(
-                        HeunGParams {
-                            a: &rat(a, PARAM_WP, RoundingMode::ToEven)?,
-                            q: &rat(q, PARAM_WP, RoundingMode::ToEven)?,
-                            alpha: &rat(al, PARAM_WP, RoundingMode::ToEven)?,
-                            beta: &rat(be, PARAM_WP, RoundingMode::ToEven)?,
-                            gamma: &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
-                            delta: &rat(de, PARAM_WP, RoundingMode::ToEven)?,
-                        },
-                        p,
-                        rm,
-                        &mut cc,
-                    );
+                    let v = rat(z, p, rm)?
+                        .heun_g(
+                            HeunGParams {
+                                a: &rat(a, PARAM_WP, RoundingMode::ToEven)?,
+                                q: &rat(q, PARAM_WP, RoundingMode::ToEven)?,
+                                alpha: &rat(al, PARAM_WP, RoundingMode::ToEven)?,
+                                beta: &rat(be, PARAM_WP, RoundingMode::ToEven)?,
+                                gamma: &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
+                                delta: &rat(de, PARAM_WP, RoundingMode::ToEven)?,
+                            },
+                            p,
+                            rm,
+                            &mut cc,
+                        )
+                        .map_err(|e| format!("{e:?}"))?;
                     let mut want = w;
                     let _ = want.set_precision(p, rm);
                     if v.compare(&want) != Some(0) {
@@ -4236,18 +4378,20 @@ mod tests {
                 }
                 for (z, al, ga, de, eps, q, gold) in rows_c {
                     let w = dec(gold, 8960, &mut cc);
-                    let v = rat(z, p, rm)?.heun_c(
-                        HeunCParams {
-                            alpha: &rat(al, PARAM_WP, RoundingMode::ToEven)?,
-                            gamma: &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
-                            delta: &rat(de, PARAM_WP, RoundingMode::ToEven)?,
-                            eps: &rat(eps, PARAM_WP, RoundingMode::ToEven)?,
-                            q: &rat(q, PARAM_WP, RoundingMode::ToEven)?,
-                        },
-                        p,
-                        rm,
-                        &mut cc,
-                    );
+                    let v = rat(z, p, rm)?
+                        .heun_c(
+                            HeunCParams {
+                                alpha: &rat(al, PARAM_WP, RoundingMode::ToEven)?,
+                                gamma: &rat(ga, PARAM_WP, RoundingMode::ToEven)?,
+                                delta: &rat(de, PARAM_WP, RoundingMode::ToEven)?,
+                                eps: &rat(eps, PARAM_WP, RoundingMode::ToEven)?,
+                                q: &rat(q, PARAM_WP, RoundingMode::ToEven)?,
+                            },
+                            p,
+                            rm,
+                            &mut cc,
+                        )
+                        .map_err(|e| format!("{e:?}"))?;
                     let mut want = w;
                     let _ = want.set_precision(p, rm);
                     if v.compare(&want) != Some(0) {
@@ -4301,7 +4445,7 @@ mod tests {
                     p,
                     rm,
                     &mut cc,
-                );
+                )?;
                 let want = crate::catalog::finish_ref(&gold, p, rm);
                 if got.compare(&want) != Some(0) {
                     bad.push(format!(
@@ -4561,7 +4705,7 @@ mod tests {
                     *p,
                     rm,
                     &mut cc,
-                );
+                )?;
                 if got.is_nan() {
                     bad.push(format!("{name} p={p} {rm:?} got NaN"));
                     continue;
@@ -4576,8 +4720,8 @@ mod tests {
         Ok(())
     }
 
-    fn is_ia(x: &ExactNum) -> bool {
-        x.is_nan() && x.err() == Some(crate::Error::InvalidArgument)
+    fn is_ia(x: &Result<ExactNum, crate::Error>) -> bool {
+        matches!(x, Err(crate::Error::InvalidArgument))
     }
 
     /// \(G^{m,n}_{p,q}\) is undefined when some \(a_k-b_j\) (\(k\le n\), \(j\le m\))
@@ -4622,7 +4766,7 @@ mod tests {
                         rm,
                         &mut cc,
                     );
-                    assert!(is_ia(&g), "G(1;0) z={z} p={p} {rm:?} got {g}");
+                    assert!(is_ia(&g), "G(1;0) z={z} p={p} {rm:?} got {g:?}");
                     let h = z.fox_h(
                         FoxHParams {
                             an: &[(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p))],
@@ -4634,7 +4778,7 @@ mod tests {
                         rm,
                         &mut cc,
                     );
-                    assert!(is_ia(&h), "H(1,1;0,1) z={z} p={p} {rm:?} got {h}");
+                    assert!(is_ia(&h), "H(1,1;0,1) z={z} p={p} {rm:?} got {h:?}");
                 }
             }
             if p > 256 {
@@ -4653,7 +4797,7 @@ mod tests {
                 rm,
                 &mut cc,
             );
-            assert!(is_ia(&g2), "G(2;0) at 0 p={p} got {g2}");
+            assert!(is_ia(&g2), "G(2;0) at 0 p={p} got {g2:?}");
             let g2z = one.meijer_g(
                 MeijerParams {
                     an: core::slice::from_ref(&two),
@@ -4665,7 +4809,7 @@ mod tests {
                 rm,
                 &mut cc,
             );
-            assert!(is_ia(&g2z), "G(2;0) at 1 p={p} got {g2z}");
+            assert!(is_ia(&g2z), "G(2;0) at 1 p={p} got {g2z:?}");
             // Sibling with no an-bm positive integer stays finite: G^{1,0}_{0,1}(0|;0)=1.
             let sib = zero.meijer_g(
                 MeijerParams {
@@ -4677,7 +4821,7 @@ mod tests {
                 p,
                 rm,
                 &mut cc,
-            );
+            )?;
             assert!(
                 sib.compare(&one) == Some(0),
                 "sibling G^{{1,0}}_{{0,1}}(0) p={p} got {sib}"
@@ -4693,7 +4837,7 @@ mod tests {
                 p,
                 rm,
                 &mut cc,
-            );
+            )?;
             assert!(
                 !ghalf.is_nan() && finite(&ghalf),
                 "G(1/2;0) at 1/2 should be finite p={p} got {ghalf}"
