@@ -4020,7 +4020,17 @@ mod tests {
         ];
         // kind, z, params..., gold
         // G: a,q,alpha,beta,gamma,delta; C: alpha,gamma,delta,eps,q
-        let rows_g: &[(&str, &str, &str, &str, &str, &str, &str, &str)] = &[
+        type HeunGRow = (
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+            &'static str,
+        );
+        let rows_g: &[HeunGRow] = &[
             (
                 "-2",
                 "2",

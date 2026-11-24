@@ -7159,23 +7159,36 @@ mod grid_digest_tests {
         digest(r, h)
     }
 
+    /// One digest cell for [`dd`]: the op name, its operands and integer arguments, `p`, `rm` and the result.
+    #[derive(Clone, Copy)]
+    struct DigestCell<'a> {
+        op: &'a str,
+        args: &'a [&'a ExactNum],
+        ints: &'a [i128],
+        p: usize,
+        rm: RoundingMode,
+        r: &'a ExactNum,
+    }
+
     /// NONE-GAP F-B: a `None` result of finite operands that is +-Inf is an overflow cell, and Jeff ruled
     /// (2026-11-11 12:03 and 12:15 PM CT) that a `None` overflow saturates to +-MAX (toward zero at rp(p, 64)). Today it
     /// gives +-Inf, a known-wrong bit, so the cell is counted and left out of the digest. It is fixed red-first in the
     /// ZF-M27 PR, which re-pins this digest with the cells back in. A division by zero (or the reciprocal of zero) is a
     /// pole, not an overflow, and stays hashed. The cells are listed by dump line in
     /// `fold-pr1-162-grid-wrong-cells.tsv` (PR #39 body).
-    #[allow(clippy::too_many_arguments)]
     fn dd_none_gap(
         h: &mut DefaultHasher,
         gap: &mut usize,
-        op: &str,
-        args: &[&ExactNum],
-        ints: &[i128],
-        p: usize,
-        rm: RoundingMode,
-        r: &ExactNum,
+        cell: DigestCell<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let DigestCell {
+            op,
+            args,
+            ints,
+            p,
+            rm,
+            r,
+        } = cell;
         let finite = args.iter().all(|a| !a.is_inf() && !a.is_nan());
         let pole = (op == "div" && args.get(1).is_some_and(|d| d.is_zero()))
             || (op == "reciprocal" && args.first().is_some_and(|d| d.is_zero()));
@@ -7201,18 +7214,20 @@ mod grid_digest_tests {
     /// A known-wrong cell of a held finding (queued as a ZF-M27 exception, or reported for an id): counted in `held`
     /// and left out of the pinned digest, so the pin does not hold wrong bits. The fix puts the cell back, red first.
     /// The cell ids (dump lines) are listed in the PR #39 body.
-    #[allow(clippy::too_many_arguments)]
     fn dd_held(
         h: &mut DefaultHasher,
         held: &mut usize,
         wrong: bool,
-        op: &str,
-        args: &[&ExactNum],
-        ints: &[i128],
-        p: usize,
-        rm: RoundingMode,
-        r: &ExactNum,
+        cell: DigestCell<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let DigestCell {
+            op,
+            args,
+            ints,
+            p,
+            rm,
+            r,
+        } = cell;
         if wrong {
             *held += 1;
             return Ok(());
@@ -7252,22 +7267,26 @@ mod grid_digest_tests {
                         dd_none_gap(
                             &mut *hh,
                             &mut gap,
-                            "ldexp",
-                            &[&operand(i)],
-                            &[i128::from(n)],
-                            p,
-                            rm,
-                            &operand(i).ldexp(n, p, rm),
+                            DigestCell {
+                                op: "ldexp",
+                                args: &[&operand(i)],
+                                ints: &[i128::from(n)],
+                                p,
+                                rm,
+                                r: &operand(i).ldexp(n, p, rm),
+                            },
                         )?;
                         dd_none_gap(
                             &mut *hh,
                             &mut gap,
-                            "ldexp",
-                            &[&operand(i)],
-                            &[i128::from(n)],
-                            p,
-                            rm,
-                            &operand(i).scalb(n, p, rm),
+                            DigestCell {
+                                op: "ldexp",
+                                args: &[&operand(i)],
+                                ints: &[i128::from(n)],
+                                p,
+                                rm,
+                                r: &operand(i).scalb(n, p, rm),
+                            },
                         )?;
                         count += 2;
                     }
@@ -7680,22 +7699,26 @@ mod grid_digest_tests {
                         dd_none_gap(
                             &mut *hh,
                             &mut gap,
-                            "mul",
-                            &[&operand(i), &operand(j)],
-                            &[],
-                            p,
-                            rm,
-                            &operand(i).mul(&operand(j), p, rm),
+                            DigestCell {
+                                op: "mul",
+                                args: &[&operand(i), &operand(j)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &operand(i).mul(&operand(j), p, rm),
+                            },
                         )?;
                         dd_none_gap(
                             &mut *hh,
                             &mut gap,
-                            "div",
-                            &[&operand(i), &operand(j)],
-                            &[],
-                            p,
-                            rm,
-                            &operand(i).div(&operand(j), p, rm),
+                            DigestCell {
+                                op: "div",
+                                args: &[&operand(i), &operand(j)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &operand(i).div(&operand(j), p, rm),
+                            },
                         )?;
                         count += 2;
                     }
@@ -7705,12 +7728,14 @@ mod grid_digest_tests {
                 dd_none_gap(
                     &mut h,
                     &mut held_fb_full,
-                    "mul_full",
-                    &[&operand(i), &operand(j)],
-                    &[],
-                    0,
-                    RoundingMode::None,
-                    &operand(i).mul_full_prec(&operand(j)),
+                    DigestCell {
+                        op: "mul_full",
+                        args: &[&operand(i), &operand(j)],
+                        ints: &[],
+                        p: 0,
+                        rm: RoundingMode::None,
+                        r: &operand(i).mul_full_prec(&operand(j)),
+                    },
                 )?;
                 count += 1;
             }
@@ -7824,12 +7849,14 @@ mod grid_digest_tests {
                                             &mut *hh,
                                             &mut held,
                                             f18 || spur || tzud || f25,
-                                            COP,
-                                            &[&x[0], &x[1], &x[2], &x[3]],
-                                            &[i128::try_from(k)?, i128::try_from(part)?],
-                                            p,
-                                            rm,
-                                            v,
+                                            DigestCell {
+                                                op: COP,
+                                                args: &[&x[0], &x[1], &x[2], &x[3]],
+                                                ints: &[i128::try_from(k)?, i128::try_from(part)?],
+                                                p,
+                                                rm,
+                                                r: v,
+                                            },
                                         )?;
                                     }
                                     count += 1;
@@ -7893,22 +7920,26 @@ mod grid_digest_tests {
                         dd_none_gap(
                             &mut *hh,
                             &mut gap,
-                            "mul",
-                            &[&operand(i), &operand(j)],
-                            &[],
-                            p,
-                            rm,
-                            &ExactNum::mul_ref(&operand(i), &operand(j), p, rm),
+                            DigestCell {
+                                op: "mul",
+                                args: &[&operand(i), &operand(j)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &ExactNum::mul_ref(&operand(i), &operand(j), p, rm),
+                            },
                         )?;
                         dd_none_gap(
                             &mut *hh,
                             &mut gap,
-                            "div",
-                            &[&operand(i), &operand(j)],
-                            &[],
-                            p,
-                            rm,
-                            &ExactNum::div_ref(&operand(i), &operand(j), p, rm),
+                            DigestCell {
+                                op: "div",
+                                args: &[&operand(i), &operand(j)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &ExactNum::div_ref(&operand(i), &operand(j), p, rm),
+                            },
                         )?;
                         count += 2;
                     }
@@ -7918,12 +7949,14 @@ mod grid_digest_tests {
                 dd_none_gap(
                     &mut h,
                     &mut held_fb_full,
-                    "mul_full",
-                    &[&operand(i), &operand(j)],
-                    &[],
-                    0,
-                    RoundingMode::None,
-                    &operand(i).mul_full_prec(&operand(j)),
+                    DigestCell {
+                        op: "mul_full",
+                        args: &[&operand(i), &operand(j)],
+                        ints: &[],
+                        p: 0,
+                        rm: RoundingMode::None,
+                        r: &operand(i).mul_full_prec(&operand(j)),
+                    },
                 )?;
                 count += 1;
             }
@@ -7965,12 +7998,14 @@ mod grid_digest_tests {
                     dd_none_gap(
                         &mut *hh,
                         &mut gap,
-                        "sqr",
-                        &[&x],
-                        &[],
-                        p,
-                        rm,
-                        &ExactNum::mul_ref(&x, &x, p, rm),
+                        DigestCell {
+                            op: "sqr",
+                            args: &[&x],
+                            ints: &[],
+                            p,
+                            rm,
+                            r: &ExactNum::mul_ref(&x, &x, p, rm),
+                        },
                     )?;
                     count += 1;
                 }
@@ -8006,12 +8041,14 @@ mod grid_digest_tests {
                     dd_none_gap(
                         &mut *hh,
                         &mut gap,
-                        "sqr",
-                        &[&operand(i)],
-                        &[],
-                        p,
-                        rm,
-                        &operand(i).sqr(p, rm),
+                        DigestCell {
+                            op: "sqr",
+                            args: &[&operand(i)],
+                            ints: &[],
+                            p,
+                            rm,
+                            r: &operand(i).sqr(p, rm),
+                        },
                     )?;
                     count += 1;
                 }
@@ -8118,12 +8155,14 @@ mod grid_digest_tests {
                         &mut *hh,
                         &mut held_f16,
                         f16,
-                        "tanh",
-                        &[&x()],
-                        &[],
-                        p,
-                        rm,
-                        &t,
+                        DigestCell {
+                            op: "tanh",
+                            args: &[&x()],
+                            ints: &[],
+                            p,
+                            rm,
+                            r: &t,
+                        },
                     )?;
                     count += 7;
                 }
@@ -8211,12 +8250,14 @@ mod grid_digest_tests {
                             &mut *hh,
                             &mut *held,
                             f12,
-                            "pow",
-                            &[&operand(i), &e],
-                            &[],
-                            p,
-                            rm,
-                            &r,
+                            DigestCell {
+                                op: "pow",
+                                args: &[&operand(i), &e],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &r,
+                            },
                         )?;
                         count += 1;
                     }
@@ -8229,12 +8270,14 @@ mod grid_digest_tests {
                             &mut *hh,
                             &mut *held,
                             f12,
-                            "powi",
-                            &[&operand(i)],
-                            &[i128::try_from(n)?],
-                            p,
-                            rm,
-                            &r,
+                            DigestCell {
+                                op: "powi",
+                                args: &[&operand(i)],
+                                ints: &[i128::try_from(n)?],
+                                p,
+                                rm,
+                                r: &r,
+                            },
                         )?;
                         count += 1;
                     }
@@ -8638,12 +8681,14 @@ mod grid_digest_tests {
                                 &mut h,
                                 &mut held,
                                 f21 || tzud || f22 || f28 || f29 || f30,
-                                JNAMES[fi],
-                                &[&operand(i), &m[mi]],
-                                &[],
-                                p,
-                                rm,
-                                &r,
+                                DigestCell {
+                                    op: JNAMES[fi],
+                                    args: &[&operand(i), &m[mi]],
+                                    ints: &[],
+                                    p,
+                                    rm,
+                                    r: &r,
+                                },
                             )?;
                             count += 1;
                         }
@@ -8908,12 +8953,14 @@ mod grid_digest_tests {
                             &mut h,
                             &mut held_logb,
                             f20 || f26 || f27,
-                            "logb",
-                            &[&operand(i), &operand(b)],
-                            &[],
-                            p,
-                            rm,
-                            &r,
+                            DigestCell {
+                                op: "logb",
+                                args: &[&operand(i), &operand(b)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &r,
+                            },
                         )?;
                         count += 1;
                     }
@@ -9000,12 +9047,14 @@ mod grid_digest_tests {
                         &mut h,
                         &mut held_f20,
                         f20,
-                        "logb",
-                        &[&x, &b],
-                        &[],
-                        p,
-                        rm,
-                        &got,
+                        DigestCell {
+                            op: "logb",
+                            args: &[&x, &b],
+                            ints: &[],
+                            p,
+                            rm,
+                            r: &got,
+                        },
                     )?;
                     count += 1;
                 }
@@ -9121,12 +9170,14 @@ mod grid_digest_tests {
                         dd_none_gap(
                             &mut *hh,
                             &mut gap,
-                            "reciprocal",
-                            &[&operand(i)],
-                            &[],
-                            p,
-                            rm,
-                            &r,
+                            DigestCell {
+                                op: "reciprocal",
+                                args: &[&operand(i)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &r,
+                            },
                         )?;
                     }
                     count += 1;

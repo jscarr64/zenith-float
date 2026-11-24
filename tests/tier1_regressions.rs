@@ -4445,8 +4445,7 @@ fn zf_78_assert_flint_gold(
     name: &str,
     below: bool,
     got: &ExactComplex,
-    re: &str,
-    im: &str,
+    [re, im]: [&str; 2],
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -4594,8 +4593,8 @@ fn zf_78_bessel_cut_and_large_integer_order() -> Result<(), String> {
             up.re().compare(dn.re()) == Some(0) && up.im().compare(dn.im()) == Some(0),
             "ZF-78 {name}_{{2+i}}(-2+0i) and (-2-0i) must agree, got {up:?} / {dn:?}"
         );
-        zf_78_assert_flint_gold(name, false, &up, golds[0], golds[1], p, rm, &mut cc);
-        zf_78_assert_flint_gold(name, true, &dn, golds[0], golds[1], p, rm, &mut cc);
+        zf_78_assert_flint_gold(name, false, &up, [golds[0], golds[1]], p, rm, &mut cc);
+        zf_78_assert_flint_gold(name, true, &dn, [golds[0], golds[1]], p, rm, &mut cc);
     }
     Ok(())
 }

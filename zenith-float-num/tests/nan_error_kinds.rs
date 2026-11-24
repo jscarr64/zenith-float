@@ -63,7 +63,8 @@ fn asvd(r: Option<(ExactNumArray, ExactNumArray, ExactNumArray)>) -> String {
 fn observations() -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
     let mut out = Vec::new();
     let mut put = |k: String, v: String| out.push((k, v));
-    let kinds: [(&str, fn() -> ExactNum); 3] = [("A", nan_a), ("B", nan_b), ("N", nan_n)];
+    type NanKind = (&'static str, fn() -> ExactNum);
+    let kinds: [NanKind; 3] = [("A", nan_a), ("B", nan_b), ("N", nan_n)];
     for (na, fa) in kinds {
         for (nb, fb) in kinds {
             let t = format!("{na}{nb}");
