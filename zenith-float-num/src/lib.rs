@@ -212,6 +212,7 @@ pub use crate::roots::brent;
 pub use crate::roots::illinois;
 pub use crate::roots::newton;
 pub use crate::roots::root_default_tol;
+pub use crate::roots::NewtonOptions;
 pub use crate::roots::ROOT_DEFAULT_TOL;
 pub use crate::roots::ROOT_MAX_ITER;
 

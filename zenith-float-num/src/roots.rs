@@ -113,12 +113,21 @@ where
     bisect_counted(f, a.clone(), b.clone(), tol, p, rm, cc).map(|(x, _)| x)
 }
 
+/// Stop tolerance and iteration cap of [`newton`] (zenith-float 2.0: grouped so no public function
+/// takes more than 7 arguments).
+#[derive(Clone, Copy, Debug)]
+pub struct NewtonOptions<'a> {
+    /// Absolute step tolerance (finite); e.g. [`root_default_tol`].
+    pub tol: &'a ExactNum,
+    /// Most Newton steps (at least 1).
+    pub max_iter: usize,
+}
+
 fn newton_counted<F, D>(
     mut f: F,
     mut df: D,
     x0: ExactNum,
-    tol: &ExactNum,
-    max_iter: usize,
+    NewtonOptions { tol, max_iter }: NewtonOptions<'_>,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -163,8 +172,7 @@ pub fn newton<F, D>(
     f: F,
     df: D,
     x0: &ExactNum,
-    tol: &ExactNum,
-    max_iter: usize,
+    NewtonOptions { tol, max_iter }: NewtonOptions<'_>,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -173,7 +181,16 @@ where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
     D: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    newton_counted(f, df, x0.clone(), tol, max_iter, p, rm, cc).map(|(x, _)| x)
+    newton_counted(
+        f,
+        df,
+        x0.clone(),
+        NewtonOptions { tol, max_iter },
+        p,
+        rm,
+        cc,
+    )
+    .map(|(x, _)| x)
 }
 
 fn illinois_counted<F>(
@@ -467,8 +484,10 @@ mod tests {
             |x, p, rm, _cc| x.sqr(p, rm).sub(&two, p, rm),
             |x, p, rm, _cc| ExactNum::mul_ref(&two, x, p, rm),
             &one,
-            &tol,
-            ROOT_MAX_ITER,
+            NewtonOptions {
+                tol: &tol,
+                max_iter: ROOT_MAX_ITER,
+            },
             p,
             rm,
             &mut cc,

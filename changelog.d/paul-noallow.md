@@ -24,3 +24,5 @@
 - `rk4(f, OdeSpan { t0, y0, t1 }, n_steps, p, rm, cc)` and
   `rk45_adaptive(f, OdeSpan { t0, y0, t1 }, OdeTol { atol, rtol }, p, rm, cc)`: the interval/initial value and the
   tolerances are grouped. Same arithmetic and results.
+- `newton(f, df, x0, NewtonOptions { tol, max_iter }, p, rm, cc)`: the stop tolerance and iteration cap are grouped.
+  Same arithmetic and results.

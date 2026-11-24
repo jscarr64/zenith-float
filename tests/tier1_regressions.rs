@@ -962,7 +962,7 @@ fn zf_64_digamma_large_negative_reduces_exactly() -> Result<(), String> {
 /// at 1200 bits; sqrt(2) and ln(3) cross-checked with FLINT arb.
 #[test]
 fn zf_52_roots_default_tolerance_converge() -> Result<(), String> {
-    use zenith_float::{bisect, newton, root_default_tol};
+    use zenith_float::{bisect, newton, root_default_tol, NewtonOptions};
     let mut cc = Consts::new().must("Consts")?;
     let refs = [
         "1.41421356237309504880168872420969807856967187537694807317667973799073247846210703885038753432764157273501384623091229702492483605585073721264412149709993583141322266592750559275579995050115278206057147010955997160597027453459686201472851741864088919860955232923048430871432145083976260362799525140798968725339654633180882964062062",
@@ -996,7 +996,18 @@ fn zf_52_roots_default_tolerance_converge() -> Result<(), String> {
             let x0 = ExactNum::from_u8(1, p);
             let want = ExactNum::parse(txt, Radix::Dec, 1152, rm, &mut cc);
             for got in [
-                newton(f, df, &x0, &tol, 200, p, rm, &mut cc),
+                newton(
+                    f,
+                    df,
+                    &x0,
+                    NewtonOptions {
+                        tol: &tol,
+                        max_iter: 200,
+                    },
+                    p,
+                    rm,
+                    &mut cc,
+                ),
                 bisect(
                     f,
                     &ExactNum::new(p),

@@ -395,7 +395,7 @@ assert_eq!(ExactInt::from_i64(2).pow(10), ExactInt::from_i64(1024));
 ### 29. Newton for `x² − 2 = 0`
 
 ```rust
-use zenith_float::{newton, root_default_tol, Consts, ExactNum, RoundingMode};
+use zenith_float::{newton, root_default_tol, Consts, ExactNum, NewtonOptions, RoundingMode};
 let p = 256;
 let rm = RoundingMode::ToEven;
 let mut cc = Consts::new().unwrap();
@@ -405,8 +405,7 @@ let root = newton(
     |x, p, rm, _| x.mul(x, p, rm).sub(&two, p, rm),
     |x, p, rm, _| x.add(x, p, rm),
     &x0,
-    &root_default_tol(p),
-    64,
+    NewtonOptions { tol: &root_default_tol(p), max_iter: 64 },
     p,
     rm,
     &mut cc,
