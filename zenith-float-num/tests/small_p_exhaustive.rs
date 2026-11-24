@@ -7,7 +7,7 @@
 //! result's sign (`ToZero`, `Down` positive, `Up` negative), else infinity (`None` included; CHANGELOG 2.0 overflow
 //! entry, tests/overflow_modes.rs). The point count and the overflow count are printed.
 //!
-//! P_MAX is 8 in release (the claim: p in 1..=8) and 5 in debug (the debug build is about 30 times slower).
+//! P_MAX is 8 (the claim: p in 1..=8) in debug and release.
 //! Underflow is not enumerated here: the bottom of the range has denormal results (exponent_range.rs covers them).
 
 use std::ops::Neg;
@@ -29,13 +29,8 @@ const E_HI: i64 = 2;
 /// Storage precision of every p <= 64 (one word): `None` keeps it (RNDZ at 64 bits).
 const STORAGE: u32 = 64;
 
-fn p_max() -> u32 {
-    if cfg!(debug_assertions) {
-        5
-    } else {
-        8
-    }
-}
+/// The claim: p in 1..=8, in every build (Jeff 2026-11-23 23:04 CT: debug still runs every test).
+const P_MAX: u32 = 8;
 
 #[derive(PartialEq, Eq, Debug)]
 enum Op {
@@ -291,7 +286,7 @@ fn check(
 fn sweep(shift: (i64, i64), ops: &[Op], label: &str, want_overflow: bool) -> Result<(), String> {
     let mut points: u64 = 0;
     let mut overflows: u64 = 0;
-    for p in 1..=p_max() {
+    for p in 1..=P_MAX {
         let v = operands(p);
         for op in ops {
             for a in &v {
@@ -310,7 +305,7 @@ fn sweep(shift: (i64, i64), ops: &[Op], label: &str, want_overflow: bool) -> Res
     }
     println!(
         "small_p_exhaustive {label}: p 1..={} x exponents {E_LO}..={E_HI} x 7 modes: {points} points checked, {overflows} overflowed",
-        p_max()
+        P_MAX
     );
     if points == 0 {
         return Err("no points".to_string());

@@ -9019,9 +9019,8 @@ mod tests {
     }
 
     /// Γ(4097.5) matches the closed form `√π · (2n−1)!! / 2^n` (56 bits).
-    #[cfg(not(debug_assertions))]
     #[test]
-    fn test_gamma_half_integer_4097_closed_form_release() -> Result<(), crate::Error> {
+    fn test_gamma_half_integer_4097_closed_form() -> Result<(), crate::Error> {
         let p = 64;
         let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;

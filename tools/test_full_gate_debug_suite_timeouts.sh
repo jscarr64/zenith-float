@@ -67,6 +67,9 @@ if ! diff <(bash "$root/tools/time_limits_scan.sh") "$root/tools/time_limits.tsv
   bad "wall-clock budgets differ from tools/time_limits.tsv: $(diff <(bash "$root/tools/time_limits_scan.sh") "$root/tools/time_limits.tsv" 2>&1 | head -5 | tr '\n' ' ')"
 fi
 
+# Jeff 2026-11-23 23:04 CT: debug still runs every test; no test may branch on debug_assertions to run less.
+bash "$root/tools/test_no_debug_skips.sh" > /dev/null 2>&1 || bad "tools/test_no_debug_skips.sh: $(bash "$root/tools/test_no_debug_skips.sh" 2>&1 | head -8 | tr '\n' ' ')"
+
 # Explicit STEP_TIMEOUT must still win, including for the debug suites
 # (selftests set STEP_TIMEOUT=60s).
 STEP_TIMEOUT=60s

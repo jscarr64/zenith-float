@@ -4148,18 +4148,6 @@ fn zf_56_anger_weber_struve_correctly_rounded() -> Result<(), String> {
     for l in include_str!("tier1/zf56.tsv").lines() {
         let t: Vec<&str> = l.split('\t').collect();
         let p = t[3].parse::<usize>().must("p")?;
-        // Debug smoke: p=64 ToEven on modest z, plus the H_0(100) regression
-        // (r.struve_h 64p0 0). Anger J at z=100 is ~3.8s per mode in debug;
-        // the full 462-row table did not finish in 15 min and official
-        // build-debug at 6e2165e hit the 20m step timeout (2026-11-17).
-        // build-release and verify.sh still run every row.
-        if cfg!(debug_assertions) {
-            let h0_100 = t[0] == "r.struve_h" && t[1] == "64p0" && t[2] == "0";
-            let large_z = matches!(t[1], "1p20" | "1p10" | "7dp3" | "3e8p0" | "64p0" | "19p2");
-            if p != 64 || t[4] != "toeven" || (large_z && !h0_100) {
-                continue;
-            }
-        }
         let z = parse_real(t[1]).must("z")?;
         let nu = parse_real(t[2]).must("nu")?;
         let rm = mode(t[4]).must("mode")?;
@@ -5062,11 +5050,7 @@ fn zf_78_elliptic_cut_signed_zeros_body() -> Result<(), String> {
     // The on-cut RF/RD path must stay near the off-cut cost at dest p=8192
     // (the survey cap is 16s). Extra work of 2p+128, needed only for R_J,
     // made E(-2±0i | 2) time out. Check finite, sides differ, and the
-    // p=8192 value rounds to the p=64 FLINT gold. Debug is too slow for
-    // this dest (the 20s child budget is for release / verify.sh).
-    if cfg!(debug_assertions) {
-        return Ok(());
-    }
+    // p=8192 value rounds to the p=64 FLINT gold, in every build.
     let p8 = 8192usize;
     let m2 = parse_complex("1p1,0").must("m=2")?;
     let up8 = parse_complex("-1p1,0")
