@@ -4,6 +4,8 @@
 # rulesscan-diag, 10f991e). For every pushed commit this runs:
 #   1. tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..<sha>"   the CI command (.github/workflows/rules-scan.yml)
 #   2. tools/no_suppress_scan.py on <sha>'s tree                 zero #[allow]/#[expect]/relaxed lint config/unsafe
+#      The tree is a --shared clone checked out at <sha>: every tracked file, including one that matches .gitignore
+#      (an archive + `add -A` copy dropped those; Spence m3), and the history the [pending-grew] check reads.
 # Both always run and report. A FAIL stops the push; fix it, never push with --no-verify.
 # Enable once per clone: git config core.hooksPath .githooks     Test: tools/pre_push_selftest.sh
 set -u
@@ -20,7 +22,7 @@ while read -r lref lsha rref rsha; do
   if tools/rules_scan.sh "$base..$lsha"; then echo "pre-push: ok rules-scan"; else echo "pre-push: FAIL rules-scan"; rc=1; fi
   t="$tmp/${lsha}"
   echo "pre-push: == no-suppress: tools/no_suppress_scan.py on the tree of $lsha"
-  if mkdir -p "$t" && git archive "$lsha" | tar -x -C "$t" && git -C "$t" init -q && git -C "$t" add -A \
+  if git clone -q --shared --no-checkout "$PWD" "$t" && git -C "$t" checkout -q --detach "$lsha" \
      && [ -f "$t/tools/no_suppress_scan.py" ]; then
     if python3 -B "$t/tools/no_suppress_scan.py" --root "$t"; then echo "pre-push: ok no-suppress"
     else echo "pre-push: FAIL no-suppress"; rc=1; fi

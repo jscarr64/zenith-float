@@ -44,6 +44,10 @@ lallow=$(mkc zenith-float-num/src/zz_fixture.rs '#[allow(clippy::too_many_argume
 relaxed=$(g checkout -q --detach "$base" && printf 'too-many-arguments-threshold = 10\n' >> "$c/clippy.toml" \
   && g commit -qam "case relaxed clippy.toml" && g rev-parse HEAD)
 unsafe_=$(mkc zenith-float-num/src/zz_fixture.rs 'pub fn zz(p: *const u8) -> u8 {\n    unsafe { *p }\n}\n')
+# Spence m3 on 0a1cb6c: a tracked file that matches .gitignore is still pushed (and CI scans it); the hook must see it
+ignored=$(g checkout -q --detach "$base" && printf 'zz_ignored.rs\n' >> "$c/.gitignore" \
+  && printf '#[allow(dead_code)]\nfn zz() {}\n' > "$c/tests/zz_ignored.rs" && g add -A && g add -f tests/zz_ignored.rs \
+  && g commit -qm "case tracked file matching .gitignore" && g rev-parse HEAD)
 g checkout -q --detach "$tallow"   # the working tree is NOT the pushed commit: the hook must scan the pushed tree
 case_ pass "clean commit passes both scans" "$clean" 'pre-push: ok'
 case_ fail "added .clone() in library code fails rules-scan" "$clone" 'FAIL rules-scan'
@@ -51,6 +55,7 @@ case_ fail "#[allow] in tests/ passes rules-scan but fails no-suppress" "$tallow
 case_ fail "#[allow] in library code fails" "$lallow" 'FAIL (rules-scan|no-suppress)'
 case_ fail "unsafe in library code fails no-suppress" "$unsafe_" 'FAIL no-suppress'
 case_ fail "a relaxed clippy.toml threshold fails no-suppress" "$relaxed" '\[clippy-config\] too-many-arguments-threshold'
+case_ fail "#[allow] in a tracked file that matches .gitignore fails no-suppress" "$ignored" 'tests/zz_ignored.rs:1 \[allow\]'
 n=$((n + 1)); out=$(cd "$c" && printf 'refs/heads/x %s refs/heads/x %s\n' "$zero" "$clean" | RATCHET_BASE="$base" bash "$hook" origin "$w/remote" 2>&1)
 if [ $? -eq 0 ]; then echo "ok $n branch delete (nothing to scan) passes"; else bad "branch delete: $out"; fi
 grep -q 'FAIL no-suppress' <<<"$(cd "$c" && printf 'refs/heads/x %s refs/heads/x %s\n' "$tallow" "$zero" | RATCHET_BASE="$base" bash "$hook" origin x 2>&1)" \
