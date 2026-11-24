@@ -1737,7 +1737,6 @@ fn pick_t(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option<Exa
 }
 
 /// Taylor-panel integral of \(f\) on `[a,b]` plus a majorant remainder.
-#[allow(clippy::needless_range_loop)]
 fn panel_integral(
     a: &ExactNum,
     b: &ExactNum,
@@ -1768,9 +1767,10 @@ fn panel_integral(
     };
     for n in 1..=n_jet {
         let mut un = ExactNum::new(wp);
-        for j in 0..n {
+        // jet holds u_0..u_{n-1} here (len n).
+        for (j, uj) in jet.iter().enumerate() {
             let c = binom(n - 1, j, wp, N);
-            let term = c.mul(ak(n - j), wp, N).mul(&jet[j], wp, N);
+            let term = c.mul(ak(n - j), wp, N).mul(uj, wp, N);
             un = un.add(&term, wp, N);
         }
         jet.push(un);
@@ -1778,10 +1778,8 @@ fn panel_integral(
     // Integrate Σ u_k (t-mid)^k / k! over [a,b] = Σ u_k / k! * (h/2)^{k+1} / (k+1) * (1-(-1)^{k+1})
     // i.e. only even k survive: 2 (h/2)^{k+1} /(k+1)! * u_k
     let mut integ = ExactNum::new(wp);
-    for k in 0..=n_jet {
-        if !k.is_multiple_of(2) {
-            continue;
-        }
+    // jet holds u_0..u_{n_jet}; even k only.
+    for (k, uk) in jet.iter().enumerate().step_by(2) {
         let pow = half_h.pow(
             &ExactNum::from_u64((k as u64).saturating_add(1), wp),
             wp,
@@ -1789,7 +1787,7 @@ fn panel_integral(
             cc,
         );
         let fac = factorial_rm(k + 1, wp, N);
-        let term = ExactNum::mul_ref(&jet[k], &pow, wp, N)
+        let term = ExactNum::mul_ref(uk, &pow, wp, N)
             .div(&fac, wp, N)
             .mul(&two(wp), wp, N);
         integ = integ.add(&term, wp, N);
@@ -1819,10 +1817,11 @@ fn panel_integral(
     let mut major: Vec<ExactNum> = vec![u0];
     for n in 1..=n_jet + 1 {
         let mut un = ExactNum::new(wp);
-        for j in 0..n {
+        // major holds U_0..U_{n-1} here (len n).
+        for (j, uj) in major.iter().enumerate() {
             let c = binom(n - 1, j, wp, UP);
             let ak = if n - j == 1 { &a1u } else { &aku };
-            let term = c.mul(ak, wp, UP).mul(&major[j], wp, UP);
+            let term = c.mul(ak, wp, UP).mul(uj, wp, UP);
             un = un.add(&term, wp, UP);
         }
         major.push(un);
