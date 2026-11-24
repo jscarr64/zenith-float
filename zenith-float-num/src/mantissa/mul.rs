@@ -48,6 +48,21 @@ impl Mantissa {
 
     // general case multiplication
     pub(crate) fn mul_unbalanced(m1: &[Word], m2: &[Word], m3: &mut [Word]) -> Result<(), Error> {
+        // Zero low words (a short value held at a wide precision) contribute nothing: multiply
+        // only the words above them and zero the same number of low product words. Without this a
+        // 1-word value at 65568 bits cost a dense 1025-word Toom-3 product (r2nd/zeta root cause).
+        let z1 = m1.iter().position(|w| w != &0).unwrap_or(m1.len());
+        let z2 = m2.iter().position(|w| w != &0).unwrap_or(m2.len());
+        let z = z1 + z2;
+        if z > 0 && m3.len() == m1.len() + m2.len() {
+            let (lo, hi) = m3.split_at_mut(z);
+            lo.fill(0);
+            if z1 == m1.len() || z2 == m2.len() {
+                hi.fill(0);
+                return Ok(());
+            }
+            return Self::mul_unbalanced(&m1[z1..], &m2[z2..], hi);
+        }
         let (sm, lg) = if m1.len() < m2.len() { (m1, m2) } else { (m2, m1) };
 
         if lg.len() / 2 >= sm.len() && sm.len() > 70 {
@@ -306,6 +321,67 @@ mod tests {
                 ns / 1_000
             );
         }
+        Ok(())
+    }
+
+    /// A short value held at a wide precision has zero low words (exact small integers at the
+    /// working precision of a binary-splitting tree, `ops::zeta_ui`); its product must be the same
+    /// as the schoolbook product of the full slices, for every algorithm range and padding.
+    #[test]
+    fn zero_low_words_give_the_same_product() -> Result<(), String> {
+        for &(l1, l2) in
+            &[(1, 1), (3, 40), (33, 33), (40, 300), (221, 230), (1025, 1025), (700, 1500)]
+        {
+            for &(z1, z2) in &[(0, 1), (1, 0), (l1 - 1, l2 - 1), (l1 / 2, l2 / 3), (l1 - 1, 0)] {
+                let mut a = WordBuf::new(l1)?;
+                let mut b = WordBuf::new(l2)?;
+                fill_odd(&mut a, 0x5151 + l1 as u64);
+                fill_odd(&mut b, 0x7373 + l2 as u64);
+                a[..z1].fill(0);
+                b[..z2].fill(0);
+                let mut got = WordBuf::new(l1 + l2)?;
+                let mut want = WordBuf::new(l1 + l2)?;
+                got.fill(Word::MAX);
+                Mantissa::mul_unbalanced(&a, &b, &mut got)?;
+                if l1 <= l2 {
+                    Mantissa::mul_basic(&a, &b, &mut want);
+                } else {
+                    Mantissa::mul_basic(&b, &a, &mut want);
+                }
+                assert!(got[..] == want[..], "l1={l1} l2={l2} z1={z1} z2={z2}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Root cause of the debug-build `zf_riemann_zeta_matches_flint_golds` time (r2nd/zeta): the
+    /// zero low words of short operands were multiplied as if dense, so a 1-word x 1-word product
+    /// at 65568 bits cost a dense 1025 x 1025-word Toom-3. It must cost a small fraction of one.
+    #[cfg(feature = "std")]
+    #[test]
+    fn padded_short_operands_skip_their_zero_words() -> Result<(), String> {
+        let limbs = 1025;
+        let mut da = WordBuf::new(limbs)?;
+        let mut db = WordBuf::new(limbs)?;
+        fill_odd(&mut da, 0x2222);
+        fill_odd(&mut db, 0x3333);
+        let mut pa = WordBuf::new(limbs)?;
+        let mut pb = WordBuf::new(limbs)?;
+        pa.fill(0);
+        pb.fill(0);
+        pa[limbs - 1] = 0x8000_0000_075b_cd15;
+        pb[limbs - 1] = 0x8000_0000_3ade_68b1;
+        let mut mc = WordBuf::new(2 * limbs)?;
+        let dense = time_ns(12, 2, || {
+            Mantissa::mul_unbalanced(&da, &db, &mut mc).map_err(|e| format!("{e:?}"))
+        })?;
+        let padded = time_ns(12, 2, || {
+            Mantissa::mul_unbalanced(&pa, &pb, &mut mc).map_err(|e| format!("{e:?}"))
+        })?;
+        assert!(
+            padded.saturating_mul(20) < dense,
+            "padded 1-word operands cost {padded} ns vs {dense} ns for a dense 1025-word product"
+        );
         Ok(())
     }
 }

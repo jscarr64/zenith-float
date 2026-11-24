@@ -580,7 +580,17 @@ impl Mantissa {
     ) -> Result<(i64, Self), Error> {
         let p = Self::bit_len_to_word_len(p);
 
-        let k = (p + m2.len()).max(self.len()) + 1;
+        // A mantissa is a fraction, so the divisor's zero low words (a short value held at a wide
+        // precision) do not change its value: divide by the words above them. Without this a 1-word
+        // divisor at 65600 bits ran the dense 1025-word division (r2nd/zeta root cause, with `mul`).
+        let z2 =
+            m2.m.iter()
+                .position(|w| w != &0)
+                .unwrap_or(m2.len())
+                .min(m2.len().saturating_sub(1));
+        let m2w: &[Word] = &m2.m[z2..];
+
+        let k = (p + m2w.len()).max(self.len()) + 1;
 
         // The operands are as stored. A subnormal dividend is shifted left (normalized) while it is written
         // into the padded working buffer `m1` below, which exists for every dividend; a subnormal divisor
@@ -590,7 +600,7 @@ impl Mantissa {
         let lz2 = m2.leading_zero_bits();
 
         let mut e_shift =
-            (m2.len() as i64 - k as i64) * WORD_BIT_SIZE as i64 + lz2 as i64 - lz1 as i64;
+            (m2w.len() as i64 - k as i64) * WORD_BIT_SIZE as i64 + lz2 as i64 - lz1 as i64;
 
         let mut m1 = Self::reserve_new(k)?;
         let l = k - self.len();
@@ -600,13 +610,13 @@ impl Mantissa {
         let d = if lz2 == 0 {
             None
         } else {
-            let mut d = Self::reserve_new(m2.len())?;
-            Self::write_shifted_left(&mut d, &m2.m, lz2);
+            let mut d = Self::reserve_new(m2w.len())?;
+            Self::write_shifted_left(&mut d, m2w, lz2);
             Some(d)
         };
         let divisor: &[Word] = match &d {
             Some(d) => d,
-            None => &m2.m,
+            None => m2w,
         };
 
         let (q, r) = Self::div_unbalanced(&m1, divisor)?;

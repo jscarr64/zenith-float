@@ -441,4 +441,91 @@ mod tests {
         s1[l - 1] |= WORD_SIGNIFICANT_BIT;
         s1
     }
+
+    fn odd_words(n: usize, seed: u64) -> Vec<Word> {
+        let mut x = seed;
+        let mut v = Vec::new();
+        for _ in 0..n {
+            x = x.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
+            v.push(x);
+        }
+        if let Some(t) = v.last_mut() {
+            *t |= WORD_SIGNIFICANT_BIT;
+        }
+        v
+    }
+
+    fn mant(words: &[Word]) -> Result<Mantissa, crate::Error> {
+        let mut b = WordBuf::new(words.len())?;
+        b.copy_from_slice(words);
+        Ok(Mantissa::from_word_buf(b))
+    }
+
+    /// A short divisor held at a wide precision (zero low words, e.g. `(N+a)^2 (2r+1)(2r+2)` in the
+    /// Euler-Maclaurin tail of `hurwitz_jet`) must give exactly the quotient, exponent shift, sticky
+    /// and rounding (a mantissa is a fraction, so the zero words do not change its value) of the same divisor without the zero words, for every rounding mode.
+    #[test]
+    fn zero_low_divisor_words_give_the_same_quotient() -> Result<(), crate::Error> {
+        use crate::defs::RoundingMode as R;
+        let modes = [R::None, R::Up, R::Down, R::ToZero, R::FromZero, R::ToEven, R::ToOdd];
+        for &(l1, l2s, pad, pbits) in &[
+            (1usize, 1usize, 3usize, 192usize),
+            (4, 1, 40, 2048),
+            (40, 2, 300, 16384),
+            (1025, 1, 1024, 65600),
+            (1025, 3, 1022, 65600),
+            (300, 30, 900, 40000),
+        ] {
+            for seed in 0..3u64 {
+                let a = mant(&odd_words(l1, 0x1111 + seed))?;
+                let short = odd_words(l2s, 0x2222 + seed);
+                let mut padded = vec![0; pad];
+                padded.extend_from_slice(&short);
+                let ds = mant(&short)?;
+                let dp = mant(&padded)?;
+                for &rm in &modes {
+                    for pos in [true, false] {
+                        let mut ix = false;
+                        let mut ip = false;
+                        let (es, qs) = a.div(&ds, pbits, rm, pos, &mut ix)?;
+                        let (ep, qp) = a.div(&dp, pbits, rm, pos, &mut ip)?;
+                        assert!(
+                            es == ep && qs.digits() == qp.digits() && ix == ip,
+                            "l1={l1} l2s={l2s} pad={pad} p={pbits} rm={rm:?} pos={pos}"
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Second half of the r2nd/zeta root cause: dividing by a 1-word value padded to 1025 words
+    /// ran the dense 1025-word division; it must cost a small fraction of a dense division.
+    #[cfg(feature = "std")]
+    #[test]
+    fn padded_short_divisor_skips_its_zero_words() -> Result<(), crate::Error> {
+        use crate::defs::RoundingMode as R;
+        let a = mant(&odd_words(1025, 0x4444))?;
+        let dense = mant(&odd_words(1025, 0x5555))?;
+        let mut padded = vec![0; 1024];
+        padded.push(0x8000_0000_3ade_68b1);
+        let padded = mant(&padded)?;
+        let time = |d: &Mantissa| -> Result<u128, crate::Error> {
+            let mut ix = false;
+            a.div(d, 65600, R::None, true, &mut ix)?;
+            let t0 = std::time::Instant::now();
+            for _ in 0..8 {
+                a.div(d, 65600, R::None, true, &mut ix)?;
+            }
+            Ok(t0.elapsed().as_nanos() / 8)
+        };
+        let td = time(&dense)?;
+        let tp = time(&padded)?;
+        assert!(
+            tp.saturating_mul(20) < td,
+            "padded 1-word divisor {tp} ns vs dense divisor {td} ns"
+        );
+        Ok(())
+    }
 }
