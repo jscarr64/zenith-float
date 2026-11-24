@@ -23,52 +23,52 @@ pub const FFT_MAX_POINTS: usize = 65_536;
 const SVD_CONV_GUARD_BITS: Exponent = 4;
 
 trait LaneBits: Copy {
-    fn add_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
-    fn mul_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
-    fn sub_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
-    fn div_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
+    fn add_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error>;
+    fn mul_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error>;
+    fn sub_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error>;
+    fn div_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error>;
     fn sqrt_lanes(a: &[Self]) -> Vec<Self>;
-    fn fma_lanes(a: &[Self], b: &[Self], c: &[Self]) -> Vec<Self>;
+    fn fma_lanes(a: &[Self], b: &[Self], c: &[Self]) -> Result<Vec<Self>, Error>;
 }
 
 impl LaneBits for u32 {
-    fn add_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+    fn add_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error> {
         add_u32_lanes(a, b)
     }
-    fn mul_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+    fn mul_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error> {
         mul_u32_lanes(a, b)
     }
-    fn sub_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+    fn sub_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error> {
         sub_u32_lanes(a, b)
     }
-    fn div_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+    fn div_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error> {
         div_u32_lanes(a, b)
     }
     fn sqrt_lanes(a: &[Self]) -> Vec<Self> {
         sqrt_u32_lanes(a)
     }
-    fn fma_lanes(a: &[Self], b: &[Self], c: &[Self]) -> Vec<Self> {
+    fn fma_lanes(a: &[Self], b: &[Self], c: &[Self]) -> Result<Vec<Self>, Error> {
         fma_u32_lanes(a, b, c)
     }
 }
 
 impl LaneBits for u64 {
-    fn add_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+    fn add_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error> {
         add_u64_lanes(a, b)
     }
-    fn mul_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+    fn mul_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error> {
         mul_u64_lanes(a, b)
     }
-    fn sub_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+    fn sub_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error> {
         sub_u64_lanes(a, b)
     }
-    fn div_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+    fn div_lanes(a: &[Self], b: &[Self]) -> Result<Vec<Self>, Error> {
         div_u64_lanes(a, b)
     }
     fn sqrt_lanes(a: &[Self]) -> Vec<Self> {
         sqrt_u64_lanes(a)
     }
-    fn fma_lanes(a: &[Self], b: &[Self], c: &[Self]) -> Vec<Self> {
+    fn fma_lanes(a: &[Self], b: &[Self], c: &[Self]) -> Result<Vec<Self>, Error> {
         fma_u64_lanes(a, b, c)
     }
 }
@@ -213,7 +213,7 @@ macro_rules! impl_ieee_array {
                     return None;
                 }
                 Some(Self {
-                    bits: <$bits>::add_lanes(&self.bits, &rhs.bits),
+                    bits: <$bits>::add_lanes(&self.bits, &rhs.bits).ok()?,
                     rows: self.rows,
                     cols: self.cols,
                 })
@@ -231,7 +231,7 @@ macro_rules! impl_ieee_array {
                     return None;
                 }
                 Some(Self {
-                    bits: <$bits>::sub_lanes(&self.bits, &rhs.bits),
+                    bits: <$bits>::sub_lanes(&self.bits, &rhs.bits).ok()?,
                     rows: self.rows,
                     cols: self.cols,
                 })
@@ -244,7 +244,7 @@ macro_rules! impl_ieee_array {
                     return None;
                 }
                 Some(Self {
-                    bits: <$bits>::mul_lanes(&self.bits, &rhs.bits),
+                    bits: <$bits>::mul_lanes(&self.bits, &rhs.bits).ok()?,
                     rows: self.rows,
                     cols: self.cols,
                 })
@@ -262,7 +262,7 @@ macro_rules! impl_ieee_array {
                     return None;
                 }
                 Some(Self {
-                    bits: <$bits>::div_lanes(&self.bits, &rhs.bits),
+                    bits: <$bits>::div_lanes(&self.bits, &rhs.bits).ok()?,
                     rows: self.rows,
                     cols: self.cols,
                 })
@@ -288,7 +288,7 @@ macro_rules! impl_ieee_array {
                     return None;
                 }
                 Some(Self {
-                    bits: <$bits>::fma_lanes(&self.bits, &b.bits, &c.bits),
+                    bits: <$bits>::fma_lanes(&self.bits, &b.bits, &c.bits).ok()?,
                     rows: self.rows,
                     cols: self.cols,
                 })

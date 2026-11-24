@@ -10,6 +10,7 @@ use super::arith::{
     add_bits, div_bits, fma_add, fma_bits, isqrt, mul_bits, normalize_mul, pack_finite, pack_mag,
     round_rne, sqrt_bits, sub_bits, unpack, Class, Format, BIN32, BIN64,
 };
+use crate::Error;
 
 /// Four binary32 bit patterns.
 pub type Bin32x4 = [u32; 4];
@@ -116,7 +117,6 @@ pub fn add_bin32_x4(a: Bin32x4, b: Bin32x4) -> Bin32x4 {
                 let (exp, core) = round_rne(sum_i as u128, exp_i as i32, false, BIN32);
                 *out_i = pack_finite(sign_i != 0, exp, core, BIN32) as u32;
             }
-            debug_assert_bit_eq32(&out, a, b, add_bits);
             return out;
         }
     }
@@ -126,16 +126,6 @@ pub fn add_bin32_x4(a: Bin32x4, b: Bin32x4) -> Bin32x4 {
         add_bits(a[2] as u64, b[2] as u64, BIN32) as u32,
         add_bits(a[3] as u64, b[3] as u64, BIN32) as u32,
     ]
-}
-
-fn debug_assert_bit_eq32(got: &Bin32x4, a: Bin32x4, b: Bin32x4, op: fn(u64, u64, Format) -> u64) {
-    for i in 0..4 {
-        debug_assert_eq!(
-            got[i],
-            op(a[i] as u64, b[i] as u64, BIN32) as u32,
-            "SIMD lane bits must match the scalar integer kernel"
-        );
-    }
 }
 
 /// Software IEEE mul on four binary32 lanes. Integer SIMD for significand products
@@ -157,7 +147,6 @@ pub fn mul_bin32_x4(a: Bin32x4, b: Bin32x4) -> Bin32x4 {
             let e = exp_a.0[i] as i32 + exp_b.0[i] as i32 - BIN32.bias;
             out[i] = normalize_mul(sign.0[i] != 0, e, prod[i] as u128, BIN32) as u32;
         }
-        debug_assert_bit_eq32(&out, a, b, mul_bits);
         return out;
     }
     [
@@ -194,8 +183,6 @@ pub fn add_bin64_x2(a: Bin64x2, b: Bin64x2) -> Bin64x2 {
         let (e0, c0) = round_rne(sum[0] as u128, ua0.exp, false, BIN64);
         let (e1, c1) = round_rne(sum[1] as u128, ua1.exp, false, BIN64);
         let out = [pack_finite(ua0.sign, e0, c0, BIN64), pack_finite(ua1.sign, e1, c1, BIN64)];
-        debug_assert_eq!(out[0], add_bits(a[0], b[0], BIN64));
-        debug_assert_eq!(out[1], add_bits(a[1], b[1], BIN64));
         return out;
     }
     [add_bits(a[0], b[0], BIN64), add_bits(a[1], b[1], BIN64)]
@@ -211,8 +198,6 @@ pub fn mul_bin64_x2(a: Bin64x2, b: Bin64x2) -> Bin64x2 {
                 normalize_mul(a0.sign ^ b0.sign, a0.exp + b0.exp - BIN64.bias, p0, BIN64),
                 normalize_mul(a1.sign ^ b1.sign, a1.exp + b1.exp - BIN64.bias, p1, BIN64),
             ];
-            debug_assert_eq!(out[0], mul_bits(a[0], b[0], BIN64));
-            debug_assert_eq!(out[1], mul_bits(a[1], b[1], BIN64));
             return out;
         }
     }
@@ -246,8 +231,10 @@ fn map_pairs_u32(
     b: &[u32],
     chunk: fn(Bin32x4, Bin32x4) -> Bin32x4,
     tail: fn(u64, u64, Format) -> u64,
-) -> alloc::vec::Vec<u32> {
-    debug_assert_eq!(a.len(), b.len());
+) -> Result<alloc::vec::Vec<u32>, Error> {
+    if a.len() != b.len() {
+        return Err(Error::InvalidArgument);
+    }
     let mut out = alloc::vec::Vec::with_capacity(a.len());
     let mut i = 0;
     while i + 4 <= a.len() {
@@ -260,7 +247,7 @@ fn map_pairs_u32(
         out.push(tail(a[i] as u64, b[i] as u64, BIN32) as u32);
         i += 1;
     }
-    out
+    Ok(out)
 }
 
 fn map_pairs_u64(
@@ -268,8 +255,10 @@ fn map_pairs_u64(
     b: &[u64],
     chunk: fn(Bin64x2, Bin64x2) -> Bin64x2,
     tail: fn(u64, u64, Format) -> u64,
-) -> alloc::vec::Vec<u64> {
-    debug_assert_eq!(a.len(), b.len());
+) -> Result<alloc::vec::Vec<u64>, Error> {
+    if a.len() != b.len() {
+        return Err(Error::InvalidArgument);
+    }
     let mut out = alloc::vec::Vec::with_capacity(a.len());
     let mut i = 0;
     while i + 2 <= a.len() {
@@ -281,26 +270,26 @@ fn map_pairs_u64(
         out.push(tail(a[i], b[i], BIN64));
         i += 1;
     }
-    out
+    Ok(out)
 }
 
-/// Elementwise binary32 add over slices of equal length.
-pub fn add_u32_lanes(a: &[u32], b: &[u32]) -> alloc::vec::Vec<u32> {
+/// Elementwise binary32 add over slices of equal length; unequal lengths are `Err(InvalidArgument)`.
+pub fn add_u32_lanes(a: &[u32], b: &[u32]) -> Result<alloc::vec::Vec<u32>, Error> {
     map_pairs_u32(a, b, add_bin32_x4, add_bits)
 }
 
-/// Elementwise binary32 mul over slices of equal length.
-pub fn mul_u32_lanes(a: &[u32], b: &[u32]) -> alloc::vec::Vec<u32> {
+/// Elementwise binary32 mul over slices of equal length; unequal lengths are `Err(InvalidArgument)`.
+pub fn mul_u32_lanes(a: &[u32], b: &[u32]) -> Result<alloc::vec::Vec<u32>, Error> {
     map_pairs_u32(a, b, mul_bin32_x4, mul_bits)
 }
 
-/// Elementwise binary64 add over slices of equal length.
-pub fn add_u64_lanes(a: &[u64], b: &[u64]) -> alloc::vec::Vec<u64> {
+/// Elementwise binary64 add over slices of equal length; unequal lengths are `Err(InvalidArgument)`.
+pub fn add_u64_lanes(a: &[u64], b: &[u64]) -> Result<alloc::vec::Vec<u64>, Error> {
     map_pairs_u64(a, b, add_bin64_x2, add_bits)
 }
 
-/// Elementwise binary64 mul over slices of equal length.
-pub fn mul_u64_lanes(a: &[u64], b: &[u64]) -> alloc::vec::Vec<u64> {
+/// Elementwise binary64 mul over slices of equal length; unequal lengths are `Err(InvalidArgument)`.
+pub fn mul_u64_lanes(a: &[u64], b: &[u64]) -> Result<alloc::vec::Vec<u64>, Error> {
     map_pairs_u64(a, b, mul_bin64_x2, mul_bits)
 }
 
@@ -340,7 +329,6 @@ pub fn div_bin32_x4(a: Bin32x4, b: Bin32x4) -> Bin32x4 {
             let scale = exp_a.0[i] as i32 - exp_b.0[i] as i32 - extra as i32;
             out[i] = pack_mag(sign.0[i] != 0, scale, q, r != 0, BIN32) as u32;
         }
-        debug_assert_bit_eq32(&out, a, b, div_bits);
         return out;
     }
     [
@@ -358,8 +346,6 @@ pub fn div_bin64_x2(a: Bin64x2, b: Bin64x2) -> Bin64x2 {
             let extra = BIN64.frac + 4;
             let out =
                 [div_normal_lane(a0, b0, extra, BIN64), div_normal_lane(a1, b1, extra, BIN64)];
-            debug_assert_eq!(out[0], div_bits(a[0], b[0], BIN64));
-            debug_assert_eq!(out[1], div_bits(a[1], b[1], BIN64));
             return out;
         }
     }
@@ -388,7 +374,6 @@ pub fn sqrt_bin32_x4(a: Bin32x4) -> Bin32x4 {
         for i in 0..4 {
             out[i] = sqrt_normal_lane(false, exp.0[i] as i32, sa[i] as u64, BIN32) as u32;
         }
-        debug_assert_unary32(&out, a, sqrt_bits);
         return out;
     }
     [
@@ -407,8 +392,6 @@ pub fn sqrt_bin64_x2(a: Bin64x2) -> Bin64x2 {
                 sqrt_normal_lane(a0.sign, a0.exp, a0.sig, BIN64),
                 sqrt_normal_lane(a1.sign, a1.exp, a1.sig, BIN64),
             ];
-            debug_assert_eq!(out[0], sqrt_bits(a[0], BIN64));
-            debug_assert_eq!(out[1], sqrt_bits(a[1], BIN64));
             return out;
         }
     }
@@ -428,16 +411,6 @@ fn sqrt_normal_lane(_sign: bool, exp: i32, sig: u64, f: Format) -> u64 {
     let rem = s - root * root;
     let scale = exp2 / 2 - extra as i32 / 2;
     pack_mag(false, scale, root, rem != 0, f)
-}
-
-fn debug_assert_unary32(got: &Bin32x4, a: Bin32x4, op: fn(u64, Format) -> u64) {
-    for i in 0..4 {
-        debug_assert_eq!(
-            got[i],
-            op(a[i] as u64, BIN32) as u32,
-            "SIMD lane bits must match the scalar integer kernel"
-        );
-    }
 }
 
 /// Software IEEE FMA \(a\cdot b + c\) on four binary32 lanes. Integer SIMD
@@ -461,7 +434,6 @@ pub fn fma_bin32_x4(a: Bin32x4, b: Bin32x4, c: Bin32x4) -> Bin32x4 {
             let uc = unpack(c[i] as u64, BIN32);
             out[i] = fma_add(sign.0[i] != 0, pe, prod[i] as u128, uc, BIN32) as u32;
         }
-        debug_assert_fma32(&out, a, b, c);
         return out;
     }
     [
@@ -497,23 +469,11 @@ pub fn fma_bin64_x2(a: Bin64x2, b: Bin64x2, c: Bin64x2) -> Bin64x2 {
                         BIN64,
                     ),
                 ];
-                debug_assert_eq!(out[0], fma_bits(a[0], b[0], c[0], BIN64));
-                debug_assert_eq!(out[1], fma_bits(a[1], b[1], c[1], BIN64));
                 return out;
             }
         }
     }
     [fma_bits(a[0], b[0], c[0], BIN64), fma_bits(a[1], b[1], c[1], BIN64)]
-}
-
-fn debug_assert_fma32(got: &Bin32x4, a: Bin32x4, b: Bin32x4, c: Bin32x4) {
-    for i in 0..4 {
-        debug_assert_eq!(
-            got[i],
-            fma_bits(a[i] as u64, b[i] as u64, c[i] as u64, BIN32) as u32,
-            "SIMD lane bits must match the scalar integer kernel"
-        );
-    }
 }
 
 fn map_unary_u32(
@@ -558,9 +518,10 @@ fn map_triples_u32(
     c: &[u32],
     chunk: fn(Bin32x4, Bin32x4, Bin32x4) -> Bin32x4,
     tail: fn(u64, u64, u64, Format) -> u64,
-) -> alloc::vec::Vec<u32> {
-    debug_assert_eq!(a.len(), b.len());
-    debug_assert_eq!(a.len(), c.len());
+) -> Result<alloc::vec::Vec<u32>, Error> {
+    if a.len() != b.len() || a.len() != c.len() {
+        return Err(Error::InvalidArgument);
+    }
     let mut out = alloc::vec::Vec::with_capacity(a.len());
     let mut i = 0;
     while i + 4 <= a.len() {
@@ -574,7 +535,7 @@ fn map_triples_u32(
         out.push(tail(a[i] as u64, b[i] as u64, c[i] as u64, BIN32) as u32);
         i += 1;
     }
-    out
+    Ok(out)
 }
 
 fn map_triples_u64(
@@ -583,9 +544,10 @@ fn map_triples_u64(
     c: &[u64],
     chunk: fn(Bin64x2, Bin64x2, Bin64x2) -> Bin64x2,
     tail: fn(u64, u64, u64, Format) -> u64,
-) -> alloc::vec::Vec<u64> {
-    debug_assert_eq!(a.len(), b.len());
-    debug_assert_eq!(a.len(), c.len());
+) -> Result<alloc::vec::Vec<u64>, Error> {
+    if a.len() != b.len() || a.len() != c.len() {
+        return Err(Error::InvalidArgument);
+    }
     let mut out = alloc::vec::Vec::with_capacity(a.len());
     let mut i = 0;
     while i + 2 <= a.len() {
@@ -597,16 +559,16 @@ fn map_triples_u64(
         out.push(tail(a[i], b[i], c[i], BIN64));
         i += 1;
     }
-    out
+    Ok(out)
 }
 
-/// Elementwise binary32 sub over slices of equal length.
-pub fn sub_u32_lanes(a: &[u32], b: &[u32]) -> alloc::vec::Vec<u32> {
+/// Elementwise binary32 sub over slices of equal length; unequal lengths are `Err(InvalidArgument)`.
+pub fn sub_u32_lanes(a: &[u32], b: &[u32]) -> Result<alloc::vec::Vec<u32>, Error> {
     map_pairs_u32(a, b, sub_bin32_x4, sub_bits)
 }
 
-/// Elementwise binary32 div over slices of equal length.
-pub fn div_u32_lanes(a: &[u32], b: &[u32]) -> alloc::vec::Vec<u32> {
+/// Elementwise binary32 div over slices of equal length; unequal lengths are `Err(InvalidArgument)`.
+pub fn div_u32_lanes(a: &[u32], b: &[u32]) -> Result<alloc::vec::Vec<u32>, Error> {
     map_pairs_u32(a, b, div_bin32_x4, div_bits)
 }
 
@@ -616,17 +578,17 @@ pub fn sqrt_u32_lanes(a: &[u32]) -> alloc::vec::Vec<u32> {
 }
 
 /// Elementwise binary32 FMA.
-pub fn fma_u32_lanes(a: &[u32], b: &[u32], c: &[u32]) -> alloc::vec::Vec<u32> {
+pub fn fma_u32_lanes(a: &[u32], b: &[u32], c: &[u32]) -> Result<alloc::vec::Vec<u32>, Error> {
     map_triples_u32(a, b, c, fma_bin32_x4, fma_bits)
 }
 
-/// Elementwise binary64 sub over slices of equal length.
-pub fn sub_u64_lanes(a: &[u64], b: &[u64]) -> alloc::vec::Vec<u64> {
+/// Elementwise binary64 sub over slices of equal length; unequal lengths are `Err(InvalidArgument)`.
+pub fn sub_u64_lanes(a: &[u64], b: &[u64]) -> Result<alloc::vec::Vec<u64>, Error> {
     map_pairs_u64(a, b, sub_bin64_x2, sub_bits)
 }
 
-/// Elementwise binary64 div over slices of equal length.
-pub fn div_u64_lanes(a: &[u64], b: &[u64]) -> alloc::vec::Vec<u64> {
+/// Elementwise binary64 div over slices of equal length; unequal lengths are `Err(InvalidArgument)`.
+pub fn div_u64_lanes(a: &[u64], b: &[u64]) -> Result<alloc::vec::Vec<u64>, Error> {
     map_pairs_u64(a, b, div_bin64_x2, div_bits)
 }
 
@@ -636,7 +598,7 @@ pub fn sqrt_u64_lanes(a: &[u64]) -> alloc::vec::Vec<u64> {
 }
 
 /// Elementwise binary64 FMA.
-pub fn fma_u64_lanes(a: &[u64], b: &[u64], c: &[u64]) -> alloc::vec::Vec<u64> {
+pub fn fma_u64_lanes(a: &[u64], b: &[u64], c: &[u64]) -> Result<alloc::vec::Vec<u64>, Error> {
     map_triples_u64(a, b, c, fma_bin64_x2, fma_bits)
 }
 
@@ -788,6 +750,134 @@ mod tests {
                         fma_bits(a[k] as u64, b[k] as u64, a[k] as u64, BIN32) as u32
                     );
                 }
+            }
+        }
+    }
+
+    /// Jeff 2026-11-24 4:40 PM CT item 5: the slice kernels refuse unequal lengths with `Err`, in every build.
+    #[test]
+    fn lanes_refuse_unequal_lengths() {
+        let inv = Err(crate::Error::InvalidArgument);
+        assert_eq!(add_u32_lanes(&[1, 2], &[1]), inv);
+        assert_eq!(sub_u32_lanes(&[1], &[1, 2]), inv);
+        assert_eq!(mul_u32_lanes(&[1, 2, 3, 4, 5], &[1, 2, 3, 4]), inv);
+        assert_eq!(div_u32_lanes(&[], &[1]), inv);
+        assert_eq!(fma_u32_lanes(&[1], &[1], &[]), inv);
+        assert_eq!(fma_u32_lanes(&[1], &[], &[1]), inv);
+        let inv64 = Err(crate::Error::InvalidArgument);
+        assert_eq!(add_u64_lanes(&[1, 2], &[1]), inv64);
+        assert_eq!(sub_u64_lanes(&[1], &[1, 2]), inv64);
+        assert_eq!(mul_u64_lanes(&[1, 2, 3], &[1, 2]), inv64);
+        assert_eq!(div_u64_lanes(&[], &[1]), inv64);
+        assert_eq!(fma_u64_lanes(&[1], &[1], &[]), inv64);
+        assert_eq!(fma_u64_lanes(&[1], &[], &[1]), inv64);
+        let one = Ieee32::from_i32(1).to_bits();
+        assert_eq!(add_u32_lanes(&[one; 5], &[one; 5]).map(|v| v.len()), Ok(5));
+        assert_eq!(
+            fma_u64_lanes(&[3; 3], &[3; 3], &[3; 3]).map(|v| v.len()),
+            Ok(3)
+        );
+    }
+
+    /// Jeff 2026-11-24 4:40 PM CT item 5: the SIMD fast paths used to re-check every lane against the scalar kernel
+    /// only in debug builds (debug_assert). That check lives here instead, always on: 2^17 pseudo-random lane sets per
+    /// op, drawn so every fast path is taken (all lanes normal; equal sign and exponent for add), plus the sampled
+    /// specials above. A lane that differs from the scalar integer kernel fails the test.
+    #[test]
+    fn simd_fast_paths_bit_identical_to_scalar_dense() {
+        let mut st = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            st ^= st << 13;
+            st ^= st >> 7;
+            st ^= st << 17;
+            st
+        };
+        let n32 = |r: u64, e: u32| ((r as u32 >> 31) << 31) | (e << 23) | (r as u32 & 0x7f_ffff);
+        let n64 =
+            |r: u64, e: u64| (r & 0x8000_0000_0000_0000) | (e << 52) | (r & 0x000f_ffff_ffff_ffff);
+        for _ in 0..(1u32 << 17) {
+            let mut a = [0u32; 4];
+            let mut b = [0u32; 4];
+            let mut c = [0u32; 4];
+            let mut same = [0u32; 4];
+            for k in 0..4 {
+                let (ra, rb, rc) = (next(), next(), next());
+                let ea = 1 + (ra >> 40) as u32 % 254;
+                a[k] = n32(ra, ea);
+                b[k] = n32(rb, 1 + (rb >> 40) as u32 % 254);
+                c[k] = n32(rc, 1 + (rc >> 40) as u32 % 254);
+                same[k] = (a[k] & 0xff80_0000) | (rb as u32 & 0x7f_ffff);
+            }
+            let (add, mul, div) = (
+                add_bin32_x4(a, same),
+                mul_bin32_x4(a, b),
+                div_bin32_x4(a, b),
+            );
+            let (sq, fma) = (
+                sqrt_bin32_x4(a.map(|x| x & 0x7fff_ffff)),
+                fma_bin32_x4(a, b, c),
+            );
+            for k in 0..4 {
+                let (x, y, z) = (a[k] as u64, b[k] as u64, c[k] as u64);
+                assert_eq!(
+                    add[k],
+                    add_bits(x, same[k] as u64, BIN32) as u32,
+                    "add32 {x:#x} {:#x}",
+                    same[k]
+                );
+                assert_eq!(mul[k], mul_bits(x, y, BIN32) as u32, "mul32 {x:#x} {y:#x}");
+                assert_eq!(div[k], div_bits(x, y, BIN32) as u32, "div32 {x:#x} {y:#x}");
+                assert_eq!(
+                    sq[k],
+                    sqrt_bits(x & 0x7fff_ffff, BIN32) as u32,
+                    "sqrt32 {x:#x}"
+                );
+                assert_eq!(
+                    fma[k],
+                    fma_bits(x, y, z, BIN32) as u32,
+                    "fma32 {x:#x} {y:#x} {z:#x}"
+                );
+            }
+            let mut a = [0u64; 2];
+            let mut b = [0u64; 2];
+            let mut c = [0u64; 2];
+            let mut same = [0u64; 2];
+            for k in 0..2 {
+                let (ra, rb, rc) = (next(), next(), next());
+                a[k] = n64(ra, 1 + (next() % 2046));
+                b[k] = n64(rb, 1 + (next() % 2046));
+                c[k] = n64(rc, 1 + (next() % 2046));
+                same[k] = (a[k] & 0xfff0_0000_0000_0000) | (rb & 0x000f_ffff_ffff_ffff);
+            }
+            let (add, mul, div) = (
+                add_bin64_x2(a, same),
+                mul_bin64_x2(a, b),
+                div_bin64_x2(a, b),
+            );
+            let (sq, fma) = (
+                sqrt_bin64_x2(a.map(|x| x & 0x7fff_ffff_ffff_ffff)),
+                fma_bin64_x2(a, b, c),
+            );
+            for k in 0..2 {
+                let (x, y, z) = (a[k], b[k], c[k]);
+                assert_eq!(
+                    add[k],
+                    add_bits(x, same[k], BIN64),
+                    "add64 {x:#x} {:#x}",
+                    same[k]
+                );
+                assert_eq!(mul[k], mul_bits(x, y, BIN64), "mul64 {x:#x} {y:#x}");
+                assert_eq!(div[k], div_bits(x, y, BIN64), "div64 {x:#x} {y:#x}");
+                assert_eq!(
+                    sq[k],
+                    sqrt_bits(x & 0x7fff_ffff_ffff_ffff, BIN64),
+                    "sqrt64 {x:#x}"
+                );
+                assert_eq!(
+                    fma[k],
+                    fma_bits(x, y, z, BIN64),
+                    "fma64 {x:#x} {y:#x} {z:#x}"
+                );
             }
         }
     }
