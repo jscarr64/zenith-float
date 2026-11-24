@@ -1,7 +1,9 @@
 # path:hash<TAB>reason. ONLY JEFF MAY EXTEND THIS FILE (see .github/CODEOWNERS); models never add entries.
 # Keys are printed as allow-key= by tools/rules_scan.sh.
-# 133 clone/cloned entries approved by Jeff 2026-11-24 1:17 PM CT ("add the 133 clone reasons to the allowlist"),
-# reasons from the traced clone-justified.tsv; the 14 #[allow] rows of that draft were removed in code instead.
+# 134 clone/cloned entries: 133 approved by Jeff 2026-11-24 1:17 PM CT ("add the 133 clone reasons to the allowlist"),
+# reasons from the traced clone-justified.tsv; the 14 #[allow] rows of that draft were removed in code instead. The 134th,
+# zenith-float-num/src/roots.rs:10c09b84e6b2 (x0.clone() in newton, re-keyed by NewtonOptions), approved by
+# Jeff 2026-11-24 3:51 PM CT.
 nostd-tests/src/lib.rs:d6b5c59d22e3	nostd-tests/src/lib.rs:160 [cloned] [traced, compile-tested] ExactNumArray has no pop/move-out (tried y.pop(): E0599); adding one only for this test is the awkward API Jeff ruled out
 zenith-float-num/src/aprcl.rs:a3ff24e1572e	zenith-float-num/src/aprcl.rs:196 [clone] [traced-B7] n (ExactInt) in nth_root k==1 / n==1: Returns an owned root equal to the input; the signature returns ExactInt and a borrowed return would force Cow on every caller.
 zenith-float-num/src/aprcl.rs:b7feb1721620	zenith-float-num/src/aprcl.rs:1786 [clone] [traced-B7] a (Vec<u64>) in add_mod test: add_mod_limbs mutates dest in place while a must stay intact for the reference sum; an owned copy is the operation under test.
