@@ -6,7 +6,7 @@
 
 use zenith_float_num::{
     gauss_kronrod_interval, gauss_legendre, integrate_adaptive_gk, integrate_adaptive_gk_estimate,
-    Consts, ExactNum, QuadratureError, Radix, RoundingMode,
+    Consts, ExactNum, GkOptions, QuadratureError, Radix, RoundingMode,
 };
 
 const RM: RoundingMode = RoundingMode::ToEven;
@@ -70,8 +70,10 @@ fn gk_oscillatory_sin_matches_two() -> Result<(), Box<dyn std::error::Error>> {
         |x, p, rm, cc| x.sin(p, rm, cc),
         &a,
         &b,
-        &rel,
-        16,
+        GkOptions {
+            tol_rel: &rel,
+            max_subintervals: 16,
+        },
         P,
         RM,
         &mut cc,
@@ -93,8 +95,10 @@ fn gk_mild_endpoint_sqrt_matches_two_thirds() -> Result<(), Box<dyn std::error::
         |x, p, rm, _cc| x.sqrt(p, rm),
         &a,
         &b,
-        &rel,
-        16,
+        GkOptions {
+            tol_rel: &rel,
+            max_subintervals: 16,
+        },
         P,
         RM,
         &mut cc,
@@ -134,8 +138,10 @@ fn gk_epsilon_beats_plain_gauss_on_invsqrt() -> Result<(), Box<dyn std::error::E
         |x, p, rm, _cc| x.sqrt(p, rm).reciprocal(p, rm),
         &a,
         &b,
-        &rel,
-        12,
+        GkOptions {
+            tol_rel: &rel,
+            max_subintervals: 12,
+        },
         P,
         RM,
         &mut cc,

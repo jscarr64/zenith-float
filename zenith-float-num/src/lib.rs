@@ -195,6 +195,7 @@ pub use crate::quadrature::integrate_adaptive_gk_infinite_estimate;
 pub use crate::quadrature::kronrod_pair;
 pub use crate::quadrature::tanh_sinh;
 pub use crate::quadrature::wynn_epsilon;
+pub use crate::quadrature::GkOptions;
 pub use crate::quadrature::GkResult;
 pub use crate::quadrature::QuadratureError;
 pub use crate::quadrature::GK_GAUSS_ORDER;

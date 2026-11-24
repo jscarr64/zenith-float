@@ -79,6 +79,16 @@ impl core::fmt::Display for QuadratureError {
 #[cfg(feature = "std")]
 impl std::error::Error for QuadratureError {}
 
+/// Tolerance and panel budget of [`integrate_adaptive_gk`] and its `_estimate` / `_infinite` forms
+/// (zenith-float 2.0: grouped so no public function takes more than 7 arguments).
+#[derive(Clone, Copy, Debug)]
+pub struct GkOptions<'a> {
+    /// Relative tolerance (finite, non-negative); see [`integrate_adaptive_gk_estimate`].
+    pub tol_rel: &'a ExactNum,
+    /// Most panels kept at once (at least 1).
+    pub max_subintervals: usize,
+}
+
 /// One (7, 15) panel, or the value accepted by [`integrate_adaptive_gk`].
 #[derive(Debug)]
 pub struct GkResult {
@@ -829,11 +839,11 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 ///
 /// # Arguments
 ///
-/// * `tol_rel` — relative tolerance. The absolute stop is
+/// * `opts.tol_rel` ([`GkOptions`]) — relative tolerance. The absolute stop is
 ///   `max(tol_rel * max(1, |estimate|), 2^(1−p))`, where `2^(1−p)` is the
 ///   unit in the last place of a `p`-bit significand. `tol_rel = 0` asks
 ///   for that floor only.
-/// * `max_subintervals` — caller panel budget (at least 1).
+/// * `opts.max_subintervals` ([`GkOptions`]) — caller panel budget (at least 1).
 ///   Each panel evaluates `f` at [`GK_KRONROD_ORDER`] (15) nodes. A call
 ///   performs at most `15 * (2 * max_subintervals − 1)` evaluations, because
 ///   each bisection discards one panel and samples two new ones.
@@ -862,8 +872,10 @@ pub fn integrate_adaptive_gk_estimate<F>(
     mut f: F,
     a: &ExactNum,
     b: &ExactNum,
-    tol_rel: &ExactNum,
-    max_subintervals: usize,
+    GkOptions {
+        tol_rel,
+        max_subintervals,
+    }: GkOptions<'_>,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -1013,8 +1025,10 @@ pub fn integrate_adaptive_gk<F>(
     f: F,
     a: &ExactNum,
     b: &ExactNum,
-    tol_rel: &ExactNum,
-    max_subintervals: usize,
+    GkOptions {
+        tol_rel,
+        max_subintervals,
+    }: GkOptions<'_>,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -1022,7 +1036,18 @@ pub fn integrate_adaptive_gk<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    match integrate_adaptive_gk_estimate(f, a, b, tol_rel, max_subintervals, p, rm, cc)? {
+    match integrate_adaptive_gk_estimate(
+        f,
+        a,
+        b,
+        GkOptions {
+            tol_rel,
+            max_subintervals,
+        },
+        p,
+        rm,
+        cc,
+    )? {
         (r, true) => Ok(r),
         (_, false) => Err(QuadratureError::NotConverged),
     }
@@ -1137,8 +1162,10 @@ pub fn integrate_adaptive_gk_infinite<F>(
     f: F,
     a: &ExactNum,
     b: &ExactNum,
-    tol_rel: &ExactNum,
-    max_subintervals: usize,
+    GkOptions {
+        tol_rel,
+        max_subintervals,
+    }: GkOptions<'_>,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -1146,7 +1173,18 @@ pub fn integrate_adaptive_gk_infinite<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    match integrate_adaptive_gk_infinite_estimate(f, a, b, tol_rel, max_subintervals, p, rm, cc)? {
+    match integrate_adaptive_gk_infinite_estimate(
+        f,
+        a,
+        b,
+        GkOptions {
+            tol_rel,
+            max_subintervals,
+        },
+        p,
+        rm,
+        cc,
+    )? {
         (r, true) => Ok(r),
         (_, false) => Err(QuadratureError::NotConverged),
     }
@@ -1158,8 +1196,10 @@ pub fn integrate_adaptive_gk_infinite_estimate<F>(
     mut f: F,
     a: &ExactNum,
     b: &ExactNum,
-    tol_rel: &ExactNum,
-    max_subintervals: usize,
+    GkOptions {
+        tol_rel,
+        max_subintervals,
+    }: GkOptions<'_>,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -1181,8 +1221,10 @@ where
             |t, wp, wrm, cc| whole_line_sample(&mut f, t, wp, wrm, cc),
             &ExactNum::from_i8(-1, p),
             &one,
-            tol_rel,
-            max_subintervals,
+            GkOptions {
+                tol_rel,
+                max_subintervals,
+            },
             p,
             rm,
             cc,
@@ -1194,8 +1236,10 @@ where
             |t, wp, wrm, cc| semi_infinite_sample(&mut f, end, true, t, wp, wrm, cc),
             &zero,
             &one,
-            tol_rel,
-            max_subintervals,
+            GkOptions {
+                tol_rel,
+                max_subintervals,
+            },
             p,
             rm,
             cc,
@@ -1207,8 +1251,10 @@ where
             |t, wp, wrm, cc| semi_infinite_sample(&mut f, end, false, t, wp, wrm, cc),
             &zero,
             &one,
-            tol_rel,
-            max_subintervals,
+            GkOptions {
+                tol_rel,
+                max_subintervals,
+            },
             p,
             rm,
             cc,
@@ -1356,8 +1402,10 @@ mod tests {
             |x, p, rm, _cc| x.reciprocal(p, rm).sqrt(p, rm),
             &a,
             &b,
-            &tol,
-            1,
+            GkOptions {
+                tol_rel: &tol,
+                max_subintervals: 1,
+            },
             p,
             rm,
             &mut cc,
@@ -1385,8 +1433,10 @@ mod tests {
                 |x, p, rm, cc| x.neg_via_mul().exp(p, rm, cc),
                 &zero,
                 &pos,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
@@ -1411,8 +1461,10 @@ mod tests {
                 |x, p, rm, _cc| x.sqr(p, rm).reciprocal(p, rm),
                 &one,
                 &pos,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
@@ -1433,8 +1485,10 @@ mod tests {
                 },
                 &neg,
                 &pos,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
@@ -1482,8 +1536,10 @@ mod tests {
             |x, p, rm, _cc| x.sqr(p, rm),
             &a,
             &b,
-            &tol,
-            GK_SUBINTERVAL_MAX + 1,
+            GkOptions {
+                tol_rel: &tol,
+                max_subintervals: GK_SUBINTERVAL_MAX + 1,
+            },
             p,
             rm,
             &mut cc,

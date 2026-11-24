@@ -5,7 +5,9 @@
 //! also be covered: `|true − estimate| ≤ abs_err_est` and the estimate within
 //! `1e-6 · max(|true|, 1)`. Settings match the `gk-eps-*` rows in quad.jsonl.
 
-use zenith_float_num::{integrate_adaptive_gk_estimate, Consts, ExactNum, Radix, RoundingMode};
+use zenith_float_num::{
+    integrate_adaptive_gk_estimate, Consts, ExactNum, GkOptions, Radix, RoundingMode,
+};
 
 const WIDTH: usize = 1088;
 
@@ -88,8 +90,10 @@ fn gk_eps_candidates() -> Result<(), Box<dyn std::error::Error>> {
                 |x, wp, wrm, cc| eval(name, x, wp, wrm, cc),
                 &a,
                 &b,
-                &tol,
-                32,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: 32,
+                },
                 p,
                 rm,
                 &mut cc,

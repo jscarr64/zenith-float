@@ -1578,7 +1578,7 @@ fn zf_73_hypergeom_0f1_1f1_large_arguments() -> Result<(), String> {
 /// References: FLINT arb at 1400 bits.
 #[test]
 fn zf_51_gk_adapt_success_meets_tolerance() -> Result<(), String> {
-    use zenith_float::{integrate_adaptive_gk, QuadratureError};
+    use zenith_float::{integrate_adaptive_gk, GkOptions, QuadratureError};
     let mut cc = Consts::new().must("Consts")?;
     let e1 = "1.71828182845904523536028747135266249775724709369995957496696762772407663035354759457138217852516642742746639193200305992181741359662904357290033429526059563073813232862794349076323382988075319525101901157383418793070215408914993488416750924476146066808226480016847741185374234544243710753907774499206955170276183860626133138458300";
     let s50 = "-0.00524749707407857571828787293825245091773331929942477045887871184828917905179901503577847382570704739317198027405306417222213647304310017250348792583103888631908764942515594820929406369254832813980963530228047177295338223389756335547195140623093431833416637568940168458545776033945301316421969951103154288667798249064536349136985842";
@@ -1607,8 +1607,10 @@ fn zf_51_gk_adapt_success_meets_tolerance() -> Result<(), String> {
             |x, q, r, c| harper_integrand(id, x, q, r, c),
             &a,
             &b,
-            &tol,
-            maxsub,
+            GkOptions {
+                tol_rel: &tol,
+                max_subintervals: maxsub,
+            },
             p,
             rm,
             &mut cc,
@@ -1643,8 +1645,10 @@ fn zf_51_gk_adapt_success_meets_tolerance() -> Result<(), String> {
         |x, q, r, c| harper_integrand(3, x, q, r, c),
         &ExactNum::new(p),
         &ExactNum::from_u8(1, p),
-        &tol,
-        8,
+        GkOptions {
+            tol_rel: &tol,
+            max_subintervals: 8,
+        },
         p,
         rm,
         &mut cc,
@@ -1890,20 +1894,44 @@ fn zf_53_pollard_rho_proven_primality_uncapped() -> Result<(), String> {
 /// carry that guarantee. At 2^-60 it is met.
 #[test]
 fn zf_51_reported_bound_includes_final_rounding() -> Result<(), String> {
-    use zenith_float::{integrate_adaptive_gk, integrate_adaptive_gk_estimate, QuadratureError};
+    use zenith_float::{
+        integrate_adaptive_gk, integrate_adaptive_gk_estimate, GkOptions, QuadratureError,
+    };
     let mut cc = Consts::new().must("Consts")?;
     let p = 64;
     let rm = RoundingMode::ToEven;
     let (a, b) = (ExactNum::new(p), ExactNum::from_u8(1, p));
     let one = |_x: &ExactNum, q: usize, _r: RoundingMode, _c: &mut Consts| ExactNum::from_u8(1, q);
     let tight = ExactNum::from_u8(1, p).ldexp(-70, p, rm);
-    let r = integrate_adaptive_gk(one, &a, &b, &tight, 4, p, rm, &mut cc);
+    let r = integrate_adaptive_gk(
+        one,
+        &a,
+        &b,
+        GkOptions {
+            tol_rel: &tight,
+            max_subintervals: 4,
+        },
+        p,
+        rm,
+        &mut cc,
+    );
     assert!(
         matches!(r, Err(QuadratureError::NotConverged)),
         "2^-70 at p=64: {r:?}"
     );
-    let (g, met) =
-        integrate_adaptive_gk_estimate(one, &a, &b, &tight, 4, p, rm, &mut cc).must("estimate")?;
+    let (g, met) = integrate_adaptive_gk_estimate(
+        one,
+        &a,
+        &b,
+        GkOptions {
+            tol_rel: &tight,
+            max_subintervals: 4,
+        },
+        p,
+        rm,
+        &mut cc,
+    )
+    .must("estimate")?;
     assert!(
         !met && g.estimate_kronrod.compare(&b) == Some(0),
         "estimate {g:?}"
@@ -1913,7 +1941,19 @@ fn zf_51_reported_bound_includes_final_rounding() -> Result<(), String> {
         "bound above 2^-70"
     );
     let loose = ExactNum::from_u8(1, p).ldexp(-60, p, rm);
-    let g = integrate_adaptive_gk(one, &a, &b, &loose, 4, p, rm, &mut cc).must("2^-60 met")?;
+    let g = integrate_adaptive_gk(
+        one,
+        &a,
+        &b,
+        GkOptions {
+            tol_rel: &loose,
+            max_subintervals: 4,
+        },
+        p,
+        rm,
+        &mut cc,
+    )
+    .must("2^-60 met")?;
     assert!(
         g.abs_err_est.compare(&loose) != Some(1),
         "bound meets 2^-60"

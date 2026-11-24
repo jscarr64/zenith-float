@@ -16,8 +16,8 @@ use std::ops::Neg;
 use zenith_float_num::{
     euler, gauss_hermite, gauss_kronrod_interval, gauss_laguerre, gauss_legendre,
     integrate_adaptive_gk, integrate_adaptive_gk_estimate, integrate_adaptive_gk_infinite_estimate,
-    rk4, rk45_adaptive, tanh_sinh, wynn_epsilon, Ball, Consts, ExactNum, QuadratureError, Radix,
-    RoundingMode,
+    rk4, rk45_adaptive, tanh_sinh, wynn_epsilon, Ball, Consts, ExactNum, GkOptions,
+    QuadratureError, Radix, RoundingMode,
 };
 
 /// `|x|` for an operand that stays borrowed: fresh `±1` times `x` at `x`'s own precision.
@@ -167,8 +167,10 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
             |x, p, rm, cc| sample(integ, x, p, rm, cc),
             &a,
             &b,
-            &tol,
-            panels,
+            GkOptions {
+                tol_rel: &tol,
+                max_subintervals: panels,
+            },
             p,
             rm,
             &mut cc,
@@ -192,8 +194,10 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
                 |x, p, rm, cc| sample(integ, x, p, rm, cc),
                 &a,
                 &b,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
@@ -203,8 +207,10 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
                 |x, p, rm, cc| sample(integ, x, p, rm, cc),
                 &a,
                 &b,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
@@ -226,8 +232,10 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
                 |x, p, rm, cc| sample(integ, x, p, rm, cc),
                 &a,
                 &b,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,

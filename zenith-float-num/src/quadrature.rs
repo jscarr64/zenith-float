@@ -14,6 +14,7 @@ pub use crate::gauss_kronrod::integrate_adaptive_gk_infinite;
 pub use crate::gauss_kronrod::integrate_adaptive_gk_infinite_estimate;
 pub use crate::gauss_kronrod::kronrod_pair;
 pub use crate::gauss_kronrod::wynn_epsilon;
+pub use crate::gauss_kronrod::GkOptions;
 pub use crate::gauss_kronrod::GkResult;
 pub use crate::gauss_kronrod::QuadratureError;
 pub use crate::gauss_kronrod::GK_GAUSS_ORDER;

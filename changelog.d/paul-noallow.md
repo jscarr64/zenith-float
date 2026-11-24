@@ -14,3 +14,10 @@
   `zenith-float-testkit`. Its 5 unit tests now run once there instead of once per including binary (num lib 481 -> 476,
   tier1 117 -> 112, c2f1 7 -> 2, oracle 12 -> 7, r9 20 -> 15, s9 17 -> 12, specials_oracle 27 -> 22; every other test
   unchanged). check_zero_test_targets: 70 -> 71 workspace targets.
+
+### Changed — public API (Jeff 2026-11-24 2:35 PM CT: no public fn over clippy's default 7 arguments)
+
+- `integrate_adaptive_gk`, `integrate_adaptive_gk_estimate`, `integrate_adaptive_gk_infinite` and
+  `integrate_adaptive_gk_infinite_estimate` take `GkOptions { tol_rel, max_subintervals }` in place of the two
+  arguments: `integrate_adaptive_gk(f, a, b, GkOptions { tol_rel: &tol, max_subintervals: 64 }, p, rm, cc)`.
+  Same arithmetic and results.
