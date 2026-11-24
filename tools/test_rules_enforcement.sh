@@ -52,6 +52,11 @@ order=$(grep -oE '^run [a-z0-9_-]+' "$root/tools/full_gate.sh" | awk '{print $2}
 rs=$(step rules-scan)
 [[ $rs == *'tools/rules_scan.sh '* && $rs != *zenith-float-bound* && $rs != *'cd '* ]] || bad "rules-scan step does not run the root library scanner: $rs"
 grep -q 'test_rules_enforcement.sh' "$root/tools/full_gate.sh" || bad "tools/full_gate.sh does not run tools/test_rules_enforcement.sh"
+# Spence R1 on 0a1cb6c: the zero-suppression scan and the pre-push hook's selftest run in the gate's unsafe-scan step.
+us=$(step unsafe-scan)
+for x in tools/no_suppress_selftest.sh tools/no_suppress_scan.sh tools/pre_push_selftest.sh; do
+  [[ $us == *"$x"* ]] || bad "the gate's unsafe-scan step does not run $x"
+done
 g="$t/rs"; mkdir -p "$g/tools" "$g/zenith-float-num/src"
 cp "$root"/tools/rules_scan.py "$root"/tools/rules_scan.sh "$root"/tools/rules_scan_selftest.sh "$root"/tools/no_clone.py "$g/tools/"
 : > "$g/tools/rules_allowlist.txt"
