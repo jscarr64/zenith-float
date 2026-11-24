@@ -17,8 +17,17 @@ step() { n=$((n + 1)); echo "== [$n/11] $* =="; }
 # --all-features includes mpfr-tests. Check 1 covers std/random/serde (and
 # compare-crate features). Check 2 is the MPFR oracle in release, on every core (P14).
 step "cargo test --all-features (workspace random,serde; mpfr-tests is [2/11])"
-"$root/tools/fresh_test_run.sh" cargo test --workspace --features random,serde
-ok "workspace tests with random,serde"
+# Jeff 2026-11-24 9:06 AM CT: "Go: in the gate, prepublish skips its random,serde rerun only after checking
+# features-random-serde passed rc=0 on the same SHA; standalone prepublish stays complete". tools/full_gate.sh sets
+# ZF_GATE_SERDE_EVIDENCE; standalone runs never skip. Only this suite is ever skipped.
+if [[ -n "${ZF_GATE_SERDE_EVIDENCE:-}" ]] && why=$(bash "$root/scripts/gate_serde_evidence.sh" check "$ZF_GATE_SERDE_EVIDENCE"); then
+  echo "prepublish: [$n/11] SKIP the cargo test --workspace --features random,serde rerun: $why"
+  ok "workspace tests with random,serde (gate features-random-serde step, same SHA)"
+else
+  [[ -n "${ZF_GATE_SERDE_EVIDENCE:-}" ]] && echo "prepublish: [$n/11] running the random,serde suite: ${why:-no evidence}"
+  "$root/tools/fresh_test_run.sh" cargo test --workspace --features random,serde
+  ok "workspace tests with random,serde"
+fi
 
 step "cargo test --features mpfr-tests"
 if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then

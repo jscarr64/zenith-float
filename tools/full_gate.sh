@@ -40,6 +40,8 @@ export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-$(nproc)}} RUST_TEST
 # No python bytecode cache in the tree: a leftover __pycache__ makes the poplog footer NOT A GATE (tree dirty at end).
 # Steps that clear the environment (env -i) set it again themselves (tools/oracle_env_selftest.sh run_forged).
 export PYTHONDONTWRITEBYTECODE=1
+# This gate run's id: the features-random-serde evidence counts for prepublish only within the same run.
+export ZF_GATE_RUN_ID="$tag-$$-$(date +%s%N)"
 TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
@@ -114,7 +116,9 @@ run ignored "tools/fresh_test_run.sh cargo test --workspace --release $TT --igno
 # ACCEPTANCE-pr39 I10 (T3): the exhaustive small-p enumeration prints its point counts into this step log (--nocapture).
 run small-p-counts "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --test small_p_exhaustive $TT --nocapture"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
-run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
+# Jeff 2026-11-24 9:06 AM CT: prepublish skips its random,serde rerun only after checking this step passed rc=0 on the same
+# SHA (evidence written here by scripts/gate_serde_evidence.sh; tools/test_prepublish_serde_dedupe.sh).
+run features-random-serde "bash scripts/gate_serde_evidence.sh run '$T/$tag-features-random-serde.evidence' tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
 run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
 run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
 # MPFR_TIER selects the MPFR tier (tests/mpfr/common.rs): the gate runs `full` (every run count, the
@@ -124,8 +128,8 @@ run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zen
 run oracle-env "tools/oracle_env_selftest.sh"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
-run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_full_gate_debug_suite_timeouts.sh && bash tools/test_rules_enforcement.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
-run prepublish "bash scripts/zenith_prepublish.sh"
+run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_prepublish_serde_dedupe.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_full_gate_debug_suite_timeouts.sh && bash tools/test_rules_enforcement.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
+run prepublish "ZF_GATE_SERDE_EVIDENCE='$T/$tag-features-random-serde.evidence' bash scripts/zenith_prepublish.sh"
 echo "done" >> "$T/$tag.rc"
 poplog_finish
 exit "$POPLOG_OVERALL"
