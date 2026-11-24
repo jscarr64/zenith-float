@@ -424,7 +424,7 @@ mod tests {
         assert_proved_prime(&p255);
         let took = t0.elapsed();
         assert!(
-            took < limit,
+            crate::test_time::limit_holds(took < limit),
             "2^255-19 must finish under 2 s native ({limit:?} here); took {took:?}"
         );
 

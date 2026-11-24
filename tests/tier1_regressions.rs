@@ -12,7 +12,8 @@
 //! `~/pop-logs/paul/2026-11-15/land39/b2/`.
 
 // Wall-clock budgets scale with ZF_TIME_FACTOR under qemu (Jeff 2026-11-22 ~11:58 PM CT); one implementation,
-// shared with the library's unit tests.
+// shared with the library's unit tests. The ZF-78 child budgets are hang watchdogs (`under_budget`, every build);
+// timing asserts apply in the release step only (Jeff 2026-11-23 23:04 CT).
 #[allow(dead_code)]
 #[path = "../zenith-float-num/src/test_time.rs"]
 mod test_time;
@@ -4257,7 +4258,7 @@ fn zf_78_format_max_value_general_radix() -> Result<(), String> {
                 );
                 return Ok(());
             }
-            None if !test_time::within(start.elapsed(), BUDGET) => {
+            None if !test_time::under_budget(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!(
@@ -4350,7 +4351,7 @@ fn zf_78_bessel_kelvin_high_prec() -> Result<(), String> {
                 );
                 return Ok(());
             }
-            None if !test_time::within(start.elapsed(), BUDGET) => {
+            None if !test_time::under_budget(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!(
@@ -4642,7 +4643,7 @@ fn zf_78_k_recur_scales_with_nu() -> Result<(), String> {
                 );
                 return Ok(());
             }
-            None if !test_time::within(start.elapsed(), BUDGET) => {
+            None if !test_time::under_budget(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!(
@@ -4703,7 +4704,7 @@ fn zf_78_hypergeom_2f1_cluster() -> Result<(), String> {
                 );
                 return Ok(());
             }
-            None if !test_time::within(start.elapsed(), BUDGET) => {
+            None if !test_time::under_budget(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!(
@@ -4916,7 +4917,7 @@ fn zf_78_elliptic_cut_signed_zeros() -> Result<(), String> {
                 );
                 return Ok(());
             }
-            None if !test_time::within(start.elapsed(), BUDGET) => {
+            None if !test_time::under_budget(start.elapsed(), BUDGET) => {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!(

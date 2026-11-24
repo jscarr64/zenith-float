@@ -523,7 +523,7 @@ mod tests {
         let td = time(&dense)?;
         let tp = time(&padded)?;
         assert!(
-            tp.saturating_mul(20) < td,
+            crate::test_time::limit_holds(tp.saturating_mul(20) < td),
             "padded 1-word divisor {tp} ns vs dense divisor {td} ns"
         );
         Ok(())

@@ -379,7 +379,7 @@ mod tests {
             Mantissa::mul_unbalanced(&pa, &pb, &mut mc).map_err(|e| format!("{e:?}"))
         })?;
         assert!(
-            padded.saturating_mul(20) < dense,
+            crate::test_time::limit_holds(padded.saturating_mul(20) < dense),
             "padded 1-word operands cost {padded} ns vs {dense} ns for a dense 1025-word product"
         );
         Ok(())

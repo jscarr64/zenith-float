@@ -2697,7 +2697,7 @@ mod tests {
             let t0 = std::time::Instant::now();
             let lg = z.ln_gamma(p, rm, &mut cc);
             assert!(
-                t0.elapsed() < limit,
+                crate::test_time::limit_holds(t0.elapsed() < limit),
                 "ln_gamma({z:?}) at p=8192 took {:?} (budget {limit:?})",
                 t0.elapsed()
             );

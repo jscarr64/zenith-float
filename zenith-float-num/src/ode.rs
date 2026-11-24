@@ -1413,7 +1413,7 @@ mod tests {
             "{label}: y(1) vs 1+sin(1) only {bits} bits after {ms} ms"
         );
         assert!(
-            ms < max_ms,
+            crate::test_time::limit_holds(ms < max_ms),
             "{label} must finish under {max_ms} ms; took {ms} ms"
         );
         let _ = ts;

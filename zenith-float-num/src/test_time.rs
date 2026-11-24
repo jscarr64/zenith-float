@@ -5,6 +5,13 @@
 //! times longer (pin `tools/qemu_aarch64_zf_time_factor.txt`, measured 6.25 + 0.25 margin), so the
 //! budget is the native one times that factor: the same work allowance, not a looser one. Native runs
 //! leave `ZF_TIME_FACTOR` unset (factor 1). Same grammar and range as `tests/s9_specials_golds.rs`.
+//!
+//! Release step only (Jeff 2026-11-23 23:04 CT: "timing limits are enforced in the release step only;
+//! debug still runs every test for correctness, and the debug step limit goes to 60 min"): in a debug
+//! build (`debug_assertions`) [`within`], [`within_ms`] and [`limit_holds`] pass, so a test that misses
+//! its wall-clock limit still runs the rest of its body and every correctness assert. The budgets keep
+//! their values (pinned in `tools/time_limits.tsv`). A hang watchdog that kills a child or stops waiting
+//! (tier1 ZF-78) uses [`under_budget`], which applies in both builds.
 
 use core::time::Duration;
 
@@ -59,17 +66,35 @@ pub(crate) fn budget(native: Duration) -> Result<Duration, String> {
     scaled(native, milli)
 }
 
-/// `elapsed` is under this run's budget for `native` (see [`budget`]). Every wall-clock bound in the
-/// library's unit tests goes through here or [`within_ms`] (Jeff 2026-11-22 ~11:58 PM CT: qemu limits
-/// scale with the time factor). An invalid `ZF_TIME_FACTOR` counts as over budget, so it fails the test.
-pub(crate) fn within(elapsed: Duration, native: Duration) -> bool {
+/// Wall-clock limits fail a test only in a release build (Jeff 2026-11-23 23:04 CT).
+pub(crate) const LIMITS_ENFORCED: bool = !cfg!(debug_assertions);
+
+/// The result of a wall-clock comparison for this build: `ok` in a release build, `true` in a debug
+/// build. Every timing assert that is not a [`within`] / [`within_ms`] budget goes through here.
+pub(crate) fn limit_holds(ok: bool) -> bool {
+    ok || !LIMITS_ENFORCED
+}
+
+/// `elapsed` is under this run's budget for `native` (see [`budget`]), in every build. For hang
+/// watchdogs only; a timing assert uses [`within`]. An invalid `ZF_TIME_FACTOR` counts as over budget.
+pub(crate) fn under_budget(elapsed: Duration, native: Duration) -> bool {
     budget(native).is_ok_and(|b| elapsed < b)
+}
+
+/// The timing assert: [`under_budget`] in a release build, `true` in a debug build ([`limit_holds`]).
+/// Every wall-clock bound in the library's unit tests goes through here or [`within_ms`] (Jeff
+/// 2026-11-22 ~11:58 PM CT: qemu limits scale with the time factor).
+pub(crate) fn within(elapsed: Duration, native: Duration) -> bool {
+    limit_holds(under_budget(elapsed, native))
 }
 
 /// [`within`] for a test that keeps its time as `Duration::as_millis()`.
 pub(crate) fn within_ms(elapsed_ms: u128, native_ms: u64) -> bool {
-    u64::try_from(elapsed_ms)
-        .is_ok_and(|ms| within(Duration::from_millis(ms), Duration::from_millis(native_ms)))
+    limit_holds(
+        u64::try_from(elapsed_ms).is_ok_and(|ms| {
+            under_budget(Duration::from_millis(ms), Duration::from_millis(native_ms))
+        }),
+    )
 }
 
 #[cfg(test)]
@@ -102,15 +127,69 @@ mod tests {
 
     #[test]
     fn within_is_strict_and_matches_the_old_native_comparisons() {
-        // Natively (factor 1) `d.as_secs() < n` and `ms < n` read exactly as before.
+        // Natively (factor 1) `d.as_secs() < n` and `ms < n` read exactly as before; in a debug
+        // build the timing assert passes (release step only, Jeff 2026-11-23 23:04 CT).
         let one = Duration::from_secs(1);
+        let release = LIMITS_ENFORCED;
+        assert_eq!(release, !cfg!(debug_assertions));
         if std::env::var_os("ZF_TIME_FACTOR").is_none() {
+            assert!(under_budget(Duration::from_millis(999), one));
+            assert!(!under_budget(one, one));
             assert!(within(Duration::from_millis(999), one));
-            assert!(!within(one, one));
+            assert_eq!(within(one, one), !release);
             assert!(within_ms(199, 200));
-            assert!(!within_ms(200, 200));
+            assert_eq!(within_ms(200, 200), !release);
         }
-        assert!(!within_ms(u128::MAX, 200));
-        assert!(!within(Duration::MAX, one));
+        assert_eq!(within_ms(u128::MAX, 200), !release);
+        assert_eq!(within(Duration::MAX, one), !release);
+        assert!(!under_budget(Duration::MAX, one));
+        assert!(limit_holds(true));
+        assert_eq!(limit_holds(false), !release);
+    }
+
+    /// Jeff 2026-11-23 23:04 CT: "timing limits are enforced in the release step only; debug still
+    /// runs every test for correctness". A run 10x over its budget passes the wall-clock check in a
+    /// debug build (debug_assertions) and fails it in a release build, whatever ZF_TIME_FACTOR is
+    /// (at most 8).
+    #[test]
+    fn debug_build_waives_wall_clock_limits_release_enforces_them() {
+        let debug = cfg!(debug_assertions);
+        assert_eq!(
+            within(Duration::from_secs(10), Duration::from_secs(1)),
+            debug
+        );
+        assert_eq!(within_ms(10_000, 1_000), debug);
+        assert_eq!(within(Duration::MAX, Duration::from_secs(1)), debug);
+    }
+
+    /// A missed wall-clock limit must not end a debug test early: the test body after the timed
+    /// section still runs, so its correctness asserts still fire. In a release build the timing
+    /// assert itself fails first, as before.
+    #[test]
+    fn correctness_asserts_still_fire_after_a_missed_limit() {
+        let ran = std::panic::catch_unwind(|| {
+            assert!(
+                within(Duration::from_secs(10), Duration::from_secs(1)),
+                "TIMING limit missed"
+            );
+            assert_eq!(1 + 1, 3, "CORRECTNESS assert");
+        });
+        let payload: &str = match &ran {
+            Ok(()) => "no panic",
+            Err(e) => e
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| e.downcast_ref::<&str>().copied())
+                .unwrap_or(""),
+        };
+        let want = if cfg!(debug_assertions) {
+            "CORRECTNESS assert"
+        } else {
+            "TIMING limit missed"
+        };
+        assert!(
+            payload.contains(want),
+            "want a panic with {want:?}, got {payload:?}"
+        );
     }
 }
