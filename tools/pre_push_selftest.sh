@@ -2,8 +2,8 @@
 # Selftest for .githooks/pre-push (Jeff 2026-11-24 1:17 PM CT: "pre-push hook"). The hook runs, for every pushed
 # commit, the CI rules-scan command (tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..<sha>", .github/workflows/
 # rules-scan.yml) and tools/no_suppress_scan.py on that commit's tree. Fixture: a --shared clone of this repo's HEAD
-# with one base commit that drops clippy.toml threshold keys (so the base is no_suppress-clean); RATCHET_BASE = that
-# base, so each case scans only its own fixture commit.
+# with one base commit that drops any clippy.toml threshold keys (empty since clippy.toml is at defaults, 2e50ed1);
+# RATCHET_BASE = that base, so each case scans only its own fixture commit.
 # usage: tools/pre_push_selftest.sh
 set -uo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,9 +18,8 @@ fi
 c="$w/clone"
 git clone -q --shared "$root" "$c" || exit 2
 g() { git -C "$c" -c user.name=t -c user.email=t@t "$@"; }
-orig=$(g rev-parse HEAD)
 sed -i -E '/^[a-z-]*(threshold|max-[a-z-]*|-limit) *=/d' "$c/clippy.toml"
-g commit -qam "fixture base: no clippy thresholds"; base=$(g rev-parse HEAD)
+g commit -q --allow-empty -am "fixture base: no clippy thresholds"; base=$(g rev-parse HEAD)
 mkc() { # mkc FILE CONTENT -> sha of a commit on base adding FILE
   g checkout -q --detach "$base"; mkdir -p "$c/$(dirname "$1")"; printf '%b' "$2" > "$c/$1"
   g add -A; g commit -qm "case $1"; g rev-parse HEAD
@@ -41,6 +40,8 @@ clean=$(mkc zenith-float-num/src/zz_fixture.rs '/// fixture\npub fn zz(x: u32) -
 clone=$(mkc zenith-float-num/src/zz_fixture.rs 'pub fn zz(x: &Vec<u8>) -> Vec<u8> {\n    x.clone()\n}\n')
 tallow=$(mkc tests/zz_fixture.rs '#[allow(dead_code)]\nfn zz() {}\n')
 lallow=$(mkc zenith-float-num/src/zz_fixture.rs '#[allow(clippy::too_many_arguments)]\npub fn zz() {}\n')
+relaxed=$(g checkout -q --detach "$base" && printf 'too-many-arguments-threshold = 10\n' >> "$c/clippy.toml" \
+  && g commit -qam "case relaxed clippy.toml" && g rev-parse HEAD)
 unsafe_=$(mkc zenith-float-num/src/zz_fixture.rs 'pub fn zz(p: *const u8) -> u8 {\n    unsafe { *p }\n}\n')
 g checkout -q --detach "$tallow"   # the working tree is NOT the pushed commit: the hook must scan the pushed tree
 case_ pass "clean commit passes both scans" "$clean" 'pre-push: ok'
@@ -48,7 +49,7 @@ case_ fail "added .clone() in library code fails rules-scan" "$clone" 'FAIL rule
 case_ fail "#[allow] in tests/ passes rules-scan but fails no-suppress" "$tallow" 'ok rules-scan.*|FAIL no-suppress'
 case_ fail "#[allow] in library code fails" "$lallow" 'FAIL (rules-scan|no-suppress)'
 case_ fail "unsafe in library code fails no-suppress" "$unsafe_" 'FAIL no-suppress'
-case_ fail "a relaxed clippy.toml threshold fails no-suppress (this repo's HEAD)" "$orig" '\[clippy-config\]'
+case_ fail "a relaxed clippy.toml threshold fails no-suppress" "$relaxed" '\[clippy-config\] too-many-arguments-threshold'
 n=$((n + 1)); out=$(cd "$c" && printf 'refs/heads/x %s refs/heads/x %s\n' "$zero" "$clean" | RATCHET_BASE="$base" bash "$hook" origin "$w/remote" 2>&1)
 if [ $? -eq 0 ]; then echo "ok $n branch delete (nothing to scan) passes"; else bad "branch delete: $out"; fi
 grep -q 'FAIL no-suppress' <<<"$(cd "$c" && printf 'refs/heads/x %s refs/heads/x %s\n' "$tallow" "$zero" | RATCHET_BASE="$base" bash "$hook" origin x 2>&1)" \
