@@ -322,8 +322,7 @@ mod tests {
 
     use crate::{
         mantissa::Mantissa, num::ExactNumNumber, Consts, Exponent, RoundingMode, Sign, Word,
-        EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS, NAN, WORD_BIT_SIZE, WORD_MAX,
-        WORD_SIGNIFICANT_BIT,
+        EXPONENT_MIN, INF_NEG, INF_POS, NAN, WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT,
     };
 
     use super::*;
@@ -380,26 +379,19 @@ mod tests {
         );
     }
 
-    fn gen_pair(m1: Mantissa, mut e: Exponent) -> Result<(ExactNum, ExactNum), crate::Error> {
+    fn gen_pair(m1: Mantissa, e: Exponent) -> Result<(ExactNum, ExactNum), crate::Error> {
         let s = if crate::common::test_rng::random::<i8>() & 1 == 0 {
             Sign::Pos
         } else {
             Sign::Neg
         };
 
-        let mut m2 = m1.clone().unwrap();
-
+        let p_bits = m1.len() * WORD_BIT_SIZE;
         let n1 = ExactNumNumber::from_raw_unchecked(m1, s, e, true);
-
-        if m2.add_ulp() {
-            assert!(e < EXPONENT_MAX);
-            if let Some(top) = m2.digits_mut().iter_mut().last() {
-                *top = WORD_SIGNIFICANT_BIT;
-            }
-            e += 1;
-        }
-
-        let n2 = ExactNumNumber::from_raw_unchecked(m2, s, e, true);
+        // n2 is n1 plus one ulp in magnitude: the next p_bits value away from zero, computed rather than copied.
+        // At the top of the exponent range that is ExponentOverflow, which fails the test (the old assert).
+        let mut n2 = n1.next_toward(s == Sign::Pos, p_bits)?;
+        n2.set_inexact(true);
 
         Ok((n1.into(), n2.into()))
     }

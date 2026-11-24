@@ -2976,17 +2976,6 @@ mod tests {
         Ok(())
     }
 
-    fn perm_rows(a: &ExactNumArray, perm: &[usize]) -> Option<ExactNumArray> {
-        let (n, m) = a.shape();
-        let mut vals = Vec::with_capacity(n * m);
-        for &r in perm {
-            for c in 0..m {
-                vals.push(a.get2(r, c).unwrap().clone());
-            }
-        }
-        ExactNumArray::from_shape(a.precision(), n, m, &vals)
-    }
-
     #[test]
     fn exact_lu_2x2_and_singular() -> Result<(), crate::Error> {
         let p = 256;
@@ -2995,15 +2984,15 @@ mod tests {
         let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)])
             .ok_or(crate::Error::InvalidArgument)?;
         let (l, u, perm) = a.lu_decomp(p, rm).ok_or(crate::Error::InvalidArgument)?;
-        let pa = perm_rows(&a, &perm).ok_or(crate::Error::InvalidArgument)?;
         let lu = l.matmul(&u).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(lu.shape(), (2, 2));
         for i in 0..2 {
             for j in 0..2 {
                 assert_eq!(
-                    lu.get2(i, j)
-                        .ok_or(crate::Error::InvalidArgument)?
-                        .compare(pa.get2(i, j).ok_or(crate::Error::InvalidArgument)?),
+                    lu.get2(i, j).ok_or(crate::Error::InvalidArgument)?.compare(
+                        a.get2(*perm.get(i).ok_or(crate::Error::InvalidArgument)?, j)
+                            .ok_or(crate::Error::InvalidArgument)?
+                    ),
                     Some(0),
                     "PA=LU at {i},{j}"
                 );
@@ -3226,19 +3215,26 @@ mod tests {
         Ok(())
     }
 
-    fn eigen_diag(evals: &ExactNumArray, p: usize) -> Option<ExactNumArray> {
-        let n = evals.cols;
-        let mut vals = Vec::with_capacity(n * n);
+    /// V * diag(evals) as products V[i][j] * evals[j] (computed at p, no element copies).
+    fn times_diag(
+        v: &ExactNumArray,
+        evals: &ExactNumArray,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<ExactNumArray, crate::Error> {
+        let (n, m) = v.shape();
+        let mut vals = Vec::with_capacity(n * m);
         for i in 0..n {
-            for j in 0..n {
-                if i == j {
-                    vals.push(evals.get(i).unwrap().clone());
-                } else {
-                    vals.push(ExactNum::from_u8(0, p));
-                }
+            for j in 0..m {
+                vals.push(ExactNum::mul_ref(
+                    v.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                    evals.get(j).ok_or(crate::Error::InvalidArgument)?,
+                    p,
+                    rm,
+                ));
             }
         }
-        ExactNumArray::from_shape(p, n, n, &vals)
+        ExactNumArray::from_parts(p, n, m, vals)
     }
 
     #[test]
@@ -3287,8 +3283,7 @@ mod tests {
             p
         ));
         let av = a.matmul(&v).ok_or(crate::Error::InvalidArgument)?;
-        let lam = eigen_diag(&evals, p).ok_or(crate::Error::InvalidArgument)?;
-        let vl = v.matmul(&lam).ok_or(crate::Error::InvalidArgument)?;
+        let vl = times_diag(&v, &evals, p, rm)?;
         for i in 0..2 {
             for j in 0..2 {
                 assert!(
@@ -3336,9 +3331,7 @@ mod tests {
             );
         }
         let av3 = a3.matmul(&v3).ok_or(crate::Error::InvalidArgument)?;
-        let vl3 = v3
-            .matmul(&eigen_diag(&w3, p).ok_or(crate::Error::InvalidArgument)?)
-            .ok_or(crate::Error::InvalidArgument)?;
+        let vl3 = times_diag(&v3, &w3, p, rm)?;
         for i in 0..3 {
             for j in 0..3 {
                 assert!(near_num(
