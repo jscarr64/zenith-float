@@ -8,7 +8,8 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 ftr="$root/tools/fresh_test_run.sh"
-t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/fresh-test-run-selftest"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+t=$(mktemp -d "$zf_tmp/run.XXXXXX"); trap 'rm -rf "$t"' EXIT
 git init -q "$t/wa"; git init -q "$t/wb"
 wa=$(cd "$t/wa" && pwd -P)
 bad=0
@@ -85,7 +86,7 @@ pp="$root/scripts/zenith_prepublish.sh"; n=0
 while IFS= read -r line; do
   n=$((n + 1))
   [[ $line == *'tools/fresh_test_run.sh" cargo test'* ]] || fail "prepublish cargo test not through fresh_test_run: $line"
-done < <(grep -E '^[^#]*cargo test( |$)' "$pp" | grep -v '^ *step ')
+done < <(grep -E '^[^#]*cargo test( |$)' "$pp" | grep -vE '^ *(step|echo) ')  # step/echo lines only name the run
 [[ $n -ge 3 ]] || fail "prepublish: expected >= 3 cargo test runs, found $n"
 [[ $bad == 0 ]] && echo "fresh_test_run_selftest: ok"
 exit "$bad"
