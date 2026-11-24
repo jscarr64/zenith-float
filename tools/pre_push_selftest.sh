@@ -19,7 +19,8 @@ c="$w/clone"
 git clone -q --shared "$root" "$c" || exit 2
 g() { git -C "$c" -c user.name=t -c user.email=t@t "$@"; }
 sed -i -E '/^[a-z-]*(threshold|max-[a-z-]*|-limit) *=/d' "$c/clippy.toml"
-g commit -q --allow-empty -am "fixture base: no clippy thresholds"; base=$(g rev-parse HEAD)
+printf 'pre_push_selftest fixture base\n' > "$c/.pre-push-fixture-base"  # a base commit even when clippy.toml had no keys
+g add -A; g commit -qm "fixture base: no clippy thresholds"; base=$(g rev-parse HEAD)
 mkc() { # mkc FILE CONTENT -> sha of a commit on base adding FILE
   g checkout -q --detach "$base"; mkdir -p "$c/$(dirname "$1")"; printf '%b' "$2" > "$c/$1"
   g add -A; g commit -qm "case $1"; g rev-parse HEAD
