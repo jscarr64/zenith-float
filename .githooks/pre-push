@@ -13,7 +13,9 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 base="${RATCHET_BASE:-c74e834^}"
 zero=0000000000000000000000000000000000000000
 rc=0
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/zf-pre-push.XXXXXX") || exit 1
+scratch="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-push"  # job scratch, not /tmp (Spence m6); like fold_pr1_selftest
+mkdir -p "$scratch" || exit 2
+tmp=$(mktemp -d "$scratch/run.XXXXXX") || exit 1
 trap 'rm -rf "$tmp"' EXIT
 while read -r lref lsha rref rsha; do
   [ -z "${lsha:-}" ] && continue

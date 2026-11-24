@@ -10,7 +10,9 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 hook="$root/.githooks/pre-push"
 fail=0; n=0
 bad() { echo "FAIL: $*"; fail=1; }
-w=$(mktemp -d "${TMPDIR:-/tmp}/pre-push-selftest.XXXXXX") || exit 2
+scratch="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-push-selftest"  # job scratch, not /tmp (Spence m6); like fold_pr1_selftest
+mkdir -p "$scratch" || exit 2
+w=$(mktemp -d "$scratch/run.XXXXXX") || exit 2
 trap 'rm -rf "$w"' EXIT
 if [ ! -x "$hook" ]; then
   echo "FAIL: $hook missing or not executable"; echo "pre_push_selftest: FAIL"; exit 1

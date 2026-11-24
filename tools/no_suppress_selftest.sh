@@ -9,7 +9,9 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 scan="$root/tools/no_suppress_scan.sh"
 fail=0; n=0
 bad() { echo "FAIL: $*"; fail=1; }
-w=$(mktemp -d "${TMPDIR:-/tmp}/no-suppress.XXXXXX") || exit 2
+scratch="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/no-suppress-selftest"  # job scratch, not /tmp (Spence m6); like fold_pr1_selftest
+mkdir -p "$scratch" || exit 2
+w=$(mktemp -d "$scratch/run.XXXXXX") || exit 2
 trap 'rm -rf "$w"' EXIT
 # fixture: a clean two-crate workspace
 mk() {
