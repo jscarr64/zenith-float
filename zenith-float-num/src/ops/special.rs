@@ -8559,7 +8559,6 @@ mod tests {
     /// head size for dest 65536 (M ≈ 3316). Ignored: used to time the
     /// `bernoulli_rev` port in official rustc release.
     #[test]
-    #[ignore]
     fn time_exact_bernoulli_rev_3316() -> Result<(), crate::Error> {
         let t0 = std::time::Instant::now();
         with_exact_bernoulli(3316, |rats| {
@@ -8585,7 +8584,6 @@ mod tests {
     /// (`M ≈ 10596`, `B_2..B_21192`) and a subsequent rounded lookup.
     /// Ignored: long run; has a progress log from `bernoulli_rev`.
     #[test]
-    #[ignore]
     fn time_exact_bernoulli_cache_em_size() -> Result<(), crate::Error> {
         let k = 10596;
         let p = 65536;

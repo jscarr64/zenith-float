@@ -560,40 +560,4 @@ mod tests {
         );
         Ok(())
     }
-
-    #[test]
-    #[ignore = "profiles ln2 vs FLINT; run with --ignored --release"]
-    fn time_ln2_hypgeom_vs_flint() -> Result<(), crate::Error> {
-        use std::hint::black_box;
-        use std::time::Instant;
-        let rm = RoundingMode::ToEven;
-        for prec in [4096usize, 16384, 65536] {
-            let t0 = Instant::now();
-            let mut cache = Ln2Cache::new()?;
-            let _ = cache.for_prec(prec, rm)?;
-            let cold_ms = t0.elapsed().as_secs_f64() * 1e3;
-            let t0 = Instant::now();
-            let n = 8u32;
-            for _ in 0..n {
-                black_box(cache.for_prec(prec, rm)?);
-            }
-            let warm_ms = (t0.elapsed() / n).as_secs_f64() * 1e3;
-            let mut cc = crate::Consts::new()?;
-            let _ = cc.ln_2(prec, rm); // warm the Consts cache
-            let two = crate::ExactNum::from_u8(2, prec);
-            let t0 = Instant::now();
-            for _ in 0..n {
-                black_box(two.ln(prec, rm, &mut cc));
-            }
-            let pub_ms = (t0.elapsed() / n).as_secs_f64() * 1e3;
-            let t0 = Instant::now();
-            let mut cc2 = crate::Consts::new()?;
-            let _ = crate::ExactNum::from_u8(2, prec).ln(prec, rm, &mut cc2);
-            let pub_cold_ms = t0.elapsed().as_secs_f64() * 1e3;
-            eprintln!(
-                "ZF  ln2 p={prec}: cold_cache={cold_ms:.4} ms  warm_cache={warm_ms:.4} ms  public_warm={pub_ms:.4} ms  public_cold={pub_cold_ms:.4} ms"
-            );
-        }
-        Ok(())
-    }
 }

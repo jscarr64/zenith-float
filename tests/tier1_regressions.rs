@@ -466,7 +466,6 @@ fn rem_overflow_exact_top_bit_and_odd_divisors() {
 /// boundary (exponent 2^22 + 1) is covered by `reduction_width` in the num unit tests: one 4-million-bit π takes
 /// about 15 minutes in this library, a speed issue (Tier 2), not a limit.
 #[test]
-#[ignore = "65536- and 262144-bit pi; run by the full gate's ignored (release) step"]
 fn trig_no_cap_past_old_limit_values() -> Result<(), String> {
     let mut cc = Consts::new().map_err(|e| format!("Consts {e:?}"))?;
     let refs = [

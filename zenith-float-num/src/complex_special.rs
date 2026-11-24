@@ -2764,7 +2764,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn zf_y2_1plusi_and_pi_family_timings() -> Result<(), String> {
         let mut cc = Consts::new().must("Consts")?;
         let rm = RoundingMode::ToEven;
@@ -2800,7 +2799,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn zf_gamma_10i_and_digamma_mi_at_p65536_timing() -> Result<(), String> {
         let mut cc = Consts::new().must("Consts")?;
         let rm = RoundingMode::ToEven;
@@ -2833,21 +2831,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    fn zf_exact_bernoulli_growth_timings() -> Result<(), String> {
-        for &n in &[1024usize, 1536, 2048, 3316] {
-            let t0 = std::time::Instant::now();
-            crate::ops::special::with_exact_bernoulli(n, |v| {
-                eprintln!("exact bernoulli n={n} len={} {:?}", v.len(), t0.elapsed());
-                Ok(())
-            })
-            .must("exact")?;
-        }
-        Ok(())
-    }
-
-    #[test]
-    #[ignore]
     fn zf_stirling_improved_high_p_plan_and_timings() -> Result<(), String> {
         let mut cc = Consts::new().must("Consts")?;
         let rm = RoundingMode::ToEven;
@@ -2903,34 +2886,6 @@ mod tests {
             );
             Ok(())
         });
-        Ok(())
-    }
-
-    #[test]
-    #[ignore]
-    fn zf_stirling_choose_param_and_8192_timing() -> Result<(), String> {
-        let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().must("Consts")?;
-        let zg = ExactComplex::new(ExactNum::new(64), ExactNum::from_u8(10, 64));
-        for p in [256usize, 1024, 2048, 8192] {
-            let (r, n) = stirling_choose_param(&zg, p, false);
-            eprintln!("gamma choose p={p} r={r} n={n}");
-            let t0 = std::time::Instant::now();
-            let _ = crate::ops::special::with_even_bernoulli(n, p, |v| {
-                eprintln!("bernoulli n={n} p={p} len={} {:?}", v.len(), t0.elapsed());
-                Ok(())
-            });
-            let t1 = std::time::Instant::now();
-            let g = zg.gamma(p, rm, &mut cc);
-            eprintln!("gamma(10i) p={p} {:?} nan={}", t1.elapsed(), g.is_nan());
-        }
-        for (p, n) in [(16384usize, 3760usize), (32768, 6182)] {
-            let t0 = std::time::Instant::now();
-            let _ = crate::ops::special::with_even_bernoulli(n, p, |v| {
-                eprintln!("bernoulli n={n} p={p} len={} {:?}", v.len(), t0.elapsed());
-                Ok(())
-            });
-        }
         Ok(())
     }
 

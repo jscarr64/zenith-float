@@ -953,7 +953,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn time_riemann_zeta_half_p65536() -> Result<(), String> {
         let mut cc = Consts::new()?;
         let p = 65536usize;
@@ -1053,121 +1052,6 @@ mod tests {
             let want = powsum_direct(&s, n, p, &mut cc);
             jets_agree(&got, &want, p, (p as i32) - 16);
         }
-        Ok(())
-    }
-
-    fn time_ns(iters: u32, warmup: u32, mut body: impl FnMut()) -> u128 {
-        for _ in 0..warmup {
-            body();
-        }
-        let t0 = std::time::Instant::now();
-        for _ in 0..iters {
-            body();
-        }
-        t0.elapsed().as_nanos() / u128::from(iters.max(1))
-    }
-
-    /// Elementary kernels used by powsum, side by side with
-    /// `$L/final/timeouts-11/zeta/bench-arb-elem.py`.
-    #[cfg(feature = "std")]
-    #[test]
-    #[ignore]
-    fn time_powsum_elem_vs_flint() -> Result<(), String> {
-        use std::hint::black_box;
-        let mut cc = Consts::new()?;
-        let rm = RoundingMode::ToEven;
-        let cases: &[(usize, u32)] = &[(4096, 40), (16384, 10), (65536, 4)];
-        for &(prec, n) in cases {
-            let k = ExactNum::from_u64(10007, prec);
-            let two = ExactNum::from_u8(2, prec);
-            let tenth = ExactNum::from_u8(1, prec).div(&ExactNum::from_u8(10, prec), prec, rm);
-            let s_half = ExactNum::from_u8(1, prec).ldexp(-1, prec, rm);
-            let s_mhalf = s_half.neg_ref();
-            let s_3h = ExactNum::from_u8(3, prec).ldexp(-1, prec, rm);
-            eprintln!("==== ZF elem prec={prec} ====");
-            let ns = time_ns(n, n.min(2), || {
-                black_box(k.ln(prec, rm, &mut cc));
-            });
-            eprintln!(
-                "ZF  ln(10007) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
-                ns / 1_000
-            );
-            let ns = time_ns(n, n.min(2), || {
-                black_box(two.ln(prec, rm, &mut cc));
-            });
-            eprintln!(
-                "ZF  ln(2) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
-                ns / 1_000
-            );
-            let ns = time_ns(n, n.min(2), || {
-                black_box(tenth.exp(prec, rm, &mut cc));
-            });
-            eprintln!(
-                "ZF  exp(1/10) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
-                ns / 1_000
-            );
-            let ns = time_ns(n, n.min(2), || {
-                black_box(k.sqrt(prec, rm));
-            });
-            eprintln!(
-                "ZF  sqrt(10007) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
-                ns / 1_000
-            );
-            let ns = time_ns(n, n.min(2), || {
-                black_box(k.sqrt(prec, rm).reciprocal(prec, rm));
-            });
-            eprintln!(
-                "ZF  1/sqrt(10007) p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
-                ns / 1_000
-            );
-            for (label, sarg) in [("s=1/2", &s_half), ("s=-1/2", &s_mhalf), ("s=3/2", &s_3h)] {
-                let ns = time_ns(n, n.min(2), || {
-                    let ln = k.ln(prec, rm, &mut cc);
-                    black_box(
-                        ExactNum::mul_ref(sarg, &ln, prec, rm)
-                            .neg()
-                            .exp(prec, rm, &mut cc),
-                    );
-                });
-                eprintln!(
-                    "ZF  exp(-s ln k) {label} p={prec}: n={n}  {ns:.0} ns/op  {} us/op",
-                    ns / 1_000
-                );
-            }
-        }
-        // Dest-p powsum + EM tail at choose_param N,M, to split the 34 s leftover.
-        let pdest = 65536usize;
-        let s = ExactNum::from_u8(1, pdest).ldexp(-1, pdest, rm);
-        let a = ExactNum::from_u8(1, pdest);
-        let t0 = std::time::Instant::now();
-        let Some((n, m)) = choose_param(&s, &a, pdest, &mut cc) else {
-            return Err("choose_param failed".into());
-        };
-        eprintln!(
-            "ZF  choose_param s=1/2 a=1 p={pdest}: N={n} M={m} ms={}",
-            t0.elapsed().as_millis()
-        );
-        let t1 = std::time::Instant::now();
-        let _ = crate::ops::log_primes::ln_primes_upto(n, pdest, &mut cc);
-        eprintln!(
-            "ZF  ln_primes_upto n={n} p={pdest} ms={}",
-            t1.elapsed().as_millis()
-        );
-        let wrk = pdest.saturating_add(2 * (bit_count(n) as usize + 2));
-        let t2 = std::time::Instant::now();
-        let jet = powsum_sieved(&s, &a, n, wrk, &mut cc);
-        eprintln!(
-            "ZF  powsum_sieved n={n} wrk={wrk} ms={} ok={}",
-            t2.elapsed().as_millis(),
-            jet.is_some()
-        );
-        let t3 = std::time::Instant::now();
-        let em = em_sum(&s, &a, n, m, pdest, &mut cc);
-        eprintln!(
-            "ZF  em_sum n={n} m={m} p={pdest} ms={} ok={}",
-            t3.elapsed().as_millis(),
-            em.is_some()
-        );
         Ok(())
     }
 }

@@ -1908,7 +1908,6 @@ mod tests {
     /// Y_1 series at modest p, and the public path at 16k/32k/64k. Ignored:
     /// official rustc release timings.
     #[test]
-    #[ignore]
     fn zf_y1_1plusi_jk_crossover_and_high_p_timing() -> Result<(), String> {
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new().must("Consts")?;
