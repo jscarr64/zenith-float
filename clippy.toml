@@ -1,14 +1,7 @@
-# Clippy for zenith-float SoftFloat kernels. Thresholds are clippy's defaults
-# (Jeff 2026-11-24: no relaxed lint limits), except too-many-arguments-threshold:
-# PENDING JEFF. Eleven public fns have 8-10 params (with self): integrate_adaptive_gk
-# and its _estimate / _infinite / _infinite_estimate forms, rk4, rk45_adaptive, newton,
-# ExactNum::meijer_g / fox_h / heun_g / heun_c. Nine of them are called with these
-# signatures by the official T2 harness (land39 verify/h2/src/aux.rs), so grouping
-# them breaks that build; it is a public 2.0 API decision. Every private
-# fn is at the default 7 except roots.rs newton_counted (8), newton's twin.
-# tools/no_suppress_scan.py reports this key until it is gone.
-
-too-many-arguments-threshold = 10
+# Clippy for zenith-float SoftFloat kernels. Every threshold is clippy's default
+# (Jeff 2026-11-24: no relaxed lint limits; 2:35 PM CT: the 11 public fns over 7
+# arguments take grouped option/param structs instead). tools/no_suppress_scan.py
+# reports any threshold key added here.
 
 # Portable integer code only. scripts/ci_no_intrinsics.sh is the text scan;
 # these entries make `cargo clippy -D warnings` reject the same calls.
