@@ -283,7 +283,13 @@ impl ExactNumNumber {
             Some((r, _)) => r,
             None => self,
         };
-        let (mut am, sn, cn, dn, err) = jacobi_agm(u, reduced.is_some(), m, p, cc)?;
+        let JacobiAgm {
+            mut am,
+            sn,
+            cn,
+            dn,
+            am_err: err,
+        } = jacobi_agm(u, reduced.is_some(), m, p, cc)?;
         // |u| < 2^-p: am ≈ sn ≈ u, cn ≈ dn ≈ 1, nothing cancels and every value is good to the
         // working precision (the bound below would be formed near the exponent floor).
         if reduced.is_none() && self.exponent() < -(p as Exponent) {
@@ -517,29 +523,29 @@ fn rel_bits(err: &ExactNumNumber, x: &ExactNumNumber) -> Result<usize, Error> {
     Ok(usize::try_from(-r.exponent()).unwrap_or(0))
 }
 
+/// The result of [`jacobi_agm`]: am, sn, cn, dn and the absolute error bound of am
+/// (`None` when it cannot be bounded at the working precision).
+struct JacobiAgm {
+    am: ExactNumNumber,
+    sn: ExactNumNumber,
+    cn: ExactNumNumber,
+    dn: ExactNumNumber,
+    am_err: Option<ExactNumNumber>,
+}
+
 /// am, sn, cn, dn by the AGM and the descending Landen recurrence (DLMF 22.20(ii)), with an
 /// absolute error bound of am carried through the recurrence (`None` when it cannot be bounded
 /// at `p` bits). A first-order bound: every working operation is within 2 ulp; the error of
 /// `phi_n` reaches `phi_{n-1} = (phi_n + asin t_n)/2` through `t_n = c_n sin phi_n / a_n`,
 /// amplified by `1/sqrt(1 - t_n^2)`. sn, cn inherit the absolute bound of am; dn is formed as
 /// `sqrt(cn^2 + m' sn^2)` (both terms non-negative), so its relative error is that of cn or sn.
-#[allow(clippy::type_complexity)]
 fn jacobi_agm(
     u: &ExactNumNumber,
     reduced: bool,
     m: &ExactNumNumber,
     p: usize,
     cc: &mut Consts,
-) -> Result<
-    (
-        ExactNumNumber,
-        ExactNumNumber,
-        ExactNumNumber,
-        ExactNumNumber,
-        Option<ExactNumNumber>,
-    ),
-    Error,
-> {
+) -> Result<JacobiAgm, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
     let two = ExactNumNumber::from_word(2, p)?;
     // m' = 1 - m: exact for m ≥ 1/2 (Sterbenz; p covers m's bits), one rounding otherwise.
@@ -666,7 +672,13 @@ fn jacobi_agm(
         .sqrt(p, RoundingMode::None)?;
     // The final roundings of sin, cos, dn (relative, a few ulp) are inside the caller's `p - 8`.
     let err = if bounded { Some(err) } else { None };
-    Ok((phi, sn, cn, dn, err))
+    Ok(JacobiAgm {
+        am: phi,
+        sn,
+        cn,
+        dn,
+        am_err: err,
+    })
 }
 
 #[cfg(test)]

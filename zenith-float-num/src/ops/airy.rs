@@ -110,7 +110,10 @@ impl ExactNumNumber {
         if !x.is_zero() && x.is_positive() && !x.airy_prefer_series(p, cc)? {
             return x.airy_asymp_pos_one(which, p, cc);
         }
-        let ([ai, bi, aip, bip], [sai, sbi, saip, sbip]) = x.airy_all(p, cc)?;
+        let AiryParts {
+            vals: [ai, bi, aip, bip],
+            scales: [sai, sbi, saip, sbip],
+        } = x.airy_all(p, cc)?;
         Ok(match which {
             AiryWhich::Ai => (ai, sai),
             AiryWhich::Bi => (bi, sbi),
@@ -168,15 +171,17 @@ impl ExactNumNumber {
     }
 
     /// Ai, Bi, Ai', Bi' and, for each, the size of the terms it is combined from.
-    #[allow(clippy::type_complexity)]
-    fn airy_all(&self, p: usize, cc: &mut Consts) -> Result<([Self; 4], [Self; 4]), Error> {
+    fn airy_all(&self, p: usize, cc: &mut Consts) -> Result<AiryParts, Error> {
         let (c1, c2, sqrt3) = airy_cs(p, cc)?;
         if self.is_zero() {
             let bi0 = sqrt3.mul(&c1, p, RoundingMode::None)?;
             let aip0 = c2.neg()?;
             let bip0 = sqrt3.mul(&c2, p, RoundingMode::None)?;
             let scales = [c1.clone()?, bi0.clone()?, aip0.clone()?, bip0.clone()?];
-            return Ok(([c1, bi0, aip0, bip0], scales));
+            return Ok(AiryParts {
+                vals: [c1, bi0, aip0, bip0],
+                scales,
+            });
         }
         // The asymptotic expansions stop at a smallest term of about e^{-2ξ}, ξ = (2/3)|x|^{3/2};
         // use them only once that is below 2^-p. Otherwise sum the Taylor pair, whose terms
@@ -186,15 +191,18 @@ impl ExactNumNumber {
         let xi_bits = if xi.exponent() >= 24 { None } else { Some(xi.int_as_usize()?) };
         if let Some(xi_n) = xi_bits.filter(|&n| n < (p + 16) * 7 / 20) {
             let pw = p + round_p(3 * (xi_n + 1)) + WORD_BIT_SIZE;
-            let (c1, c2, sqrt3) = airy_cs(pw, cc)?;
-            let (f, g, fp, gp) = self.airy_fg_series(pw)?;
-            return combine_fg(&c1, &c2, &sqrt3, &f, &g, &fp, &gp, pw);
+            let cs = airy_cs(pw, cc)?;
+            let fg = self.airy_fg_series(pw)?;
+            return combine_fg(&cs, &fg, pw);
         }
         if self.is_positive() {
             // Every term has the sign of the leading one: no cancellation.
             let (ai, bi, aip, bip) = self.airy_asymp_pos(p, cc)?;
             let scales = [ai.clone()?, bi.clone()?, aip.clone()?, bip.clone()?];
-            Ok(([ai, bi, aip, bip], scales))
+            Ok(AiryParts {
+                vals: [ai, bi, aip, bip],
+                scales,
+            })
         } else {
             self.airy_asymp_neg(p, cc)
         }
@@ -330,8 +338,7 @@ impl ExactNumNumber {
         }
     }
 
-    #[allow(clippy::type_complexity)]
-    fn airy_asymp_neg(&self, p: usize, cc: &mut Consts) -> Result<([Self; 4], [Self; 4]), Error> {
+    fn airy_asymp_neg(&self, p: usize, cc: &mut Consts) -> Result<AiryParts, Error> {
         let z = self.with_sign(Sign::Pos)?;
         let (zeta_p, z14, z_m14, pi_m12) = z.airy_xi_scales(p, cc)?;
         // The phase χ = ζ + π/4 enters sin/cos with an absolute error, so ζ = (2/3) z^{3/2} and
@@ -393,7 +400,10 @@ impl ExactNumNumber {
         // Each value is amp·(±sin χ P ± cos χ Q) with |P|, |Q| ≤ 1-ish: the term size is the
         // prefactor; near a zero of the combination the loss is measured against it.
         let scales = [amp.clone()?, amp, amp_p.clone()?, amp_p];
-        Ok(([ai, bi, aip, bip], scales))
+        Ok(AiryParts {
+            vals: [ai, bi, aip, bip],
+            scales,
+        })
     }
 
     /// \(\xi=(2/3)x^{3/2}\), \(x^{1/4}\), \(x^{-1/4}\), \(\pi^{-1/2}\) for \(x>0\).
@@ -464,17 +474,27 @@ fn airy_cs(
     Ok((c1, c2, sqrt3))
 }
 
-#[allow(clippy::type_complexity)]
+/// Ai, Bi, Ai', Bi' (`vals`) and, for each, the size of the terms it was combined from
+/// (`scales`), in that order.
+struct AiryParts {
+    vals: [ExactNumNumber; 4],
+    scales: [ExactNumNumber; 4],
+}
+
+/// Ai = c1 f − c2 g, Bi = √3 (c1 f + c2 g) and the primes, from `cs` = (c1, c2, √3) and
+/// `fg` = (f, g, f', g').
 fn combine_fg(
-    c1: &ExactNumNumber,
-    c2: &ExactNumNumber,
-    sqrt3: &ExactNumNumber,
-    f: &ExactNumNumber,
-    g: &ExactNumNumber,
-    fp: &ExactNumNumber,
-    gp: &ExactNumNumber,
+    cs: &(ExactNumNumber, ExactNumNumber, ExactNumNumber),
+    fg: &(
+        ExactNumNumber,
+        ExactNumNumber,
+        ExactNumNumber,
+        ExactNumNumber,
+    ),
     p: usize,
-) -> Result<([ExactNumNumber; 4], [ExactNumNumber; 4]), Error> {
+) -> Result<AiryParts, Error> {
+    let (c1, c2, sqrt3) = cs;
+    let (f, g, fp, gp) = fg;
     let c1f = c1.mul(f, p, RoundingMode::None)?;
     let c2g = c2.mul(g, p, RoundingMode::None)?;
     let c1fp = c1.mul(fp, p, RoundingMode::None)?;
@@ -504,7 +524,10 @@ fn combine_fg(
     let s_fp = big(&c1fp, &c2gp)?;
     let s_bi = sqrt3.mul(&s_f, p, RoundingMode::None)?;
     let s_bip = sqrt3.mul(&s_fp, p, RoundingMode::None)?;
-    Ok(([ai, bi, aip, bip], [s_f, s_bi, s_fp, s_bip]))
+    Ok(AiryParts {
+        vals: [ai, bi, aip, bip],
+        scales: [s_f, s_bi, s_fp, s_bip],
+    })
 }
 
 /// \(\sum u_k\xi^{-k}\) and \(\sum v_k\xi^{-k}\). `alt` applies \((-1)^k\).
