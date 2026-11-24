@@ -13,8 +13,9 @@ FAILS on (file:line [form] text), every git-tracked file, all crates, tests/, be
   [unsafe]              the token `unsafe` in code, anywhere except the known-pending inventory below
   [cargo-lint]          any `[lints.*]` / `[workspace.lints.*]` entry of any Cargo.toml at level "allow" or "warn"
                         (string or `{ level = .. }` form)
-  [clippy-config]       any clippy.toml / .clippy.toml key that relaxes a lint by a number: `*-threshold`, `max-*`,
-                        `*-limit` (e.g. too-many-arguments-threshold, max-fn-params-bools, type-complexity-threshold)
+  [clippy-config]       any clippy.toml / .clippy.toml key except the `disallowed-*` lists: thresholds (`*-threshold`,
+                        `max-*`, `*-limit`), the boolean `allow-*-in-tests` escapes, msrv, anything (clippy.toml stays at
+                        clippy's defaults, Jeff 2026-11-24 1:17 PM CT; Spence R2 on 0a1cb6c). An unparsable file fails too.
   [lint-flag]           `-A <lint>`, `-A<lint>`, `--allow`, `--cap-lints` passed to rustc/cargo/clippy (RUSTFLAGS,
                         RUSTDOCFLAGS, cargo or clippy command lines) in scripts/, tools/, .github/, .githooks/, .cargo/
                         and top-level shell/make/just files; `.cargo/config*` rustflags arrays holding "-A"/"--cap-lints"
@@ -193,10 +194,18 @@ def main(argv):
             if "package" in doc:
                 pkgs.append((os.path.dirname(f), doc))
         elif base in ("clippy.toml", ".clippy.toml"):
-            for k, l in enumerate(open(p, encoding="utf-8").read().split("\n"), 1):
-                m = re.match(r"\s*([A-Za-z0-9_-]+)\s*=", l)
-                if m and re.search(r"(threshold$|^max-|-limit$)", m.group(1)):
-                    find(f, k, "clippy-config", l.strip())
+            txt = open(p, encoding="utf-8").read()
+            try:
+                keys = list(tomllib.loads(txt))
+            except tomllib.TOMLDecodeError as e:
+                find(f, 0, "clippy-config", f"unparsable clippy config: {e}"); keys = []
+            lines_ = txt.split("\n")
+            for key in keys:
+                if key.startswith("disallowed-"):
+                    continue
+                pat = re.compile(r"\s*(\[+\s*)?[\"']?" + re.escape(key) + r"[\"']?\s*(=|\.|\])")
+                ln = next((i + 1 for i, t in enumerate(lines_) if pat.match(t)), 0)
+                find(f, ln, "clippy-config", lines_[ln - 1].strip() if ln else key)
         if f in SELF or f.endswith(".rs"):
             continue
         if FLAG_FILE.search(f):

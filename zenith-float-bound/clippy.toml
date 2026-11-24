@@ -1,8 +1,6 @@
 # zenith-float-bound clippy config. Jeff's rules apply to test code too: no unwrap/expect/panic/indexing escape in tests.
-allow-unwrap-in-tests = false
-allow-expect-in-tests = false
-allow-panic-in-tests = false
-allow-indexing-slicing-in-tests = false
+# Those allow-*-in-tests keys are false by clippy's default, so none is set: every key except the disallowed-* lists is a
+# tools/no_suppress_scan.py [clippy-config] finding (Spence R2 on 0a1cb6c).
 
 # Portable integer code only (same entries as zenith-float's clippy.toml).
 disallowed-macros = [
