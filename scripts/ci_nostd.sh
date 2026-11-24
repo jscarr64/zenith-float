@@ -3,8 +3,9 @@
 #
 # 1. The library builds with --no-default-features for bare-metal 64-bit targets (no std at all):
 #    x86_64-unknown-none and aarch64-unknown-none.
-# 2. nostd-tests (a #![no_std] crate: core + alloc only) runs the mpmath reference cases on the host as a
-#    #![no_std]/#![no_main] binary linking only libc. It exits non-zero if any case misses its bit target.
+# 2. nostd-tests (a #![no_std] crate: core + alloc only) runs the mpmath reference cases on the host through the
+#    safe nostd-host binary (std only for allocator, output and exit status; no unsafe, Jeff 2026-11-24 4:40 PM CT
+#    item 6). It exits non-zero if any case misses its bit target. Step 1 is what proves no std is linked.
 # The former thumbv7em-none-eabihf (32-bit) builds and its QEMU runner were removed with the 32-bit targets.
 #
 # Needs: rustup targets x86_64-unknown-none and aarch64-unknown-none.
@@ -22,6 +23,6 @@ for t in x86_64-unknown-none aarch64-unknown-none; do
 done
 
 cd nostd-tests
-echo "== nostd-host (x86_64-unknown-linux-gnu, #![no_std] + libc)"
+echo "== nostd-host (x86_64-unknown-linux-gnu; #![no_std] cases, safe std runner)"
 cargo build --release --features host --bin nostd-host
 "${CARGO_TARGET_DIR:-target}/release/nostd-host"

@@ -5,8 +5,8 @@
 //! [`cases`] carry mpmath references; [`run`] evaluates each one and reports the number of
 //! correct bits through a caller-supplied sink. One runner uses it:
 //!
-//! - `nostd-host`: a `#![no_std]` / `#![no_main]` binary for hosted Linux targets that links only
-//!   libc (allocator via `malloc`, output via `write`).
+//! - `nostd-host`: a safe hosted binary (`std` for allocator, output and exit status only); the cases and
+//!   the library stay `#![no_std]`, and `scripts/ci_nostd.sh` builds the libraries for bare-metal targets.
 //!
 //! The former bare-metal `nostd-qemu` runner (thumbv7em-none-eabihf, Cortex-M4F, 32-bit limbs) was
 //! removed: zenith-float 2.0 is 64-bit only (P6/P8; Jeff 2026-11-10 "Yes 64 bit only please").

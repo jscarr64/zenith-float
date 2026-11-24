@@ -41,7 +41,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 
 `no_std` is supported when a global allocator is available (`default-features = false`). Formatting traits require `std`.
 
-`no_std` is **built and tested**. zenith-float 2.0 is **64-bit only** (P6/P8; Jeff 2026-11-10 "Yes 64 bit only please"): every crate root has `compile_error!` for a target whose pointer width is not 64. `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features` for `x86_64-unknown-none` and `aarch64-unknown-none`, then runs the `nostd-tests` harness, a `#![no_std]` crate (core + alloc only) with 77 mpmath reference cases, as a `#![no_std]`/`#![no_main]` binary on x86_64 Linux that links only libc. It passes 77/77. The former 32-bit runs (bare-metal `thumbv7em-none-eabihf` under QEMU, i686, wasm32) were dropped. There is no separate `alloc` feature: `alloc` is always required.
+`no_std` is **built and tested**. zenith-float 2.0 is **64-bit only** (P6/P8; Jeff 2026-11-10 "Yes 64 bit only please"): every crate root has `compile_error!` for a target whose pointer width is not 64. `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features` for `x86_64-unknown-none` and `aarch64-unknown-none`, then runs the `nostd-tests` harness, a `#![no_std]` crate (core + alloc only) with 77 mpmath reference cases, through a safe hosted runner on x86_64 Linux (no `unsafe`; the bare-metal builds are what prove no `std` is linked). It passes 77/77. The former 32-bit runs (bare-metal `thumbv7em-none-eabihf` under QEMU, i686, wasm32) were dropped. There is no separate `alloc` feature: `alloc` is always required.
 
 ---
 

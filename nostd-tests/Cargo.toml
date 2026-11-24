@@ -19,7 +19,7 @@ bench = false
 zenith-float-num = { path = "../zenith-float-num", default-features = false }
 
 [features]
-# Hosted Linux runner (libc only).
+# Hosted runner (the nostd-host binary; uses std only for allocator, output and exit status).
 host = []
 
 [[bin]]

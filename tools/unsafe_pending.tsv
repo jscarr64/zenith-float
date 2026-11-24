@@ -1,6 +1,5 @@
 # Known-pending unsafe (test-only), removed in a separate step (Jeff 2026-11-24 1:17 PM CT: "unsafe tests as a separate step after").
 # path<TAB>count<TAB>note. Read by tools/no_suppress_scan.py: each count is EXACT (no growth, no stale pin); lines only ever leave this file.
-nostd-tests/src/bin/nostd-host.rs	5	no_std libc host runner (GlobalAlloc, write, _exit)
 zenith-float-num/tests/mpfr/all_modes_jacobi_airy.rs	7	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
 zenith-float-num/tests/mpfr/common.rs	48	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
 zenith-float-num/tests/mpfr/compare_complex_test.rs	10	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
