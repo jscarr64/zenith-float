@@ -25,6 +25,9 @@ REMOVED="rust-toolchain.toml .github/CODEOWNERS"
 REMOVED="$REMOVED .gitignore tests/goldens/slices/.gitignore"
 # Retired in d15bb37 (order 3, MAX_PRECISION one zf definition): the bound precision mutants 117-123 have no code left to mutate.
 REMOVED="$REMOVED $(printf 'tools/mutants/%s.patch ' 117-P-min2 118-P-min0 119-P-maxsub 120-P-maxsub2 121-P-shl61 122-P-shl59 123-P-cmp)"
+# Renamed in 832a5f1 (Jeff 2026-11-23 07:43 CT, ROOT-CAUSE.md: one library scanner): the bound layer's rules_scan.* are
+# zenith-float-bound/tools/bound_layer_scan.*.
+REMOVED="$REMOVED tools/rules_scan.py tools/rules_scan.sh tools/rules_scan_selftest.sh"
 HEAD_SHA=$(git rev-parse HEAD) || exit 2
 NO_BUILD=${FOLD_PR1_NO_BUILD:-0}
 scratch=${FOLD_PR1_SCRATCH:-$HOME/.cache/zenith-float/fold-pr1}
@@ -210,7 +213,9 @@ lockfacts() {
 }
 # S: Cargo.lock differs from BASE by exactly the fold (zenith-float-bound and its two dependency edges) and the rustix
 # 1.1.4 -> 1.1.6 bump of b0afcb1 (RUSTSEC-2026-0486). That bump drops windows-sys 0.61.2, so the windows-sys edges lose
-# their version suffix (only 0.60.2 is left) and windows-sys's own windows-link edge goes with it.
+# their version suffix (only 0.60.2 is left) and windows-sys's own windows-link edge goes with it. Plus the shared test
+# helper crate of 86c2d32 (Jeff 2026-11-24 1:17 PM CT r3-noallow): zenith-float-testkit and its dev-dependency edges
+# from zenith-float and zenith-float-num.
 check_S() {
   local added removed want_added want_removed
   git show "$BASE:Cargo.lock" | lockfacts > "$work/lock.base" || return 1
@@ -220,6 +225,7 @@ check_S() {
   local reg=registry+https://github.com/rust-lang/crates.io-index ws
   want_added=$( {
     printf '%s\n' "D zenith-float $PFX" "D $PFX zenith-float-num" "P $PFX 2.0.0 -" "P rustix 1.1.6 $reg"
+    printf '%s\n' "P zenith-float-testkit 2.0.0 -" "D zenith-float zenith-float-testkit" "D zenith-float-num zenith-float-testkit"
     for ws in anstyle-query anstyle-wincon errno gmp-mpfr-sys is-terminal rustix tempfile winapi-util; do echo "D $ws windows-sys"; done
   } | sort)
   want_removed=$( {
