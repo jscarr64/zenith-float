@@ -6,6 +6,11 @@
 //! a panic or a timeout is a failure. `ORACLE_FAILS` raises the number of
 //! mismatches printed (the default is 12).
 
+// Per-row wall-clock limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the
+// library (test_time::wait_row).
+#[allow(dead_code)]
+#[path = "../src/test_time.rs"]
+mod test_time;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc;
 use std::thread;
@@ -397,7 +402,7 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             let result = catch_unwind(AssertUnwindSafe(|| eval_row(&row_for_thread)));
             let _ = tx.send(result);
         });
-        let outcome = match rx.recv_timeout(CASE_BUDGET) {
+        let outcome = match test_time::wait_row(&rx, CASE_BUDGET) {
             Ok(Ok(Ok(got))) => {
                 if got == expect {
                     None
@@ -410,6 +415,9 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             }
             Ok(Ok(Err(err))) => Some(format!("{name}:{} {id}: {err}", idx + 1)),
             Ok(Err(_)) => Some(format!("{name}:{} {id}: panic", idx + 1)),
+            Err(test_time::RowWait::Hang) => {
+                Some(format!("{name}:{} {id}: hang watchdog (debug)", idx + 1))
+            }
             Err(_) => Some(format!("{name}:{} {id}: timeout", idx + 1)),
         };
         if let Some(msg) = outcome {

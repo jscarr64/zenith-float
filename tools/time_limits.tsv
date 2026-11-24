@@ -30,6 +30,7 @@ zenith-float-num/src/ode.rs	ode_max_ms	90000	1
 zenith-float-num/src/ode.rs	within_ms	2000	2
 zenith-float-num/src/ode.rs	within_ms	5000	1
 zenith-float-num/src/ops/special.rs	secs	60	1
+zenith-float-num/src/test_time.rs	debug_watchdog_x	10	1
 zenith-float-num/tests/c2f1_log_mpmath.rs	secs	60	1
 zenith-float-num/tests/oracle.rs	secs	2	1
 zenith-float-num/tests/r9_overflow_golds.rs	secs	30	1
@@ -38,5 +39,4 @@ zenith-float-num/tests/s9_specials_golds.rs	secs	10	1
 zenith-float-num/tests/s9_specials_golds.rs	secs	120	2
 zenith-float-num/tests/s9_specials_golds.rs	secs	1206	1
 zenith-float-num/tests/s9_specials_golds.rs	secs	900	1
-zenith-float-num/tests/specials_oracle.rs	debug_budget_x	10	1
 zenith-float-num/tests/specials_oracle.rs	secs	2	1

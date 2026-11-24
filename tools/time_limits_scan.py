@@ -14,6 +14,7 @@ ROOT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(os.
 # The helper itself (its unit tests use literal durations as test data, not budgets).
 SKIP = {"zenith-float-num/src/test_time.rs"}
 DIRS = ("zenith-float-num/src", "zenith-float-num/tests", "tests")
+WATCHDOG_FACTOR = re.compile(r"const DEBUG_WATCHDOG_FACTOR: u32 = (\d+);")
 PATTERNS = [
     ("secs", re.compile(r"Duration::from_secs\(\s*([\d_]+)\s*\)")),
     ("millis", re.compile(r"Duration::from_millis\(\s*([\d_]+)\s*\)")),
@@ -34,6 +35,9 @@ def main() -> int:
                 path = os.path.join(dirpath, f)
                 rel = os.path.relpath(path, ROOT)
                 if rel in SKIP:
+                    # only the shared debug hang-watchdog factor (Spence R1 on 82e4afb: was specials_oracle's 10x)
+                    for m in WATCHDOG_FACTOR.finditer(open(path, encoding="utf-8").read()):
+                        counts[(rel, "debug_watchdog_x", m.group(1))] += 1
                     continue
                 text = open(path, encoding="utf-8").read()
                 for kind, rx in PATTERNS:

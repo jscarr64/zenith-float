@@ -7,6 +7,11 @@
 //! allowed. `WorkingPrecision` uses the class budget. `Unspecified` checks
 //! the domain, the sign, and two decimal digits.
 
+// Per-row wall-clock limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the
+// library (test_time::wait_row).
+#[allow(dead_code)]
+#[path = "../src/test_time.rs"]
+mod test_time;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc;
 use std::thread;
@@ -716,10 +721,7 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
         let budget = row
             .get("budget_s")
             .and_then(|v| v.as_u64())
-            .map_or(Duration::from_secs(2), Duration::from_secs)
-            // Budgets are for optimised builds; an unoptimised build that shares the machine
-            // with the rest of the workspace tests runs several times slower.
-            .saturating_mul(if cfg!(debug_assertions) { 10 } else { 1 });
+            .map_or(Duration::from_secs(2), Duration::from_secs);
         let expect = expect_of(row.get("expect").unwrap_or(&serde_json::Value::Null));
         let (tx, rx) = mpsc::channel();
         let row_for_thread = row.clone();
@@ -727,13 +729,18 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             let result = catch_unwind(AssertUnwindSafe(|| eval_row(&row_for_thread)));
             let _ = tx.send(result);
         });
-        let outcome = match rx.recv_timeout(budget) {
+        // Release step: the row fails at `budget`. Debug: not a limit; the hang watchdog is budget x 10
+        // (test_time::DEBUG_WATCHDOG_FACTOR, the factor this file used for debug rows).
+        let outcome = match test_time::wait_row(&rx, budget) {
             Ok(Ok(Ok(got))) => match verdict(&got, &expect, &row) {
                 Ok(()) => None,
                 Err(why) => Some(format!("{name}:{line_no} {id}: {why}")),
             },
             Ok(Ok(Err(err))) => Some(format!("{name}:{line_no} {id}: {err}")),
             Ok(Err(_)) => Some(format!("{name}:{line_no} {id}: panic")),
+            Err(test_time::RowWait::Hang) => {
+                Some(format!("{name}:{line_no} {id}: hang watchdog (debug)"))
+            }
             Err(_) => Some(format!("{name}:{line_no} {id}: timeout")),
         };
         if let Some(msg) = outcome {

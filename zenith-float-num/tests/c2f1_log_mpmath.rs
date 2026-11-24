@@ -4,6 +4,11 @@
 //! printed to p·log10(2)+12 digits). The first 1.0.5 candidate returned NaN for 34 of these
 //! 54 cases.
 
+// Per-row wall-clock limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the
+// library (test_time::wait_row).
+#[allow(dead_code)]
+#[path = "../src/test_time.rs"]
+mod test_time;
 use core::ops::Neg;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, Radix, RoundingMode};
 
@@ -140,13 +145,9 @@ fn log_case_negative_m_near_one_returns() -> Result<(), Box<dyn std::error::Erro
         };
         let _sent = tx.send(run());
     });
-    let got = rx
-        .recv_timeout(std::time::Duration::from_secs(60))
-        .map_err(|e| {
-            format!(
-                "2F1(-0.25+i, 2.5-0.5i; 0.25+0.5i; 0.9999999-1e-7i) did not return in 60 s: {e}"
-            )
-        })??;
+    let got = test_time::wait_row(&rx, std::time::Duration::from_secs(60)).map_err(|e| {
+        format!("2F1(-0.25+i, 2.5-0.5i; 0.25+0.5i; 0.9999999-1e-7i) did not return in 60 s: {e:?}")
+    })??;
     assert!(!got.is_nan(), "NaN");
     Ok(())
 }

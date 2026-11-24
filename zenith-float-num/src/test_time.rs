@@ -97,9 +97,91 @@ pub(crate) fn within_ms(elapsed_ms: u128, native_ms: u64) -> bool {
     )
 }
 
+/// A debug build waits this many times a row's release limit before it calls the row hung: the factor
+/// `tests/specials_oracle.rs` already gave its unoptimised rows, now shared (pinned in tools/time_limits.tsv).
+pub(crate) const DEBUG_WATCHDOG_FACTOR: u32 = 10;
+
+/// Why a row's result did not arrive.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RowWait {
+    /// Release step: the row missed its wall-clock limit.
+    Limit,
+    /// Debug build: no result after the hang watchdog (`limit` x [`DEBUG_WATCHDOG_FACTOR`]).
+    Hang,
+    /// The worker stopped without sending.
+    Gone,
+}
+
+/// Waits for one row's result. Release step: the row fails at `limit`, as before ([`RowWait::Limit`]). Debug
+/// build: the limit is not enforced (Jeff 2026-11-23 23:04 CT); the wait stops only at the hang watchdog
+/// `limit` x [`DEBUG_WATCHDOG_FACTOR`] ([`RowWait::Hang`]), so a slow row still has its result checked.
+pub(crate) fn wait_row<T>(
+    rx: &std::sync::mpsc::Receiver<T>,
+    limit: Duration,
+) -> Result<T, RowWait> {
+    use std::sync::mpsc::RecvTimeoutError;
+    let (wait, missed) = if LIMITS_ENFORCED {
+        (limit, RowWait::Limit)
+    } else {
+        (limit.saturating_mul(DEBUG_WATCHDOG_FACTOR), RowWait::Hang)
+    };
+    rx.recv_timeout(wait).map_err(|e| match e {
+        RecvTimeoutError::Timeout => missed,
+        RecvTimeoutError::Disconnected => RowWait::Gone,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A row that takes 3x its limit fails in the release step only; in a debug build its result arrives and
+    /// is checked. A row that never answers is a hang in both (debug: at the watchdog). Spence R1 on 82e4afb.
+    #[test]
+    fn slow_row_fails_its_limit_in_release_only() {
+        let limit = Duration::from_millis(20);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let slow = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            let _sent = tx.send(7u8);
+        });
+        let got = wait_row(&rx, limit);
+        let _joined = slow.join();
+        if LIMITS_ENFORCED {
+            assert_eq!(
+                got,
+                Err(RowWait::Limit),
+                "release: a slow row must miss its limit"
+            );
+        } else {
+            assert_eq!(
+                got,
+                Ok(7),
+                "debug: a slow row is not a failure; its result must arrive"
+            );
+        }
+        let (keep, rx) = std::sync::mpsc::channel::<u8>();
+        let start = std::time::Instant::now();
+        let hung = wait_row(&rx, Duration::from_millis(5));
+        let waited = start.elapsed();
+        drop(keep);
+        if LIMITS_ENFORCED {
+            assert_eq!(hung, Err(RowWait::Limit));
+        } else {
+            assert_eq!(
+                hung,
+                Err(RowWait::Hang),
+                "debug: no answer is a hang at the watchdog"
+            );
+            assert!(
+                waited >= Duration::from_millis(50),
+                "debug watchdog is 10 x the limit, waited {waited:?}"
+            );
+        }
+        let (gone, rx) = std::sync::mpsc::channel::<u8>();
+        drop(gone);
+        assert_eq!(wait_row(&rx, limit), Err(RowWait::Gone));
+    }
 
     #[test]
     fn factor_grammar_and_scaling() -> Result<(), String> {
