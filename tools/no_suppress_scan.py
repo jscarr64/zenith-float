@@ -30,7 +30,8 @@ tests under zenith-float-num/tests/mpfr/ and nostd-tests/src/bin/nostd-host.rs).
 its count and the total. A pending file must hold EXACTLY its pinned count: more fails (it cannot grow), fewer fails too
 (lower the pin in the same commit, so it cannot grow back). A library file (a crate's src/ outside nostd-tests) can never
 be pending, and an unsafe line in any file not on the list fails. A pending bin root is exempt from [no-forbid] only
-while it is listed. Only lines can leave this file; nothing is ever added to it.
+while it is listed. Only lines can leave this file; nothing is ever added to it: [pending-grew] fails any version (in git
+history from HEAD, then the working tree) that lists a file its previous version did not, or a higher pin (Spence m2).
 
 Test: tools/no_suppress_selftest.sh (fixture repos: each planted form fails by name, doc comments included; plain comments,
   strings, raw strings,
@@ -166,6 +167,40 @@ FLAG_CTX = re.compile(r"RUSTFLAGS|RUSTDOCFLAGS|\bcargo\b|\bclippy\b|\brustc\b|ru
 FLAG = re.compile(r"(?<![\w-])(-A\s*[\"']?[a-z_]+(?:::[a-z_]+)?\b|--allow\b|--cap-lints\b)")
 
 
+def parse_pending(text):
+    """path -> pin from unsafe_pending.tsv text (malformed lines are reported by main, skipped here)."""
+    out = {}
+    for l in text.split("\n"):
+        t = l.split("\t")
+        if l.strip() and not l.lstrip().startswith("#") and len(t) >= 3 and t[1].isdigit():
+            out[t[0]] = int(t[1])
+    return out
+
+
+def pending_history(root, current):
+    """Spence m2: the inventory only shrinks. Every version of PENDING_FILE in git history (oldest first, topo order,
+    from HEAD), then the working tree; each version after the first may hold only files of the version before it, at a
+    pin no higher. Returns findings. Outside a git repo or with no history: [] (the exact-pin checks still run)."""
+    try:
+        revs = subprocess.run(["git", "-C", root, "log", "--reverse", "--topo-order", "--format=%H", "--", PENDING_FILE],
+                              check=True, capture_output=True, text=True).stdout.split()
+    except (subprocess.CalledProcessError, OSError):
+        return []
+    versions = []
+    for c in revs:
+        g = subprocess.run(["git", "-C", root, "show", f"{c}:{PENDING_FILE}"], capture_output=True, text=True)
+        versions.append((c[:10], parse_pending(g.stdout) if g.returncode == 0 else {}))
+    versions.append(("working tree", current))
+    out = []
+    for (_, prev), (c, cur) in zip(versions, versions[1:]):
+        for f, n in sorted(cur.items()):
+            if f not in prev:
+                out.append(f"{f} [pending-grew] new file in {PENDING_FILE} at {c}: the inventory only shrinks")
+            elif n > prev[f]:
+                out.append(f"{f} [pending-grew] pin {prev[f]} -> {n} at {c}: the inventory only shrinks")
+    return out
+
+
 def main(argv):
     root = None
     if "--root" in argv:
@@ -192,6 +227,7 @@ def main(argv):
                 findings.append(f"{PENDING_FILE}:{k} [pending] malformed (want path<TAB>count<TAB>note): {l[:120]}")
                 continue
             pending[t[0]] = int(t[1])
+    findings += pending_history(root, pending)
     for f in pending:
         if is_lib(f):
             findings.append(f"{PENDING_FILE}: {f} [pending] is a library file: library unsafe is never pending")

@@ -53,6 +53,11 @@ case_ fail "unsafe in a test file not on the pending list" "printf 'fn v() { uns
 case_ pass "unsafe in a pinned pending file at its count" "printf 'fn v() { unsafe {} }\nfn w() { unsafe {} }\n' > tests/m.rs && printf 'tests/m.rs\t2\tmpfr FFI\n' >> tools/unsafe_pending.tsv"
 case_ fail "pending file grew" "printf 'fn v() { unsafe {} }\nfn w() { unsafe {} }\n' > tests/m.rs && printf 'tests/m.rs\t1\tmpfr FFI\n' >> tools/unsafe_pending.tsv" 'tests/m.rs: 2 unsafe, pinned 1'
 case_ fail "pending pin stale (count went down)" "printf 'fn v() { unsafe {} }\n' > tests/m.rs && printf 'tests/m.rs\t2\tmpfr FFI\n' >> tools/unsafe_pending.tsv" 'tests/m.rs: 1 unsafe, pinned 2'
+# Spence m2 on 0a1cb6c: the pending inventory only shrinks over history: no new file, no higher pin, in any later version
+B0='git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm base'
+case_ fail "pending: a later commit adds a new file" "printf 'fn v() { unsafe {} }\n' > tests/m.rs && printf 'tests/m.rs\t1\tmpfr FFI\n' >> tools/unsafe_pending.tsv && $B0 && printf 'fn n() { unsafe {} }\n' > tests/n.rs && printf 'tests/n.rs\t1\tnew\n' >> tools/unsafe_pending.tsv" 'tests/n.rs \[pending-grew\] new file'
+case_ fail "pending: a later commit raises a pin" "printf 'fn v() { unsafe {} }\n' > tests/m.rs && printf 'tests/m.rs\t1\tmpfr FFI\n' >> tools/unsafe_pending.tsv && $B0 && printf 'fn v() { unsafe {} }\nfn w() { unsafe {} }\n' > tests/m.rs && sed -i 's/^tests.m.rs\t1/tests\/m.rs\t2/' tools/unsafe_pending.tsv" 'tests/m.rs \[pending-grew\] pin 1 -> 2'
+case_ pass "pending: a later commit lowers a pin" "printf 'fn v() { unsafe {} }\nfn w() { unsafe {} }\n' > tests/m.rs && printf 'tests/m.rs\t2\tmpfr FFI\n' >> tools/unsafe_pending.tsv && $B0 && printf 'fn v() { unsafe {} }\n' > tests/m.rs && sed -i 's/^tests.m.rs\t2/tests\/m.rs\t1/' tools/unsafe_pending.tsv"
 case_ fail "pending entry for a library file" "printf 'pub fn u() { unsafe {} }\n' >> $L && printf '$L\t1\tno\n' >> tools/unsafe_pending.tsv" 'library file.*never pending'
 case_ fail "Cargo [lints] allow" "printf '[lints.rust]\ndead_code = \"allow\"\n' >> Cargo.toml" 'Cargo.toml.*\[cargo-lint\] lints.rust.dead_code = allow'
 case_ fail "Cargo [workspace.lints] warn (table form)" "printf '[workspace.lints.clippy]\nx = { level = \"warn\", priority = 1 }\n' >> Cargo.toml" 'workspace.lints.clippy.x = warn'
