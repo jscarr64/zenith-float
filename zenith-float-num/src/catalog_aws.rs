@@ -2283,12 +2283,9 @@ fn anger_a_laplace(
 /// then J_k = e^{-zτ} τ^{k+1} S (termwise directed rounding).
 fn exp_uk_0_tau_series_k(
     k: usize,
-    ztau_dn: &ExactNum,
-    ztau_up: &ExactNum,
-    exp_dn: &ExactNum,
-    exp_up: &ExactNum,
-    tau_pow_dn: &ExactNum,
-    tau_pow_up: &ExactNum,
+    [ztau_dn, ztau_up]: [&ExactNum; 2],
+    [exp_dn, exp_up]: [&ExactNum; 2],
+    [tau_pow_dn, tau_pow_up]: [&ExactNum; 2],
     target: &ExactNum,
     wp: usize,
 ) -> Option<(ExactNum, ExactNum)> {
@@ -2428,12 +2425,9 @@ fn exp_uk_0_tau(
         if got.is_none() {
             got = exp_uk_0_tau_series_k(
                 k,
-                &ztau_dn,
-                &ztau_up,
-                &exp_dn,
-                &exp_up,
-                &tau_pow_dn,
-                &tau_pow_up,
+                [&ztau_dn, &ztau_up],
+                [&exp_dn, &exp_up],
+                [&tau_pow_dn, &tau_pow_up],
                 &target,
                 wp,
             );

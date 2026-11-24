@@ -487,9 +487,7 @@ fn factorial_c(n: u32, p: usize) -> ExactComplex {
 /// Euler's transformation \(F(a,b;c;z)=(1-z)^{m}F(c-a,c-b;c;z)\) (then \(c-a'-b'=-m>0\)).
 /// Cancellation between the parts is measured and the sum re-evaluated with that many extra bits.
 fn transform_1mz_log(
-    a: &ExactComplex,
-    b: &ExactComplex,
-    c: &ExactComplex,
+    [a, b, c]: [&ExactComplex; 3],
     z: &ExactComplex,
     m: i32,
     p: usize,
@@ -590,15 +588,13 @@ fn transform_inv(
     let one = ExactComplex::one(p);
     let inv = one.div(z, p, rm());
     let mz = z.neg_via_mul();
-    let t1 = inv_term(a, b, c, &mz, &inv, p, cc, seen);
-    let t2 = inv_term(b, a, c, &mz, &inv, p, cc, seen);
+    let t1 = inv_term([a, b, c], &mz, &inv, p, cc, seen);
+    let t2 = inv_term([b, a, c], &mz, &inv, p, cc, seen);
     t1.add(&t2, p, rm())
 }
 
 fn inv_term(
-    a: &ExactComplex,
-    b: &ExactComplex,
-    c: &ExactComplex,
+    [a, b, c]: [&ExactComplex; 3],
     mz: &ExactComplex,
     inv: &ExactComplex,
     p: usize,
@@ -842,7 +838,7 @@ fn hypergeom_at(
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm());
         let near = matches!(omz.abs(p, rm()).compare(&half), Some(o) if o <= 0);
         if seen & (1 << 6) == 0 && (near || (abs_lt_one(&omz, p) && !abs_lt_one(z, p))) {
-            return transform_1mz_log(a, b, c, z, m, p, cc, seen | (1 << 6));
+            return transform_1mz_log([a, b, c], z, m, p, cc, seen | (1 << 6));
         }
     }
 

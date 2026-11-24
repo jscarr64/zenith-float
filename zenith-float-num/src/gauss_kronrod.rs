@@ -617,11 +617,8 @@ pub fn kronrod_pair(
 
 fn eval_panel<F>(
     f: &mut F,
-    a: &ExactNum,
-    b: &ExactNum,
-    nodes: &[ExactNum],
-    w_gauss: &[ExactNum],
-    w_kronrod: &[ExactNum],
+    [a, b]: [&ExactNum; 2],
+    [nodes, w_gauss, w_kronrod]: [&[ExactNum]; 3],
     p: usize,
     cc: &mut Consts,
 ) -> Result<(ExactNum, ExactNum), QuadratureError>
@@ -695,7 +692,7 @@ where
     let mut bb = b.clone();
     let _ = aa.set_precision(wrk, RoundingMode::None);
     let _ = bb.set_precision(wrk, RoundingMode::None);
-    let (k, g) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
+    let (k, g) = eval_panel(&mut f, [&aa, &bb], [&nodes, &w_gauss, &w_kronrod], wrk, cc)?;
     let err = ExactNum::sub_ref(&k, &g, wrk, RoundingMode::None).abs();
     if !finite(&k) || !finite(&g) || !finite(&err) {
         return Err(QuadratureError::NotConverged);
@@ -890,7 +887,7 @@ where
     let _ = aa.set_precision(wrk, RoundingMode::None);
     let _ = bb.set_precision(wrk, RoundingMode::None);
     let tol_work = tol_rel.rounded_to(wrk, RoundingMode::None);
-    let (k0, g0) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
+    let (k0, g0) = eval_panel(&mut f, [&aa, &bb], [&nodes, &w_gauss, &w_kronrod], wrk, cc)?;
     let err0 = ExactNum::sub_ref(&k0, &g0, wrk, RoundingMode::None).abs();
     let mut panels = vec![Panel {
         a: aa,
@@ -975,9 +972,19 @@ where
         if mid.compare(&left_a) != Some(1) || mid.compare(&right_b) != Some(-1) {
             return Err(QuadratureError::NotConverged);
         }
-        let (k1, g1) = eval_panel(&mut f, &left_a, &mid, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
+        let (k1, g1) = eval_panel(
+            &mut f,
+            [&left_a, &mid],
+            [&nodes, &w_gauss, &w_kronrod],
+            wrk,
+            cc,
+        )?;
         let (k2, g2) = eval_panel(
-            &mut f, &mid, &right_b, &nodes, &w_gauss, &w_kronrod, wrk, cc,
+            &mut f,
+            [&mid, &right_b],
+            [&nodes, &w_gauss, &w_kronrod],
+            wrk,
+            cc,
         )?;
         let e1 = ExactNum::sub_ref(&k1, &g1, wrk, RoundingMode::None).abs();
         let e2 = ExactNum::sub_ref(&k2, &g2, wrk, RoundingMode::None).abs();

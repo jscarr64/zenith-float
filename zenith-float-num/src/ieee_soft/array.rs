@@ -1676,8 +1676,7 @@ fn svd_householder(
 fn svd_apply_house_left(
     a: &mut [ExactNum],
     cols: usize,
-    row0: usize,
-    col0: usize,
+    [row0, col0]: [usize; 2],
     v: &[ExactNum],
     beta: &ExactNum,
     p: usize,
@@ -1704,10 +1703,8 @@ fn svd_apply_house_left(
 
 fn svd_apply_house_right(
     a: &mut [ExactNum],
-    rows: usize,
-    cols: usize,
-    row0: usize,
-    col0: usize,
+    [rows, cols]: [usize; 2],
+    [row0, col0]: [usize; 2],
     v: &[ExactNum],
     beta: &ExactNum,
     p: usize,
@@ -1751,12 +1748,9 @@ fn svd_rotg(
 
 fn svd_apply_givens_cols(
     mat: &mut [ExactNum],
-    rows: usize,
-    cols: usize,
-    j0: usize,
-    j1: usize,
-    cs: &ExactNum,
-    sn: &ExactNum,
+    [rows, cols]: [usize; 2],
+    [j0, j1]: [usize; 2],
+    [cs, sn]: [&ExactNum; 2],
     p: usize,
     rm: RoundingMode,
 ) {
@@ -1824,12 +1818,9 @@ fn svd_qr_sweep(
     e: &mut [ExactNum],
     u: &mut [ExactNum],
     v: &mut [ExactNum],
-    m: usize,
-    n: usize,
-    p_blk: usize,
-    q_blk: usize,
-    p: usize,
-    rm: RoundingMode,
+    [m, n]: [usize; 2],
+    [p_blk, q_blk]: [usize; 2],
+    (p, rm): (usize, RoundingMode),
 ) {
     let last = q_blk - 1;
     let e_prev = if last >= p_blk + 2 { e[last - 2].clone() } else { svd_zero(p) };
@@ -1850,7 +1841,7 @@ fn svd_qr_sweep(
         e[j] = ej.mul(&cs, p, rm).sub(&dj.mul(&sn, p, rm), p, rm);
         g = ExactNum::mul_ref(&sn, &dj1, p, rm);
         d[j + 1] = dj1.mul(&cs, p, rm);
-        svd_apply_givens_cols(v, n, n, j, j + 1, &cs, &sn, p, rm);
+        svd_apply_givens_cols(v, [n, n], [j, j + 1], [&cs, &sn], p, rm);
 
         let (cs, sn, r) = svd_rotg(&f, &g, p, rm);
         d[j] = r;
@@ -1863,7 +1854,7 @@ fn svd_qr_sweep(
             let old = core::mem::replace(&mut e[j + 1], svd_zero(p));
             e[j + 1] = old.mul(&cs, p, rm);
         }
-        svd_apply_givens_cols(u, m, m, j, j + 1, &cs, &sn, p, rm);
+        svd_apply_givens_cols(u, [m, m], [j, j + 1], [&cs, &sn], p, rm);
     }
     e[last - 1] = f;
 }
@@ -1873,8 +1864,7 @@ fn svd_zero_last_super(
     e: &mut [ExactNum],
     v: &mut [ExactNum],
     n: usize,
-    p_blk: usize,
-    q_blk: usize,
+    [p_blk, q_blk]: [usize; 2],
     p: usize,
     rm: RoundingMode,
 ) {
@@ -1884,7 +1874,7 @@ fn svd_zero_last_super(
     for j in (p_blk..k).rev() {
         let (cs, sn, t) = svd_rotg(&d[j], &f, p, rm);
         d[j] = t;
-        svd_apply_givens_cols(v, n, n, j, k, &cs, &sn, p, rm);
+        svd_apply_givens_cols(v, [n, n], [j, k], [&cs, &sn], p, rm);
         if j > p_blk {
             f = sn.neg().mul(&e[j - 1], p, rm);
             e[j - 1] = cs.mul(&e[j - 1], p, rm);
@@ -1897,8 +1887,7 @@ fn svd_zero_first_super(
     e: &mut [ExactNum],
     u: &mut [ExactNum],
     m: usize,
-    p_blk: usize,
-    q_blk: usize,
+    [p_blk, q_blk]: [usize; 2],
     p: usize,
     rm: RoundingMode,
 ) {
@@ -1907,7 +1896,7 @@ fn svd_zero_first_super(
     for j in (p_blk + 1)..q_blk {
         let (cs, sn, t) = svd_rotg(&d[j], &f, p, rm);
         d[j] = t;
-        svd_apply_givens_cols(u, m, m, p_blk, j, &cs, &sn, p, rm);
+        svd_apply_givens_cols(u, [m, m], [p_blk, j], [&cs, &sn], p, rm);
         if j + 1 < q_blk {
             f = sn.neg().mul(&e[j], p, rm);
             e[j] = cs.mul(&e[j], p, rm);
@@ -1959,14 +1948,14 @@ fn svd_decomp_tall(
     for k in 0..n {
         let x: Vec<ExactNum> = (k..m).map(|i| a[i * n + k].clone()).collect();
         if let Some((hv, beta)) = svd_householder(&x, p, rm) {
-            svd_apply_house_left(&mut a, n, k, k, &hv, &beta, p, rm);
-            svd_apply_house_right(&mut u, m, m, 0, k, &hv, &beta, p, rm);
+            svd_apply_house_left(&mut a, n, [k, k], &hv, &beta, p, rm);
+            svd_apply_house_right(&mut u, [m, m], [0, k], &hv, &beta, p, rm);
         }
         if k + 1 < n {
             let x: Vec<ExactNum> = ((k + 1)..n).map(|j| a[k * n + j].clone()).collect();
             if let Some((hv, beta)) = svd_householder(&x, p, rm) {
-                svd_apply_house_right(&mut a, m, n, k, k + 1, &hv, &beta, p, rm);
-                svd_apply_house_right(&mut v, n, n, 0, k + 1, &hv, &beta, p, rm);
+                svd_apply_house_right(&mut a, [m, n], [k, k + 1], &hv, &beta, p, rm);
+                svd_apply_house_right(&mut v, [n, n], [0, k + 1], &hv, &beta, p, rm);
             }
         }
     }
@@ -2025,9 +2014,9 @@ fn svd_decomp_tall(
             if svd_negligible(&d[i], &el, &er, p, rm) {
                 d[i] = svd_zero(p);
                 if i == q - 1 && i > p_blk {
-                    svd_zero_last_super(&mut d, &mut e, &mut v, n, p_blk, q, p, rm);
+                    svd_zero_last_super(&mut d, &mut e, &mut v, n, [p_blk, q], p, rm);
                 } else if i < q - 1 {
-                    svd_zero_first_super(&mut d, &mut e, &mut u, m, i, q, p, rm);
+                    svd_zero_first_super(&mut d, &mut e, &mut u, m, [i, q], p, rm);
                 }
                 did_split = true;
                 break;
@@ -2041,7 +2030,7 @@ fn svd_decomp_tall(
                 return None;
             }
         }
-        svd_qr_sweep(&mut d, &mut e, &mut u, &mut v, m, n, p_blk, q, p, rm);
+        svd_qr_sweep(&mut d, &mut e, &mut u, &mut v, [m, n], [p_blk, q], (p, rm));
     }
 
     for (i, di) in d.iter_mut().enumerate().take(n) {
@@ -2118,8 +2107,7 @@ fn eigen_qr_sweep(
     e: &mut [ExactNum],
     q: &mut [ExactNum],
     n: usize,
-    p_blk: usize,
-    q_blk: usize,
+    [p_blk, q_blk]: [usize; 2],
     p: usize,
     rm: RoundingMode,
 ) {
@@ -2152,7 +2140,7 @@ fn eigen_qr_sweep(
         e[k] = cs2
             .mul(&d1.sub(&d0, p, rm), p, rm)
             .add(&c2.sub(&s2, p, rm).mul(&ee, p, rm), p, rm);
-        svd_apply_givens_cols(q, n, n, k, k + 1, &cs, &sn, p, rm);
+        svd_apply_givens_cols(q, [n, n], [k, k + 1], [&cs, &sn], p, rm);
         if k + 1 < last {
             let ek1 = e[k + 1].clone();
             f = e[k].clone();
@@ -2173,9 +2161,9 @@ fn eigen_decomp_sym(
     for k in 0..n.saturating_sub(2) {
         let x: Vec<ExactNum> = ((k + 1)..n).map(|i| a[i * n + k].clone()).collect();
         if let Some((hv, beta)) = svd_householder(&x, p, rm) {
-            svd_apply_house_left(&mut a, n, k + 1, k, &hv, &beta, p, rm);
-            svd_apply_house_right(&mut a, n, n, 0, k + 1, &hv, &beta, p, rm);
-            svd_apply_house_right(&mut q, n, n, 0, k + 1, &hv, &beta, p, rm);
+            svd_apply_house_left(&mut a, n, [k + 1, k], &hv, &beta, p, rm);
+            svd_apply_house_right(&mut a, [n, n], [0, k + 1], &hv, &beta, p, rm);
+            svd_apply_house_right(&mut q, [n, n], [0, k + 1], &hv, &beta, p, rm);
         }
     }
     let mut d: Vec<ExactNum> = (0..n).map(|i| a[i * n + i].clone()).collect();
@@ -2229,7 +2217,7 @@ fn eigen_decomp_sym(
                 return None;
             }
         }
-        eigen_qr_sweep(&mut d, &mut e, &mut q, n, p_blk, q_blk, p, rm);
+        eigen_qr_sweep(&mut d, &mut e, &mut q, n, [p_blk, q_blk], p, rm);
     }
 
     for i in 0..n {

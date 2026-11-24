@@ -167,8 +167,7 @@ where
 
 fn isolate_positive<F>(
     mut f: F,
-    lo: &ExactNum,
-    hi: &ExactNum,
+    [lo, hi]: [&ExactNum; 2],
     want: usize,
     sqrt_grid: bool,
     p: usize,
@@ -540,8 +539,7 @@ fn gauss_laguerre_nodes(
     let hi = ExactNum::from_u32((4 * n + 4) as u32, wrk);
     let brackets = isolate_positive(
         |x, p, rm, _cc| x.laguerre(n, p, rm),
-        &zero,
-        &hi,
+        [&zero, &hi],
         n,
         true,
         wrk,
@@ -636,8 +634,7 @@ fn gauss_hermite_nodes(
     let want_pos = n / 2;
     let brackets = isolate_positive(
         |x, p, rm, _cc| x.hermite_h(n, p, rm),
-        &zero,
-        &hi,
+        [&zero, &hi],
         want_pos,
         false,
         wrk,
@@ -871,7 +868,7 @@ mod tests {
         };
         let lo = ExactNum::new(p);
         let hi = ExactNum::from_u8(1, p);
-        let brackets = isolate_positive(f, &lo, &hi, 5, false, p, rm, &mut cc)
+        let brackets = isolate_positive(f, [&lo, &hi], 5, false, p, rm, &mut cc)
             .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(brackets.len(), 5, "clustered roots were missed");
         Ok(())

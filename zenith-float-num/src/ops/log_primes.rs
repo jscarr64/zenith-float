@@ -1503,10 +1503,8 @@ fn mul_ui(a: &ExactInt, k: u64) -> ExactInt {
 
 /// Binary splitting of `Σ_{k=a}^{b-1} (±) u^{2k+1}/(2k+1)` with `u = p/q`.
 fn atan_bsplit(
-    p: &ExactInt,
-    q: &ExactInt,
-    p2: &ExactInt,
-    q2: &ExactInt,
+    [p, q]: [&ExactInt; 2],
+    [p2, q2]: [&ExactInt; 2],
     alternate: bool,
     a: i64,
     b: i64,
@@ -1526,8 +1524,8 @@ fn atan_bsplit(
         (p1, q1, r1)
     } else {
         let m = (a + b) / 2;
-        let (p1, q1, r1) = atan_bsplit(p, q, p2, q2, alternate, a, m, true);
-        let (p2b, q2b, r2) = atan_bsplit(p, q, p2, q2, alternate, m, b, cont);
+        let (p1, q1, r1) = atan_bsplit([p, q], [p2, q2], alternate, a, m, true);
+        let (p2b, q2b, r2) = atan_bsplit([p, q], [p2, q2], alternate, m, b, cont);
         let p_out = p1.mul(&q2b).add(&r1.mul(&p2b));
         let q_out = q1.mul(&q2b);
         let r_out = if cont { r1.mul(&r2) } else { ExactInt::zero() };
@@ -1560,7 +1558,7 @@ pub(crate) fn atan_frac_bsplit(
 
     let p2 = p.mul(p);
     let q2 = q.mul(q);
-    let (p_out, q_out, _r) = atan_bsplit(p, q, &p2, &q2, !hyperbolic, 0, nterms, false);
+    let (p_out, q_out, _r) = atan_bsplit([p, q], [&p2, &q2], !hyperbolic, 0, nterms, false);
     if q_out.is_zero() {
         return ExactNum::nan(Some(Error::InvalidArgument));
     }

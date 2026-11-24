@@ -1204,7 +1204,13 @@ impl ExactNumNumber {
                     // `1000...0` exp 1 under every mode).
                     if !y_is_int {
                         yint = Self::round_trip_adjust(
-                            self, yint, base, scale, p_out, rm, &bn, &bn1, &mut e,
+                            self,
+                            yint,
+                            base,
+                            scale,
+                            (p_out, rm),
+                            [&bn, &bn1],
+                            &mut e,
                         )?;
                     }
                     let mut digits = Self::int_to_radix_digits(&yint, base, n, p_wrk)?;
@@ -1238,10 +1244,8 @@ impl ExactNumNumber {
         yint: Self,
         base: u8,
         scale: i64,
-        p: usize,
-        rm: RoundingMode,
-        bn: &Self,
-        bn1: &Self,
+        (p, rm): (usize, RoundingMode),
+        [bn, bn1]: [&Self; 2],
         e: &mut i64,
     ) -> Result<Self, Error> {
         if Self::spelling_recovers(x, &yint, base, scale, p, rm)? {

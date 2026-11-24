@@ -738,9 +738,7 @@ fn rj_panel_kmax(wabs: &ExactNum, rho: &ExactNum, p: usize) -> usize {
 fn rj_panel(
     a: &ExactComplex,
     h: &ExactComplex,
-    x: &ExactComplex,
-    y: &ExactComplex,
-    z: &ExactComplex,
+    [x, y, z]: [&ExactComplex; 3],
     pv: &ExactComplex,
     p: usize,
     cc: &mut Consts,
@@ -882,10 +880,8 @@ fn rj_u2_rho(
 fn rj_u2_panel(
     u0: &ExactComplex,
     h: &ExactComplex,
-    lam: &ExactComplex,
-    two_sl: &ExactComplex,
-    y: &ExactComplex,
-    z: &ExactComplex,
+    [lam, two_sl]: [&ExactComplex; 2],
+    [y, z]: [&ExactComplex; 2],
     pv: &ExactComplex,
     p: usize,
     cc: &mut Consts,
@@ -984,7 +980,7 @@ fn rj_u2_segment(
             )
         };
         acc = acc.add(
-            &rj_u2_panel(&u, &h, &lam, &two_sl, aa, bb, cc_p, p, cc),
+            &rj_u2_panel(&u, &h, [&lam, &two_sl], [aa, bb], cc_p, p, cc),
             p,
             rm(),
         );
@@ -995,9 +991,7 @@ fn rj_u2_segment(
 fn rj_line_integral(
     from: &ExactComplex,
     to: &ExactComplex,
-    x: &ExactComplex,
-    y: &ExactComplex,
-    z: &ExactComplex,
+    [x, y, z]: [&ExactComplex; 3],
     pv: &ExactComplex,
     p: usize,
     cc: &mut Consts,
@@ -1046,7 +1040,7 @@ fn rj_line_integral(
                 rm(),
             )
         };
-        acc = acc.add(&rj_panel(a, &h, x, y, z, pv, p, cc), p, rm());
+        acc = acc.add(&rj_panel(a, &h, [x, y, z], pv, p, cc), p, rm());
         a_slot = Some(ExactComplex::add_ref(a, &h, p, rm()));
     }
 }
@@ -1240,11 +1234,11 @@ fn carlson_rj(
     let three_halves = c_u32(3, p).div(&c_u32(2, p), p, rm());
     let origin = ExactComplex::zero(p);
     let integ = if let Some(m) = mid {
-        let i1 = rj_line_integral(&origin, &m, &x, &y, &z, &pv, p, cc);
-        let i2 = rj_line_integral(&m, &n_end, &x, &y, &z, &pv, p, cc);
+        let i1 = rj_line_integral(&origin, &m, [&x, &y, &z], &pv, p, cc);
+        let i2 = rj_line_integral(&m, &n_end, [&x, &y, &z], &pv, p, cc);
         i1.add(&i2, p, rm())
     } else {
-        rj_line_integral(&origin, &n_end, &x, &y, &z, &pv, p, cc)
+        rj_line_integral(&origin, &n_end, [&x, &y, &z], &pv, p, cc)
     };
     let xs = x.add(&n_end, p, rm());
     let ys = y.add(&n_end, p, rm());

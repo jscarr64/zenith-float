@@ -724,9 +724,7 @@ fn stirling_digamma_coeff_sum_horner(z: &ExactComplex, terms: usize, p: usize) -
 /// and a final factor of `z`; digamma uses `(2n-1)!` (no extra `z`).
 fn stirling_sum_s3(
     z: &ExactComplex,
-    nterms: usize,
-    m_head: usize,
-    k_max: usize,
+    [nterms, m_head, k_max]: [usize; 3],
     mk: &[usize],
     term_mags: &[i128],
     p: usize,
@@ -942,7 +940,7 @@ fn stirling_log_sum_improved(
     let (m_head, k_max, mk, term_mags) = stirling_improved_plan(terms, p, log2_zinv);
     let s2 = stirling_log_sum_s2(z, m_head, p);
     let s3 = if k_max > 1 && m_head < terms {
-        stirling_sum_s3(z, terms, m_head, k_max, &mk, &term_mags, p, cc, false)
+        stirling_sum_s3(z, [terms, m_head, k_max], &mk, &term_mags, p, cc, false)
     } else {
         ExactComplex::new(ExactNum::new(p), ExactNum::new(p))
     };
@@ -962,7 +960,7 @@ fn stirling_digamma_coeff_sum_improved(
     let (m_head, k_max, mk, term_mags) = stirling_improved_plan(terms, p, log2_zinv);
     let s2 = stirling_digamma_sum_s2(z, m_head, p);
     let s3 = if k_max > 1 && m_head < terms {
-        stirling_sum_s3(z, terms, m_head, k_max, &mk, &term_mags, p, cc, true)
+        stirling_sum_s3(z, [terms, m_head, k_max], &mk, &term_mags, p, cc, true)
     } else {
         ExactComplex::new(ExactNum::new(p), ExactNum::new(p))
     };

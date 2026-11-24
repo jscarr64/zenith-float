@@ -111,10 +111,7 @@ enum GEval {
 
 fn meijer_g_series(
     z: &ExactNum,
-    an: &[ExactNum],
-    ap: &[ExactNum],
-    bm: &[ExactNum],
-    bq: &[ExactNum],
+    [an, ap, bm, bq]: [&[ExactNum]; 4],
     r: &ExactNum,
     p: usize,
     cc: &mut Consts,
@@ -347,18 +344,15 @@ fn meijer_g_series(
 
 fn meijer_g_inner(
     z: &ExactNum,
-    an: &[ExactNum],
-    ap: &[ExactNum],
-    bm: &[ExactNum],
-    bq: &[ExactNum],
+    [an, ap, bm, bq]: [&[ExactNum]; 4],
     r: &ExactNum,
     p: usize,
     cc: &mut Consts,
 ) -> ExactNum {
-    match meijer_g_series(z, an, ap, bm, bq, r, p, cc) {
+    match meijer_g_series(z, [an, ap, bm, bq], r, p, cc) {
         GEval::Val(v) => v,
         GEval::Bad => cat_nan(),
-        GEval::Singular => meijer_removable_limit(z, an, ap, bm, bq, r, p, cc),
+        GEval::Singular => meijer_removable_limit(z, [an, ap, bm, bq], r, p, cc),
     }
 }
 
@@ -784,10 +778,7 @@ fn meijer_jet_limit(
     z: &ExactNum,
     r: &ExactNum,
     invert: bool,
-    an: &[ExactNum],
-    ap: &[ExactNum],
-    bm: &[ExactNum],
-    bq: &[ExactNum],
+    [an, ap, bm, bq]: [&[ExactNum]; 4],
     p: usize,
     cc: &mut Consts,
 ) -> ExactNum {
@@ -1125,10 +1116,7 @@ fn nonremovable(an: &[ExactNum], bm: &[ExactNum], wp: usize) -> bool {
 /// \(G^{m,n}_{p,q}(w\mid a;b)=G^{n,m}_{q,p}(1/w\mid1-b;1-a)\) (DLMF 16.19.1).
 fn meijer_removable_limit(
     z: &ExactNum,
-    an: &[ExactNum],
-    ap: &[ExactNum],
-    bm: &[ExactNum],
-    bq: &[ExactNum],
+    [an, ap, bm, bq]: [&[ExactNum]; 4],
     r: &ExactNum,
     p: usize,
     cc: &mut Consts,
@@ -1169,7 +1157,7 @@ fn meijer_removable_limit(
         return cat_nan();
     }
     if choose_series(an.len(), ap.len(), bm.len(), bq.len(), w, p) == 1 {
-        return meijer_jet_limit(z, r, false, an, ap, bm, bq, p, cc);
+        return meijer_jet_limit(z, r, false, [an, ap, bm, bq], p, cc);
     }
     let refl = |xs: &[ExactNum]| -> Vec<ExactNum> {
         xs.iter()
@@ -1180,10 +1168,7 @@ fn meijer_removable_limit(
         z,
         r,
         true,
-        &refl(bm),
-        &refl(bq),
-        &refl(an),
-        &refl(ap),
+        [&refl(bm), &refl(bq), &refl(an), &refl(ap)],
         p,
         cc,
     )
@@ -1364,24 +1349,21 @@ impl ExactNum {
                 || bq.iter().any(|v| v.inexact_accumulated()),
             p,
             rm,
-            |q, r| this.meijer_g_word(&an_c, &ap_c, &bm_c, &bq_c, q, r, cc),
+            |q, r| this.meijer_g_word([&an_c, &ap_c, &bm_c, &bq_c], q, r, cc),
         )
     }
 
     /// Word-precision implementation of [`Self::meijer_g`].
     fn meijer_g_word(
         &self,
-        an: &[Self],
-        ap: &[Self],
-        bm: &[Self],
-        bq: &[Self],
+        [an, ap, bm, bq]: [&[Self]; 4],
         p: usize,
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Self {
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
-        finish(meijer_g_inner(self, an, ap, bm, bq, &one, wrk, cc), p, rm)
+        finish(meijer_g_inner(self, [an, ap, bm, bq], &one, wrk, cc), p, rm)
     }
 
     /// Fox \(H^{m,n}_{p,q}(\mathrm{self}\mid (a_i,A_i); (b_j,B_j))\).
@@ -1456,17 +1438,14 @@ impl ExactNum {
                     .any(|(u, v)| u.inexact_accumulated() || v.inexact_accumulated()),
             p,
             rm,
-            |q, r| this.fox_h_word(&an_c, &ap_c, &bm_c, &bq_c, q, r, cc),
+            |q, r| this.fox_h_word([&an_c, &ap_c, &bm_c, &bq_c], q, r, cc),
         )
     }
 
     /// Word-precision implementation of [`Self::fox_h`].
     fn fox_h_word(
         &self,
-        an: &[(Self, Self)],
-        ap: &[(Self, Self)],
-        bm: &[(Self, Self)],
-        bq: &[(Self, Self)],
+        [an, ap, bm, bq]: [&[(Self, Self)]; 4],
         p: usize,
         rm: RoundingMode,
         cc: &mut Consts,
@@ -1495,10 +1474,7 @@ impl ExactNum {
             return finish(
                 meijer_g_inner(
                     self,
-                    &an_a,
-                    &ap_a,
-                    &bm_a,
-                    &bq_a,
+                    [&an_a, &ap_a, &bm_a, &bq_a],
                     &ExactNum::from_u8(1, wrk),
                     wrk,
                     cc,
@@ -1582,19 +1558,21 @@ impl ExactNum {
                 || delta.inexact_accumulated(),
             p,
             rm,
-            |q, r| this.heun_g_word(&a_c, &q_c, &alpha_c, &beta_c, &gamma_c, &delta_c, q, r, cc),
+            |q, r| {
+                this.heun_g_word(
+                    [&a_c, &q_c, &alpha_c, &beta_c, &gamma_c, &delta_c],
+                    q,
+                    r,
+                    cc,
+                )
+            },
         )
     }
 
     /// Word-precision implementation of [`Self::heun_g`].
     fn heun_g_word(
         &self,
-        a: &Self,
-        q: &Self,
-        alpha: &Self,
-        beta: &Self,
-        gamma: &Self,
-        delta: &Self,
+        [a, q, alpha, beta, gamma, delta]: [&Self; 6],
         p: usize,
         rm: RoundingMode,
         cc: &mut Consts,
@@ -1615,7 +1593,7 @@ impl ExactNum {
         if self.is_zero() {
             return finish(ExactNum::from_u8(1, p), p, rm);
         }
-        if heun_g_is_2f1(a, q, alpha, beta, gamma, delta, p, rm) {
+        if heun_g_is_2f1([a, q, alpha, beta, gamma, delta], p, rm) {
             return alpha.hypergeom_2f1(beta, gamma, self, p, rm, cc);
         }
         let wrk = work_p(p);
@@ -1632,9 +1610,9 @@ impl ExactNum {
             &one
         };
         if matches!(self.abs_cmp(rad), Some(c) if c >= 0) {
-            return heun_g_outside(self, a, q, alpha, beta, gamma, delta, p, rm);
+            return heun_g_outside(self, [a, q, alpha, beta, gamma, delta], p, rm);
         }
-        heun_g_series(self, a, q, alpha, beta, gamma, delta, p, rm)
+        heun_g_series(self, [a, q, alpha, beta, gamma, delta], p, rm)
     }
 
     /// Confluent Heun: the \(y(0)=1\) Frobenius solution of DLMF 31.12.1,
@@ -1713,9 +1691,9 @@ impl ExactNum {
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
         if matches!(self.abs_cmp(&one), Some(c) if c >= 0) {
-            return heun_c_outside(self, alpha, gamma, delta, eps, q, p, rm);
+            return heun_c_outside(self, [alpha, gamma, delta, eps, q], p, rm);
         }
-        heun_c_series(self, alpha, gamma, delta, eps, q, p, rm)
+        heun_c_series(self, [alpha, gamma, delta, eps, q], p, rm)
     }
 }
 
@@ -2082,12 +2060,7 @@ where
 /// [`rec_series`] tail bound (characteristic roots \(1\) and \(1/a\)).
 fn heun_g_series(
     z: &ExactNum,
-    a: &ExactNum,
-    q: &ExactNum,
-    alpha: &ExactNum,
-    beta: &ExactNum,
-    gamma: &ExactNum,
-    delta: &ExactNum,
+    [a, q, alpha, beta, gamma, delta]: [&ExactNum; 6],
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
@@ -2176,11 +2149,7 @@ fn heun_g_series(
 /// [`rec_series`] tail bound (characteristic roots \(1\) and \(0\)).
 fn heun_c_series(
     z: &ExactNum,
-    alpha: &ExactNum,
-    gamma: &ExactNum,
-    delta: &ExactNum,
-    eps: &ExactNum,
-    q: &ExactNum,
+    [alpha, gamma, delta, eps, q]: [&ExactNum; 5],
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
@@ -2235,12 +2204,7 @@ fn heun_c_series(
 /// is returned as a polynomial.
 fn heun_g_jet(
     z: &ExactNum,
-    a: &ExactNum,
-    q: &ExactNum,
-    alpha: &ExactNum,
-    beta: &ExactNum,
-    gamma: &ExactNum,
-    delta: &ExactNum,
+    [a, q, alpha, beta, gamma, delta]: [&ExactNum; 6],
     p: usize,
 ) -> Option<(ExactNum, ExactNum, bool, Vec<ExactNum>)> {
     let nr = RoundingMode::None;
@@ -2484,12 +2448,7 @@ fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
 }
 
 fn heun_g_is_2f1(
-    a: &ExactNum,
-    q: &ExactNum,
-    alpha: &ExactNum,
-    beta: &ExactNum,
-    gamma: &ExactNum,
-    delta: &ExactNum,
+    [a, q, alpha, beta, gamma, delta]: [&ExactNum; 6],
     p: usize,
     _rm: RoundingMode,
 ) -> bool {
@@ -2529,12 +2488,7 @@ fn heun_c_is_1f1(
 /// coefficients are exact zeros (a polynomial; later coefficients stay zero).
 fn heun_g_ode(
     z0: &ExactNum,
-    a: &ExactNum,
-    q: &ExactNum,
-    alpha: &ExactNum,
-    beta: &ExactNum,
-    gamma: &ExactNum,
-    delta: &ExactNum,
+    [a, q, alpha, beta, gamma, delta]: [&ExactNum; 6],
     p: usize,
 ) -> Option<OdePoly> {
     let one = ExactNum::from_u8(1, p);
@@ -2923,8 +2877,7 @@ fn majorant_forced(
 
 fn taylor_step(
     ode: &OdePoly,
-    y: &ExactNum,
-    yp: &ExactNum,
+    [y, yp]: [&ExactNum; 2],
     h: &ExactNum,
     zc: &ExactNum,
     sings: &[ExactNum],
@@ -3202,8 +3155,7 @@ fn taylor_step(
 
 fn step_with_rad(
     ode: &OdePoly,
-    y: &Br,
-    yp: &Br,
+    [y, yp]: [&Br; 2],
     h: &ExactNum,
     zc: &ExactNum,
     sings: &[ExactNum],
@@ -3212,12 +3164,12 @@ fn step_with_rad(
 ) -> Option<(Br, Br)> {
     let y_ub = ub_rel(&y.mid).add(&ub_rel(&y.rad), 64, RoundingMode::Up);
     let yp_ub = ub_rel(&yp.mid).add(&ub_rel(&yp.rad), 64, RoundingMode::Up);
-    let (_, _, rem_y, rem_d) = taylor_step(ode, &y_ub, &yp_ub, h, zc, sings, p, acc)?;
-    let (ym, ypm, _, _) = taylor_step(ode, &y.mid, &yp.mid, h, zc, sings, p, acc)?;
+    let (_, _, rem_y, rem_d) = taylor_step(ode, [&y_ub, &yp_ub], h, zc, sings, p, acc)?;
+    let (ym, ypm, _, _) = taylor_step(ode, [&y.mid, &yp.mid], h, zc, sings, p, acc)?;
     let one = ExactNum::from_u8(1, p);
     let zero = ExactNum::new(p);
-    let (y10, yp10, r10y, r10d) = taylor_step(ode, &one, &zero, h, zc, sings, p, acc)?;
-    let (y01, yp01, r01y, r01d) = taylor_step(ode, &zero, &one, h, zc, sings, p, acc)?;
+    let (y10, yp10, r10y, r10d) = taylor_step(ode, [&one, &zero], h, zc, sings, p, acc)?;
+    let (y01, yp01, r01y, r01d) = taylor_step(ode, [&zero, &one], h, zc, sings, p, acc)?;
     let up = RoundingMode::Up;
     let ey = ub_rel(&y.rad);
     let eyp = ub_rel(&yp.rad);
@@ -3313,7 +3265,7 @@ where
             return Some((y.mid, y.rad));
         }
         let ode = ode_at(&zc, acc)?;
-        let (yn, ypn) = step_with_rad(&ode, &y, &yp, &h, &zc, sings, p, acc)?;
+        let (yn, ypn) = step_with_rad(&ode, [&y, &yp], &h, &zc, sings, p, acc)?;
         let next = ExactNum::add_ref(&h, &zc, p, RoundingMode::None);
         if next.compare(&zc) == Some(0) {
             if !finite(&yn.mid) {
@@ -3351,18 +3303,13 @@ fn heun_g_seed(z: &ExactNum, a: &ExactNum, wp: usize) -> ExactNum {
 
 fn heun_g_outside(
     z: &ExactNum,
-    a: &ExactNum,
-    q: &ExactNum,
-    alpha: &ExactNum,
-    beta: &ExactNum,
-    gamma: &ExactNum,
-    delta: &ExactNum,
+    [a, q, alpha, beta, gamma, delta]: [&ExactNum; 6],
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
     ball_ziv(p, rm, |wp| {
         let seed = heun_g_seed(z, a, wp);
-        let (y, yp, poly, coefs) = heun_g_jet(&seed, a, q, alpha, beta, gamma, delta, wp)?;
+        let (y, yp, poly, coefs) = heun_g_jet(&seed, [a, q, alpha, beta, gamma, delta], wp)?;
         if poly {
             let v = horner(&coefs, z, wp);
             return Some((v, ExactNum::new(64)));
@@ -3376,18 +3323,14 @@ fn heun_g_outside(
         let yb = br_enclose(y, ye);
         let ypb = br_enclose(yp, ype);
         taylor_walk_ball(seed, yb, ypb, z, &sings, wp, |z0, pr| {
-            heun_g_ode(z0, a, q, alpha, beta, gamma, delta, pr)
+            heun_g_ode(z0, [a, q, alpha, beta, gamma, delta], pr)
         })
     })
 }
 
 fn heun_c_outside(
     z: &ExactNum,
-    alpha: &ExactNum,
-    gamma: &ExactNum,
-    delta: &ExactNum,
-    eps: &ExactNum,
-    q: &ExactNum,
+    [alpha, gamma, delta, eps, q]: [&ExactNum; 5],
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
@@ -3558,7 +3501,7 @@ fn fox_h_gauss(
     let ap_t = &a_tilde[n_t..];
     let bm_t = &b_tilde[..m_t];
     let bq_t = &b_tilde[m_t..];
-    let g = meijer_g_inner(&z_arg, an_t, ap_t, bm_t, bq_t, &r, p, cc);
+    let g = meijer_g_inner(&z_arg, [an_t, ap_t, bm_t, bq_t], &r, p, cc);
     if !finite(&g) || !finite(&pre) {
         return None;
     }
@@ -4273,7 +4216,7 @@ mod tests {
         let z = ExactNum::from_u8(1, 256).div(&ExactNum::from_u8(2, 256), 256, RoundingMode::None);
         let r = ExactNum::from_u8(1, 256);
         let bm: Vec<ExactNum> = (0..16).map(|_| ExactNum::new(256)).collect();
-        let g = meijer_jet_limit(&z, &r, false, &[], &[], &bm, &[], 256, &mut cc);
+        let g = meijer_jet_limit(&z, &r, false, [&[], &[], &bm, &[]], 256, &mut cc);
         for &p in &[64usize, 256] {
             for &rm in &modes {
                 let got = crate::catalog::finish_ref(&g, p, rm);

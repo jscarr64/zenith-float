@@ -372,8 +372,7 @@ fn dp45_step<F>(
     t: &ExactNum,
     y: &ExactNum,
     h: &ExactNum,
-    p: usize,
-    rm: RoundingMode,
+    (p, rm): (usize, RoundingMode),
     cc: &mut Consts,
 ) -> Option<(ExactNum, ExactNum)>
 where
@@ -560,19 +559,16 @@ fn max_representable_trajectory_len(p: usize) -> usize {
 fn a_priori_trajectory_unrepresentable<F>(
     tab: &Dp45,
     f: &mut F,
-    t0: &ExactNum,
-    y0: &ExactNum,
-    h0: &ExactNum,
-    span: &ExactNum,
-    atol: &ExactNum,
-    rtol: &ExactNum,
+    [t0, y0]: [&ExactNum; 2],
+    [h0, span]: [&ExactNum; 2],
+    [atol, rtol]: [&ExactNum; 2],
     wrk: usize,
     cc: &mut Consts,
 ) -> Result<bool, OdeError>
 where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    let (y5, y4) = dp45_step(tab, f, t0, y0, h0, wrk, RoundingMode::None, cc)
+    let (y5, y4) = dp45_step(tab, f, t0, y0, h0, (wrk, RoundingMode::None), cc)
         .ok_or(OdeError::InvalidArgument)?;
     let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::None).abs();
     if err.is_zero() || !finite(&err) {
@@ -619,8 +615,7 @@ fn rk45_at_prec<F>(
     t0: &ExactNum,
     y0: &ExactNum,
     t1: &ExactNum,
-    atol: &ExactNum,
-    rtol: &ExactNum,
+    [atol, rtol]: [&ExactNum; 2],
     wrk: usize,
     cc: &mut Consts,
 ) -> Result<(Vec<ExactNum>, Vec<ExactNum>), OdeError>
@@ -669,7 +664,7 @@ where
             }
             return Err(OdeError::ToleranceUnreachable);
         }
-        let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, wrk, RoundingMode::None, cc)
+        let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, (wrk, RoundingMode::None), cc)
             .ok_or(OdeError::InvalidArgument)?;
         let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::None).abs();
         let scale = step_scale(atol, rtol, &y, &y5, wrk);
@@ -829,8 +824,7 @@ fn bs_try_step<F>(
     t: &ExactNum,
     y: &ExactNum,
     span: &ExactNum,
-    atol: &ExactNum,
-    rtol: &ExactNum,
+    [atol, rtol]: [&ExactNum; 2],
     wrk: usize,
     cc: &mut Consts,
 ) -> Result<Option<ExactNum>, OdeError>
@@ -900,8 +894,7 @@ fn bs_at_prec<F>(
     t0: &ExactNum,
     y0: &ExactNum,
     t1: &ExactNum,
-    atol: &ExactNum,
-    rtol: &ExactNum,
+    [atol, rtol]: [&ExactNum; 2],
     wrk: usize,
     cc: &mut Consts,
 ) -> Result<(Vec<ExactNum>, Vec<ExactNum>), OdeError>
@@ -924,7 +917,7 @@ where
         if !finite(&h) || h.is_zero() || h.is_negative() || h.compare(&hmin) == Some(-1) {
             return Err(OdeError::ToleranceUnreachable);
         }
-        match bs_try_step(f, &t, &y, &h, atol, rtol, wrk, cc)? {
+        match bs_try_step(f, &t, &y, &h, [atol, rtol], wrk, cc)? {
             Some(yn) => {
                 t = ExactNum::add_ref(&t, &h, wrk, rm);
                 if t.compare(t1) == Some(1) {
@@ -1013,7 +1006,7 @@ where
     }
     let mut wrk = work_p(p);
     loop {
-        match rk45_at_prec(&mut f, t0, y0, t1, atol, rtol, wrk, cc) {
+        match rk45_at_prec(&mut f, t0, y0, t1, [atol, rtol], wrk, cc) {
             Ok((ts, ys)) => {
                 let ts = to_row(p, rm, &ts).ok_or(OdeError::InvalidArgument)?;
                 let ys = to_row(p, rm, &ys).ok_or(OdeError::InvalidArgument)?;
@@ -1022,7 +1015,7 @@ where
             Err(OdeError::InvalidArgument) => return Err(OdeError::InvalidArgument),
             Err(OdeError::ToleranceUnreachable) => {
                 if wrk_supports_tol(atol, rtol, y0, wrk) {
-                    match bs_at_prec(&mut f, t0, y0, t1, atol, rtol, wrk, cc) {
+                    match bs_at_prec(&mut f, t0, y0, t1, [atol, rtol], wrk, cc) {
                         Ok((ts, ys)) => {
                             let ts = to_row(p, rm, &ts).ok_or(OdeError::InvalidArgument)?;
                             let ys = to_row(p, rm, &ys).ok_or(OdeError::InvalidArgument)?;
@@ -1228,7 +1221,13 @@ mod tests {
                 ExactNum::mul_ref(&lam_w, &nt.exp(q, r, c), q, r)
             };
         let decided = super::a_priori_trajectory_unrepresentable(
-            &tab, &mut pulse, &t0, &y0, &h0, &span, &atol, &rtol, wrk, &mut cc,
+            &tab,
+            &mut pulse,
+            [&t0, &y0],
+            [&h0, &span],
+            [&atol, &rtol],
+            wrk,
+            &mut cc,
         );
         assert_eq!(
             decided,
@@ -1704,7 +1703,7 @@ mod tests {
                         evals += 1;
                         tt.cos(q, r, c)
                     };
-                let (y5, _y4) = super::dp45_step(&tab, &mut f, &t, &y, &h, wrk, rm, &mut cc)
+                let (y5, _y4) = super::dp45_step(&tab, &mut f, &t, &y, &h, (wrk, rm), &mut cc)
                     .ok_or(crate::Error::InvalidArgument)?;
                 t = ExactNum::add_ref(&t, &h, wrk, rm);
                 y = y5;
@@ -1720,7 +1719,7 @@ mod tests {
                     evals_bs += 1;
                     tt.cos(q, r, c)
                 };
-            let got = super::bs_try_step(&mut f, &zero, &one, &one, &atol, &rtol, wrk, &mut cc);
+            let got = super::bs_try_step(&mut f, &zero, &one, &one, [&atol, &rtol], wrk, &mut cc);
             let try_ms = wall_bs.elapsed().as_millis();
             let try_ok = matches!(got, Ok(Some(_)));
             eprintln!("BOUND wrk={wrk} phase=bs_try_step ok={try_ok} evals={evals_bs} ms={try_ms}");
@@ -1733,7 +1732,7 @@ mod tests {
                     evals_full += 1;
                     tt.cos(q, r, c)
                 };
-            let full = super::bs_at_prec(&mut f, &zero, &one, &one, &atol, &rtol, wrk, &mut cc);
+            let full = super::bs_at_prec(&mut f, &zero, &one, &one, [&atol, &rtol], wrk, &mut cc);
             let full_ms = wall_full.elapsed().as_millis();
             let full_ok = full.is_ok();
             eprintln!(
