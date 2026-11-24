@@ -2,7 +2,7 @@
 # Canonical full gate. usage: tools/full_gate.sh TAG
 # 64-bit host only (P6; Jeff 2026-11-10 19:15 CT): no 32-bit target is built, linted or tested here
 # (tools/test_full_gate_64bit_only.sh, run in the unsafe-scan step, keeps it that way).
-# Every step runs under `timeout` (STEP_TIMEOUT, default 20m; build-debug defaults to 60m (Jeff 2026-11-23 23:04 CT) and features-random-serde to 40m as headroom for the heavier post-985b100 debug workspace suite; the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
+# Every step runs under `timeout` (STEP_TIMEOUT, default 20m; build-debug, features-random-serde and prepublish default to 90m (Jeff 2026-11-24 9:27 AM CT); the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
 # output to $T/TAG-<step>.log (T, else ZF_GATE_LOG_DIR, else $HOME/rusty-work/logs/zf-gate/<sha>-<time>; never /tmp). REPO selects the checkout (default: this one).
 # The library rules run first (Jeff 2026-11-23 07:43 CT): rules-scan, no-clone-progress, fmt, then target-dir, then clippy.
 # CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The
@@ -69,7 +69,8 @@ run() {
   # Jeff 2026-11-23 23:04 CT: "timing limits are enforced in the release step only; debug still runs every
   # test for correctness, and the debug step limit goes to 60 min" (measured ~44 min at f21c27e).
   # Jeff 2026-11-24 12:58 AM CT: "Go: features-random-serde and prepublish get the same 60 min limit as build-debug".
-  [[ $name =~ ^(build-debug|features-random-serde|prepublish)$ && -z "${STEP_TIMEOUT:-}" ]] && to=60m
+  # Jeff 2026-11-24 9:27 AM CT: "just move it to 90" (all three; build-release stays 20m).
+  [[ $name =~ ^(build-debug|features-random-serde|prepublish)$ && -z "${STEP_TIMEOUT:-}" ]] && to=90m
   timeout "$to" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""
