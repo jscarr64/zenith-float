@@ -10,7 +10,8 @@ scan="$root/tools/debug_skips_scan.py"
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 
-fx=$(mktemp -d "${TMPDIR:-/tmp}/no-debug-skips.XXXXXX") || exit 2
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-no-debug-skips"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+fx=$(mktemp -d "$zf_tmp/no-debug-skips.XXXXXX") || exit 2
 trap 'rm -rf "$fx"' EXIT
 git -C "$fx" init -q
 mkdir -p "$fx/tests"

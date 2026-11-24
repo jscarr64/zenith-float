@@ -53,7 +53,8 @@ cd "$root"
 EXPECTED_TARGETS=71
 EXPECTED_MPFR_TARGETS=54
 
-tmpdir=$(mktemp -d)
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/check-zero-test-targets"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+tmpdir=$(mktemp -d "$zf_tmp/run.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
 
 check_list() {

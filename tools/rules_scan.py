@@ -538,6 +538,13 @@ def helper_copy_exceptions():
     return out
 
 
+def scratch_dir():
+    """The job scratch parent for temp dirs: ${ZF_SCRATCH:-$HOME/.cache/zenith-float}/rules-scan, never the system temp dir (Spence n3)."""
+    d = os.path.join(os.environ.get("ZF_SCRATCH") or os.path.join(os.path.expanduser("~"), ".cache", "zenith-float"), "rules-scan")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def per_commit_check(rng):
     import tempfile
     commits = [c for c in git("rev-list", "--reverse", "--first-parent", rng).stdout.split()]
@@ -548,7 +555,7 @@ def per_commit_check(rng):
     except (OSError, IndexError):
         pass
     rc = 0
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=scratch_dir()) as tmp:
         cache = {}
         for c in commits:
             parent = git("rev-parse", "--verify", "-q", c + "^").stdout.strip()
@@ -1259,7 +1266,7 @@ def counts_at_rev(rev):
     import tempfile
     if git("rev-parse", "--verify", "-q", rev + "^{commit}").returncode != 0:
         return None
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=scratch_dir()) as tmp:
         a = subprocess.run(["git", "-C", ROOT, "archive", rev], capture_output=True)
         if a.returncode != 0:
             return None

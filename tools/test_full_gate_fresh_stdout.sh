@@ -8,7 +8,8 @@ unset POPLOG_FILE POPLOG_STATE_DIR POPLOG_PID POPLOG_PROGRESS_FILE POPLOG_STEP P
 root=$(cd "$(dirname "$0")/.." && pwd)
 wrap=${FRESH_TEST_RUN:-$HOME/pop-logs/bin/fresh_test_run.sh}
 [[ -x "$wrap" ]] || { echo "FAIL: fresh_test_run.sh not found at $wrap (set FRESH_TEST_RUN)"; exit 1; }
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-full-gate-fresh-stdout"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+tmp=$(mktemp -d "$zf_tmp/run.XXXXXX"); trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin" "$tmp/target/debug/deps"
 printf '#!/bin/sh\nexit 0\n' > "$tmp/target/debug/deps/fixture-0123abcd"; chmod +x "$tmp/target/debug/deps/fixture-0123abcd"
 git -C "$root" rev-parse --show-toplevel > "$tmp/target/.worktree-owner"  # claimed by this worktree, as a fresh gate dir would be

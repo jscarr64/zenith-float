@@ -23,7 +23,8 @@ check() {  # DIR -> 0 when single-definition
   return $r
 }
 check "$root" || bad "precision items are not one zf definition"
-t=$(mktemp -d "${TMPDIR:-$HOME/.cache}/maxprec.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-max-precision-single-def"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+t=$(mktemp -d "$zf_tmp/maxprec.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
 plant() {  # FILE OLD-REGEX NEW
   mkdir -p "$t/$(dirname "$DEFS")" "$t/$(dirname "$BP")" "$t/$(dirname "$MAN")"
   cp "$root/$DEFS" "$t/$DEFS"; cp "$root/$BP" "$t/$BP"; cp "$root/$MAN" "$t/$MAN"

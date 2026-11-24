@@ -17,8 +17,9 @@ source "$root/scripts/use_rust_1_99.sh"
 
 baseline="${REGRESSION_FILE:-doc/bench-baselines.tsv}"
 regression_pct="${REGRESSION_PCT:-10}"
-tmp_log="$(mktemp)"
-tmp_tsv="$(mktemp)"
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/bench-compare"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+tmp_log="$(mktemp "$zf_tmp/f.XXXXXX")"
+tmp_tsv="$(mktemp "$zf_tmp/f.XXXXXX")"
 trap 'rm -f "$tmp_log" "$tmp_tsv"' EXIT
 
 usage() {

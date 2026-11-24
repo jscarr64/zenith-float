@@ -11,7 +11,8 @@
 # Nothing is written outside a mktemp dir; HOME points at it, so no real team env, popguard or ~/.local is consulted.
 set -u
 repo="$(cd "$(dirname "$0")/.." && pwd)"; cd "$repo" || exit 1
-t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/oracle-env-selftest"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+t="$(mktemp -d "$zf_tmp/run.XXXXXX")"; trap 'rm -rf "$t"' EXIT
 fail=0; n=0
 bad() { echo "FAIL: $*"; fail=1; }
 

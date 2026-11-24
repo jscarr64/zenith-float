@@ -16,7 +16,8 @@ fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 SERDE='cargo test --workspace --features random,serde'
 
-w=$(mktemp -d "${TMPDIR:-/tmp}/prepub-dedupe.XXXXXX") || exit 2
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-prepublish-serde-dedupe"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+w=$(mktemp -d "$zf_tmp/prepub-dedupe.XXXXXX") || exit 2
 trap 'rm -rf "$w"' EXIT
 repo="$w/repo"; mkdir -p "$repo/tools" "$repo/scripts" "$repo/zenith-float-num/src" "$w/bin" "$w/target"
 cp "$root/scripts/zenith_prepublish.sh" "$repo/scripts/"

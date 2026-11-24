@@ -26,7 +26,8 @@ if [[ -z "$qemu" ]]; then
   echo "error: qemu-aarch64 or qemu-aarch64-static is required to run $target hex golds" >&2
   exit 1
 fi
-tmp="$(mktemp)"
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/ci-hex-arm"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+tmp="$(mktemp "$zf_tmp/f.XXXXXX")"
 trap 'rm -f "$tmp" "${tmp}.ref"' EXIT
 "$qemu" "$bin" | sed '/^#/d' | grep -E '^[a-z]' >"$tmp"
 sed '/^#/d' "$root/golds/hex/reference.txt" | grep -E '^[a-z]' >"${tmp}.ref"

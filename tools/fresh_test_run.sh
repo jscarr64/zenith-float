@@ -23,7 +23,7 @@ case $1 in
   cargo) [[ ${2:-} == test ]] || die "$usage" ;;
   *) die "$usage" ;;
 esac
-[[ -n ${CARGO_TARGET_DIR:-} ]] || die "CARGO_TARGET_DIR is unset (one target dir per worktree: /tmp/target-<agent>-<worktree>)"
+[[ -n ${CARGO_TARGET_DIR:-} ]] || die "CARGO_TARGET_DIR is unset (one target dir per worktree: ~/t7-targets/<agent>-<job>, P15)"
 wt=$(git rev-parse --show-toplevel 2> /dev/null) || die "$(pwd) is not inside a git worktree"
 wt=$(cd "$wt" && pwd -P)
 # claim_dir DIR: print DIR's real path if this worktree owns it. A dir with no marker is claimed only when
@@ -79,7 +79,8 @@ for a in "${@:3}"; do
     if [[ $a == --no-run ]]; then no_run=1; else pre+=("$a"); fi
   fi
 done
-w=$(mktemp -d); trap 'rm -rf "$w"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/fresh-test-run"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+w=$(mktemp -d "$zf_tmp/run.XXXXXX"); trap 'rm -rf "$w"' EXIT
 echo "fresh_test_run: build: cargo test ${pre[*]} --no-run --message-format=json"
 rc=0; cargo test "${pre[@]}" --no-run --message-format=json-render-diagnostics > "$w/build.json" || rc=$?
 [[ $rc == 0 ]] || die "build failed (exit $rc)"

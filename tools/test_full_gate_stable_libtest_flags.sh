@@ -23,7 +23,8 @@ fi
 set -- $TT
 # $1 is the cargo/libtest separator "--"
 shift
-t="$(mktemp -d)"
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-full-gate-stable-libtest-flags"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+t="$(mktemp -d "$zf_tmp/run.XXXXXX")"
 trap 'rm -rf "$t"' EXIT
 printf '#[test] fn t() {}\n' > "$t/t.rs"
 rustc --test "$t/t.rs" -o "$t/tbin"

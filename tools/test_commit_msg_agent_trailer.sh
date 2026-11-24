@@ -8,7 +8,8 @@ set -uo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
-w=$(mktemp -d "${TMPDIR:-/tmp}/commit-msg-trailer.XXXXXX") || exit 2
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-commit-msg-agent-trailer"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+w=$(mktemp -d "$zf_tmp/commit-msg-trailer.XXXXXX") || exit 2
 trap 'rm -rf "$w"' EXIT
 repo="$w/repo"; mkdir -p "$repo/.githooks"
 [[ -f "$root/.githooks/commit-msg" ]] && cp "$root/.githooks/commit-msg" "$repo/.githooks/" && chmod +x "$repo/.githooks/commit-msg"

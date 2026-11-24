@@ -5,7 +5,8 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
-t="$(mktemp -d)"
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-gate-tool-checks"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+t="$(mktemp -d "$zf_tmp/run.XXXXXX")"
 trap 'rm -rf "$t"' EXIT
 bad=0
 fail() { echo "FAIL: $*" >&2; bad=1; }

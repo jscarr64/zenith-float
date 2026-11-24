@@ -22,7 +22,8 @@ check() {  # DIR -> 0 when no step is pinned to one thread and the fallback is t
   return $r
 }
 check "$root" || bad "a gate test step is pinned to one thread, or the job fallback is not the core count"
-t=$(mktemp -d "${TMPDIR:-$HOME/.cache}/gatethreads.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-full-gate-threads"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+t=$(mktemp -d "$zf_tmp/gatethreads.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/tools" "$t/scripts"
 plant() {  # FILE LINE
   cp "$root/tools/full_gate.sh" "$t/tools/"; cp "$root/scripts/zenith_prepublish.sh" "$root/scripts/ci.sh" "$t/scripts/"

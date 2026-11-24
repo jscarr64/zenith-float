@@ -3,7 +3,8 @@
 # SHA256SUMS is missing, empty, does not list a required golden, or a hash mismatches; and pass on a correct pin.
 # It must also fail closed on a CRLF-converted golden (ZF-TD41 hazard case).
 set -u
-here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/golden-sums-selftest"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d "$zf_tmp/run.XXXXXX")"; trap 'rm -rf "$t"' EXIT
 fail() { echo "GOLDEN SUMS SELFTEST FAIL: $*"; exit 1; }
 chk() { "$here/golden_sums_check.sh" "$t" borrow_ops.jsonl; }
 printf '{"id":"a"}\n{"id":"b"}\n' > "$t/borrow_ops.jsonl"; printf 'x\n' > "$t/other.jsonl"

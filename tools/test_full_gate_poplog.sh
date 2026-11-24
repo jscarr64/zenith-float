@@ -8,7 +8,8 @@ set -euo pipefail
 unset POPLOG_FILE POPLOG_STATE_DIR POPLOG_PID POPLOG_PROGRESS_FILE POPLOG_STEP POPLOG_RUNNING POPLOG_JOB \
   POPSLOT_HELD POPSLOT_SLOT POPSLOT_FD POPSLOT_HOLDER_PID POPSLOT_AGENT POPSLOT_PRIORITY CARGO_BUILD_JOBS RUST_TEST_THREADS
 root=$(cd "$(dirname "$0")/.." && pwd)
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-full-gate-poplog"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+tmp=$(mktemp -d "$zf_tmp/run.XXXXXX"); trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/cargo" <<'SH'
 #!/usr/bin/env bash

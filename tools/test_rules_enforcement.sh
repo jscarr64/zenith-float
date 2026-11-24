@@ -13,7 +13,8 @@
 set -u
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
 fail=0; bad() { echo "FAIL: $*"; fail=1; }
-t=$(mktemp -d "${TMPDIR:-/tmp}/rules-enf.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-rules-enforcement"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+t=$(mktemp -d "$zf_tmp/rules-enf.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/fx/tools"; : > "$t/empty.diff"
 
 # 1. one library scanner, and each scanner names itself
@@ -54,7 +55,7 @@ rs=$(step rules-scan)
 grep -q 'test_rules_enforcement.sh' "$root/tools/full_gate.sh" || bad "tools/full_gate.sh does not run tools/test_rules_enforcement.sh"
 # Spence R1 on 0a1cb6c: the zero-suppression scan and the pre-push hook's selftest run in the gate's unsafe-scan step.
 us=$(step unsafe-scan)
-for x in tools/no_suppress_selftest.sh tools/no_suppress_scan.sh tools/pre_push_selftest.sh; do
+for x in tools/no_suppress_selftest.sh tools/no_suppress_scan.sh tools/pre_push_selftest.sh tools/no_tmp_selftest.sh tools/no_tmp_scan.sh; do
   [[ $us == *"$x"* ]] || bad "the gate's unsafe-scan step does not run $x"
 done
 g="$t/rs"; mkdir -p "$g/tools" "$g/zenith-float-num/src"

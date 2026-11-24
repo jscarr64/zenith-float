@@ -8,7 +8,8 @@ cd "$root"
 source "$root/scripts/use_rust_1_99.sh"
 ref="$root/golds/hex/reference.txt"
 [[ -f "$ref" ]] || { echo "error: missing $ref" >&2; exit 1; }
-tmp="$(mktemp)"
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/ci-hex-common"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+tmp="$(mktemp "$zf_tmp/f.XXXXXX")"
 trap 'rm -f "$tmp" "${tmp}.ref"' EXIT
 cargo run -q -p zenith-float --release --bin hex_golds "$@" | sed '/^#/d' | grep -E '^[a-z]' >"$tmp"
 sed '/^#/d' "$ref" | grep -E '^[a-z]' >"${tmp}.ref"

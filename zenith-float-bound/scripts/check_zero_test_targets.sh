@@ -5,7 +5,8 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
-out=$(mktemp)
+. "${BASH_SOURCE[0]%/*}/../tools/scratch.sh"  # zb_scratch: never /tmp (Spence n3)
+out=$(mktemp "$(zb_scratch)/check_zero_test_targets.XXXXXX")
 trap 'rm -f "$out"' EXIT
 cargo test --workspace -- --list > "$out" 2>&1 || { cat "$out" >&2; echo "check_zero_test_targets: cargo test --list failed" >&2; exit 1; }
 awk '/^ *(Running|Doc-tests) /{sub(/^ +/,""); h=$0; next}

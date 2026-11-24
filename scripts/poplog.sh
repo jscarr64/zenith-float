@@ -183,7 +183,8 @@ poplog_init() {
   mkdir -p "$POPLOG_ROOT/$POPLOG_AGENT/$day"
   POPLOG_FILE=$POPLOG_ROOT/$POPLOG_AGENT/$day/$(date +%H%M)-$POPLOG_JOB.log
   [[ -e "$POPLOG_FILE" ]] && POPLOG_FILE="${POPLOG_FILE%.log}-$$.log"
-  POPLOG_STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/poplog.XXXXXX")
+  zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/poplog"; mkdir -p "$zf_tmp" || return 2  # job scratch, never /tmp (Spence n3)
+  POPLOG_STATE_DIR=$(mktemp -d "$zf_tmp/poplog.XXXXXX")
   POPLOG_PROGRESS_FILE=$POPLOG_STATE_DIR/progress
   export POPLOG_AGENT POPLOG_FILE POPLOG_PROGRESS_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_ROOT POPLOG_RUNNING
   : > "$POPLOG_STATE_DIR/out"; echo '-' > "$POPLOG_STATE_DIR/step"

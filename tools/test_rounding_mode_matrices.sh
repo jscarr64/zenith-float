@@ -107,7 +107,8 @@ PY
   return $r
 }
 check "$root" || bad "a rounding-mode matrix in zenith-float-num does not cover all 7 modes (or breaks the KNOWN-GAP rules)"
-t=$(mktemp -d "${TMPDIR:-$HOME/.cache}/rmmat.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-rounding-mode-matrices"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+t=$(mktemp -d "$zf_tmp/rmmat.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/zenith-float-num/tests/mpfr"
 printf 'const M: [RoundingMode; 7] = [\n    RoundingMode::None,\n    RoundingMode::Up,\n    RoundingMode::Down,\n    RoundingMode::ToZero,\n    RoundingMode::FromZero,\n    RoundingMode::ToEven,\n    RoundingMode::ToOdd,\n];\n' > "$t/zenith-float-num/tests/good.rs"
 check "$t" > /dev/null || bad "the 7-mode control copy was flagged"

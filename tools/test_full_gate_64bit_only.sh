@@ -35,7 +35,8 @@ check() {  # DIR -> 0 when 64-bit only
   return $r
 }
 check "$root" || bad "the gate is not 64-bit only"
-t=$(mktemp -d "${TMPDIR:-$HOME/.cache}/gate64.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/test-full-gate-64bit-only"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+t=$(mktemp -d "$zf_tmp/gate64.XXXXXX") || exit 2; trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/tools" "$t/scripts" "$t/src" "$t/zenith-float-num/src" "$t/zenith-float-bound/src" "$t/zenith-float-compare/src" "$t/nostd-tests/.cargo"
 fresh() {  # copy every checked file into the planted tree
   rm -rf "$t/scripts" "$t/nostd-tests/.cargo"; mkdir -p "$t/scripts" "$t/nostd-tests/.cargo"

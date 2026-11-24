@@ -5,7 +5,8 @@
 # and that the constant-cache exception allowlist works (unlisted clone fails, listed passes, stale entry fails, count only down).
 set -u
 unset RULES_SCAN_FAULT   # the fault hook is set per call below, never inherited
-here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
+zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/rules-scan-selftest"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
+here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d "$zf_tmp/run.XXXXXX")"; trap 'rm -rf "$t"' EXIT
 scan() { "$here/rules_scan.sh" "$@"; }
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 mkdiff() { # mkdiff <path> <added line...>  -> fixture diff on stdout

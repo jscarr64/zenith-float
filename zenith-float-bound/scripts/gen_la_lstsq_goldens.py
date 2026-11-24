@@ -108,7 +108,7 @@ if __name__ == "__main__":
     rows = gen(small)
     assert rows.count[True] == 0, "lstsq corpus has no heavy rows"
     if small or "--check" in sys.argv:
-        d = sys.argv[sys.argv.index("--check") + 1] if "--check" in sys.argv else os.environ.get("TMPDIR", "/tmp")
+        d = sys.argv[sys.argv.index("--check") + 1] if "--check" in sys.argv else (os.environ.get("ZB_SCRATCH") or os.path.join(os.path.expanduser("~"), ".cache", "zenith-float-bound", "scratch"))
         os.makedirs(os.path.join(d, "qr"), exist_ok=True)
         h = write(os.path.join(d, "qr", "la_lstsq%s.txt" % ("_small" if small else "")), rows)
         if not small:

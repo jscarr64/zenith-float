@@ -4,7 +4,7 @@
 . "${BASH_SOURCE[0]%/*}/runlog.sh"; runlog_wrap bound_layer_scan_selftest "$@"   # run log (tools/runlog.sh)
 runlog_detach_children
 set -u
-here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; runlog_on_exit "rm -rf \"$t\""; . "${BASH_SOURCE[0]%/*}/selftest_cases.sh"; st_init "$t"
+here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d "$(zb_scratch)/bound_layer_scan_selftest.XXXXXX")"; runlog_on_exit "rm -rf \"$t\""; . "${BASH_SOURCE[0]%/*}/selftest_cases.sh"; st_init "$t"
 scan() { "$here/bound_layer_scan.sh" "$@"; }
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 mkdiff() { # mkdiff <path> <added line...>  -> fixture diff on stdout
