@@ -23,8 +23,9 @@ bash scripts/ci_full.sh
 
 Enable the committed pre-commit hook once per clone: `git config core.hooksPath .githooks`. It runs
 `tools/rules_scan.sh --working`, `tools/rules_scan.sh --count-only --no-rise HEAD`, `cargo fmt --all -- --check` and
-`cargo clippy --workspace --all-targets --all-features -- -D warnings`, and refuses the commit on any FAIL. Never commit
-with `--no-verify`.
+`cargo clippy --workspace --all-targets --all-features -- -D warnings`, and refuses the commit on any FAIL. The same
+setting enables `.githooks/commit-msg`, which refuses a commit whose message has no `Agent: <name>` trailer in its last
+paragraph (merges too). Never commit with `--no-verify`.
 
 `scripts/ci.sh` is the default gate (workspace tests, `no_std` / thumb, MPFR on Linux x86_64). `scripts/ci_full.sh` is the 12-check pre-publish gate.
 

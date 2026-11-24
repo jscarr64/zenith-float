@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# zenith-float commit-msg hook (Spence B3 on 82e4afb; U7 Agent trailers): every commit names its agent in a trailer
+#   Agent: <name>        (last paragraph of the message, git trailer syntax; e.g. `Agent: paul`)
+# The pre-commit hook cannot see the message, so 15 commits after 5bfe97b went in without one. Enabled with the same
+# `git config core.hooksPath .githooks` as .githooks/pre-commit. A merge needs one too: git merge -m "...\n\nAgent: <name>".
+# Never bypass with --no-verify. Test: tools/test_commit_msg_agent_trailer.sh.
+set -u
+msg=${1:?usage: commit-msg MSGFILE}
+if git stripspace --strip-comments < "$msg" | git interpret-trailers --parse | grep -qE '^Agent: [A-Za-z0-9][A-Za-z0-9._-]*$'; then
+  exit 0
+fi
+echo "commit-msg: FAIL: no 'Agent: <name>' trailer in the last paragraph of the message (commit refused; never --no-verify)" >&2
+exit 1

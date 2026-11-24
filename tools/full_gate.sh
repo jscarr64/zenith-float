@@ -129,7 +129,7 @@ run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zen
 run oracle-env "tools/oracle_env_selftest.sh"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
-run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_prepublish_serde_dedupe.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_full_gate_debug_suite_timeouts.sh && bash tools/test_rules_enforcement.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
+run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_commit_msg_agent_trailer.sh && bash tools/test_prepublish_serde_dedupe.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_full_gate_debug_suite_timeouts.sh && bash tools/test_rules_enforcement.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
 run prepublish "ZF_GATE_SERDE_EVIDENCE='$T/$tag-features-random-serde.evidence' bash scripts/zenith_prepublish.sh"
 echo "done" >> "$T/$tag.rc"
 poplog_finish
