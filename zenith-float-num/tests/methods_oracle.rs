@@ -16,8 +16,8 @@ use std::ops::Neg;
 use zenith_float_num::{
     euler, gauss_hermite, gauss_kronrod_interval, gauss_laguerre, gauss_legendre,
     integrate_adaptive_gk, integrate_adaptive_gk_estimate, integrate_adaptive_gk_infinite_estimate,
-    rk4, rk45_adaptive, tanh_sinh, wynn_epsilon, Ball, Consts, ExactNum, GkOptions,
-    QuadratureError, Radix, RoundingMode,
+    rk4, rk45_adaptive, tanh_sinh, wynn_epsilon, Ball, Consts, ExactNum, GkOptions, OdeSpan,
+    OdeTol, QuadratureError, Radix, RoundingMode,
 };
 
 /// `|x|` for an operand that stays borrowed: fresh `±1` times `x` at `x`'s own precision.
@@ -385,9 +385,11 @@ fn run_ode(row: &serde_json::Value) -> Result<(), String> {
             let steps = row.get("steps").and_then(|v| v.as_u64()).unwrap_or(40) as usize;
             rk4(
                 |t, y, p, rm, cc| ode_rhs(problem, t, y, p, rm, cc),
-                &t0,
-                &y0,
-                &t1,
+                OdeSpan {
+                    t0: &t0,
+                    y0: &y0,
+                    t1: &t1,
+                },
                 steps,
                 p,
                 rm,
@@ -400,11 +402,15 @@ fn run_ode(row: &serde_json::Value) -> Result<(), String> {
             let rtol = parse_at(row["rtol"].as_str().unwrap_or("1e-6"), p, rm, &mut cc);
             rk45_adaptive(
                 |t, y, p, rm, cc| ode_rhs(problem, t, y, p, rm, cc),
-                &t0,
-                &y0,
-                &t1,
-                &atol,
-                &rtol,
+                OdeSpan {
+                    t0: &t0,
+                    y0: &y0,
+                    t1: &t1,
+                },
+                OdeTol {
+                    atol: &atol,
+                    rtol: &rtol,
+                },
                 p,
                 rm,
                 &mut cc,

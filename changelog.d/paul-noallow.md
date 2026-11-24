@@ -21,3 +21,6 @@
   `integrate_adaptive_gk_infinite_estimate` take `GkOptions { tol_rel, max_subintervals }` in place of the two
   arguments: `integrate_adaptive_gk(f, a, b, GkOptions { tol_rel: &tol, max_subintervals: 64 }, p, rm, cc)`.
   Same arithmetic and results.
+- `rk4(f, OdeSpan { t0, y0, t1 }, n_steps, p, rm, cc)` and
+  `rk45_adaptive(f, OdeSpan { t0, y0, t1 }, OdeTol { atol, rtol }, p, rm, cc)`: the interval/initial value and the
+  tolerances are grouped. Same arithmetic and results.

@@ -25,7 +25,7 @@ use alloc::vec::Vec;
 use cases::{Case, CASES};
 use zenith_float_num::{
     brent, gauss_legendre, rk45_adaptive, root_default_tol, tanh_sinh, Consts, ExactComplex,
-    ExactNum, Radix, RoundingMode,
+    ExactNum, OdeSpan, OdeTol, Radix, RoundingMode,
 };
 
 const RM: RoundingMode = RoundingMode::ToEven;
@@ -148,11 +148,15 @@ fn method(op: &str, p: usize, cc: &mut Consts) -> ExactNum {
             let tol = parse("1e-12", p, cc);
             match rk45_adaptive(
                 |_, y, _, _, _| y.clone(),
-                &ExactNum::new(p),
-                &n(1),
-                &n(1),
-                &tol,
-                &tol,
+                OdeSpan {
+                    t0: &ExactNum::new(p),
+                    y0: &n(1),
+                    t1: &n(1),
+                },
+                OdeTol {
+                    atol: &tol,
+                    rtol: &tol,
+                },
                 p,
                 RM,
                 cc,

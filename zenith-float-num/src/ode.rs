@@ -133,6 +133,27 @@ impl core::fmt::Display for OdeError {
 #[cfg(feature = "std")]
 impl std::error::Error for OdeError {}
 
+/// The interval and initial value of [`rk4`] and [`rk45_adaptive`]: \(y(t_0) = y_0\), integrated to `t1`
+/// (zenith-float 2.0: grouped so no public function takes more than 7 arguments).
+#[derive(Clone, Copy, Debug)]
+pub struct OdeSpan<'a> {
+    /// Start abscissa.
+    pub t0: &'a ExactNum,
+    /// Initial value \(y(t_0)\).
+    pub y0: &'a ExactNum,
+    /// End abscissa (`t0 < t1`).
+    pub t1: &'a ExactNum,
+}
+
+/// Absolute and relative step tolerances of [`rk45_adaptive`] (non-negative, not both zero).
+#[derive(Clone, Copy, Debug)]
+pub struct OdeTol<'a> {
+    /// Absolute tolerance.
+    pub atol: &'a ExactNum,
+    /// Relative tolerance.
+    pub rtol: &'a ExactNum,
+}
+
 fn to_row(p: usize, rm: RoundingMode, vals: &[ExactNum]) -> Option<ExactNumArray> {
     let rounded: Vec<ExactNum> = vals.iter().map(|x| x.rounded_to(p, rm)).collect();
     ExactNumArray::from_shape(p, 1, rounded.len(), &rounded)
@@ -149,9 +170,7 @@ fn push_pair(ts: &mut Vec<ExactNum>, ys: &mut Vec<ExactNum>, t: ExactNum, y: Exa
 /// `t1 ≤ t0`, or a value is non-finite. A huge `n_steps` may fail to allocate.
 pub fn rk4<F>(
     mut f: F,
-    t0: &ExactNum,
-    y0: &ExactNum,
-    t1: &ExactNum,
+    OdeSpan { t0, y0, t1 }: OdeSpan<'_>,
     n_steps: usize,
     p: usize,
     rm: RoundingMode,
@@ -983,11 +1002,8 @@ where
 /// `N ≈ 2^{102}` and switches.
 pub fn rk45_adaptive<F>(
     mut f: F,
-    t0: &ExactNum,
-    y0: &ExactNum,
-    t1: &ExactNum,
-    atol: &ExactNum,
-    rtol: &ExactNum,
+    OdeSpan { t0, y0, t1 }: OdeSpan<'_>,
+    OdeTol { atol, rtol }: OdeTol<'_>,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -1062,9 +1078,11 @@ mod tests {
 
         let (_t, y) = rk4(
             |_t, y, _p, _rm, _cc| y.neg_via_mul(),
-            &zero,
-            &one,
-            &one,
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &one,
+            },
             EULER_OH_STEPS,
             p,
             rm,
@@ -1081,11 +1099,15 @@ mod tests {
         let rtol = ExactNum::new(p);
         let (_t45, y45) = rk45_adaptive(
             |_t, y, _p, _rm, _cc| y.neg_via_mul(),
-            &zero,
-            &one,
-            &one,
-            &atol,
-            &rtol,
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &one,
+            },
+            OdeTol {
+                atol: &atol,
+                rtol: &rtol,
+            },
             p,
             rm,
             &mut cc,
@@ -1144,9 +1166,11 @@ mod tests {
 
         assert!(rk4(
             |_t, y, _p, _rm, _cc| y.neg_via_mul(),
-            &one,
-            &one,
-            &zero,
+            OdeSpan {
+                t0: &one,
+                y0: &one,
+                t1: &zero
+            },
             4,
             p,
             rm,
@@ -1173,11 +1197,15 @@ mod tests {
                 evals += 1;
                 t.cos(q, r, cc)
             },
-            &zero,
-            &one,
-            &one,
-            &zero,
-            &zero,
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &one,
+            },
+            OdeTol {
+                atol: &zero,
+                rtol: &zero,
+            },
             p,
             rm,
             &mut cc,
@@ -1243,11 +1271,15 @@ mod tests {
                 let nt = ExactNum::mul_ref(&lam, tt, q, r).neg();
                 ExactNum::mul_ref(&lam, &nt.exp(q, r, c), q, r)
             },
-            &zero,
-            &zero,
-            &t1,
-            &atol,
-            &rtol,
+            OdeSpan {
+                t0: &zero,
+                y0: &zero,
+                t1: &t1,
+            },
+            OdeTol {
+                atol: &atol,
+                rtol: &rtol,
+            },
             p,
             rm,
             &mut cc,
@@ -1304,11 +1336,15 @@ mod tests {
                 evals_r += 1;
                 t.cos(q, r, cc)
             },
-            &zero,
-            &one,
-            &one,
-            &tol,
-            &tol,
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &one,
+            },
+            OdeTol {
+                atol: &tol,
+                rtol: &tol,
+            },
             p,
             rm,
             &mut cc,
@@ -1338,11 +1374,15 @@ mod tests {
                 evals_e += 1;
                 y.neg_via_mul()
             },
-            &zero,
-            &one,
-            &one,
-            &tol,
-            &tol,
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &one,
+            },
+            OdeTol {
+                atol: &tol,
+                rtol: &tol,
+            },
             p,
             rm,
             &mut cc,
@@ -1377,11 +1417,15 @@ mod tests {
                 evals = evals.saturating_add(1);
                 t.cos(q, r, cc)
             },
-            &zero,
-            &one,
-            &one,
-            &tol,
-            &tol,
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &one,
+            },
+            OdeTol {
+                atol: &tol,
+                rtol: &tol,
+            },
             p,
             rm,
             &mut cc,
@@ -1455,9 +1499,11 @@ mod tests {
         let n = 65_537usize;
         let (t, y) = rk4(
             |_t, y, _p, _rm, _cc| y.neg_via_mul(),
-            &zero,
-            &one,
-            &one,
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &one,
+            },
             n,
             p,
             rm,
@@ -1497,11 +1543,15 @@ mod tests {
                 evals += 1;
                 ExactNum::new(p)
             },
-            &zero,
-            &one,
-            &zero,
-            &tol,
-            &tol,
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &zero,
+            },
+            OdeTol {
+                atol: &tol,
+                rtol: &tol,
+            },
             p,
             rm,
             &mut cc,
@@ -1528,11 +1578,15 @@ mod tests {
                 evals += 1;
                 ExactNum::new(p)
             },
-            &two,
-            &one,
-            &zero,
-            &tol,
-            &tol,
+            OdeSpan {
+                t0: &two,
+                y0: &one,
+                t1: &zero,
+            },
+            OdeTol {
+                atol: &tol,
+                rtol: &tol,
+            },
             p,
             rm,
             &mut cc,
@@ -1564,11 +1618,15 @@ mod tests {
         let wall = std::time::Instant::now();
         let got = rk45_adaptive(
             |t, _y, q, r, cc| t.cos(q, r, cc),
-            &zero,
-            &one,
-            &one,
-            &atol,
-            &ExactNum::new(p),
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &one,
+            },
+            OdeTol {
+                atol: &atol,
+                rtol: &ExactNum::new(p),
+            },
             p,
             rm,
             &mut cc,
@@ -1621,11 +1679,15 @@ mod tests {
                 evals += 1;
                 ExactNum::mul_ref(y, &lam, q, r).neg()
             },
-            &zero,
-            &one,
-            &one,
-            &atol,
-            &atol,
+            OdeSpan {
+                t0: &zero,
+                y0: &one,
+                t1: &one,
+            },
+            OdeTol {
+                atol: &atol,
+                rtol: &atol,
+            },
             p,
             rm,
             &mut cc,

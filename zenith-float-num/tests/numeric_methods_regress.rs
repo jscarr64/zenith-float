@@ -7,7 +7,7 @@
 use std::ops::Neg;
 use zenith_float_num::{
     bisect, brent, chebyshev_coeffs, chebyshev_eval, gauss_legendre, illinois, rk4, rk45_adaptive,
-    root_default_tol, tanh_sinh, Consts, ExactNum, Radix, RoundingMode,
+    root_default_tol, tanh_sinh, Consts, ExactNum, OdeSpan, OdeTol, Radix, RoundingMode,
 };
 
 /// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
@@ -128,11 +128,15 @@ fn ode_rtol_and_equal_exponent_span() -> Result<(), Box<dyn std::error::Error>> 
     // Non-zero rtol (1.0.4: None).
     let (_, y) = rk45_adaptive(
         |_, y, _, _, _| y.clone(),
-        &ExactNum::new(P),
-        &n(1),
-        &n(1),
-        &tol,
-        &tol,
+        OdeSpan {
+            t0: &ExactNum::new(P),
+            y0: &n(1),
+            t1: &n(1),
+        },
+        OdeTol {
+            atol: &tol,
+            rtol: &tol,
+        },
         P,
         RM,
         &mut cc,
@@ -142,9 +146,11 @@ fn ode_rtol_and_equal_exponent_span() -> Result<(), Box<dyn std::error::Error>> 
     // Span [2, 3] (1.0.4: rejected as not t0 < t1): y' = y, y(2) = 1 → y(3) = e.
     let (_, y) = rk4(
         |_, y, _, _, _| y.clone(),
-        &n(2),
-        &n(1),
-        &n(3),
+        OdeSpan {
+            t0: &n(2),
+            y0: &n(1),
+            t1: &n(3),
+        },
         1000,
         P,
         RM,
