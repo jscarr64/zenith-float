@@ -7,8 +7,9 @@ no reason file: the only passing count is 0.
 Usage: tools/no_suppress_scan.sh [--root DIR]      (exit 0 clean, 1 findings, 2 scanner error)
 
 FAILS on (file:line [form] text), every git-tracked file, all crates, tests/, benches/, examples/, fuzz/, nostd-tests/:
-  [allow] [expect]      `#[allow(..)]`, `#![allow(..)]`, `#[expect(..)]`, `#![expect(..)]` in any .rs (comments, strings
-                        and char literals stripped first, so prose and fixtures in strings do not count)
+  [allow] [expect]      `#[allow(..)]`, `#![allow(..)]`, `#[expect(..)]`, `#![expect(..)]` in any .rs (plain comments,
+                        strings and char literals stripped first, so prose and fixtures in strings do not count; doc
+                        comments are doctest source and ARE scanned, hidden `# ` doctest lines included)
   [cfg_attr-allow]      `#[cfg_attr(<pred>, allow(..))]` / `expect(..)`, inner or outer
   [unsafe]              the token `unsafe` in code, anywhere except the known-pending inventory below
   [cargo-lint]          any `[lints.*]` / `[workspace.lints.*]` entry of any Cargo.toml at level "allow" or "warn"
@@ -31,7 +32,8 @@ its count and the total. A pending file must hold EXACTLY its pinned count: more
 be pending, and an unsafe line in any file not on the list fails. A pending bin root is exempt from [no-forbid] only
 while it is listed. Only lines can leave this file; nothing is ever added to it.
 
-Test: tools/no_suppress_selftest.sh (fixture repos: each planted form fails by name; comments, strings, raw strings,
+Test: tools/no_suppress_selftest.sh (fixture repos: each planted form fails by name, doc comments included; plain comments,
+  strings, raw strings,
 forbid/deny attributes and identifiers like unsafe_code pass).
 """
 import os, re, sys, subprocess, tomllib
@@ -42,12 +44,42 @@ LIB_DIRS = ("src/", "zenith-float-num/src/", "zenith-float-bound/src/", "zenith-
             "zenith-float-compare/src/", "zenith-float-testkit/src/")
 
 
+def strip_doc_block(body):
+    """the inside of /** .. */ or /*! .. */: each line's leading `*` dropped, then scanned as code (length kept)."""
+    out = []
+    for ln in body.split("\n"):
+        m = re.match(r"\s*\*(?!/)", ln)
+        k = m.end() if m else 0
+        out.append(" " * k + strip_rust(ln[k:]))
+    return "\n".join(out)
+
+
 def strip_rust(src):
-    """comments, string / raw string / byte string and char literals -> spaces (newlines kept)."""
+    """comments, string / raw string / byte string and char literals -> spaces (newlines kept). Doc comments (`///`,
+    `//!`, `/** */`, `/*! */`) are doctest source and rustdoc input, so their text is kept and scanned as code, one line at
+    a time (a string literal in it is still stripped; a stray quote blanks only the rest of its own line). Spence m1."""
     out, i, n = [], 0, len(src)
     blank = lambda s: re.sub(r"[^\n]", " ", s)
     while i < n:
         c = src[i]
+        if (src.startswith("///", i) and not src.startswith("////", i)) or src.startswith("//!", i):
+            j = src.find("\n", i)
+            j = n if j < 0 else j
+            out.append("   " + strip_rust(src[i + 3:j])); i = j; continue
+        if (src.startswith("/**", i) and not src.startswith("/**/", i) and not src.startswith("/***", i)) \
+                or src.startswith("/*!", i):
+            d, j = 0, i
+            while j < n:
+                if src.startswith("/*", j):
+                    d += 1; j += 2
+                elif src.startswith("*/", j):
+                    d -= 1; j += 2
+                else:
+                    j += 1
+                if d == 0:
+                    break
+            inner_end = j - 2 if src.startswith("*/", j - 2) and j - 2 >= i + 3 else j
+            out.append("   " + strip_doc_block(src[i + 3:inner_end]) + " " * (j - inner_end)); i = j; continue
         if src.startswith("//", i):
             j = src.find("\n", i)
             j = n if j < 0 else j

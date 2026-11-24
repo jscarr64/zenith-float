@@ -69,7 +69,13 @@ case_ fail ".cargo/config rustflags -A" "mkdir -p .cargo && printf '[build]\nrus
 case_ fail "crate root without forbid(unsafe_code)" "printf 'pub use zenith_float_num::f;\n' > src/lib.rs" 'src/lib.rs \[no-forbid\]'
 case_ pass "root covered by Cargo [lints.rust] unsafe_code = forbid" "printf '#![deny(unused)]\n/// d\npub fn f() -> u32 { 1 }\n' > $L"
 case_ pass "tokens in comments, strings, raw strings, forbid/deny, identifiers" \
-  "printf '// #[allow(dead_code)] unsafe\n/* #[allow(x)] unsafe { } */\n/// #[expect(y)] unsafe\npub const S: &str = \"#[allow(z)] unsafe\";\npub const R: &str = r#\"#[allow(q)] unsafe\"#;\n#[deny(unused)]\npub const UNSAFE_CODE: u32 = 0;\npub fn is_unsafe(unsafe_code: u32) -> u32 { unsafe_code }\n' >> $L && printf 'git add -A\n' > scripts/g.sh"
+  "printf '// #[allow(dead_code)] unsafe\n/* #[allow(x)] unsafe { } */\n//// #[expect(y)] unsafe (four slashes: not a doc comment)\n/// a doc string \"unsafe #[allow(w)]\" is a literal\npub const S: &str = \"#[allow(z)] unsafe\";\npub const R: &str = r#\"#[allow(q)] unsafe\"#;\n#[deny(unused)]\npub const UNSAFE_CODE: u32 = 0;\npub fn is_unsafe(unsafe_code: u32) -> u32 { unsafe_code }\n' >> $L && printf 'git add -A\n' > scripts/g.sh"
+# Spence m1 on 0a1cb6c: doc comments are doctest source, so their text is scanned as code (string literals still stripped)
+case_ fail "/// #[expect] unsafe in a doc comment" "printf '/// #[expect(y)] unsafe\npub const D: u32 = 0;\n' >> $L" 'zenith-float-num/src/lib.rs:5 \[expect\]'
+case_ fail "unsafe in a doctest code block" "printf '/// \x60\x60\x60\n/// let v = unsafe { core::mem::zeroed::<u8>() };\n/// \x60\x60\x60\npub const E: u32 = 0;\n' >> $L" 'zenith-float-num/src/lib.rs:6 \[unsafe\]'
+case_ fail "hidden doctest line # #[allow]" "printf '/// \x60\x60\x60\n/// # #[allow(dead_code)]\n/// # fn h() {}\n/// \x60\x60\x60\npub const F: u32 = 0;\n' >> $L" 'zenith-float-num/src/lib.rs:6 \[allow\]'
+case_ fail "//! inner doc comment" "printf '//! #[allow(unused)] in crate docs\n' > src/y.rs" 'src/y.rs:1 \[allow\]'
+case_ fail "/** block doc comment */" "printf '/**\n * unsafe { }\n */\npub const G: u32 = 0;\n' >> $L" 'zenith-float-num/src/lib.rs:6 \[unsafe\]'
 case_ fail "every finding is listed, then a total" "printf '#[allow(dead_code)]\nconst A: u32 = 1;\n#[allow(unused)]\nconst B: u32 = 2;\n' >> $L" 'no_suppress_scan: FAIL 2 finding'
 [[ $fail -eq 0 ]] && { echo "no_suppress_selftest: ok ($n cases)"; exit 0; }
 echo "no_suppress_selftest: FAIL"; exit 1
