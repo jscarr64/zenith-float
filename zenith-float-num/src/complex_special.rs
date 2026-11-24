@@ -397,11 +397,6 @@ pub(crate) fn is_nonpos_integer(z: &ExactComplex) -> bool {
     z.im().is_zero() && z.re().is_int() && (z.re().is_zero() || z.re().is_negative())
 }
 
-#[allow(dead_code)]
-pub(crate) fn series_term_cap(p: usize) -> usize {
-    p.saturating_add(WORD_BIT_SIZE)
-}
-
 /// `None` if a dest-width mantissa can be reserved on this machine; otherwise a
 /// NaN pair with the existing allocation (or precision) error, before any work.
 pub(crate) fn nan_if_dest_unallocatable(p: usize) -> Option<ExactComplex> {

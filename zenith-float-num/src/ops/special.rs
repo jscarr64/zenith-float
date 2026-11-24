@@ -6069,18 +6069,6 @@ fn extra_bits_for_degree(n: u32) -> usize {
     round_p(n as usize)
 }
 
-#[allow(dead_code)]
-pub(crate) fn series_n_max(p: usize, exp: Exponent) -> usize {
-    let mag = if exp <= 0 {
-        0
-    } else if exp >= 16 {
-        p
-    } else {
-        1usize << (exp as usize).min(12)
-    };
-    p.saturating_add(32).saturating_add(mag)
-}
-
 /// `|t| < 2^-p |sum|` (or `t = 0`): relative stopping rule for series whose sum can be far
 /// below 1 (e.g. `J_ν(x) ≈ (x/2)^ν/Γ(ν+1)` for small `x`, `Si(x) ≈ x`). The absolute rule
 /// `|t| < 2^-p` used before truncated such sums early (J_10.5(1e-10) had 367 correct bits at p=512).
@@ -8059,6 +8047,19 @@ fn lambert_w_bracketed(
 mod tests {
     use super::*;
 
+    /// The term cap the I/J series used before fb2809d (removed from the library: the series now runs to its tail
+    /// bound). Kept here only so the regression test below can show the old cap stopped short of the I_1 peak.
+    fn old_series_n_max(p: usize, exp: Exponent) -> usize {
+        let mag = if exp <= 0 {
+            0
+        } else if exp >= 16 {
+            p
+        } else {
+            1usize << (exp as usize).min(12)
+        };
+        p.saturating_add(32).saturating_add(mag)
+    }
+
     /// `x` as an exact number at `p` bits: `2^e` (`e` may be negative).
     fn pow2(e: Exponent, p: usize) -> Result<ExactNumNumber, crate::Error> {
         let mut x = ExactNumNumber::from_word(1, p)?;
@@ -8931,7 +8932,7 @@ mod tests {
         Ok(())
     }
 
-    /// `series_n_max` is O(p) once the exponent is ≥ 16, and even at exponent 14
+    /// The old `series_n_max` cap is O(p) once the exponent is ≥ 16, and even at exponent 14
     /// it is only p+32+2^12. For I_1(10000) the peak is at k ≈ 5000, past that
     /// old limit, so a cap there returns PrecisionRetryExhausted (or, before
     /// the `!done` check, a truncated sum). The series must run past the peak
@@ -8942,10 +8943,10 @@ mod tests {
         let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
         let x = ExactNumNumber::from_word(10_000, p)?;
-        let nmax = series_n_max(p, x.exponent());
+        let nmax = old_series_n_max(p, x.exponent());
         assert!(
             nmax < 5000,
-            "series_n_max({p}, exp={}) = {nmax}, no longer short of the I-peak?",
+            "old_series_n_max({p}, exp={}) = {nmax}, no longer short of the I-peak?",
             x.exponent()
         );
         let one = ExactNumNumber::from_word(1, p)?;

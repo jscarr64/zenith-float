@@ -47,15 +47,10 @@ pub const GK_KRONROD_ORDER: usize = 2 * GK_GAUSS_ORDER + 1;
 
 /// Largest `max_subintervals` accepted by [`integrate_adaptive_gk`].
 /// Historical public constant; the caller's `max_subintervals` is no longer refused at this value.
-#[allow(dead_code)]
 pub const GK_SUBINTERVAL_MAX: usize = 32;
 
 /// Destination precision below this cannot host a guarded (7, 15) rule.
 const GK_MIN_PREC: usize = 32;
-
-/// Newton corrections after the sign-change bracket is bisected.
-#[allow(dead_code)]
-const GK_NEWTON_MAX: usize = 32;
 
 /// Bisection steps used to separate a characteristic-polynomial root.
 const GK_BISECT_STEPS: usize = 48;

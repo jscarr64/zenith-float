@@ -14,14 +14,6 @@ use crate::ExactNum;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-/// Historical sweep multiplier; SVD now stalls when the off-diagonals stop shrinking.
-/// returns `None`.
-#[allow(dead_code)]
-const SVD_ITER_MAX: u32 = 64;
-/// Historical sweep multiplier; eigen now stalls when the off-diagonals stop shrinking.
-/// returns `None`.
-#[allow(dead_code)]
-const EIGEN_ITER_MAX: u32 = 64;
 /// Default maximum length of [`ExactNumArray::fft`] / [`ExactNumArray::ifft`] (65,536; was 4,096
 /// before 2.0). [`ExactNumArray::fft_with_max_points`] / [`ExactNumArray::ifft_with_max_points`]
 /// take the cap per call instead.

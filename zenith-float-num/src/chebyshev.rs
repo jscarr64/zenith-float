@@ -8,10 +8,6 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use alloc::vec::Vec;
 
-/// Historical public constant; [`chebyshev_coeffs`] is no longer refused at this degree.
-#[allow(dead_code)]
-pub const CHEBYSHEV_MAX_DEGREE: usize = 256;
-
 fn work_p(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE)
 }
@@ -372,17 +368,17 @@ mod tests {
             chebyshev_coeffs(|x, p, rm, cc| x.exp(p, rm, cc), 0, a, &b, p, rm, &mut cc)
                 == Err(crate::Error::InvalidArgument)
         );
-        // Past the old CHEBYSHEV_MAX_DEGREE = 256 refusal.
+        // Past the old 256-coefficient refusal (the removed CHEBYSHEV_MAX_DEGREE).
         let big = chebyshev_coeffs(
             |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
-            CHEBYSHEV_MAX_DEGREE + 1,
+            257,
             ExactNum::from_i64(-1, p),
             &b,
             p,
             rm,
             &mut cc,
         );
-        assert_eq!(big.as_ref().map(|c| c.len()), Ok(CHEBYSHEV_MAX_DEGREE + 1));
+        assert_eq!(big.as_ref().map(|c| c.len()), Ok(257));
         assert!(chebyshev_error_bound(&c, p).compare(&ExactNum::from_u8(5, p)) == Some(0));
         Ok(())
     }

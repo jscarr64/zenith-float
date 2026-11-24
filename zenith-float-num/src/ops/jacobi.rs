@@ -31,11 +31,6 @@ fn jacobi_ratio_m_one(m: &ExactNumNumber, p: usize) -> Result<Option<ExactNumNum
     }
 }
 
-/// Historical public constant; AGM now runs until `|c|` is below the
-/// working-precision bound, or stalls.
-#[allow(dead_code)]
-pub const JACOBI_AGM_MAX: u32 = 128;
-
 impl ExactNumNumber {
     /// Jacobi amplitude \(\operatorname{am}(u|m)\). Parameter \(m=k^2\in[0,1]\).
     pub fn jacobi_am(

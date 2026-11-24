@@ -515,11 +515,6 @@ impl ExactNumNumber {
     }
 }
 
-/// Historical bound; the exact-dyadic log check is now limited only by
-/// allocatable working precision, not this constant.
-#[allow(dead_code)]
-const LOG_EXACT_MAX: usize = 4096;
-
 /// Returns true when `base^r == x` exactly, for a candidate `r = a / 2^j` with small `a`, `j`.
 fn log_is_exact_dyadic(
     x: &ExactNumNumber,
@@ -589,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_log_exact_dyadic_beyond_old_4096_cap() -> Result<(), crate::Error> {
-        // 2^4097 is an exact power; the old LOG_EXACT_MAX = 4096 refused this
+        // 2^4097 is an exact power; the old 4096-bit exact-log bound (LOG_EXACT_MAX, removed) refused this
         // numerator and skipped the exact-result flag.
         let p = 64;
         let two = ExactNumNumber::from_word(2, p)?;

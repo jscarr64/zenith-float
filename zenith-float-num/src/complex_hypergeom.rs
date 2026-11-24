@@ -17,10 +17,6 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 
-/// Linear-transform attempts before `NaN`.
-#[allow(dead_code)]
-const HYPERGEOM_TRANSFORM_MAX: u32 = 8;
-
 fn rm() -> RoundingMode {
     RoundingMode::None
 }
@@ -73,32 +69,6 @@ fn mag64(z: &ExactComplex) -> ExactNum {
 
 fn mag_lt(a: &ExactNum, b: &ExactNum) -> bool {
     matches!(a.compare(b), Some(c) if c < 0)
-}
-
-/// Terms needed for a geometric series at `|z|` and precision `p`, plus `big` (the
-/// largest parameter, so the terms are already decreasing) and a 128-bit guard.
-/// For `|z| < 1`, `n ≲ (p + guard) / −log2(|z|) ≤ 2(p + guard) / (1 − |z|)`.
-#[allow(dead_code)]
-fn series_term_budget(z: &ExactComplex, p: usize, big: u64) -> usize {
-    let base = p.saturating_add(128).saturating_add(big as usize).max(32);
-    let one = ExactNum::from_u8(1, 64);
-    let az = mag64(z);
-    if !mag_lt(&az, &one) {
-        return base;
-    }
-    let mut d = ExactNum::sub_ref(&one, &az, 64, RoundingMode::ToZero);
-    if d.is_zero() {
-        return base;
-    }
-    let mut shift = 0u32;
-    while shift < 62 && mag_lt(&d, &one) {
-        d = d.ldexp(1, 64, RoundingMode::ToZero);
-        shift += 1;
-    }
-    let scale = 1usize.checked_shl(shift).unwrap_or(usize::MAX);
-    base.saturating_mul(2)
-        .saturating_mul(scale)
-        .min(u32::MAX as usize)
 }
 
 fn re_positive_strict(z: &ExactComplex) -> bool {

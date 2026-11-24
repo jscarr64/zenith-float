@@ -28,27 +28,9 @@ use crate::RoundingMode;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-/// Maximum number of Gauss nodes. Larger `n` is `None`.
-/// Historical public constant; node counts are no longer refused at this value.
-#[allow(dead_code)]
-pub const QUADRATURE_MAX_NODES: usize = 64;
-
-/// Maximum tanh–sinh step halvings after the precision-based `h`.
-/// Historical public constant; tanh-sinh now halves until the error bound or a stall.
-#[allow(dead_code)]
-pub const TANH_SINH_LEVELS_MAX: usize = 8;
-
-/// Newton sweeps per Gauss root.
-#[allow(dead_code)]
-const QUADRATURE_NEWTON_MAX: usize = 64;
-
 /// Starting grid points per expected root when isolating Laguerre / Hermite
 /// zeros. If a pass finds fewer than n brackets the grid is doubled.
 const QUADRATURE_BRACKET_MUL: usize = 8;
-
-/// Bisection steps inside a sign-change bracket before Newton.
-#[allow(dead_code)]
-const QUADRATURE_BISECT_STEPS: usize = 16;
 
 /// Destination width, rounded up to a word, plus two guard words.
 ///
@@ -848,13 +830,13 @@ mod tests {
             &mut cc
         )
         .is_none());
-        // Past the old QUADRATURE_MAX_NODES = 64 refusal; ∫_{-1}^{1} 1 dx = 2
+        // Past the old 64-node refusal (the removed QUADRATURE_MAX_NODES); ∫_{-1}^{1} 1 dx = 2
         // is exact for any n ≥ 1.
         let gl65 = gauss_legendre(
             |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
             &a,
             &b,
-            QUADRATURE_MAX_NODES + 1,
+            65,
             64,
             rm,
             &mut cc,

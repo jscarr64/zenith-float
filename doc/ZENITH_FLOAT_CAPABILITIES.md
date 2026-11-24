@@ -56,15 +56,9 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `EXPONENT_MIN` | `−(2^62 − 1)` on every target |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |
 | `MAX_PREC_RETRY` | `256` — extra word-sized retry steps beyond `p` for correct-rounding loops |
-| `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |
-| `EIGEN_ITER_MAX` | `64` — QR sweeps per eigenvalue in `eigen_decomp`; then `None` |
 | `FFT_MAX_POINTS` | `65536` — default max length of `fft` / `ifft` (was `4096`); longer → `None`; per call: `fft_with_max_points` / `ifft_with_max_points` |
 | `POLY_COMPANION_CLOSED_DEG` | `2` — `ExactNumPoly::roots_real` closed-form companion eigenvalues; higher degree → `None` |
-| `CHEBYSHEV_MAX_DEGREE` | `256` — max coefficient count for `chebyshev_coeffs`; larger `n` → `None` |
 | `ORTHOPOLY_N_MAX` | `256` — max degree for Hermite / Laguerre / Chebyshev T,U / Gegenbauer / Jacobi \(P_n^{(\alpha,\beta)}\); larger `n` → `NaN` |
-| `JACOBI_AGM_MAX` | `128` — AGM / Landen steps for `jacobi_am` / `sn` / `cn` / `dn` / `cd` |
-| `QUADRATURE_MAX_NODES` | `64` — max Gauss nodes; larger `n` → `None` |
-| `TANH_SINH_LEVELS_MAX` | `8` — max tanh–sinh step halvings after `h = 2π/(p ln 2)` |
 | `ROOT_MAX_ITER` | `256` — cap on bisection / Newton / Brent / Illinois steps |
 | `ROOT_DEFAULT_TOL` | `−256` — default absolute tolerance exponent (`2^{ROOT_DEFAULT_TOL}`) |
 | `ode_min_step(p)` | `2^{-p}` — minimum representable RK45 step at the working precision |
@@ -264,8 +258,8 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `lu_decomp`, `qr_decomp`, `svd_decomp`, `eigen_decomp`, `fft`/`ifft`; `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
 | Integer SIMD (IEEE) | ✅ | `u32`/`u64` lanes; SSE2/NEON; `IEEE_SIMD_LANE_WIDTH=4`; add/sub/mul/div/sqrt/fma bit-identical to scalar kernel; 1000-element `Ieee64Array` gold; not an FPU |
 | `lu_decomp` / `qr_decomp` | ✅ | Partial-pivot LU; modified Gram–Schmidt QR; singular or failed workspace reserve → `None`; rank-deficient QR → zero \(R_{kk}\) |
-| `svd_decomp` | ✅ | Golub–Reinsch; \((U,\Sigma,V^T)\); \(\sigma\) descending; `SVD_ITER_MAX=64` sweeps/value → `None`; empty/NaN/Inf → `None` |
-| `eigen_decomp` | ✅ | Symmetric QR; \((\Lambda,V)\) with \(\lambda\) descending; `EIGEN_ITER_MAX=64`; non-symmetric / empty / non-finite → `None` |
+| `svd_decomp` | ✅ | Golub–Reinsch; \((U,\Sigma,V^T)\); \(\sigma\) descending; sweeps until the off-diagonals stop shrinking; empty/NaN/Inf → `None` |
+| `eigen_decomp` | ✅ | Symmetric QR; \((\Lambda,V)\) with \(\lambda\) descending; sweeps until the off-diagonals stop shrinking; non-symmetric / empty / non-finite → `None` |
 | `fft` / `ifft` | ✅ | Radix-2 Cooley–Tukey; `(1,n)`/`(n,1)` real or `(2,n)` complex; unnormalized DFT; `ifft` divides by `n`; `FFT_MAX_POINTS=65536` (per call: `fft_with_max_points`) |
 | `ExactRational` | ✅ | `num/den` reduced; `den>0`; `from_i64` / `new`; add/sub/mul/div; `to_exact_num`; `1/3+1/6=1/2`; `2/4=1/2`; `(-3)/(-4)=3/4`; 256-bit `1/3` |
 | `ExactInt` | ✅ | Little-endian `Word` limbs; `from_i64`/`u64`/`i128`/`u128`; add/sub/mul; `div_rem`; `gcd`; `pow`; `20!`; `2^100`; `gcd(48,18)=6` |

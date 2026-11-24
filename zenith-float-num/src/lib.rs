@@ -118,7 +118,6 @@ pub use crate::chebyshev::chebyshev_coeffs;
 pub use crate::chebyshev::chebyshev_error_bound;
 pub use crate::chebyshev::chebyshev_eval;
 pub use crate::chebyshev::clenshaw;
-pub use crate::chebyshev::CHEBYSHEV_MAX_DEGREE;
 pub use crate::common::buf::INLINE_WORDS;
 pub use crate::complex::ExactComplex;
 pub use crate::defs::Error;
@@ -182,7 +181,6 @@ pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;
 pub use crate::ops::special::beta;
-pub use crate::ops::JACOBI_AGM_MAX;
 pub use crate::orthopoly::ORTHOPOLY_N_MAX;
 pub use crate::poly::ExactNumPoly;
 pub use crate::poly::POLY_COMPANION_CLOSED_DEG;
@@ -202,8 +200,6 @@ pub use crate::quadrature::QuadratureError;
 pub use crate::quadrature::GK_GAUSS_ORDER;
 pub use crate::quadrature::GK_KRONROD_ORDER;
 pub use crate::quadrature::GK_SUBINTERVAL_MAX;
-pub use crate::quadrature::QUADRATURE_MAX_NODES;
-pub use crate::quadrature::TANH_SINH_LEVELS_MAX;
 pub use crate::radix_float::RadixFloat;
 #[cfg(any(test, feature = "random"))]
 pub use crate::random_dist::RandomDist;
