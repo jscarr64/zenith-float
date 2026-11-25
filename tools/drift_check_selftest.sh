@@ -206,5 +206,61 @@ k=$(grep -c 'side2: 2 commits ahead' <<<"$out")
 [ $rc = 1 ] && [ "$k" = 1 ] && ok "scan of 3 linked worktrees: branch reported once" || { bad "scan of 3 linked worktrees (rc=$rc, reported $k times)"; show "$out"; }
 r=$(fresh wtl); git -C "$r" worktree add -q -b wtb "$work/wtl-linked" 2>/dev/null; commit_at "$work/wtl-linked" 30 x1; commit_at "$work/wtl-linked" 20 x2
                 expect "linked worktree branch 2 ahead"    1 run --repo "$work/wtl-linked"
+# ---- active mode (Jeff 2026-11-25 3:55 PM CT: "limit the check to active work trees") ----
+# --scan checks only ACTIVE work trees: newest change (HEAD commit time, index mtime, logs/HEAD mtime, newest dirty
+# file mtime) within the window (default 24 h; exactly 24 h is active), or dirty work less than 30 min old, or listed
+# with --include / --include-file. Unknown activity counts as active (fail closed). --all checks every work tree.
+# Inside an active tree: the HEAD branch, plus other branches whose tip changed within the window.
+W=86400
+# age REPO SECS : index and logs/HEAD last touched SECS ago (git itself touched them at real now)
+age() { touch -d "@$((NOW-$2))" "$1/.git/index" "$1/.git/logs/HEAD"; }
+# stale NAME COMMIT_AGE : repo 2 commits ahead, both commits COMMIT_AGE old, index/logs/HEAD 2 days old
+stale() { local r; r=$(fresh "$1"); commit_at "$r" "$2" s1; commit_at "$r" "$2" s2; age "$r" 172800; echo "$r"; }
+r=$(stale ina 172800)
+expect "active: tree idle 2 days is skipped"                 0 run --scan "$work/ina"
+expect "active: --all checks the idle tree"                  1 run --all --scan "$work/ina"
+expect "active: --include checks the idle tree"              1 run --scan "$work/ina" --include "$r"
+printf '# comment\n%s\n' "$r" > "$work/ina-inc.txt"
+expect "active: --include-file checks the idle tree"         1 run --scan "$work/ina" --include-file "$work/ina-inc.txt"
+out=$(run --scan "$work/ina" 2>&1); grep -q "skip $r" <<<"$out" && ok "active: skipped tree is named" || { bad "active: skipped tree is named"; show "$out"; }
+r=$(stale cwe $W)
+expect "active: HEAD commit exactly 24 h old is active"      1 run --scan "$work/cwe"
+r=$(stale cwo $((W+1)))
+expect "active: HEAD commit 24 h + 1 s old is idle"          0 run --scan "$work/cwo"
+r=$(stale ixr 172800); touch -d "@$((NOW-100))" "$r/.git/index"
+expect "active: recent index alone makes it active"          1 run --scan "$work/ixr"
+r=$(stale rlr 172800); touch -d "@$((NOW-100))" "$r/.git/logs/HEAD"
+expect "active: recent logs/HEAD alone makes it active"      1 run --scan "$work/rlr"
+r=$(stale dwr 172800); echo u > "$r/u.txt"; touch -d "@$((NOW-7200))" "$r/u.txt"
+expect "active: dirty file 2 h old (inside window) is active" 1 run --scan "$work/dwr"
+r=$(stale d29 172800); echo u > "$r/u.txt"; touch -d "@$((NOW-1799))" "$r/u.txt"
+expect "active: dirty < 30 min is active even with a 5 min window" 1 run --scan "$work/d29" --active-window-min 5
+r=$(stale d30 172800); echo u > "$r/u.txt"; touch -d "@$((NOW-1800))" "$r/u.txt"
+expect "active: dirty exactly 30 min, 5 min window: idle"    0 run --scan "$work/d30" --active-window-min 5
+r=$(stale brk 172800); echo 0123456789abcdef0123456789abcdef01234567 > "$r/.git/refs/heads/w"
+out=$(run --scan "$work/brk" 2>&1); rc=$?
+[ $rc != 0 ] && ok "active: unreadable activity fails closed (checked, rc=$rc)" || { bad "active: unreadable activity fails closed (rc=0)"; show "$out"; }
+# branches inside an active tree
+r=$(fresh obr); git -C "$r" switch -q -c old; commit_at "$r" 172800 o1; commit_at "$r" 172800 o2; git -C "$r" switch -q w
+expect "active: other branch idle 2 days is skipped"         0 run --scan "$work/obr"
+expect "active: --all checks the idle branch"                1 run --all --scan "$work/obr"
+r=$(fresh obe); git -C "$r" switch -q -c old; commit_at "$r" 172800 o1; commit_at "$r" $W o2; git -C "$r" switch -q w
+expect "active: other branch tip exactly 24 h old is checked" 1 run --scan "$work/obe"
+r=$(fresh obo); git -C "$r" switch -q -c old; commit_at "$r" 172800 o1; commit_at "$r" $((W+1)) o2; git -C "$r" switch -q w
+expect "active: other branch tip 24 h + 1 s old is skipped"  0 run --scan "$work/obo"
+r=$(fresh obk); echo 0123456789abcdef0123456789abcdef01234567 > "$r/.git/refs/heads/bogus"
+expect "active: other branch with unreadable tip is checked (git error, rc 2)" 2 run --scan "$work/obk"
+r=$(stale ind 172800); out=$(run --scan "$work/ind" --include "$r" 2>&1)
+! grep -q "skip $r" <<<"$out" && ok "active: an --include tree that is also scanned is checked once, not skipped" || { bad "active: --include tree also skipped"; show "$out"; }
+expect "active: --repo always checks every branch"           1 run --repo "$r"
+r=$(fresh obt); git -C "$r" hash-object -w --stdin <<<blob > "$r/.git/refs/heads/blobref"
+out=$(run --scan "$work/obt" 2>&1); rc=$?
+[ $rc = 0 ] && ! grep -q "skip.*blobref" <<<"$out" && ok "active: branch with no commit date (points at a blob) is checked, not skipped" || { bad "active: branch with no commit date (rc=$rc)"; show "$out"; }
+ra=$(stale ia 172800); rb=$(stale ib 172800); echo "$ra" > "$work/ia-inc.txt"
+out=$(run --scan "$work/ia" --include "$rb" --include-file "$work/ia-inc.txt" 2>&1)
+grep -q "FAIL $ra " <<<"$out" && grep -q "FAIL $rb " <<<"$out" && ok "active: --include and --include-file together both count" || { bad "active: --include and --include-file together"; show "$out"; }
+expect "active: bad window value"                            2 run --scan "$work/obo" --active-window-min -1
+e="$work/act-empty"; mkdir -p "$e"; git init -q -b w "$e/r"; echo x > "$e/r/u.txt"; touch -d "@$((NOW-1801))" "$e/r/u.txt"
+expect "active: empty repo (no HEAD commit) counts as active, old dirty file fails" 1 run --scan "$e"
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
