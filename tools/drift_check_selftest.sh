@@ -118,5 +118,40 @@ r=$(fresh dha); git -C "$r" switch -q --detach; commit_at "$r" 1800 d1
                 expect "detached HEAD, 1 unpushed exactly 30 min" 0 run --repo "$r"
 r=$(fresh dhb); git -C "$r" switch -q --detach; commit_at "$r" 1801 d1
                 expect "detached HEAD, 1 unpushed 30 min + 1 s"   1 run --repo "$r"
+# ---- dirty work: FAIL when the OLDEST dirty path (modified, deleted, untracked, not ignored) is > 30 min old ----
+r=$(fresh dn);  echo x > "$r/new.txt"; touch -d "@$((NOW-60))" "$r/new.txt"
+                expect "untracked 1 min old"               0 run --repo "$r"
+r=$(fresh dx);  echo x > "$r/new.txt"; touch -d "@$((NOW-1800))" "$r/new.txt"
+                expect "untracked exactly 30 min"          0 run --repo "$r"
+r=$(fresh do);  echo x > "$r/new.txt"; touch -d "@$((NOW-1801))" "$r/new.txt"
+                expect "untracked 30 min + 1 s"            1 run --repo "$r"
+r=$(fresh dm);  echo y >> "$r/f.txt"; touch -d "@$((NOW-3600))" "$r/f.txt"
+                expect "modified tracked file 1 h old"     1 run --repo "$r"
+r=$(fresh di);  echo '*.log' > "$r/.gitignore"; git -C "$r" add .gitignore; GIT_COMMITTER_DATE="@$((NOW-7000)) +0000" git -C "$r" commit -q -m ign
+                git -C "$r" push -q 2>/dev/null; echo x > "$r/old.log"; touch -d "@$((NOW-9999))" "$r/old.log"
+                expect "ignored file 2.7 h old"            0 run --repo "$r"
+r=$(fresh dsub); mkdir -p "$r/d/e"; echo x > "$r/d/e/deep.txt"; touch -d "@$((NOW-4000))" "$r/d/e/deep.txt"
+                expect "untracked file in a new subdir, old" 1 run --repo "$r"
+r=$(fresh ddn); rm -f "$r/f.txt"
+                expect "deleted tracked file, index fresh" 0 run --repo "$r"
+r=$(fresh ddo); rm -f "$r/f.txt"; touch -d "@$((NOW-4000))" "$r/.git/index"
+                expect "deleted tracked file, age from index 66 min" 1 run --repo "$r"
+r=$(fresh drn); git -C "$r" mv f.txt g.txt; touch -d "@$((NOW-60))" "$r/g.txt"; touch -d "@$((NOW-4000))" "$r/.git/index"
+                expect "staged rename: age from the new file, not the index" 0 run --repo "$r"
+# the OLDEST dirty file decides, not the newest (Cassie B5b)
+r=$(fresh d2o); echo x > "$r/a.txt"; echo y > "$r/b.txt"; touch -d "@$((NOW-1801))" "$r/a.txt"; touch -d "@$((NOW-5))" "$r/b.txt"
+                expect "two dirty files, oldest 30 min + 1 s" 1 run --repo "$r"
+r=$(fresh d2x); echo x > "$r/a.txt"; echo y > "$r/b.txt"; touch -d "@$((NOW-1800))" "$r/a.txt"; touch -d "@$((NOW-5))" "$r/b.txt"
+                expect "two dirty files, oldest exactly 30 min" 0 run --repo "$r"
+# empty repo (no commit yet): dirty work still counts (Cassie B6)
+e="$work/emp1"; git init -q -b w "$e"; echo x > "$e/u.txt"; touch -d "@$((NOW-1800))" "$e/u.txt"
+                expect "empty repo, untracked exactly 30 min" 0 run --repo "$e"
+e="$work/emp2"; git init -q -b w "$e"; echo x > "$e/u.txt"; touch -d "@$((NOW-1801))" "$e/u.txt"
+                expect "empty repo, untracked 30 min + 1 s"   1 run --repo "$e"
+# a submodule with old uncommitted changes is dirty work too (Cassie N6 X09)
+r=$(fresh dsm); s=$(fresh dsms)
+git -C "$r" -c protocol.file.allow=always submodule -q add "$s" sm 2>/dev/null; git -C "$r" commit -q -m sm; git -C "$r" push -q 2>/dev/null
+echo z >> "$r/sm/f.txt"; touch -d "@$((NOW-4000))" "$r/sm/f.txt" "$r/sm"
+                expect "submodule with 66 min old changes"   1 run --repo "$r"
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
