@@ -14,6 +14,7 @@ pub mod points;
 pub mod replay;
 pub mod rng;
 pub mod seeds;
+pub mod sha256;
 pub mod shrink;
 pub mod tightness;
 

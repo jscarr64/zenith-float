@@ -1,5 +1,6 @@
-//! The committed golden files and the header line each must start with. The sha256 comparison is NOT done in Rust (no hashing crate may be
-//! added); the shell gate step tools/goldens_regen.sh runs `sha256sum -c tests/goldens/SHA256SUMS` and regenerates every file byte for byte.
+//! The committed golden files and the header line each must start with. Their sha256 comparison is NOT done in Rust: the shell gate step
+//! tools/goldens_regen.sh runs `sha256sum -c tests/goldens/SHA256SUMS` and regenerates every file byte for byte. The committed heavy-tier
+//! files are the exception: their tests check them against HEAVY.SHA256 with common::sha256 (no crate) before reading them.
 
 use std::path::PathBuf;
 

@@ -12,6 +12,7 @@
 //! containment-only for now (the `k_row` tightness bound is a follow-up commit), the columns themselves are checked below.
 
 use crate::common::goldens::golden_dir;
+use crate::common::sha256::read_pinned;
 use zenith_float_bound::array::{BallMat, BallVec};
 use zenith_float_bound::ball::Ball;
 use zenith_float_bound::error::BoundError;
@@ -727,10 +728,13 @@ fn pair_at(p: &[&str], k: usize) -> Result<(ExactNum, ExactNum), String> {
 
 #[test]
 fn la3_qr_hilbert_256_contains_by_heavy_tier() -> Result<(), String> {
-    // 16.LA.5 heavy tier. la_qr_enc4096_heavy.txt is committed (r6 item b; sha256 pinned in HEAVY.SHA256): no env var, no
-    // ignore, no skip. la_qr_enc16384_heavy.txt is not committed; no row needs it (HILBERT_TIERS), and a row that did
-    // fails naming the file.
-    let e4 = heavy_rows("la_qr_enc4096_heavy.txt")?.ok_or("no la_qr_enc4096_heavy.txt")?;
+    // 16.LA.5 heavy tier. la_qr_enc4096_heavy.txt is committed (r6 item b) and checked against HEAVY.SHA256 before use:
+    // no env var, no ignore, no skip. la_qr_enc16384_heavy.txt is not committed; no row needs it (HILBERT_TIERS), and a
+    // row that did fails naming the file.
+    let e4 = read_pinned(
+        &golden_dir().join("slices").join("qr"),
+        "la_qr_enc4096_heavy.txt",
+    )?;
     let e16 = heavy_rows("la_qr_enc16384_heavy.txt")?;
     let text = gold_text("la_qr.txt")?;
     let mut got: Vec<(String, usize)> = Vec::new();
