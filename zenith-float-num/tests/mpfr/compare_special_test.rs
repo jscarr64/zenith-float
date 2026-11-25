@@ -13,9 +13,9 @@ use crate::mpfr::common::{
     test_zf_rem_pi,
 };
 use crate::mpfr::common::{draw_seed, get_prec_rng, rebuild_from_seed, test_zf_op};
+use crate::mpfr::mp::mpfr::{self, ExpT};
+use crate::mpfr::mp::Float;
 use crate::mpfr::shifted as sh;
-use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::Float;
 use zenith_float_num::{
     Consts, ExactNum, Exponent, RoundingMode, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN,
     WORD_BIT_SIZE,
@@ -23,7 +23,7 @@ use zenith_float_num::{
 
 #[test]
 fn mpfr_compare_special() -> Result<(), Box<dyn std::error::Error>> {
-    let run_cnt = crate::mpfr::common::tier_runs(500);
+    let run_cnt = 500;
     let p_rng = get_prec_rng();
     let p_min = 1;
 
@@ -33,7 +33,7 @@ fn mpfr_compare_special() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn mpfr_compare_special_large() -> Result<(), Box<dyn std::error::Error>> {
-    let run_cnt_large = crate::mpfr::common::tier_runs(3);
+    let run_cnt_large = 3;
     let p_rng_large = 1;
     let p_min_large = 1563;
 
@@ -49,13 +49,13 @@ fn run_compare_special(
     reset_test_rng();
     let mut cc = Consts::new()?;
 
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as exp_t);
-        mpfr::set_emax(EXPONENT_MAX as exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as ExpT);
+        mpfr::set_emax(EXPONENT_MAX as ExpT);
     }
 
-    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
-    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
+    assert_eq!(EXPONENT_MIN, mpfr::get_emin());
+    assert_eq!(EXPONENT_MAX, mpfr::get_emax());
 
     let mpfr_one = Float::with_val(64, 1);
 
@@ -193,7 +193,7 @@ fn run_compare_special(
                 let mut n3 = n.rem(n1);
 
                 let mut f3 = Float::with_val(p as u32, 0);
-                unsafe { mpfr::remainder(f3.as_raw_mut(), f.as_raw(), f1.as_raw(), rnd) };
+                mpfr::remainder(f3.as_raw_mut(), f.as_raw(), f1.as_raw(), rnd);
 
                 n3 = n3.abs(); // n3 sign is set to the sign of n1.
 
@@ -249,8 +249,8 @@ fn run_compare_special(
                     // asinh(x) = sign(x) (ln 2 + ln |x|) there, to far below the last bit.
                     let r = if n.is_negative() {
                         let mirrored = match rnd {
-                            mpfr::rnd_t::RNDU => mpfr::rnd_t::RNDD,
-                            mpfr::rnd_t::RNDD => mpfr::rnd_t::RNDU,
+                            mpfr::Rnd::Up => mpfr::Rnd::Down,
+                            mpfr::Rnd::Down => mpfr::Rnd::Up,
                             other => other,
                         };
                         -big_log_ref(&Float::with_val(f.prec(), f.abs_ref()), p, mirrored)
@@ -397,7 +397,7 @@ fn run_compare_special(
                 let n3 = ExactNum::reciprocal(n, p, rm);
 
                 let mut f3 = Float::with_val(p as u32, 1);
-                unsafe { mpfr::div(f3.as_raw_mut(), mpfr_one.as_raw(), f.as_raw(), rnd) };
+                mpfr::div(f3.as_raw_mut(), mpfr_one.as_raw(), f.as_raw(), rnd);
 
                 assert_float_close(
                     n3,
@@ -438,16 +438,16 @@ fn run_compare_special(
 }
 
 /// `ln 2 + ln x` rounded to `p` bits by `rnd`, from a 256-bit-wider evaluation.
-fn big_log_ref(f: &Float, p: usize, rnd: mpfr::rnd_t) -> Float {
+fn big_log_ref(f: &Float, p: usize, rnd: mpfr::Rnd) -> Float {
     let wp = p as u32 + 256;
     let mut l = Float::with_val(wp, 0);
     let mut two = Float::with_val(wp, 2);
-    unsafe {
-        mpfr::log(l.as_raw_mut(), f.as_raw(), mpfr::rnd_t::RNDN);
-        mpfr::log(two.as_raw_mut(), two.as_raw(), mpfr::rnd_t::RNDN);
+    {
+        mpfr::log(l.as_raw_mut(), f.as_raw(), mpfr::Rnd::Nearest);
+        mpfr::log_self(two.as_raw_mut(), mpfr::Rnd::Nearest);
     }
     let mut r = Float::with_val(p as u32, 0);
-    unsafe { mpfr::add(r.as_raw_mut(), l.as_raw(), two.as_raw(), rnd) };
+    mpfr::add(r.as_raw_mut(), l.as_raw(), two.as_raw(), rnd);
     r
 }
 
@@ -459,13 +459,13 @@ fn check_pow(
     n1: &ExactNum,
     f: &Float,
     f1: &Float,
-    (p, rm, rnd): (usize, RoundingMode, mpfr::rnd_t),
+    (p, rm, rnd): (usize, RoundingMode, mpfr::Rnd),
     info: &str,
     cc: &mut Consts,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let got = ExactNum::pow(n, n1, p, rm, cc);
     let mut f3 = Float::with_val(p as u32, 1);
-    let edge = unsafe {
+    let edge = {
         mpfr::clear_flags();
         mpfr::pow(f3.as_raw_mut(), f.as_raw(), f1.as_raw(), rnd);
         mpfr::underflow_p() != 0 || mpfr::overflow_p() != 0

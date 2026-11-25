@@ -1,5 +1,5 @@
 //! Seeded `ToOdd` and `None` passes for the call-site families of `get_random_rnd_pair` (common.rs). The picker draws
-//! only the five modes MPFR has a `rnd_t` for, and its `% 5` streams stay as they are. Each family gets one extra
+//! only the five modes MPFR has a `Rnd` for, and its `% 5` streams stay as they are. Each family gets one extra
 //! pass here with its own seed, through [`extra_mode_reference`]:
 //! - `None`: MPFR toward zero at rp(p, 64) (the storage precision), with the inexact flag from the ternary value.
 //! - `ToOdd`: nearest with ties to odd, as the library defines it (defs.rs `ToOdd`), derived from MPFR toward zero at
@@ -18,13 +18,13 @@ use crate::mpfr::common::{
     assert_exact_eq, conv_to_mpfr, draw_seed, mpfr_reference_with, normal_from_seed,
     reset_test_rng, test_random,
 };
-use gmp_mpfr_sys::mpfr::{self, rnd_t};
-use rug::Float;
+use crate::mpfr::mp::Float;
+use crate::mpfr::mp::{mpfr, Rnd};
 use zenith_float_num::{Consts, ExactNum, RoundingMode};
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
-/// `f(result, rnd)` rounded as `rm` at `p` bits for a mode with no MPFR `rnd_t` (`ToOdd`, `None`), with whether it is
+/// `f(result, rnd)` rounded as `rm` at `p` bits for a mode with no MPFR `Rnd` (`ToOdd`, `None`), with whether it is
 /// inexact. Any other mode is an error: the five MPFR modes go through `get_random_rnd_pair`.
 pub fn extra_mode_reference<F>(
     p: usize,
@@ -32,19 +32,19 @@ pub fn extra_mode_reference<F>(
     f: F,
 ) -> Result<(Float, bool), Box<dyn std::error::Error>>
 where
-    F: Fn(&mut Float, rnd_t) -> i32,
+    F: Fn(&mut Float, Rnd) -> i32,
 {
     match rm {
         RoundingMode::ToOdd | RoundingMode::None => mpfr_reference_with(u32::try_from(p)?, rm, f),
-        _ => Err(format!("{rm:?} has an MPFR rnd_t: use get_random_rnd_pair").into()),
+        _ => Err(format!("{rm:?} has an MPFR Rnd: use get_random_rnd_pair").into()),
     }
 }
 
 /// `m / d` as MPFR computes it, for the helper tests (exact when `d` is a power of two).
-fn ratio(m: u64, d: u64) -> impl Fn(&mut Float, rnd_t) -> i32 {
+fn ratio(m: u64, d: u64) -> impl Fn(&mut Float, Rnd) -> i32 {
     move |r, rnd| {
         let (a, b) = (Float::with_val(64, m), Float::with_val(64, d));
-        unsafe { mpfr::div(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) }
+        mpfr::div(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd)
     }
 }
 
@@ -56,7 +56,7 @@ fn is_val(f: &Float, m: u64, d: u64) -> bool {
 
 #[test]
 fn helper_exact_is_exact_in_both_modes() -> Res {
-    // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+    // MODE-SUBSET mode-specific: no MPFR Rnd; the rest use get_random_rnd_pair
     for rm in [RoundingMode::ToOdd, RoundingMode::None] {
         let (f, ix) = extra_mode_reference(4, rm, ratio(3, 4))?;
         assert!(is_val(&f, 3, 4) && !ix, "{rm:?}: {f}");
@@ -69,14 +69,12 @@ fn helper_none_truncates_at_the_storage_precision() -> Res {
     // 1/3 at p = 65: storage 128 bits, toward zero, inexact (not the 65-bit truncation)
     let (f, ix) = extra_mode_reference(65, RoundingMode::None, ratio(1, 3))?;
     let mut want = Float::new(128);
-    unsafe {
-        mpfr::div_ui(
-            want.as_raw_mut(),
-            Float::with_val(64, 1).as_raw(),
-            3,
-            rnd_t::RNDZ,
-        )
-    };
+    mpfr::div_ui(
+        want.as_raw_mut(),
+        Float::with_val(64, 1).as_raw(),
+        3,
+        Rnd::Zero,
+    );
     assert!(ix && f == want && f.prec() >= 128, "None 1/3 at 65: {f}");
     Ok(())
 }
@@ -103,11 +101,11 @@ fn helper_to_odd_tie_with_lsb_0_goes_to_the_odd_neighbour() -> Res {
 #[test]
 fn helper_binade_edge() -> Res {
     // 2 - 2^-200 at p = 64: None truncates to 2 - 2^-63 (all ones), ToOdd rounds to nearest, 2
-    let below_two = |r: &mut Float, rnd: rnd_t| {
+    let below_two = |r: &mut Float, rnd: Rnd| {
         let mut tiny = Float::with_val(64, 1);
         tiny >>= 200;
         let two = Float::with_val(64, 2);
-        unsafe { mpfr::sub(r.as_raw_mut(), two.as_raw(), tiny.as_raw(), rnd) }
+        mpfr::sub(r.as_raw_mut(), two.as_raw(), tiny.as_raw(), rnd)
     };
     let (f, ix) = extra_mode_reference(64, RoundingMode::None, below_two)?;
     let mut ones = Float::with_val(256, 2);
@@ -135,8 +133,8 @@ fn check_exact(n: &ExactNum, (f, ix): &(Float, bool), p: usize, msg: &str, cc: &
 
 type Un = fn(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum;
 type Bin = fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum;
-type MpUn = fn(&mut Float, &Float, rnd_t) -> i32;
-type MpBin = fn(&mut Float, &Float, &Float, rnd_t) -> i32;
+type MpUn = fn(&mut Float, &Float, Rnd) -> i32;
+type MpBin = fn(&mut Float, &Float, &Float, Rnd) -> i32;
 
 /// One seeded pass: `runs` draws of `p` and operands in `[2^lo, 2^hi]` (both signs), every unary and binary op, both
 /// extra modes, bit-exact against [`extra_mode_reference`] with the inexact flag.
@@ -165,7 +163,7 @@ fn pass(
             conv_to_mpfr(po, &n1, &mut cc)?,
             conv_to_mpfr(po, &n2, &mut cc)?,
         );
-        // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+        // MODE-SUBSET mode-specific: no MPFR Rnd; the rest use get_random_rnd_pair
         for rm in [RoundingMode::ToOdd, RoundingMode::None] {
             for (name, zf, mp) in un {
                 let r = extra_mode_reference(p, rm, |r, d| mp(r, &f1, d))?;
@@ -190,69 +188,69 @@ fn ops_family_extra_modes() -> Res {
         (
             "sqrt",
             |x, p, rm, _| x.sqrt(p, rm),
-            |r, a, d| unsafe { mpfr::sqrt(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::sqrt(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "sin",
             |x, p, rm, cc| x.sin(p, rm, cc),
-            |r, a, d| unsafe { mpfr::sin(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::sin(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "cos",
             |x, p, rm, cc| x.cos(p, rm, cc),
-            |r, a, d| unsafe { mpfr::cos(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::cos(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "sinh",
             |x, p, rm, cc| x.sinh(p, rm, cc),
-            |r, a, d| unsafe { mpfr::sinh(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::sinh(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "cosh",
             |x, p, rm, cc| x.cosh(p, rm, cc),
-            |r, a, d| unsafe { mpfr::cosh(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::cosh(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "exp",
             |x, p, rm, cc| x.exp(p, rm, cc),
-            |r, a, d| unsafe { mpfr::exp(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::exp(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "ln",
             |x, p, rm, cc| x.ln(p, rm, cc),
-            |r, a, d| unsafe { mpfr::log(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::log(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "powi3",
             |x, p, rm, _| x.powi(3, p, rm),
-            |r, a, d| unsafe { mpfr::pow_ui(r.as_raw_mut(), a.as_raw(), 3, d) },
+            |r, a, d| mpfr::pow_ui(r.as_raw_mut(), a.as_raw(), 3, d),
         ),
     ];
     let bin: [(&str, Bin, MpBin); 5] = [
         (
             "add",
             |x, y, p, rm, _| ExactNum::add_ref(x, y, p, rm),
-            |r, a, b, d| unsafe { mpfr::add(r.as_raw_mut(), a.as_raw(), b.as_raw(), d) },
+            |r, a, b, d| mpfr::add(r.as_raw_mut(), a.as_raw(), b.as_raw(), d),
         ),
         (
             "sub",
             |x, y, p, rm, _| ExactNum::sub_ref(x, y, p, rm),
-            |r, a, b, d| unsafe { mpfr::sub(r.as_raw_mut(), a.as_raw(), b.as_raw(), d) },
+            |r, a, b, d| mpfr::sub(r.as_raw_mut(), a.as_raw(), b.as_raw(), d),
         ),
         (
             "mul",
             |x, y, p, rm, _| ExactNum::mul_ref(x, y, p, rm),
-            |r, a, b, d| unsafe { mpfr::mul(r.as_raw_mut(), a.as_raw(), b.as_raw(), d) },
+            |r, a, b, d| mpfr::mul(r.as_raw_mut(), a.as_raw(), b.as_raw(), d),
         ),
         (
             "div",
             |x, y, p, rm, _| ExactNum::div_ref(x, y, p, rm),
-            |r, a, b, d| unsafe { mpfr::div(r.as_raw_mut(), a.as_raw(), b.as_raw(), d) },
+            |r, a, b, d| mpfr::div(r.as_raw_mut(), a.as_raw(), b.as_raw(), d),
         ),
         (
             "hypot",
             |x, y, p, rm, _| x.hypot(y, p, rm),
-            |r, a, b, d| unsafe { mpfr::hypot(r.as_raw_mut(), a.as_raw(), b.as_raw(), d) },
+            |r, a, b, d| mpfr::hypot(r.as_raw_mut(), a.as_raw(), b.as_raw(), d),
         ),
     ];
     pass(400, -20, 20, false, &un, &bin)
@@ -266,32 +264,32 @@ fn special_fn_family_extra_modes() -> Res {
         (
             "erf",
             |x, p, rm, cc| x.erf(p, rm, cc),
-            |r, a, d| unsafe { mpfr::erf(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::erf(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "erfc",
             |x, p, rm, cc| x.erfc(p, rm, cc),
-            |r, a, d| unsafe { mpfr::erfc(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::erfc(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "gamma",
             |x, p, rm, cc| x.gamma(p, rm, cc),
-            |r, a, d| unsafe { mpfr::gamma(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::gamma(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "ln_gamma",
             |x, p, rm, cc| x.ln_gamma(p, rm, cc),
-            |r, a, d| unsafe { mpfr::lngamma(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::lngamma(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "digamma",
             |x, p, rm, cc| x.digamma(p, rm, cc),
-            |r, a, d| unsafe { mpfr::digamma(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::digamma(r.as_raw_mut(), a.as_raw(), d),
         ),
         (
             "ai",
             |x, p, rm, cc| x.ai(p, rm, cc),
-            |r, a, d| unsafe { mpfr::ai(r.as_raw_mut(), a.as_raw(), d) },
+            |r, a, d| mpfr::ai(r.as_raw_mut(), a.as_raw(), d),
         ),
     ];
     pass(60, -3, 3, true, &un, &[])
@@ -304,13 +302,11 @@ fn const_family_extra_modes() -> Res {
     let mut cc = Consts::new()?;
     for _ in 0..60 {
         let p = draw_p();
-        // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+        // MODE-SUBSET mode-specific: no MPFR Rnd; the rest use get_random_rnd_pair
         for rm in [RoundingMode::ToOdd, RoundingMode::None] {
-            let r =
-                extra_mode_reference(p, rm, |r, d| unsafe { mpfr::const_pi(r.as_raw_mut(), d) })?;
+            let r = extra_mode_reference(p, rm, |r, d| mpfr::const_pi(r.as_raw_mut(), d))?;
             check_exact(&cc.pi(p, rm), &r, p, &format!("pi p={p} {rm:?}"), &mut cc)?;
-            let r =
-                extra_mode_reference(p, rm, |r, d| unsafe { mpfr::const_log2(r.as_raw_mut(), d) })?;
+            let r = extra_mode_reference(p, rm, |r, d| mpfr::const_log2(r.as_raw_mut(), d))?;
             check_exact(
                 &cc.ln_2(p, rm),
                 &r,
@@ -319,9 +315,7 @@ fn const_family_extra_modes() -> Res {
                 &mut cc,
             )?;
             let one = Float::with_val(64, 1);
-            let r = extra_mode_reference(p, rm, |r, d| unsafe {
-                mpfr::exp(r.as_raw_mut(), one.as_raw(), d)
-            })?;
+            let r = extra_mode_reference(p, rm, |r, d| mpfr::exp(r.as_raw_mut(), one.as_raw(), d))?;
             check_exact(&cc.e(p, rm), &r, p, &format!("e p={p} {rm:?}"), &mut cc)?;
         }
     }
@@ -355,10 +349,10 @@ fn special_values_family_extra_modes() -> Res {
                         conv_to_mpfr(po, &x, &mut cc)?,
                         conv_to_mpfr(po, &y, &mut cc)?,
                     );
-                    // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+                    // MODE-SUBSET mode-specific: no MPFR Rnd; the rest use get_random_rnd_pair
                     for rm in [RoundingMode::ToOdd, RoundingMode::None] {
                         let msg = |op: &str| format!("{op} p={p} {rm:?} i={i} j={j}");
-                        let r = extra_mode_reference(p, rm, |r, d| unsafe {
+                        let r = extra_mode_reference(p, rm, |r, d| {
                             mpfr::add(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), d)
                         })?;
                         check_exact(
@@ -368,7 +362,7 @@ fn special_values_family_extra_modes() -> Res {
                             &msg("add"),
                             &mut cc,
                         )?;
-                        let r = extra_mode_reference(p, rm, |r, d| unsafe {
+                        let r = extra_mode_reference(p, rm, |r, d| {
                             mpfr::sub(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), d)
                         })?;
                         check_exact(
@@ -378,7 +372,7 @@ fn special_values_family_extra_modes() -> Res {
                             &msg("sub"),
                             &mut cc,
                         )?;
-                        let r = extra_mode_reference(p, rm, |r, d| unsafe {
+                        let r = extra_mode_reference(p, rm, |r, d| {
                             mpfr::mul(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), d)
                         })?;
                         check_exact(
@@ -388,7 +382,7 @@ fn special_values_family_extra_modes() -> Res {
                             &msg("mul"),
                             &mut cc,
                         )?;
-                        let r = extra_mode_reference(p, rm, |r, d| unsafe {
+                        let r = extra_mode_reference(p, rm, |r, d| {
                             mpfr::div(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), d)
                         })?;
                         check_exact(
@@ -402,9 +396,9 @@ fn special_values_family_extra_modes() -> Res {
                 }
                 let x = mk(i, po);
                 let fx = conv_to_mpfr(po, &x, &mut cc)?;
-                // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+                // MODE-SUBSET mode-specific: no MPFR Rnd; the rest use get_random_rnd_pair
                 for rm in [RoundingMode::ToOdd, RoundingMode::None] {
-                    let r = extra_mode_reference(p, rm, |r, d| unsafe {
+                    let r = extra_mode_reference(p, rm, |r, d| {
                         mpfr::log(r.as_raw_mut(), fx.as_raw(), d)
                     })?;
                     check_exact(
@@ -434,16 +428,16 @@ fn complex_add_family_extra_modes() -> Res {
         let f: Vec<Float> = (0..4)
             .map(|k| conv_to_mpfr(128, &part(k), &mut cc))
             .collect::<Result<_, _>>()?;
-        // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+        // MODE-SUBSET mode-specific: no MPFR Rnd; the rest use get_random_rnd_pair
         for rm in [RoundingMode::ToOdd, RoundingMode::None] {
             let a = ExactComplex::new(part(0), part(1));
             let b = ExactComplex::new(part(2), part(3));
             let c = ExactComplex::add_ref(&a, &b, p, rm);
 
-            let rr = extra_mode_reference(p, rm, |r, d| unsafe {
+            let rr = extra_mode_reference(p, rm, |r, d| {
                 mpfr::add(r.as_raw_mut(), f[0].as_raw(), f[2].as_raw(), d)
             })?;
-            let ri = extra_mode_reference(p, rm, |r, d| unsafe {
+            let ri = extra_mode_reference(p, rm, |r, d| {
                 mpfr::add(r.as_raw_mut(), f[1].as_raw(), f[3].as_raw(), d)
             })?;
             // the flag is value-wide: ExactComplex::inexact is "this operation rounded either part"

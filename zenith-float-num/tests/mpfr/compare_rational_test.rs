@@ -1,7 +1,7 @@
 //! GMP `mpq` oracle for [`ExactRational`] add / sub / mul / div.
 
 use crate::mpfr::common::{reset_test_rng, test_random};
-use rug::Rational;
+use crate::mpfr::mp::Rational;
 use zenith_float_num::ExactNum;
 use zenith_float_num::ExactRational;
 

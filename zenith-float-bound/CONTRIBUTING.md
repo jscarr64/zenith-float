@@ -55,7 +55,7 @@ Arb/FLINT and MPFR are licensed under the **LGPL**. We use them (and mpmath) onl
 
 Use the isolated oracle venv `~/.local/oracle-venv/bin/python` (mpmath 1.3.0, sympy 1.14.0, gmpy2 2.3.2, python-flint 0.9.0; `scripts/requirements.lock`). `scripts/goldlib.py` refuses any other interpreter at startup: exact versions, `sys.prefix` is the venv, no `~/.local` on `sys.path`. Never import oracle packages from `~/.local` outside the venv. The output is deterministic, so regenerating must leave `tests/goldens/mag_ops.txt` byte-identical.
 
-MPFR is reached only through zenith-float's own test suite (via `rug`); zenith-float-bound has no MPFR dependency. Goldens are regenerated only in a commit that says why, and a byte-golden change also needs an `op_ver` bump.
+MPFR is reached only through zenith-float's own test suite (committed golden streams, no C library); zenith-float-bound has no MPFR dependency. Goldens are regenerated only in a commit that says why, and a byte-golden change also needs an `op_ver` bump.
 
 ## Review
 

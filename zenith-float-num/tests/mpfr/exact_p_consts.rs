@@ -3,8 +3,8 @@
 
 use crate::mpfr::common::{assert_exact_eq, mpfr_reference_with};
 use crate::mpfr::exact_bit_functions::MODES;
-use gmp_mpfr_sys::mpfr;
-use rug::Float;
+use crate::mpfr::mp::mpfr;
+use crate::mpfr::mp::Float;
 use zenith_float_num::{Consts, Error, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 
 type Res = Result<(), Box<dyn std::error::Error>>;
@@ -14,26 +14,26 @@ const PRECISIONS: [usize; 18] =
 
 type ZfConst = fn(&mut Consts, usize, RoundingMode) -> ExactNum;
 
-fn mp_pi(r: &mut Float, rnd: mpfr::rnd_t) -> i32 {
-    unsafe { mpfr::const_pi(r.as_raw_mut(), rnd) }
+fn mp_pi(r: &mut Float, rnd: mpfr::Rnd) -> i32 {
+    mpfr::const_pi(r.as_raw_mut(), rnd)
 }
 
-fn mp_ln_2(r: &mut Float, rnd: mpfr::rnd_t) -> i32 {
-    unsafe { mpfr::const_log2(r.as_raw_mut(), rnd) }
+fn mp_ln_2(r: &mut Float, rnd: mpfr::Rnd) -> i32 {
+    mpfr::const_log2(r.as_raw_mut(), rnd)
 }
 
-fn mp_e(r: &mut Float, rnd: mpfr::rnd_t) -> i32 {
+fn mp_e(r: &mut Float, rnd: mpfr::Rnd) -> i32 {
     let one = Float::with_val(2, 1);
-    unsafe { mpfr::exp(r.as_raw_mut(), one.as_raw(), rnd) }
+    mpfr::exp(r.as_raw_mut(), one.as_raw(), rnd)
 }
 
-fn mp_ln_10(r: &mut Float, rnd: mpfr::rnd_t) -> i32 {
+fn mp_ln_10(r: &mut Float, rnd: mpfr::Rnd) -> i32 {
     let ten = Float::with_val(8, 10);
-    unsafe { mpfr::log(r.as_raw_mut(), ten.as_raw(), rnd) }
+    mpfr::log(r.as_raw_mut(), ten.as_raw(), rnd)
 }
 
 /// An MPFR constant (or constant-like value) at the precision of `r`.
-type MpConst = fn(&mut Float, mpfr::rnd_t) -> i32;
+type MpConst = fn(&mut Float, mpfr::Rnd) -> i32;
 
 #[test]
 fn consts_round_at_exactly_p_bits() -> Res {

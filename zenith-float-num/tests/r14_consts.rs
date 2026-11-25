@@ -143,18 +143,13 @@ fn report(bad: &[String], total: usize, what: &str) -> Result<(), String> {
 }
 
 /// Fast-tier precisions: small (1, 2, 3, the word edges 63..65), medium (128, 1000) and large
-/// (4096). p ≥ 8192 for all seven constants runs in the full tier only. γ is Brent–McMillan B1
+/// (4096). p ≥ 8192 for all seven constants runs in the full tier (always run since r6; no `MPFR_TIER` switch). γ is Brent–McMillan B1
 /// by exact binary splitting with one final division (S3): 0.49 s release at p=65536, down
 /// from 44 s for the old term-by-term B1 with ≈ 0.6 p full-precision multiplications.
 const FAST_P: [usize; 9] = [1, 2, 3, 63, 64, 65, 128, 1000, 4096];
 /// FNV-1a 64 of every gold row's `canon_of` result, in file order, '\n'-joined: the full tier
 /// pins all 1050 results (value, precision, max bits and both inexact flags).
 const FULL_DIGEST: u64 = 0xbe47_caf6_df76_9963;
-
-/// `MPFR_TIER=full` (as in `tools/full_gate.sh`) also runs the full tier.
-fn full_tier() -> bool {
-    std::env::var("MPFR_TIER").is_ok_and(|t| t == "full")
-}
 
 fn fnv1a(h: u64, bytes: &[u8]) -> u64 {
     bytes.iter().fold(h, |h, b| {
@@ -285,10 +280,6 @@ fn down_and_up_bracket_the_constant_fast_tier() -> Result<(), String> {
 /// brackets at all 25 p, on one cache so γ at p=65536 is computed once.
 #[test]
 fn golds_full_tier_digest_and_brackets() -> Result<(), String> {
-    if !full_tier() {
-        eprintln!("r14 full tier skipped: set MPFR_TIER=full");
-        return Ok(());
-    }
     let rows = rows()?;
     let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
     let (bad, checked, digest) = check_golds(&mut cc, &rows, |_| true)?;

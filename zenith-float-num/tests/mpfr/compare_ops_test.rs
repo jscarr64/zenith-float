@@ -13,8 +13,8 @@ use crate::mpfr::common::{
     normal_from_seed, reset_test_rng, test_random, test_zf_fma, test_zf_rem_pi,
 };
 use crate::mpfr::common::{RAND_EMAX, RAND_EMIN};
-use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::Float;
+use crate::mpfr::mp::mpfr::{self, ExpT};
+use crate::mpfr::mp::Float;
 use zenith_float_num::Word;
 use zenith_float_num::EXPONENT_BIT_SIZE;
 use zenith_float_num::{Consts, ExactNum, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
@@ -22,15 +22,15 @@ use zenith_float_num::{Consts, ExactNum, Exponent, EXPONENT_MAX, EXPONENT_MIN, W
 /// Sets MPFR's exponent range to zenith-float's and puts the caller's back
 /// on drop, including on an early `?` return.
 struct MpfrExpRange {
-    old: (exp_t, exp_t),
+    old: (ExpT, ExpT),
 }
 
 impl MpfrExpRange {
     fn widen() -> Self {
-        let old = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
-        unsafe {
-            mpfr::set_emin(EXPONENT_MIN as exp_t);
-            mpfr::set_emax(EXPONENT_MAX as exp_t);
+        let old = (mpfr::get_emin(), mpfr::get_emax());
+        {
+            mpfr::set_emin(EXPONENT_MIN as ExpT);
+            mpfr::set_emax(EXPONENT_MAX as ExpT);
         }
         MpfrExpRange { old }
     }
@@ -38,7 +38,7 @@ impl MpfrExpRange {
 
 impl Drop for MpfrExpRange {
     fn drop(&mut self) {
-        unsafe {
+        {
             mpfr::set_emin(self.old.0);
             mpfr::set_emax(self.old.1);
         }
@@ -47,7 +47,7 @@ impl Drop for MpfrExpRange {
 
 #[test]
 fn mpfr_compare_ops() -> Result<(), Box<dyn std::error::Error>> {
-    let run_cnt = crate::mpfr::common::tier_runs(1000);
+    let run_cnt = 1000;
     let p_rng = get_prec_rng();
     let p_min = 1;
 
@@ -57,7 +57,7 @@ fn mpfr_compare_ops() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn mpfr_compare_ops_large() -> Result<(), Box<dyn std::error::Error>> {
-    let run_cnt_large = crate::mpfr::common::tier_runs(5);
+    let run_cnt_large = 5;
     let p_rng_large = 1;
     let p_min_large = 1563;
 
@@ -75,8 +75,8 @@ fn run_compare_ops(
 
     let _range = MpfrExpRange::widen();
 
-    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
-    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
+    assert_eq!(EXPONENT_MIN, mpfr::get_emin());
+    assert_eq!(EXPONENT_MAX, mpfr::get_emax());
 
     // rounding
     let e_rng = WORD_BIT_SIZE * 3;
@@ -92,9 +92,7 @@ fn run_compare_ops(
         let positions = (p as Exponent - n1.exponent().ok_or("none value")?) as usize;
         let n2 = n1.round(positions, rm);
 
-        unsafe {
-            mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
-        }
+        mpfr::prec_round(f1.as_raw_mut(), p as mpfr::PrecT, rnd);
 
         assert_float_close(n2, f1, p, &msg, true, &mut cc)?;
     }
@@ -210,7 +208,7 @@ fn run_compare_ops(
         let n3 = ExactNum::reciprocal(&n1, p, rm);
 
         let mut f3 = Float::with_val(p as u32, 1);
-        unsafe { mpfr::div(f3.as_raw_mut(), mpfr_one.as_raw(), f1.as_raw(), rnd) };
+        mpfr::div(f3.as_raw_mut(), mpfr_one.as_raw(), f1.as_raw(), rnd);
 
         assert_float_close(
             n3,
@@ -252,7 +250,7 @@ fn run_compare_ops(
         let mut n3 = n1.rem(&n2);
 
         let mut f3 = Float::with_val(p as u32, 1);
-        unsafe { mpfr::remainder(f3.as_raw_mut(), f1.as_raw(), f2.as_raw(), rnd) };
+        mpfr::remainder(f3.as_raw_mut(), f1.as_raw(), f2.as_raw(), rnd);
 
         n3 = n3.abs(); // n3 sign is set to the sign of n1.
 
@@ -287,7 +285,7 @@ fn run_compare_ops(
 
         let mut f3 = Float::with_val(p as u32, 1);
 
-        unsafe { mpfr::pow_ui(f3.as_raw_mut(), f1.as_raw(), i as Word, rnd) };
+        mpfr::pow_ui(f3.as_raw_mut(), f1.as_raw(), i as Word, rnd);
 
         // println!("\n{}", i);
         // println!("{:b}\n{}", n1, f1.to_string_radix(2, None));
@@ -625,7 +623,7 @@ fn run_compare_ops(
             let n3 = ExactNum::hypot(&n1, &n2, p, rm);
             if !n3.is_nan() {
                 let mut f3 = Float::with_val(p as u32, 1);
-                unsafe { mpfr::hypot(f3.as_raw_mut(), f1.as_raw(), f2.as_raw(), rnd) };
+                mpfr::hypot(f3.as_raw_mut(), f1.as_raw(), f2.as_raw(), rnd);
                 assert_float_close(
                     n3,
                     f3,
@@ -689,7 +687,7 @@ fn run_compare_ops(
         if !ns.is_nan() && !ncs.is_nan() {
             let mut fs = Float::with_val(p as u32, 1);
             let mut fc = Float::with_val(p as u32, 1);
-            unsafe { mpfr::sin_cos(fs.as_raw_mut(), fc.as_raw_mut(), f1.as_raw(), rnd) };
+            mpfr::sin_cos(fs.as_raw_mut(), fc.as_raw_mut(), f1.as_raw(), rnd);
             assert_float_close(
                 ns,
                 fs,
@@ -711,7 +709,7 @@ fn run_compare_ops(
         if !nsh.is_nan() && !nch.is_nan() && !nsh.is_inf() && !nch.is_inf() {
             let mut fsh = Float::with_val(p as u32, 1);
             let mut fch = Float::with_val(p as u32, 1);
-            unsafe { mpfr::sinh_cosh(fsh.as_raw_mut(), fch.as_raw_mut(), f1.as_raw(), rnd) };
+            mpfr::sinh_cosh(fsh.as_raw_mut(), fch.as_raw_mut(), f1.as_raw(), rnd);
             assert_float_close(
                 nsh,
                 fsh,
@@ -788,14 +786,14 @@ fn run_compare_ops(
 /// whatever range the caller had, or later tests on the same thread see it.
 #[test]
 fn run_compare_ops_restores_the_mpfr_exponent_range() -> Result<(), Box<dyn std::error::Error>> {
-    let outer = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
-    unsafe {
+    let outer = (mpfr::get_emin(), mpfr::get_emax());
+    {
         mpfr::set_emin(-1000);
         mpfr::set_emax(1000);
     }
     let res = run_compare_ops(1, 1, 1);
-    let after = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
-    unsafe {
+    let after = (mpfr::get_emin(), mpfr::get_emax());
+    {
         mpfr::set_emin(outer.0);
         mpfr::set_emax(outer.1);
     }

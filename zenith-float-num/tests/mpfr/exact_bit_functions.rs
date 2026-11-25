@@ -6,8 +6,8 @@ use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::mpfr_reference_with;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_random;
-use gmp_mpfr_sys::mpfr::{self, rnd_t};
-use rug::Float;
+use crate::mpfr::mp::Float;
+use crate::mpfr::mp::{mpfr, Rnd};
 use std::ops::Neg;
 use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode, WORD_BIT_SIZE};
 
@@ -76,7 +76,7 @@ pub fn check(
     rm: RoundingMode,
     info: &str,
     cc: &mut Consts,
-    f: impl Fn(&mut Float, rnd_t) -> i32,
+    f: impl Fn(&mut Float, Rnd) -> i32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (want, inexact) = mpfr_reference_with(p as u32, rm, f)?;
     assert_exact_eq(got, &want, p, info, cc)?;
@@ -99,7 +99,7 @@ pub fn sweep_unary(
     exact: &[(i64, i32)],
     per_band: usize,
     zf: impl Fn(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
-    mp: impl Fn(&mut Float, &Float, rnd_t) -> i32,
+    mp: impl Fn(&mut Float, &Float, Rnd) -> i32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
@@ -144,7 +144,7 @@ fn exact_bit_sqrt() -> Result<(), Box<dyn std::error::Error>> {
         ],
         12,
         |x, p, rm, _| x.sqrt(p, rm),
-        |r, a, rnd| unsafe { mpfr::sqrt(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::sqrt(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -157,7 +157,7 @@ fn exact_bit_cbrt() -> Result<(), Box<dyn std::error::Error>> {
         &[(27, 0), (-8, 0), (1, 3), (2, 0), (-27, 3), (1 << 60, 0)],
         6,
         |x, p, rm, _| x.cbrt(p, rm),
-        |r, a, rnd| unsafe { mpfr::cbrt(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::cbrt(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -170,7 +170,7 @@ fn exact_bit_exp() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0), (-1, 1)],
         6,
         |x, p, rm, cc| x.exp(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::exp(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::exp(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -183,7 +183,7 @@ fn exact_bit_exp2() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (3, 0), (-5, 0), (1, 1), (64, 0), (-100, 0)],
         6,
         |x, p, rm, cc| x.exp2(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::exp2(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::exp2(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -196,7 +196,7 @@ fn exact_bit_exp10() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (2, 0), (-1, 0)],
         6,
         |x, p, rm, cc| x.exp10(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::exp10(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::exp10(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -209,7 +209,7 @@ fn exact_bit_ln() -> Result<(), Box<dyn std::error::Error>> {
         &[(1, 0), (2, 0), (1, 1)],
         6,
         |x, p, rm, cc| x.ln(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::log(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::log(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -222,7 +222,7 @@ fn exact_bit_log2() -> Result<(), Box<dyn std::error::Error>> {
         &[(1, 0), (8, 0), (1, 5), (3, 0), (1, 40), (1 << 40, 0)],
         6,
         |x, p, rm, cc| x.log2(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::log2(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::log2(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -242,7 +242,7 @@ fn exact_bit_log10() -> Result<(), Box<dyn std::error::Error>> {
         ],
         6,
         |x, p, rm, cc| x.log10(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::log10(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::log10(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -255,7 +255,7 @@ fn exact_bit_log1p() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0), (-1, 1)],
         6,
         |x, p, rm, cc| x.log1p(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::log1p(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::log1p(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -268,7 +268,7 @@ fn exact_bit_expm1() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0)],
         6,
         |x, p, rm, cc| x.expm1(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::expm1(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::expm1(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -281,7 +281,7 @@ fn exact_bit_sin() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0), (3, 0)],
         6,
         |x, p, rm, cc| x.sin(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::sin(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::sin(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -294,7 +294,7 @@ fn exact_bit_cos() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0), (3, 0)],
         6,
         |x, p, rm, cc| x.cos(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::cos(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::cos(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -307,7 +307,7 @@ fn exact_bit_tan() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0)],
         6,
         |x, p, rm, cc| x.tan(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::tan(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::tan(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -320,7 +320,7 @@ fn exact_bit_asin() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0), (-1, 0), (1, 1)],
         6,
         |x, p, rm, cc| x.asin(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::asin(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::asin(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -333,7 +333,7 @@ fn exact_bit_acos() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0), (-1, 0), (1, 1)],
         6,
         |x, p, rm, cc| x.acos(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::acos(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::acos(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -346,7 +346,7 @@ fn exact_bit_atan() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0), (-1, 0)],
         6,
         |x, p, rm, cc| x.atan(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::atan(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::atan(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -359,7 +359,7 @@ fn exact_bit_sinh() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0)],
         6,
         |x, p, rm, cc| x.sinh(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::sinh(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::sinh(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -372,7 +372,7 @@ fn exact_bit_cosh() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0)],
         6,
         |x, p, rm, cc| x.cosh(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::cosh(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::cosh(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -385,7 +385,7 @@ fn exact_bit_tanh() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0)],
         6,
         |x, p, rm, cc| x.tanh(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::tanh(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::tanh(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -398,7 +398,7 @@ fn exact_bit_asinh() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0)],
         6,
         |x, p, rm, cc| x.asinh(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::asinh(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::asinh(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -411,7 +411,7 @@ fn exact_bit_acosh() -> Result<(), Box<dyn std::error::Error>> {
         &[(1, 0), (2, 0)],
         6,
         |x, p, rm, cc| x.acosh(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::acosh(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::acosh(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -424,7 +424,7 @@ fn exact_bit_atanh() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 1), (-1, 2)],
         6,
         |x, p, rm, cc| x.atanh(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::atanh(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::atanh(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -437,7 +437,7 @@ fn exact_bit_gamma() -> Result<(), Box<dyn std::error::Error>> {
         &[(1, 0), (3, 0), (5, 0), (1, 1)],
         6,
         |x, p, rm, cc| x.gamma(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::gamma(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::gamma(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -450,7 +450,7 @@ fn exact_bit_ln_gamma() -> Result<(), Box<dyn std::error::Error>> {
         &[(1, 0), (2, 0), (3, 0)],
         6,
         |x, p, rm, cc| x.ln_gamma(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::lngamma(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::lngamma(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -463,7 +463,7 @@ fn exact_bit_digamma() -> Result<(), Box<dyn std::error::Error>> {
         &[(1, 0), (2, 0)],
         6,
         |x, p, rm, cc| x.digamma(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::digamma(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::digamma(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -476,7 +476,7 @@ fn exact_bit_erf() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0)],
         6,
         |x, p, rm, cc| x.erf(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::erf(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::erf(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -489,7 +489,7 @@ fn exact_bit_erfc() -> Result<(), Box<dyn std::error::Error>> {
         &[(0, 0), (1, 0)],
         6,
         |x, p, rm, cc| x.erfc(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::erfc(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::erfc(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -502,7 +502,7 @@ fn exact_bit_ei() -> Result<(), Box<dyn std::error::Error>> {
         &[(1, 0), (2, 0)],
         6,
         |x, p, rm, cc| x.ei(p, rm, cc),
-        |r, a, rnd| unsafe { mpfr::eint(r.as_raw_mut(), a.as_raw(), rnd) },
+        |r, a, rnd| mpfr::eint(r.as_raw_mut(), a.as_raw(), rnd),
     )?;
     Ok(())
 }
@@ -511,7 +511,18 @@ fn exact_bit_ei() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn exact_bit_sin_cos_pair() -> Result<(), Box<dyn std::error::Error>> {
-    for (part, mp) in [(0usize, mpfr::sin as unsafe extern "C" fn(_, _, _) -> _), (1, mpfr::cos)] {
+    for (part, mp) in [
+        (
+            0usize,
+            mpfr::sin
+                as fn(
+                    &mut crate::mpfr::mp::Float,
+                    &crate::mpfr::mp::Float,
+                    crate::mpfr::mp::Rnd,
+                ) -> i32,
+        ),
+        (1, mpfr::cos),
+    ] {
         sweep_unary(
             if part == 0 { "sin_cos.0" } else { "sin_cos.1" },
             &[(-6, 4, true)],
@@ -525,7 +536,7 @@ fn exact_bit_sin_cos_pair() -> Result<(), Box<dyn std::error::Error>> {
                     c
                 }
             },
-            |r, a, rnd| unsafe { mp(r.as_raw_mut(), a.as_raw(), rnd) },
+            |r, a, rnd| mp(r.as_raw_mut(), a.as_raw(), rnd),
         )?;
     }
     Ok(())
@@ -533,8 +544,18 @@ fn exact_bit_sin_cos_pair() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn exact_bit_sinh_cosh_pair() -> Result<(), Box<dyn std::error::Error>> {
-    for (part, mp) in [(0usize, mpfr::sinh as unsafe extern "C" fn(_, _, _) -> _), (1, mpfr::cosh)]
-    {
+    for (part, mp) in [
+        (
+            0usize,
+            mpfr::sinh
+                as fn(
+                    &mut crate::mpfr::mp::Float,
+                    &crate::mpfr::mp::Float,
+                    crate::mpfr::mp::Rnd,
+                ) -> i32,
+        ),
+        (1, mpfr::cosh),
+    ] {
         sweep_unary(
             if part == 0 { "sinh_cosh.0" } else { "sinh_cosh.1" },
             &[(-6, 4, true), (32, 33, true)],
@@ -548,7 +569,7 @@ fn exact_bit_sinh_cosh_pair() -> Result<(), Box<dyn std::error::Error>> {
                     c
                 }
             },
-            |r, a, rnd| unsafe { mp(r.as_raw_mut(), a.as_raw(), rnd) },
+            |r, a, rnd| mp(r.as_raw_mut(), a.as_raw(), rnd),
         )?;
     }
     Ok(())

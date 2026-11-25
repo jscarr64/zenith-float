@@ -5,8 +5,8 @@ use crate::mpfr::common::{
     assert_float_close, conv_to_mpfr, get_float_pair, get_random_rnd_pair, reset_test_rng,
     test_random,
 };
-use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::Float;
+use crate::mpfr::mp::mpfr::{self, ExpT};
+use crate::mpfr::mp::Float;
 use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 #[test]
@@ -14,12 +14,12 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
 
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as exp_t);
-        mpfr::set_emax(EXPONENT_MAX as exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as ExpT);
+        mpfr::set_emax(EXPONENT_MAX as ExpT);
     }
-    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
-    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
+    assert_eq!(EXPONENT_MIN, mpfr::get_emin());
+    assert_eq!(EXPONENT_MAX, mpfr::get_emax());
 
     let p = 2 * WORD_BIT_SIZE;
     let (rm, rnd) = get_random_rnd_pair();
@@ -30,16 +30,12 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
         let f = conv_to_mpfr(p, &n, &mut cc)?;
         let g = n.gamma(p, rm, &mut cc);
         let mut fg = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::gamma(fg.as_raw_mut(), f.as_raw(), rnd);
-        }
+        mpfr::gamma(fg.as_raw_mut(), f.as_raw(), rnd);
         assert_float_close(g, fg, p, &format!("gamma({k})"), false, &mut cc)?;
 
         let lg = n.ln_gamma(p, rm, &mut cc);
         let mut flg = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::lngamma(flg.as_raw_mut(), f.as_raw(), rnd);
-        }
+        mpfr::lngamma(flg.as_raw_mut(), f.as_raw(), rnd);
         assert_float_close(lg, flg, p, &format!("ln_gamma({k})"), false, &mut cc)?;
     }
 
@@ -48,9 +44,7 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
     let fhalf = conv_to_mpfr(p, &half, &mut cc)?;
     let g = half.gamma(p, rm, &mut cc);
     let mut fg = Float::with_val(p as u32, 1);
-    unsafe {
-        mpfr::gamma(fg.as_raw_mut(), fhalf.as_raw(), rnd);
-    }
+    mpfr::gamma(fg.as_raw_mut(), fhalf.as_raw(), rnd);
     assert_float_close(g, fg, p, "gamma(1/2)", false, &mut cc)?;
 
     // erf / erfc on a modest interval
@@ -62,16 +56,12 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
         let (rm, rnd) = get_random_rnd_pair();
         let er = n1.erf(p, rm, &mut cc);
         let mut fe = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::erf(fe.as_raw_mut(), f1.as_raw(), rnd);
-        }
+        mpfr::erf(fe.as_raw_mut(), f1.as_raw(), rnd);
         assert_float_close(er, fe, p, "erf", false, &mut cc)?;
 
         let erc = n1.erfc(p, rm, &mut cc);
         let mut fec = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::erfc(fec.as_raw_mut(), f1.as_raw(), rnd);
-        }
+        mpfr::erfc(fec.as_raw_mut(), f1.as_raw(), rnd);
         assert_float_close(erc, fec, p, "erfc", false, &mut cc)?;
     }
 
@@ -85,9 +75,7 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
             let (rm, rnd) = get_random_rnd_pair();
             let j = n1.bessel_j(n_ord as usize, p, rm, &mut cc);
             let mut fj = Float::with_val(p as u32, 1);
-            unsafe {
-                mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
-            }
+            mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
             assert_float_close(j, fj, p, &format!("bessel_j n={n_ord}"), false, &mut cc)?;
         }
     }
@@ -101,9 +89,7 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
         let (rm, rnd) = get_random_rnd_pair();
         let j = n1.bessel_j(n_ord as usize, p, rm, &mut cc);
         let mut fj = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
-        }
+        mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
         assert_float_close(j, fj, p, &format!("bessel_j n={n_ord}"), false, &mut cc)?;
     }
 
@@ -117,9 +103,7 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
             let (rm, rnd) = get_random_rnd_pair();
             let e = n1.ei(p, rm, &mut cc);
             let mut fe = Float::with_val(p as u32, 1);
-            unsafe {
-                mpfr::eint(fe.as_raw_mut(), f1.as_raw(), rnd);
-            }
+            mpfr::eint(fe.as_raw_mut(), f1.as_raw(), rnd);
             assert_float_close(e, fe, p, "ei", false, &mut cc)?;
         }
     }
@@ -135,9 +119,7 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
             let (rm, rnd) = get_random_rnd_pair();
             let y = n1.bessel_y(&nu, p, rm, &mut cc);
             let mut fy = Float::with_val(p as u32, 1);
-            unsafe {
-                mpfr::yn(fy.as_raw_mut(), n_ord, f1.as_raw(), rnd);
-            }
+            mpfr::yn(fy.as_raw_mut(), n_ord, f1.as_raw(), rnd);
             assert_float_close(y, fy, p, &format!("bessel_y n={n_ord}"), false, &mut cc)?;
         }
     }
@@ -151,9 +133,7 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
         let (rm, rnd) = get_random_rnd_pair();
         let d = n1.digamma(p, rm, &mut cc);
         let mut fd = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::digamma(fd.as_raw_mut(), f1.as_raw(), rnd);
-        }
+        mpfr::digamma(fd.as_raw_mut(), f1.as_raw(), rnd);
         assert_float_close(d, fd, p, "digamma", false, &mut cc)?;
     }
 
@@ -163,9 +143,7 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
         let f1 = conv_to_mpfr(p, &one, &mut cc)?;
         let a = one.ai(p, rm, &mut cc);
         let mut fa = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
-        }
+        mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
         assert_float_close(a, fa, p, "ai(1)", false, &mut cc)?;
     }
     for _ in 0..8 {
@@ -176,9 +154,7 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
         let (rm, rnd) = get_random_rnd_pair();
         let a = n1.ai(p, rm, &mut cc);
         let mut fa = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
-        }
+        mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
         assert_float_close(a, fa, p, "ai", false, &mut cc)?;
     }
 
@@ -198,9 +174,7 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
         let (rm, rnd) = get_random_rnd_pair();
         let g = s.gammainc_upper(&x, p, rm, &mut cc);
         let mut fg = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::gamma_inc(fg.as_raw_mut(), fs.as_raw(), fx.as_raw(), rnd);
-        }
+        mpfr::gamma_inc(fg.as_raw_mut(), fs.as_raw(), fx.as_raw(), rnd);
         assert_float_close(g, fg, p, "gammainc_upper", false, &mut cc)?;
     }
 
@@ -232,9 +206,9 @@ fn mpfr_compare_extra_constants() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
 
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as exp_t);
-        mpfr::set_emax(EXPONENT_MAX as exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as ExpT);
+        mpfr::set_emax(EXPONENT_MAX as ExpT);
     }
 
     for _ in 0..24 {
@@ -244,29 +218,23 @@ fn mpfr_compare_extra_constants() -> Result<(), Box<dyn std::error::Error>> {
         let n = cc.sqrt2(p, rm);
         let two = Float::with_val(p as u32, 2);
         let mut f = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::sqrt(f.as_raw_mut(), two.as_raw(), rnd);
-        }
+        mpfr::sqrt(f.as_raw_mut(), two.as_raw(), rnd);
         assert_float_close(n, f, p, "const sqrt2", true, &mut cc)?;
 
         let n = cc.phi(p, rm);
         let five = Float::with_val(p as u32, 5);
         let mut s5 = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::sqrt(s5.as_raw_mut(), five.as_raw(), rnd);
-        }
+        mpfr::sqrt(s5.as_raw_mut(), five.as_raw(), rnd);
         let mut f = Float::with_val(p as u32, 1);
-        unsafe {
+        {
             mpfr::add_ui(f.as_raw_mut(), s5.as_raw(), 1, rnd);
-            mpfr::div_ui(f.as_raw_mut(), f.as_raw(), 2, rnd);
+            mpfr::div_ui_self(f.as_raw_mut(), 2, rnd);
         }
         assert_float_close(n, f, p, "const phi", true, &mut cc)?;
 
         let n = cc.euler_gamma(p, rm);
         let mut f = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::const_euler(f.as_raw_mut(), rnd);
-        }
+        mpfr::const_euler(f.as_raw_mut(), rnd);
         assert_float_close(n, f, p, "const euler_gamma", false, &mut cc)?;
     }
     Ok(())

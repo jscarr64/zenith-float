@@ -24,7 +24,7 @@ Default unit tests:
 cargo test --workspace
 ```
 
-Full gold suite, including optional MPFR bit-oracles (Linux x86_64, `rug`):
+Full gold suite, including the MPFR bit-oracle goldens (committed streams under `zenith-float-num/tests/mpfr/golden`):
 
 ```bash
 cargo test --features mpfr-tests

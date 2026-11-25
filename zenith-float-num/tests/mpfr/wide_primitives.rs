@@ -6,13 +6,12 @@
 //! the per-operation inexact flag. Every mismatch of a run is listed at once.
 
 use crate::mpfr::common::{assert_exact_eq, mpfr_reference_with};
+use crate::mpfr::mp::Float;
+use crate::mpfr::mp::Rnd;
+use crate::mpfr::mp::Round;
 use crate::mpfr::retry_budget::use_full_exponent_range;
 use crate::mpfr::retry_budget::{round_of, ternary};
 use crate::mpfr::shifted::{self as sh, Term, Want};
-use gmp_mpfr_sys::mpfr::rnd_t;
-use rug::float::Round;
-use rug::ops::AssignRound;
-use rug::Float;
 use std::cmp::Ordering;
 use std::ops::Neg;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -140,7 +139,7 @@ impl Run {
         p: usize,
         rm: RoundingMode,
         info: &str,
-        f: impl Fn(&mut Float, rnd_t) -> i32,
+        f: impl Fn(&mut Float, Rnd) -> i32,
     ) {
         self.checked += 1;
         let (cc, flags) = (&mut self.cc, self.flags);
@@ -1052,7 +1051,6 @@ fn pow_sweep(
     precisions: &[usize],
     modes: &[RoundingMode],
 ) {
-    use rug::ops::Pow;
     for &(bm, bk, bneg) in bases {
         for &(em, ek, eneg) in exponents {
             let (x, n) = (zf(bm, bk, bneg), zf(em, ek, eneg));
@@ -1066,7 +1064,7 @@ fn pow_sweep(
                         if eneg { "-" } else { "" }
                     );
                     run.check(&got, p, rm, &info, |r, rnd| {
-                        ternary(r.assign_round(Pow::pow(&fx, &fn_), round_of(rnd)))
+                        ternary(r.assign_round(fx.pow(&fn_), round_of(rnd)))
                     });
                 }
             }

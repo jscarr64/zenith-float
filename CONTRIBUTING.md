@@ -29,7 +29,7 @@ paragraph (merges too). Never commit with `--no-verify`.
 
 `scripts/ci.sh` is the default gate (workspace tests, `no_std` / thumb, MPFR on Linux x86_64). `scripts/ci_full.sh` is the 12-check pre-publish gate.
 
-MPFR golds need Linux x86_64 and `rug` (`--features mpfr-tests`). Replay a random failure with `ZENITH_TEST_SEED=<seed> cargo test <name> -- --test-threads=1`.
+MPFR comparison tests replay committed golden streams (`--features mpfr-tests`; regenerate with `tools/mpfr_golden/gen.sh` in the pinned team env). Replay a random failure with `ZENITH_TEST_SEED=<seed> cargo test <name> -- --test-threads=1`.
 
 ## Per-commit checklist
 

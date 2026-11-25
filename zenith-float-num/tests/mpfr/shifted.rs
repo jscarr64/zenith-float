@@ -17,10 +17,9 @@
 use crate::mpfr::common::{
     exact_mpfr_shifted, mpfr_reference_shifted, mpfr_reference_with, show_mp, storage_bits, BinOp,
 };
-use gmp_mpfr_sys::mpfr::{self, rnd_t};
-use rug::float::Round;
-use rug::ops::Pow;
-use rug::{Float, Integer};
+use crate::mpfr::mp::Round;
+use crate::mpfr::mp::{mpfr, Rnd};
+use crate::mpfr::mp::{Float, Integer};
 use std::cmp::Ordering;
 use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
 
@@ -54,31 +53,26 @@ impl Term {
         self.k + i128::from(self.m.significant_bits())
     }
 
-    pub fn mul(&self, o: &Term) -> Term {
+    /// `-self` (consumes the term: nothing is copied).
+    pub fn neg(self) -> Term {
         Term {
-            m: Integer::from(&self.m * &o.m),
-            k: self.k + o.k,
-        }
-    }
-
-    pub fn neg(&self) -> Term {
-        Term {
-            m: Integer::from(-&self.m),
+            m: -self.m,
             k: self.k,
         }
     }
 
-    pub fn ldexp(&self, d: i128) -> Term {
+    /// `self * 2^d` (consumes the term).
+    pub fn ldexp(self, d: i128) -> Term {
         Term {
-            m: Integer::from(&self.m),
+            m: self.m,
             k: self.k + d,
         }
     }
 
-    pub fn abs(&self) -> Term {
+    pub fn mul(&self, o: &Term) -> Term {
         Term {
-            m: Integer::from(self.m.abs_ref()),
-            k: self.k,
+            m: &self.m * &o.m,
+            k: self.k + o.k,
         }
     }
 
@@ -92,11 +86,11 @@ impl Term {
 }
 
 /// MPFR's widest exponent range until dropped.
-struct Widest(mpfr::exp_t, mpfr::exp_t);
+struct Widest(mpfr::ExpT, mpfr::ExpT);
 
 fn widest() -> Widest {
-    let w = unsafe { Widest(mpfr::get_emin(), mpfr::get_emax()) };
-    unsafe {
+    let w = Widest(mpfr::get_emin(), mpfr::get_emax());
+    {
         mpfr::set_emin(mpfr::get_emin_min());
         mpfr::set_emax(mpfr::get_emax_max());
     }
@@ -105,7 +99,7 @@ fn widest() -> Widest {
 
 impl Drop for Widest {
     fn drop(&mut self) {
-        unsafe {
+        {
             mpfr::set_emin(self.0);
             mpfr::set_emax(self.1);
         }
@@ -122,7 +116,7 @@ fn exact(t: &Term, r: i128) -> Res<Float> {
     let bits = t.m.significant_bits().max(1);
     let mut f = Float::with_val(bits, &t.m);
     let sh = i64::try_from(t.k + r)?;
-    unsafe { mpfr::mul_2si(f.as_raw_mut(), f.as_raw(), sh, rnd_t::RNDN) };
+    mpfr::mul_2si_self(f.as_raw_mut(), sh, Rnd::Nearest);
     Ok(f)
 }
 
@@ -145,7 +139,7 @@ fn zero(negative: bool) -> Want {
 
 fn nan() -> Want {
     Want {
-        v: Float::with_val(2, rug::float::Special::Nan),
+        v: Float::with_val(2, crate::mpfr::mp::Special::Nan),
         inexact: false,
         shift: 0,
     }
@@ -173,7 +167,7 @@ pub fn round_scaled(
     e_est: i128,
     negative: bool,
     r: i128,
-    eval: impl Fn(&mut Float, rnd_t) -> i32,
+    eval: impl Fn(&mut Float, Rnd) -> i32,
 ) -> Res<Want> {
     let (p, rm) = none_as_storage(p, rm)?;
     let pi = i128::from(p);
@@ -220,8 +214,8 @@ pub fn round_scaled(
 
 /// `o = v` rounded in the current range. `mpfr_set` assumes `v` is inside that range (a shifted `v` near `1`
 /// can sit above `emax` or below `emin`), so `mpfr_check_range` applies the overflow or underflow.
-fn set_checked(o: &mut Float, v: &Float, rnd: rnd_t) -> i32 {
-    unsafe {
+fn set_checked(o: &mut Float, v: &Float, rnd: Rnd) -> i32 {
+    {
         let t = mpfr::set(o.as_raw_mut(), v.as_raw(), rnd);
         mpfr::check_range(o.as_raw_mut(), t, rnd)
     }
@@ -231,7 +225,7 @@ fn set_checked(o: &mut Float, v: &Float, rnd: rnd_t) -> i32 {
 fn with_sticky(f: &Float, p: u32, negative: bool) -> Res<Float> {
     let _w = widest();
     let prec = f.prec().max(p) + 16;
-    let e = unsafe { mpfr::get_exp(f.as_raw()) };
+    let e = mpfr::get_exp(f.as_raw());
     let tiny = exact(
         &Term::new(1, 0, negative),
         i128::from(e) - i128::from(prec) - 4,
@@ -247,23 +241,33 @@ fn with_sticky(f: &Float, p: u32, negative: bool) -> Res<Float> {
 /// below the value's lowest bit, so a sticky bit of its sign below `p` and below that bit rounds the same.
 /// An all-zero sum is `+0` (`-0` in `Down`), as an exact cancellation of nonzero terms.
 pub fn ref_sum(terms: &[Term], p: u32, rm: RoundingMode) -> Res<Want> {
+    let parts: Vec<Part> = terms.iter().map(|t| (t, false)).collect();
+    ref_sum_parts(&parts, p, rm)
+}
+
+/// A summand of [`ref_sum_parts`]: a term, negated when the flag is set (borrowed; the sum only reads it).
+pub type Part<'a> = (&'a Term, bool);
+
+/// `sum (-1)^neg_i * t_i` exactly rounded at `p`, the terms borrowed (see [`ref_sum`]).
+pub fn ref_sum_parts(terms: &[Part], p: u32, rm: RoundingMode) -> Res<Want> {
     let (p, rm) = none_as_storage(p, rm)?;
-    let mut ts: Vec<&Term> = terms.iter().filter(|t| !t.is_zero()).collect();
-    ts.sort_by_key(|t| std::cmp::Reverse(t.top()));
-    let mut groups: Vec<Vec<&Term>> = Vec::new();
+    let mut ts: Vec<&Part> = terms.iter().filter(|t| !t.0.is_zero()).collect();
+    ts.sort_by_key(|t| std::cmp::Reverse(t.0.top()));
+    let mut groups: Vec<Vec<&Part>> = Vec::new();
     for t in ts {
         match groups.last_mut() {
-            Some(g) if g.last().is_some_and(|l| l.top() - t.top() <= GAP) => g.push(t),
+            Some(g) if g.last().is_some_and(|l| l.0.top() - t.0.top() <= GAP) => g.push(t),
             _ => groups.push(vec![t]),
         }
     }
     let mut sums: Vec<Term> = Vec::new();
     for g in &groups {
-        let kmin = g.iter().map(|t| t.k).min().ok_or("empty group")?;
+        let kmin = g.iter().map(|t| t.0.k).min().ok_or("empty group")?;
         let mut s = Integer::new();
-        for t in g {
+        for (t, neg) in g {
             let sh = u32::try_from(t.k - kmin)?;
-            s += Integer::from(&t.m << sh);
+            let v = &t.m << sh;
+            s += if *neg { -v } else { v };
         }
         if s != 0 {
             sums.push(Term { m: s, k: kmin });
@@ -300,7 +304,7 @@ pub fn ref_div(a: &Term, b: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
         ta - tb,
         a.is_negative() != b.is_negative(),
         tb - ta,
-        |o, rnd| unsafe { mpfr::div(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd) },
+        |o, rnd| mpfr::div(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd),
     )
 }
 
@@ -322,12 +326,10 @@ pub fn ref_root(x: &Term, n: u32, p: u32, rm: RoundingMode) -> Res<Want> {
     let ni = i128::from(n);
     let u = (-x.top()).div_euclid(ni);
     let fx = exact(x, ni * u)?;
-    round_scaled(p, rm, -u, x.is_negative(), u, |o, rnd| unsafe {
-        match n {
-            2 => mpfr::sqrt(o.as_raw_mut(), fx.as_raw(), rnd),
-            3 => mpfr::cbrt(o.as_raw_mut(), fx.as_raw(), rnd),
-            _ => mpfr::rootn_ui(o.as_raw_mut(), fx.as_raw(), n.into(), rnd),
-        }
+    round_scaled(p, rm, -u, x.is_negative(), u, |o, rnd| match n {
+        2 => mpfr::sqrt(o.as_raw_mut(), fx.as_raw(), rnd),
+        3 => mpfr::cbrt(o.as_raw_mut(), fx.as_raw(), rnd),
+        _ => mpfr::rootn_ui(o.as_raw_mut(), fx.as_raw(), n.into(), rnd),
     })
 }
 
@@ -337,11 +339,15 @@ pub fn ref_hypot(a: &Term, b: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
     let (p, rm) = none_as_storage(p, rm)?;
     let (big, small) = if a.top() >= b.top() { (a, b) } else { (b, a) };
     if small.is_zero() || big.top() - small.top() > GAP {
-        return ref_sum(&[big.abs(), small.abs()], p, rm);
+        return ref_sum_parts(
+            &[(big, big.is_negative()), (small, small.is_negative())],
+            p,
+            rm,
+        );
     }
     let r = -big.top();
     let (fa, fb) = (exact(a, r)?, exact(b, r)?);
-    round_scaled(p, rm, big.top(), false, r, |o, rnd| unsafe {
+    round_scaled(p, rm, big.top(), false, r, |o, rnd| {
         mpfr::hypot(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
     })
 }
@@ -349,13 +355,11 @@ pub fn ref_hypot(a: &Term, b: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
 /// `f` truncated with an inexact flag `t` made round-to-odd (the last bit set when inexact): rounding the result
 /// to fewer than `prec - 1` bits is rounding the exact value.
 fn odd(mut f: Float, t: i32) -> Float {
-    if t != 0 && unsafe { mpfr::min_prec(f.as_raw()) } < f.prec() as mpfr::prec_t {
-        unsafe {
-            if f.is_sign_negative() {
-                mpfr::nextbelow(f.as_raw_mut());
-            } else {
-                mpfr::nextabove(f.as_raw_mut());
-            }
+    if t != 0 && mpfr::min_prec(f.as_raw()) < f.prec() as mpfr::PrecT {
+        if f.is_sign_negative() {
+            mpfr::nextbelow(f.as_raw_mut());
+        } else {
+            mpfr::nextabove(f.as_raw_mut());
         }
     }
     f
@@ -366,9 +370,9 @@ fn odd(mut f: Float, t: i32) -> Float {
 fn pi_odd(p: u32, h: i64, negative: bool) -> Float {
     let _w = widest();
     let mut f = Float::new(p + 200);
-    let t = unsafe { mpfr::const_pi(f.as_raw_mut(), rnd_t::RNDZ) };
+    let t = mpfr::const_pi(f.as_raw_mut(), Rnd::Zero);
     let mut f = odd(f, t);
-    unsafe { mpfr::mul_2si(f.as_raw_mut(), f.as_raw(), h, rnd_t::RNDN) };
+    mpfr::mul_2si_self(f.as_raw_mut(), h, Rnd::Nearest);
     if negative {
         -f
     } else {
@@ -396,14 +400,12 @@ pub fn ref_atan2(y: &Term, x: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
         let q = {
             let _w = widest();
             let mut q = Float::new(p + 700);
-            let tq = unsafe { mpfr::div(q.as_raw_mut(), fy.as_raw(), fx.as_raw(), rnd_t::RNDZ) };
+            let tq = mpfr::div(q.as_raw_mut(), fy.as_raw(), fx.as_raw(), Rnd::Zero);
             if tq == 0 {
-                unsafe {
-                    if neg {
-                        mpfr::nextabove(q.as_raw_mut());
-                    } else {
-                        mpfr::nextbelow(q.as_raw_mut());
-                    }
+                if neg {
+                    mpfr::nextabove(q.as_raw_mut());
+                } else {
+                    mpfr::nextbelow(q.as_raw_mut());
                 }
                 q
             } else {
@@ -419,7 +421,7 @@ pub fn ref_atan2(y: &Term, x: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
     }
     let r = -ty.max(tx);
     let (fy, fx) = (exact(y, r)?, exact(x, r)?);
-    round_scaled(p, rm, 2, neg, 0, |o, rnd| unsafe {
+    round_scaled(p, rm, 2, neg, 0, |o, rnd| {
         mpfr::atan2(o.as_raw_mut(), fy.as_raw(), fx.as_raw(), rnd)
     })
 }
@@ -510,8 +512,8 @@ pub fn term_of(x: &ExactNum) -> Res<Term> {
 pub fn ref_binop(a: &Term, b: &Term, op: BinOp, p: u32, rm: RoundingMode) -> Res<Want> {
     let (p, rm) = none_as_storage(p, rm)?;
     match op {
-        BinOp::Add => ref_sum(&[a.ldexp(0), b.ldexp(0)], p, rm),
-        BinOp::Sub => ref_sum(&[a.ldexp(0), b.neg()], p, rm),
+        BinOp::Add => ref_sum_parts(&[(a, false), (b, false)], p, rm),
+        BinOp::Sub => ref_sum_parts(&[(a, false), (b, true)], p, rm),
         BinOp::Mul => ref_sum(&[a.mul(b)], p, rm),
         BinOp::Div => ref_div(a, b, p, rm),
     }
@@ -542,7 +544,7 @@ pub fn ref_pow(
     {
         let n = e.unsigned_abs();
         let t = Term {
-            m: Integer::from((&tx.m).pow(n)),
+            m: tx.m.pow(n),
             k: tx.k * i128::from(n),
         };
         return if e >= 0 {
@@ -610,12 +612,12 @@ pub fn ref_pow(
     round_scaled(p, rm, t, negative, -t, |o, rnd| set_checked(o, &q, rnd))
 }
 
-fn round_of_rnd(rnd: rnd_t) -> Round {
+fn round_of_rnd(rnd: Rnd) -> Round {
     match rnd {
-        rnd_t::RNDZ => Round::Zero,
-        rnd_t::RNDU => Round::Up,
-        rnd_t::RNDD => Round::Down,
-        rnd_t::RNDA => Round::AwayZero,
+        Rnd::Zero => Round::Zero,
+        Rnd::Up => Round::Up,
+        Rnd::Down => Round::Down,
+        Rnd::AwayZero => Round::AwayZero,
         _ => Round::Nearest,
     }
 }
@@ -713,7 +715,7 @@ mod self_test {
     fn agree(want: &Want, plain: &(Float, bool), info: &str) {
         let _w = widest();
         let mut back = Float::with_val(want.v.prec(), &want.v);
-        unsafe { mpfr::mul_2si(back.as_raw_mut(), back.as_raw(), -want.shift, rnd_t::RNDN) };
+        mpfr::mul_2si_self(back.as_raw_mut(), -want.shift, Rnd::Nearest);
         assert!(
             (back.is_nan() && plain.0.is_nan()) || back == plain.0,
             "{info}: shifted {} (shift {}), plain {}",
@@ -771,50 +773,44 @@ mod self_test {
             let (m3, k3, n3) = ops[(i * 5 + 1) % ops.len()];
             let (c, fc) = (Term::new(m3, k3, n3), plain_f(m3, k3, n3));
             let prod = Float::with_val(128, &fa * &fb);
+            let ab = a.mul(&b);
             for p in PRECISIONS {
                 for rm in MODES {
                     let info = format!("{a:?} {b:?} {c:?} p={p} {rm:?}");
-                    let plain =
-                        |f: &dyn Fn(&mut Float, rnd_t) -> i32| mpfr_reference_with(p, rm, f);
+                    let plain = |f: &dyn Fn(&mut Float, Rnd) -> i32| mpfr_reference_with(p, rm, f);
                     agree(
-                        &ref_sum(&[a.mul(&b), c.ldexp(0)], p, rm)?,
-                        &plain(&|o, rnd| unsafe {
+                        &ref_sum_parts(&[(&ab, false), (&c, false)], p, rm)?,
+                        &plain(&|o, rnd| {
                             mpfr::fma(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), fc.as_raw(), rnd)
                         })?,
                         &format!("fma {info}"),
                     );
                     agree(
-                        &ref_sum(&[a.ldexp(0), b.ldexp(0)], p, rm)?,
-                        &plain(&|o, rnd| unsafe {
-                            mpfr::add(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
-                        })?,
+                        &ref_sum_parts(&[(&a, false), (&b, false)], p, rm)?,
+                        &plain(&|o, rnd| mpfr::add(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd))?,
                         &format!("add {info}"),
                     );
                     agree(
-                        &ref_sum(&[a.mul(&b), a.mul(&b).neg()], p, rm)?,
-                        &plain(&|o, rnd| unsafe {
+                        &ref_sum_parts(&[(&ab, false), (&ab, true)], p, rm)?,
+                        &plain(&|o, rnd| {
                             mpfr::sub(o.as_raw_mut(), prod.as_raw(), prod.as_raw(), rnd)
                         })?,
                         &format!("cancel {info}"),
                     );
                     agree(
                         &ref_div(&a, &b, p, rm)?,
-                        &plain(&|o, rnd| unsafe {
-                            mpfr::div(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
-                        })?,
+                        &plain(&|o, rnd| mpfr::div(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd))?,
                         &format!("div {info}"),
                     );
                     agree(
                         &ref_recip(&a, p, rm)?,
-                        &plain(&|o, rnd| unsafe {
-                            mpfr::ui_div(o.as_raw_mut(), 1, fa.as_raw(), rnd)
-                        })?,
+                        &plain(&|o, rnd| mpfr::ui_div(o.as_raw_mut(), 1, fa.as_raw(), rnd))?,
                         &format!("recip {info}"),
                     );
                     for nr in [2u32, 3, 5, 7, 33] {
                         agree(
                             &ref_root(&a, nr, p, rm)?,
-                            &plain(&|o, rnd| unsafe {
+                            &plain(&|o, rnd| {
                                 mpfr::rootn_ui(o.as_raw_mut(), fa.as_raw(), nr.into(), rnd)
                             })?,
                             &format!("root {nr} {info}"),
@@ -822,14 +818,14 @@ mod self_test {
                     }
                     agree(
                         &ref_hypot(&a, &b, p, rm)?,
-                        &plain(&|o, rnd| unsafe {
+                        &plain(&|o, rnd| {
                             mpfr::hypot(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
                         })?,
                         &format!("hypot {info}"),
                     );
                     agree(
                         &ref_atan2(&a, &b, p, rm)?,
-                        &plain(&|o, rnd| unsafe {
+                        &plain(&|o, rnd| {
                             mpfr::atan2(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
                         })?,
                         &format!("atan2 {info}"),
@@ -863,19 +859,18 @@ mod self_test {
                     for p in PRECISIONS {
                         for rm in MODES {
                             let info = format!("{a:?} {b:?} p={p} {rm:?}");
-                            let plain = |f: &dyn Fn(&mut Float, rnd_t) -> i32| {
-                                mpfr_reference_with(p, rm, f)
-                            };
+                            let plain =
+                                |f: &dyn Fn(&mut Float, Rnd) -> i32| mpfr_reference_with(p, rm, f);
                             agree(
-                                &ref_sum(&[a.ldexp(0), b.ldexp(0)], p, rm)?,
-                                &plain(&|o, rnd| unsafe {
+                                &ref_sum_parts(&[(&a, false), (&b, false)], p, rm)?,
+                                &plain(&|o, rnd| {
                                     mpfr::add(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
                                 })?,
                                 &format!("add {info}"),
                             );
                             agree(
                                 &ref_hypot(&a, &b, p, rm)?,
-                                &plain(&|o, rnd| unsafe {
+                                &plain(&|o, rnd| {
                                     mpfr::hypot(o.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
                                 })?,
                                 &format!("hypot {info}"),
@@ -883,7 +878,7 @@ mod self_test {
                             for (y, x, fy, fx) in [(&b, &a, &fb, &fa), (&a, &b, &fa, &fb)] {
                                 agree(
                                     &ref_atan2(y, x, p, rm)?,
-                                    &plain(&|o, rnd| unsafe {
+                                    &plain(&|o, rnd| {
                                         mpfr::atan2(o.as_raw_mut(), fy.as_raw(), fx.as_raw(), rnd)
                                     })?,
                                     &format!("atan2 {y:?} {x:?} p={p} {rm:?}"),
@@ -939,7 +934,7 @@ mod self_test {
             let deep = [Term::new(1, min - 5_000_000, true)];
             is(
                 &ref_sum(&deep, p, RoundingMode::FromZero)?,
-                &g.neg(),
+                &Term::new(1, min - pi, true),
                 true,
                 "deep",
             )?;
@@ -947,10 +942,15 @@ mod self_test {
             let (a, b) = (Term::new(1, max - 10, false), Term::new(1, min + 10, false));
             let w = ref_div(&a, &b, p, RoundingMode::ToEven)?;
             assert!(w.v.is_infinite() && !w.v.is_sign_negative(), "overflow");
-            let big = Term {
-                m: (Integer::from(1) << p) - 1u32,
-                k: MAX - i128::from(p),
+            // the largest finite value, either sign
+            let largest = |neg: bool| {
+                let m = (Integer::from(1) << p) - 1u32;
+                Term {
+                    m: if neg { -m } else { m },
+                    k: MAX - i128::from(p),
+                }
             };
+            let big = largest(false);
             is(
                 &ref_div(&a, &b, p, RoundingMode::ToZero)?,
                 &big,
@@ -967,7 +967,7 @@ mod self_test {
             )?;
             // 1 / 2^(MIN - 2): 2^(-(MIN - 2)) = 2^(MAX + 3) overflows
             let w = ref_recip(&Term::new(1, min - 2, true), p, RoundingMode::Up)?;
-            is(&w, &big.neg(), true, "recip")?;
+            is(&w, &largest(true), true, "recip")?;
             // atan2(2^(MIN - p - 1), 1) = 2^(MIN - p - 1) (1 - eps): Down 0, Up the grid, ToEven 0
             let (y, one) = (Term::new(1, min - pi - 1, false), Term::new(1, 0, false));
             let w = ref_atan2(&y, &one, p, RoundingMode::Down)?;

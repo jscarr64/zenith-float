@@ -12,3 +12,6 @@ golds/hex/** -text
 # Mutant patches are unified diffs: a blank source line is a context line of one space, and a patch may end with an empty
 # context line. That whitespace is the patch format, not an error, so whitespace checks (git diff --check) skip them.
 zenith-float-bound/tools/mutants/**/*.patch -whitespace
+# MPFR golden streams are binary (zfgold2, tests/mpfr/gold.rs): no text diffs, no line-ending conversion
+zenith-float-num/tests/mpfr/golden/*.gold binary
+zenith-float-num/tests/mpfr/golden/*.gold.* binary

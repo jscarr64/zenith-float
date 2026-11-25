@@ -5,11 +5,9 @@
 use crate::mpfr::common::get_prec_rng;
 use crate::mpfr::common::test_zf_const;
 use crate::mpfr::common::{assert_float_close, get_random_rnd_pair, reset_test_rng, test_random};
-use gmp_mpfr_sys::{
-    gmp::exp_t,
-    mpfr::{self, rnd_t},
-};
-use rug::Float;
+use crate::mpfr::mp::mpfr::{self, ExpT};
+use crate::mpfr::mp::Float;
+use crate::mpfr::mp::Rnd;
 use zenith_float_num::RoundingMode;
 use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
@@ -17,7 +15,7 @@ use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SI
 #[test]
 fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let repeat_cnt = crate::mpfr::common::tier_runs(100);
+    let repeat_cnt = 100;
     let run_cnt = 500;
 
     let p_rng = get_prec_rng();
@@ -26,30 +24,26 @@ fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
 
     let p_max = (p_rng + p_min) * WORD_BIT_SIZE;
 
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as exp_t);
-        mpfr::set_emax(EXPONENT_MAX as exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as ExpT);
+        mpfr::set_emax(EXPONENT_MAX as ExpT);
     }
 
-    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
-    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
+    assert_eq!(EXPONENT_MIN, mpfr::get_emin());
+    assert_eq!(EXPONENT_MAX, mpfr::get_emax());
 
     let mk_e = || {
         let mut f = Float::with_val((p_max + WORD_BIT_SIZE) as u32, 1);
-        unsafe {
-            mpfr::exp(f.as_raw_mut(), Float::with_val(1, 1).as_raw(), rnd_t::RNDN);
-        }
+        mpfr::exp(f.as_raw_mut(), Float::with_val(1, 1).as_raw(), Rnd::Nearest);
         f
     };
     let mk_ln10 = || {
         let mut f = Float::with_val((p_max + WORD_BIT_SIZE) as u32, 1);
-        unsafe {
-            mpfr::log(
-                f.as_raw_mut(),
-                Float::with_val(32, 10).as_raw(),
-                rnd_t::RNDN,
-            );
-        }
+        mpfr::log(
+            f.as_raw_mut(),
+            Float::with_val(32, 10).as_raw(),
+            Rnd::Nearest,
+        );
         f
     };
 
@@ -68,9 +62,7 @@ fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
             // e
             let n1 = cc.e(p, rm);
             let mut f1 = mk_e();
-            unsafe {
-                mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
-            }
+            mpfr::prec_round(f1.as_raw_mut(), p as mpfr::PrecT, rnd);
 
             assert_float_close(
                 n1,
@@ -84,9 +76,7 @@ fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
             // ln(10)
             let n1 = cc.ln_10(p, rm);
             f1 = mk_ln10();
-            unsafe {
-                mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
-            }
+            mpfr::prec_round(f1.as_raw_mut(), p as mpfr::PrecT, rnd);
 
             assert_float_close(
                 n1,
@@ -104,25 +94,21 @@ fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cc = Consts::new()?;
     let rm = RoundingMode::ToEven;
-    let rnd = rnd_t::RNDN;
+    let rnd = Rnd::Nearest;
 
     let mut mpfr_e = Float::with_val(p as u32, 1);
-    unsafe {
-        mpfr::exp(
-            mpfr_e.as_raw_mut(),
-            Float::with_val(1, 1).as_raw(),
-            rnd_t::RNDN,
-        );
-    }
+    mpfr::exp(
+        mpfr_e.as_raw_mut(),
+        Float::with_val(1, 1).as_raw(),
+        Rnd::Nearest,
+    );
 
     let mut mpfr_ln10 = Float::with_val(p as u32, 1);
-    unsafe {
-        mpfr::log(
-            mpfr_ln10.as_raw_mut(),
-            Float::with_val(32, 10).as_raw(),
-            rnd_t::RNDN,
-        );
-    }
+    mpfr::log(
+        mpfr_ln10.as_raw_mut(),
+        Float::with_val(32, 10).as_raw(),
+        Rnd::Nearest,
+    );
 
     // pi, ln(2)
     test_zf_const!(pi, const_pi, p, rm, rnd, (p, rm, "const pi"), cc);
@@ -131,9 +117,7 @@ fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
     // e
     let n1 = cc.e(p, rm);
     let mut f1 = mpfr_e;
-    unsafe {
-        mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
-    }
+    mpfr::prec_round(f1.as_raw_mut(), p as mpfr::PrecT, rnd);
 
     assert_float_close(
         n1,
@@ -147,9 +131,7 @@ fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
     // ln(10)
     let n1 = cc.ln_10(p, rm);
     f1 = mpfr_ln10;
-    unsafe {
-        mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
-    }
+    mpfr::prec_round(f1.as_raw_mut(), p as mpfr::PrecT, rnd);
 
     assert_float_close(
         n1,

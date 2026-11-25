@@ -7,8 +7,8 @@ use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::exact_bit_functions::{
     check, exact_input, input, MODES, NONE_GAP_MODES, P14_PRECISIONS, PRECISIONS,
 };
-use gmp_mpfr_sys::mpfr;
-use rug::Float;
+use crate::mpfr::mp::mpfr;
+use crate::mpfr::mp::Float;
 use std::ops::Neg;
 use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactNum, Radix, WORD_BIT_SIZE};
@@ -51,7 +51,7 @@ fn exact_bit_hypot() -> Result<(), Box<dyn std::error::Error>> {
             for rm in MODES {
                 let got = x.hypot(&y, p, rm);
                 let info = format!("hypot p={p} {rm:?} {x:?} {y:?}");
-                check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                check(&got, p, rm, &info, &mut cc, |r, rnd| {
                     mpfr::hypot(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), rnd)
                 })?;
             }
@@ -87,7 +87,7 @@ fn exact_bit_fma() -> Result<(), Box<dyn std::error::Error>> {
             for rm in MODES {
                 let got = x.fma(&y, &z, p, rm);
                 let info = format!("fma p={p} {rm:?} {x:?} {y:?} {z:?}");
-                check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                check(&got, p, rm, &info, &mut cc, |r, rnd| {
                     mpfr::fma(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), fz.as_raw(), rnd)
                 })?;
             }
@@ -123,14 +123,14 @@ fn exact_bit_pow_atan2() -> Result<(), Box<dyn std::error::Error>> {
             for rm in NONE_GAP_MODES {
                 let got = x.pow(&y, p, rm, &mut cc);
                 let info = format!("pow p={p} {rm:?} {x:?} {y:?}");
-                check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                check(&got, p, rm, &info, &mut cc, |r, rnd| {
                     mpfr::pow(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), rnd)
                 })?;
             }
             for rm in MODES {
                 let got = y.atan2(&x, p, rm, &mut cc);
                 let info = format!("atan2 p={p} {rm:?} {y:?} {x:?}");
-                check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                check(&got, p, rm, &info, &mut cc, |r, rnd| {
                     mpfr::atan2(r.as_raw_mut(), fy.as_raw(), fx.as_raw(), rnd)
                 })?;
             }
@@ -156,20 +156,20 @@ fn exact_bit_powi_root_reciprocal() -> Result<(), Box<dyn std::error::Error>> {
                 for n in [0usize, 1, 2, 3, 7] {
                     let got = x.powi(n, p, rm);
                     let info = format!("powi({n}) p={p} {rm:?} {x:?}");
-                    check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                    check(&got, p, rm, &info, &mut cc, |r, rnd| {
                         mpfr::pow_ui(r.as_raw_mut(), fx.as_raw(), n as _, rnd)
                     })?;
                 }
                 for n in [-3i64, -1, 2] {
                     let got = x.powsi(n, p, rm);
                     let info = format!("powsi({n}) p={p} {rm:?} {x:?}");
-                    check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                    check(&got, p, rm, &info, &mut cc, |r, rnd| {
                         mpfr::pow_si(r.as_raw_mut(), fx.as_raw(), n as _, rnd)
                     })?;
                 }
                 let got = x.reciprocal(p, rm);
                 let info = format!("reciprocal p={p} {rm:?} {x:?}");
-                check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                check(&got, p, rm, &info, &mut cc, |r, rnd| {
                     mpfr::ui_div(r.as_raw_mut(), 1, fx.as_raw(), rnd)
                 })?;
             }
@@ -179,7 +179,7 @@ fn exact_bit_powi_root_reciprocal() -> Result<(), Box<dyn std::error::Error>> {
                     for n in [4usize, 5] {
                         let got = x.nth_root(n, p, rm);
                         let info = format!("nth_root({n}) p={p} {rm:?} {x:?}");
-                        check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                        check(&got, p, rm, &info, &mut cc, |r, rnd| {
                             mpfr::rootn_ui(r.as_raw_mut(), fx.as_raw(), n as _, rnd)
                         })?;
                     }
@@ -212,10 +212,9 @@ fn exact_bit_parse() -> Result<(), Box<dyn std::error::Error>> {
             for rm in MODES {
                 let got = ExactNum::parse(s, Radix::Dec, p, rm, &mut cc);
                 let info = format!("parse({s}) p={p} {rm:?}");
-                let c = std::ffi::CString::new(s)?;
                 let exact = Float::with_val(4096, Float::parse(s)?);
                 check(&got, p, rm, &info, &mut cc, |r, rnd| {
-                    unsafe { mpfr::set_str(r.as_raw_mut(), c.as_ptr(), 10, rnd) };
+                    mpfr::set_str(r.as_raw_mut(), s, 10, rnd);
                     // set_str's return value is not the ternary value: recompute it
                     match (*r).partial_cmp(&exact) {
                         Some(core::cmp::Ordering::Less) => -1,
@@ -245,7 +244,7 @@ fn exact_bit_hypot_wide_spread() -> Result<(), Box<dyn std::error::Error>> {
                 for rm in MODES {
                     let got = a.hypot(b, p, rm);
                     let info = format!("hypot spread p={p} {rm:?}");
-                    check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                    check(&got, p, rm, &info, &mut cc, |r, rnd| {
                         mpfr::hypot(r.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
                     })?;
                 }
@@ -282,22 +281,20 @@ fn add_sub_full_prec_are_exact() -> Result<(), Box<dyn std::error::Error>> {
                 ("sub_full_prec", a.sub_full_prec(b), true),
             ] {
                 let mut want = Float::new(wide as u32);
-                let t = unsafe {
-                    if sub {
-                        mpfr::sub(
-                            want.as_raw_mut(),
-                            fa.as_raw(),
-                            fb.as_raw(),
-                            mpfr::rnd_t::RNDN,
-                        )
-                    } else {
-                        mpfr::add(
-                            want.as_raw_mut(),
-                            fa.as_raw(),
-                            fb.as_raw(),
-                            mpfr::rnd_t::RNDN,
-                        )
-                    }
+                let t = if sub {
+                    mpfr::sub(
+                        want.as_raw_mut(),
+                        fa.as_raw(),
+                        fb.as_raw(),
+                        mpfr::Rnd::Nearest,
+                    )
+                } else {
+                    mpfr::add(
+                        want.as_raw_mut(),
+                        fa.as_raw(),
+                        fb.as_raw(),
+                        mpfr::Rnd::Nearest,
+                    )
                 };
                 let info = format!("{name} p={p} a={a:?} b={b:?}");
                 assert_eq!(t, 0, "{info}: reference not exact");
@@ -328,7 +325,7 @@ fn nth_root_wide_exponents_and_large_n() -> Result<(), Box<dyn std::error::Error
                 for rm in MODES {
                     let got = x.nth_root(n, p, rm);
                     let info = format!("nth_root({n}) p={p} {rm:?} {x:?}");
-                    check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                    check(&got, p, rm, &info, &mut cc, |r, rnd| {
                         mpfr::rootn_ui(r.as_raw_mut(), fx.as_raw(), n as _, rnd)
                     })?;
                 }
@@ -355,7 +352,7 @@ fn acosh_ln2x_branch() -> Result<(), Box<dyn std::error::Error>> {
             for rm in MODES {
                 let got = x.acosh(p, rm, &mut cc);
                 let info = format!("acosh p={p} {rm:?} {x:?}");
-                check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                check(&got, p, rm, &info, &mut cc, |r, rnd| {
                     mpfr::acosh(r.as_raw_mut(), fx.as_raw(), rnd)
                 })?;
             }

@@ -8,19 +8,15 @@
 use crate::mpfr::common::{emulated_range_ok, exact_mpfr_shifted, mpfr_reference_shifted};
 use crate::mpfr::common::{show_mp, with_full_range};
 use crate::mpfr::exact_bit_functions::{MODES, NONE_GAP_MODES};
-use gmp_mpfr_sys::mpfr::{self, rnd_t};
-use rug::Float;
+use crate::mpfr::mp::Float;
+use crate::mpfr::mp::{mpfr, Rnd};
 use std::ops::Neg;
 use zenith_float_num::{
     ExactNum, Exponent, RoundingMode, EXPONENT_MAX, EXPONENT_MIN, MAX_PRECISION, WORD_BIT_SIZE,
 };
 
 /// A named zenith result and the MPFR call that rounds its reference.
-type EdgeCase<'a> = (
-    &'a str,
-    ExactNum,
-    Box<dyn Fn(&mut Float, rnd_t) -> i32 + 'a>,
-);
+type EdgeCase<'a> = (&'a str, ExactNum, Box<dyn Fn(&mut Float, Rnd) -> i32 + 'a>);
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
@@ -104,14 +100,14 @@ fn same(got: &ExactNum, want: &Float, inexact: bool, shift: i64, info: &str) -> 
             "{info}: sign of zero"
         );
     } else {
-        let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
-        unsafe {
+        let (old_min, old_max) = (mpfr::get_emin(), mpfr::get_emax());
+        {
             mpfr::set_emin(mpfr::get_emin_min());
             mpfr::set_emax(mpfr::get_emax_max());
         }
         let g = exact_mpfr_shifted(got, shift)?;
         let eq = g == *want;
-        unsafe {
+        {
             mpfr::set_emin(old_min);
             mpfr::set_emax(old_max);
         }
@@ -133,7 +129,7 @@ fn limits_are_62_bit_and_match_mpfr() {
     assert_eq!(size_of::<Exponent>(), 8);
     // The fixed 2^60 - 1, no usize-width cap (order 3, 2026-11-10).
     assert_eq!(MAX_PRECISION, (1usize << 60) - 1);
-    unsafe {
+    {
         assert_eq!(mpfr::get_emax_max() as i128, EXPONENT_MAX as i128);
         assert_eq!(mpfr::get_emin_min() as i128, EXPONENT_MIN as i128);
     }
@@ -162,28 +158,28 @@ fn top_edge_carry_out_and_overflow() -> Res {
                         (
                             "x+h",
                             ExactNum::add_ref(&x, &h, p, rm),
-                            Box::new(|r: &mut Float, rnd| unsafe {
+                            Box::new(|r: &mut Float, rnd| {
                                 mpfr::add(r.as_raw_mut(), fx.as_raw(), fh.as_raw(), rnd)
                             }),
                         ),
                         (
                             "x+x",
                             ExactNum::add_ref(&x, &x, p, rm),
-                            Box::new(|r: &mut Float, rnd| unsafe {
+                            Box::new(|r: &mut Float, rnd| {
                                 mpfr::add(r.as_raw_mut(), fx.as_raw(), fx.as_raw(), rnd)
                             }),
                         ),
                         (
                             "x*2",
                             ExactNum::mul_ref(&x, &two, p, rm),
-                            Box::new(|r: &mut Float, rnd| unsafe {
+                            Box::new(|r: &mut Float, rnd| {
                                 mpfr::mul(r.as_raw_mut(), fx.as_raw(), f2.as_raw(), rnd)
                             }),
                         ),
                         (
                             "x*x",
                             ExactNum::mul_ref(&x, &x, p, rm),
-                            Box::new(|r: &mut Float, rnd| unsafe {
+                            Box::new(|r: &mut Float, rnd| {
                                 mpfr::mul(r.as_raw_mut(), fx.as_raw(), fx.as_raw(), rnd)
                             }),
                         ),
@@ -219,7 +215,7 @@ fn bottom_edge_subnormals_round_into_normal() -> Res {
                 let d = k + j;
                 for rm in MODES {
                     let got = all_ones(p, e)?.ldexp(-(d as Exponent), p, rm);
-                    let (want, inexact) = mpfr_reference_shifted(pu, rm, SHIFT, |r, rnd| unsafe {
+                    let (want, inexact) = mpfr_reference_shifted(pu, rm, SHIFT, |r, rnd| {
                         mpfr::mul_2si(r.as_raw_mut(), fx.as_raw(), -d as _, rnd)
                     })?;
                     same(
@@ -230,7 +226,7 @@ fn bottom_edge_subnormals_round_into_normal() -> Res {
                         &format!("bottom ldexp p={p} k={k} j={j} {rm:?}"),
                     )?;
                     let got = all_ones(p, e)?.neg().ldexp(-(d as Exponent), p, rm);
-                    let (want, inexact) = mpfr_reference_shifted(pu, rm, SHIFT, |r, rnd| unsafe {
+                    let (want, inexact) = mpfr_reference_shifted(pu, rm, SHIFT, |r, rnd| {
                         mpfr::mul_2si(r.as_raw_mut(), fxn.as_raw(), -d as _, rnd)
                     })?;
                     same(
@@ -263,7 +259,7 @@ fn bottom_edge_subnormals_round_into_normal() -> Res {
         );
         for rm in MODES {
             let got = ExactNum::add_ref(&big_sub, &tiny, ps, rm);
-            let (want, inexact) = mpfr_reference_shifted(psu, rm, SHIFT, |r, rnd| unsafe {
+            let (want, inexact) = mpfr_reference_shifted(psu, rm, SHIFT, |r, rnd| {
                 mpfr::add(r.as_raw_mut(), fb.as_raw(), ft.as_raw(), rnd)
             })?;
             same(

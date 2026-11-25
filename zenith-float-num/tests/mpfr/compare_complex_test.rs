@@ -3,8 +3,8 @@
 use crate::mpfr::common::{
     assert_float_close, get_float_pair, get_random_rnd_pair, reset_test_rng,
 };
-use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::Float;
+use crate::mpfr::mp::mpfr::{self, ExpT};
+use crate::mpfr::mp::Float;
 use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
@@ -13,12 +13,12 @@ fn mpfr_compare_complex() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
 
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as exp_t);
-        mpfr::set_emax(EXPONENT_MAX as exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as ExpT);
+        mpfr::set_emax(EXPONENT_MAX as ExpT);
     }
-    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
-    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
+    assert_eq!(EXPONENT_MIN, mpfr::get_emin());
+    assert_eq!(EXPONENT_MAX, mpfr::get_emax());
 
     let p = 2 * WORD_BIT_SIZE;
 
@@ -38,7 +38,7 @@ fn mpfr_compare_complex() -> Result<(), Box<dyn std::error::Error>> {
         let s = ExactComplex::add_ref(&a, &b, p, rm);
         let mut fre = Float::with_val(p as u32, 1);
         let mut fim = Float::with_val(p as u32, 1);
-        unsafe {
+        {
             mpfr::add(fre.as_raw_mut(), far.as_raw(), fbr.as_raw(), rnd);
             mpfr::add(fim.as_raw_mut(), fai.as_raw(), fbi.as_raw(), rnd);
         }
@@ -55,7 +55,7 @@ fn mpfr_compare_complex() -> Result<(), Box<dyn std::error::Error>> {
         let mut fbd = Float::with_val(2 * p as u32, 1);
         let mut fad = Float::with_val(2 * p as u32, 1);
         let mut fbc = Float::with_val(2 * p as u32, 1);
-        unsafe {
+        {
             mpfr::mul(fac.as_raw_mut(), far.as_raw(), fbr.as_raw(), rnd);
             mpfr::mul(fbd.as_raw_mut(), fai.as_raw(), fbi.as_raw(), rnd);
             mpfr::mul(fad.as_raw_mut(), far.as_raw(), fbi.as_raw(), rnd);
@@ -76,9 +76,9 @@ fn mpfr_compare_complex_real_axis() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
 
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as exp_t);
-        mpfr::set_emax(EXPONENT_MAX as exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as ExpT);
+        mpfr::set_emax(EXPONENT_MAX as ExpT);
     }
 
     let p = 2 * WORD_BIT_SIZE;
@@ -95,9 +95,7 @@ fn mpfr_compare_complex_real_axis() -> Result<(), Box<dyn std::error::Error>> {
 
         let er = z.erf(p, rm, &mut cc);
         let mut fe = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::erf(fe.as_raw_mut(), f1.as_raw(), rnd);
-        }
+        mpfr::erf(fe.as_raw_mut(), f1.as_raw(), rnd);
         let (er_re, er_im) = er.into_parts();
         assert_float_close(er_re, fe, p, "cplx erf|R re", false, &mut cc)?;
         assert!(
@@ -108,17 +106,13 @@ fn mpfr_compare_complex_real_axis() -> Result<(), Box<dyn std::error::Error>> {
         if n1_positive {
             let g = z.gamma(p, rm, &mut cc);
             let mut fg = Float::with_val(p as u32, 1);
-            unsafe {
-                mpfr::gamma(fg.as_raw_mut(), f1.as_raw(), rnd);
-            }
+            mpfr::gamma(fg.as_raw_mut(), f1.as_raw(), rnd);
             assert_float_close(g.into_parts().0, fg, p, "cplx gamma|R re", false, &mut cc)?;
         }
 
         let a = z.ai(p, rm, &mut cc);
         let mut fa = Float::with_val(p as u32, 1);
-        unsafe {
-            mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
-        }
+        mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
         assert_float_close(a.into_parts().0, fa, p, "cplx ai|R re", false, &mut cc)?;
     }
 
@@ -133,9 +127,7 @@ fn mpfr_compare_complex_real_axis() -> Result<(), Box<dyn std::error::Error>> {
             let nu = ExactComplex::from_real(ExactNum::from_i64(n_ord, p), p);
             let j = z.bessel_j_nu(&nu, p, rm, &mut cc);
             let mut fj = Float::with_val(p as u32, 1);
-            unsafe {
-                mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
-            }
+            mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
             assert_float_close(
                 j.into_parts().0,
                 fj,

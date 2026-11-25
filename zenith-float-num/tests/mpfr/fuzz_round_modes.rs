@@ -15,9 +15,9 @@ use crate::mpfr::common::test_random;
 use crate::mpfr::common::test_zf_op_no_cc;
 use crate::mpfr::common::zenith_binop;
 use crate::mpfr::common::BinOp;
+use crate::mpfr::mp::Float;
+use crate::mpfr::mp::{mpfr, Rnd};
 use crate::mpfr::shifted as sh;
-use gmp_mpfr_sys::mpfr::{self, rnd_t};
-use rug::Float;
 use std::ops::Neg;
 use zenith_float_num::{
     Consts, ExactNum, Exponent, RoundingMode, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
@@ -31,12 +31,12 @@ fn neg_of(x: &ExactNum) -> ExactNum {
     ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
 }
 
-const ROUNDS: [(RoundingMode, rnd_t); 5] = [
-    (RoundingMode::ToEven, rnd_t::RNDN),
-    (RoundingMode::Up, rnd_t::RNDU),
-    (RoundingMode::Down, rnd_t::RNDD),
-    (RoundingMode::FromZero, rnd_t::RNDA),
-    (RoundingMode::ToZero, rnd_t::RNDZ),
+const ROUNDS: [(RoundingMode, Rnd); 5] = [
+    (RoundingMode::ToEven, Rnd::Nearest),
+    (RoundingMode::Up, Rnd::Up),
+    (RoundingMode::Down, Rnd::Down),
+    (RoundingMode::FromZero, Rnd::AwayZero),
+    (RoundingMode::ToZero, Rnd::Zero),
 ];
 
 /// All 7 modes, each with a bit-exact reference: `ToOdd` is emulated in `mpfr_reference`, and `None` is MPFR toward zero at the
@@ -56,12 +56,12 @@ fn fuzz_mpfr_bit_exact_all_round_modes() -> Result<(), Box<dyn std::error::Error
     reset_test_rng();
     let mut cc = Consts::new()?;
 
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
-        mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as mpfr::ExpT);
+        mpfr::set_emax(EXPONENT_MAX as mpfr::ExpT);
     }
-    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
-    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
+    assert_eq!(EXPONENT_MIN, mpfr::get_emin());
+    assert_eq!(EXPONENT_MAX, mpfr::get_emax());
 
     let emin: Exponent = -64;
     let emax: Exponent = 64;
@@ -138,9 +138,7 @@ fn fuzz_mpfr_bit_exact_all_round_modes() -> Result<(), Box<dyn std::error::Error
                     for (rm, rnd) in ROUNDS {
                         let n3 = ExactNum::nth_root(&a, n, p, rm);
                         let mut f3 = Float::with_val(p as u32, 1);
-                        unsafe {
-                            mpfr::rootn_ui(f3.as_raw_mut(), fa.as_raw(), n as u64, rnd);
-                        }
+                        mpfr::rootn_ui(f3.as_raw_mut(), fa.as_raw(), n as u64, rnd);
                         assert_float_close(
                             n3,
                             f3,
@@ -161,9 +159,9 @@ fn fuzz_mpfr_bit_exact_all_round_modes() -> Result<(), Box<dyn std::error::Error
 fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
-        mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as mpfr::ExpT);
+        mpfr::set_emax(EXPONENT_MAX as mpfr::ExpT);
     }
 
     for &p in &[64, 128, 192, 256, 512] {
@@ -208,7 +206,7 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
                 let b = n2;
 
                 for &(rm, rnd) in ROUNDS.iter() {
-                    unsafe { mpfr::clear_flags() };
+                    mpfr::clear_flags();
                     test_zf_op_no_cc!(
                         true,
                         mk_a(is_neg),
@@ -224,7 +222,7 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
                         cc
                     );
 
-                    unsafe { mpfr::clear_flags() };
+                    mpfr::clear_flags();
                     test_zf_op_no_cc!(
                         true,
                         mk_a(is_neg),
@@ -240,7 +238,7 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
                         cc
                     );
 
-                    unsafe { mpfr::clear_flags() };
+                    mpfr::clear_flags();
                     test_zf_op_no_cc!(
                         true,
                         mk_a(is_neg),
@@ -256,7 +254,7 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
                         cc
                     );
 
-                    unsafe { mpfr::clear_flags() };
+                    mpfr::clear_flags();
                     test_zf_op_no_cc!(
                         true,
                         mk_a(is_neg),
@@ -285,9 +283,9 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
 #[test]
 fn fuzz_mpfr_exact_bit_precision() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
-        mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as mpfr::ExpT);
+        mpfr::set_emax(EXPONENT_MAX as mpfr::ExpT);
     }
     let modes = [
         RoundingMode::ToEven,
@@ -344,9 +342,9 @@ fn fuzz_mpfr_exact_bit_precision() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::error::Error>> {
     let mut cc = Consts::new()?;
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
-        mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as mpfr::ExpT);
+        mpfr::set_emax(EXPONENT_MAX as mpfr::ExpT);
     }
     let p = 24usize;
     let n1 = ExactNum::from_raw_parts(&zenith_float_num::RawParts {
@@ -394,9 +392,9 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::err
 #[test]
 fn fuzz_mpfr_sqr_all_round_modes() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
-        mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as mpfr::ExpT);
+        mpfr::set_emax(EXPONENT_MAX as mpfr::ExpT);
     }
     let modes = [
         RoundingMode::ToEven,

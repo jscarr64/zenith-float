@@ -4,60 +4,77 @@
 
 use crate::mpfr::common::{conv_to_mpfr, draw_seed, rebuild_from_seed, reset_test_rng};
 use crate::mpfr::exact_bit_functions::{input, PRECISIONS};
-use rug::{Float, Integer};
+use crate::mpfr::mp::{mpfr, Big, Float, Nat};
 use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 
 /// Runs `f` with MPFR's exponent range at its widest (both ends: a lifted operand can pass the default `emax`).
 fn widest_range<T>(f: impl FnOnce() -> T) -> T {
-    use gmp_mpfr_sys::mpfr;
-    let (emin, emax) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
-    unsafe {
+    use crate::mpfr::mp::mpfr;
+    let (emin, emax) = (mpfr::get_emin(), mpfr::get_emax());
+    {
         mpfr::set_emin(mpfr::get_emin_min());
         mpfr::set_emax(mpfr::get_emax_max());
     }
     let r = f();
-    unsafe {
+    {
         mpfr::set_emin(emin);
         mpfr::set_emax(emax);
     }
     r
 }
 
-/// The significand and exponent of a finite `f`, `f = m * 2^e`, with the exponent at full `mpfr_exp_t` width
-/// (`rug`'s `to_integer_exp` narrows it to `i32`, which panics with "overflow" once the exponents use the i64 range).
-fn integer_exp(f: &Float) -> Result<(Integer, i64), Box<dyn std::error::Error>> {
+/// The significand magnitude and exponent of a finite `f`, `|f| = m * 2^e`, borrowed from `f`, with the exponent
+/// at full `mpfr_exp_t` width (`rug`'s `to_integer_exp` narrows it to `i32`, which panics with "overflow" once the
+/// exponents use the i64 range). A zero is `m = 0` at `e = emin` (as `mpfr_get_z_2exp`).
+fn significand<'a>(
+    f: &'a Float,
+    zero: &'a Big,
+) -> Result<(&'a Big, i64), Box<dyn std::error::Error>> {
     if !f.is_finite() {
         return Err("none value".into());
     }
-    let mut i = Integer::new();
-    let e = unsafe { gmp_mpfr_sys::mpfr::get_z_2exp(i.as_raw_mut(), f.as_raw()) };
-    Ok((i, e))
+    Ok(match f.mantissa_exp() {
+        Some((_, m, e)) => (m, e),
+        None => (zero, mpfr::get_emin()),
+    })
+}
+
+/// `2^k mod m` by square and multiply.
+fn pow2_mod(k: u64, m: &Big) -> Big {
+    let mut r = Big::from_u64(1).divrem(m).1;
+    for i in (0..64 - k.leading_zeros()).rev() {
+        r = r.mul(&r).divrem(m).1;
+        if (k >> i) & 1 == 1 {
+            r = r.shl(1).divrem(m).1;
+        }
+    }
+    r
 }
 
 /// `|x| mod |y|` with the sign of `x`, from the exact integer significands. Exact math at any exponent spread:
 /// for `ex >= ey` the lifted dividend is reduced as `|mx| * (2^(ex - ey) mod |my|) mod |my|` (no `2^spread`
 /// integer); for `ey - ex > 4096` the divisor exceeds the dividend and the remainder is `x` itself.
 fn oracle(fx: &Float, fy: &Float) -> Result<Float, Box<dyn std::error::Error>> {
-    let (mx, ex) = integer_exp(fx)?;
-    let (my, ey) = integer_exp(fy)?;
-    let (ax, ay) = (Integer::from(mx.abs_ref()), Integer::from(my.abs_ref()));
-    let (mut r, e) = if ex >= ey {
-        let k = Integer::from(ex - ey);
-        let two = Integer::from(2);
-        let t = two.pow_mod(&k, &ay).map_err(|_| "pow_mod")?;
-        (Integer::from(&ax * &t) % &ay, ey)
+    let zero = Big::zero();
+    let (ax, ex) = significand(fx, &zero)?;
+    let (ay, ey) = significand(fy, &zero)?;
+    let owned;
+    let (r, e) = if ex >= ey {
+        let t = pow2_mod(u64::try_from(ex - ey)?, ay);
+        owned = ax.mul(&t).divrem(ay).1;
+        (&owned, ey)
     } else if ey - ex > 4096 {
         (ax, ex)
     } else {
-        (ax % (ay << u32::try_from(ey - ex)?), ex)
+        owned = ax.divrem(&ay.shl(u64::try_from(ey - ex)?)).1;
+        (&owned, ex)
     };
-    if fx.is_sign_negative() {
-        r = -r;
-    }
-    let bits = r.significant_bits().max(1);
+    // a zero remainder is +0 (the integer oracle has no signed zero)
+    let neg = fx.is_sign_negative() && !r.is_zero();
+    let bits = u32::try_from(r.bits())?.max(1);
     let sh = isize::try_from(e)?;
-    Ok(widest_range(|| Float::with_val(bits, r) << sh))
+    Ok(widest_range(|| Float::from_parts(bits, neg, r, 0) << sh))
 }
 
 /// `conv_to_mpfr` of `x * 2^lift` for values near the bottom of the range: `lift` moves the zenith subnormals

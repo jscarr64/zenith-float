@@ -1,11 +1,10 @@
 //! `leading_bit_exponent`, `top_u64_mantissa_and_sticky`, `from_mag_parts` and `pow2` (the prerequisites P1 to P3 of
 //! zenith-float-bound) over the whole exponent range, subnormals included, and widths from one word to 313 words
-//! (20 000 bits). The oracle is exact integer arithmetic (`rug::Integer`) on the words of the operand, and MPFR
+//! (20 000 bits). The oracle is exact integer arithmetic (`crate::mpfr::mp::Integer`) on the words of the operand, and MPFR
 //! (`Float`) for the powers of two that MPFR can hold.
 
+use crate::mpfr::mp::{Float, Integer, Nat};
 use crate::mpfr::retry_budget::use_full_exponent_range;
-use rug::integer::Order;
-use rug::{Float, Integer};
 use zenith_float_num::Exponent;
 use zenith_float_num::{
     Error, ExactNum, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS,
@@ -51,25 +50,22 @@ struct Expect {
 }
 
 fn expect_of(words: &[u64], e: i64) -> Expect {
-    let m = Integer::from_digits(words, Order::Lsf);
-    let bl = m.significant_bits() as i64;
+    // the words read in place as one unsigned integer
+    let bl = words.bits() as i64;
     let lz = 64 * words.len() as i64 - bl;
     let leading = e - 1 - lz;
+    let low_word = |b: &[u64]| b.first().copied().unwrap_or(0);
     if bl >= 64 {
-        let sh = (bl - 64) as u32;
-        let t = Integer::from(&m >> sh);
-        let back = Integer::from(&t << sh);
-        let low = Integer::from(&m - &back);
+        let sh = (bl - 64) as u64;
         Expect {
             leading,
-            top: t.to_u64_wrapping(),
-            sticky: low != 0,
+            top: low_word(&words.shr(sh)),
+            sticky: words.low_nonzero(sh),
         }
     } else {
-        let t = Integer::from(&m << (64 - bl) as u32);
         Expect {
             leading,
-            top: t.to_u64_wrapping(),
+            top: low_word(&words.shl((64 - bl) as u64)),
             sticky: false,
         }
     }
@@ -77,11 +73,10 @@ fn expect_of(words: &[u64], e: i64) -> Expect {
 
 /// An operand from words and an exponent: normal when the top bit of the top word is set, subnormal otherwise.
 fn operand(words: &[u64], negative: bool, e: i64) -> Result<ExactNum, Box<dyn std::error::Error>> {
-    let m = Integer::from_digits(words, Order::Lsf);
     let n = if words.last().is_some_and(|w| w >> 63 == 1) {
         64 * words.len()
     } else {
-        m.significant_bits() as usize
+        words.bits() as usize
     };
     let parts = zenith_float_num::RawParts {
         kind: if n == 0 {
@@ -278,12 +273,12 @@ fn odd_and_exp(x: &ExactNum) -> Result<(Integer, i64), Box<dyn std::error::Error
         return Err("no raw parts".into());
     }
     let (words, e) = (raw.words, raw.exponent);
-    let m = Integer::from_digits(words, Order::Lsf);
-    let Some(tz) = m.find_one(0) else {
+    if words.is_zero() {
         return Err("zero mantissa".into());
-    };
-    let odd = Integer::from(&m >> tz);
-    Ok((odd, e - 64 * words.len() as i64 + i64::from(tz)))
+    }
+    let tz = words.trailing_zeros();
+    let odd = Integer::from_big(false, words.shr(tz));
+    Ok((odd, e - 64 * words.len() as i64 + i64::try_from(tz)?))
 }
 
 /// The expected outcome of `from_mag_parts(mant, exp, p)`: `None` when it must be an error.

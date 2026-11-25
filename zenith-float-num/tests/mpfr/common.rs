@@ -2,48 +2,15 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! Components used in MPFR integration tests
 
-use gmp_mpfr_sys::mpfr::{self, rnd_t};
+use crate::mpfr::mp::Float;
+pub use crate::mpfr::mp::{mpfr, Rnd};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use rug::Float;
 use std::cell::RefCell;
 use zenith_float_num::{
     Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, Word, EXPONENT_MAX, EXPONENT_MIN,
     WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT,
 };
-
-/// Which MPFR tier runs: `MPFR_TIER=full` keeps every run count and runs the 100032-bit tests;
-/// anything else (the default) is the fast tier, which divides the heavy run counts by 10 and skips
-/// the 100032-bit tests. `tools/full_gate.sh` runs the full tier unless `MPFR_TIER` says otherwise.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum MpfrTier {
-    Fast,
-    Full,
-}
-
-pub fn mpfr_tier() -> MpfrTier {
-    match std::env::var("MPFR_TIER") {
-        Ok(t) if t == "full" => MpfrTier::Full,
-        _ => MpfrTier::Fast,
-    }
-}
-
-/// `full` in the full tier; `full / 10` (at least 1) in the fast tier.
-pub fn tier_runs(full: usize) -> usize {
-    match mpfr_tier() {
-        MpfrTier::Full => full,
-        MpfrTier::Fast => (full / 10).max(1),
-    }
-}
-
-/// True (and a note on stderr) when the fast tier skips a 100032-bit test.
-pub fn fast_tier_skips_100032_bits(name: &str) -> bool {
-    let skip = mpfr_tier() == MpfrTier::Fast;
-    if skip {
-        eprintln!("{name}: skipped in the fast MPFR tier (set MPFR_TIER=full to run it)");
-    }
-    skip
-}
 
 thread_local! {
     static TEST_RNG: RefCell<StdRng> = RefCell::new(StdRng::seed_from_u64(0x5EED_CAFE_BADC_0D00));
@@ -93,7 +60,7 @@ macro_rules! test_zf_op {
 
         let mut f3 = Float::with_val($p as u32, 1);
 
-        unsafe { mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), ($f2).as_raw(), $rnd) };
+        mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), ($f2).as_raw(), $rnd);
 
         //println!("\n{:b}\n{:b}", $n1, $n2);
         //println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
@@ -106,7 +73,7 @@ macro_rules! test_zf_op {
 
         let mut f3 = Float::with_val($p as u32, 1);
 
-        unsafe { mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), $rnd) };
+        mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), $rnd);
 
         // println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
         // println!("\n{:b}\n{}", n3, f3.to_string_radix(2, None));
@@ -118,7 +85,7 @@ macro_rules! test_zf_op {
 
         let mut f3 = Float::with_val($p as u32, 1);
 
-        unsafe { mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), $rnd) };
+        mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), $rnd);
 
         // println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
         // println!("\n{:b}\n{}", n3, f3.to_string_radix(2, None));
@@ -135,7 +102,7 @@ macro_rules! test_zf_op_no_cc {
 
         let mut f3 = Float::with_val($p as u32, 1);
 
-        unsafe { mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), ($f2).as_raw(), $rnd) };
+        mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), ($f2).as_raw(), $rnd);
 
         //println!("\n{:b}\n{:b}", $n1, $n2);
         //println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
@@ -148,7 +115,7 @@ macro_rules! test_zf_op_no_cc {
 
         let mut f3 = Float::with_val($p as u32, 1);
 
-        unsafe { mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), $rnd) };
+        mpfr::$mpfr_op(f3.as_raw_mut(), ($f1).as_raw(), $rnd);
 
         // println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
         // println!("\n{:b}\n{}", n3, f3.to_string_radix(2, None));
@@ -161,15 +128,13 @@ macro_rules! test_zf_fma {
     ($eq:literal, $n1:ident, $n2:ident, $nc:ident, $f1:ident, $f2:ident, $fc:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
         let n4 = ExactNum::fma(&($n1), &($n2), &($nc), $p, $rm);
         let mut f4 = Float::with_val($p as u32, 1);
-        unsafe {
-            mpfr::fma(
-                f4.as_raw_mut(),
-                ($f1).as_raw(),
-                ($f2).as_raw(),
-                ($fc).as_raw(),
-                $rnd,
-            )
-        };
+        mpfr::fma(
+            f4.as_raw_mut(),
+            ($f1).as_raw(),
+            ($f2).as_raw(),
+            ($fc).as_raw(),
+            $rnd,
+        );
         assert_float_close(n4, f4, $p, &format!("{:?}", $op_info), $eq, &mut $cc)?;
     };
 }
@@ -209,9 +174,7 @@ macro_rules! test_zf_const {
 
         let mut f1 = Float::with_val($p as u32, 1);
 
-        unsafe {
-            mpfr::$mpfr_const(f1.as_raw_mut(), $rnd);
-        }
+        mpfr::$mpfr_const(f1.as_raw_mut(), $rnd);
 
         assert_float_close(n1, f1, $p, &format!("{:?}", $op_info), true, &mut $cc)?;
     };
@@ -255,8 +218,7 @@ pub fn conv_to_mpfr(
     if let Some((w, s, e)) = value_parts(n) {
         if !(RAND_EMIN..=RAND_EMAX).contains(&e) {
             let bits = w.len() * WORD_BIT_SIZE;
-            let int = rug::Integer::from_digits(w, rug::integer::Order::Lsf);
-            let mut f = Float::with_val(u32::try_from(p)?, &int);
+            let mut f = Float::with_val(u32::try_from(p)?, crate::mpfr::mp::Words(w));
             f <<= (e - i64::try_from(bits)?) as isize;
             if s == Sign::Neg {
                 f = -f;
@@ -277,7 +239,7 @@ pub fn conv_to_mpfr(
 
 /// `Some(MPFR exponent)` when either value lies outside [`RAND_EMIN`, `RAND_EMAX`].
 fn far_exponent(n: &ExactNum, f: &Float) -> Option<i64> {
-    let e_f = if f.is_normal() { unsafe { (*f.as_raw()).exp } } else { 0 };
+    let e_f = if f.is_normal() { f.as_raw().exp } else { 0 };
     let e_n = n.exponent().unwrap_or(0);
     let far = |e: i64| !(RAND_EMIN..=RAND_EMAX).contains(&e);
     (far(e_f) || far(e_n)).then_some(e_f)
@@ -285,13 +247,13 @@ fn far_exponent(n: &ExactNum, f: &Float) -> Option<i64> {
 
 /// Runs `f` with MPFR's exponent range widened to its maximum, then restores it.
 pub fn with_full_range<T>(f: impl FnOnce() -> T) -> T {
-    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
-    unsafe {
+    let (old_min, old_max) = (mpfr::get_emin(), mpfr::get_emax());
+    {
         mpfr::set_emin(mpfr::get_emin_min());
         mpfr::set_emax(mpfr::get_emax_max());
     }
     let r = f();
-    unsafe {
+    {
         mpfr::set_emin(old_min);
         mpfr::set_emax(old_max);
     }
@@ -325,14 +287,14 @@ pub fn assert_float_close(
         }
     } else if (n.is_subnormal() || n.is_zero()) && eq {
         // subnormal (bit-exact mode only — otherwise compare below)
-        let unf = unsafe { mpfr::underflow_p() };
+        let unf = mpfr::underflow_p();
         if !f.is_zero() {
             assert!(
                 unf != 0,
                 "{} zenith {:?}, MPFR exp {} prec {}",
                 op,
                 n.as_raw_parts(),
-                if f.is_normal() { unsafe { (*f.as_raw()).exp } } else { 0 },
+                if f.is_normal() { f.as_raw().exp } else { 0 },
                 f.prec()
             );
         }
@@ -351,7 +313,7 @@ pub fn assert_float_close(
             if d.is_zero() {
                 return Ok(true);
             }
-            let e2 = unsafe { (*d.as_raw()).exp };
+            let e2 = d.as_raw().exp;
             Ok(e1 - e2 >= i64::try_from(mlen)? - 1)
         })?;
         assert!(
@@ -433,13 +395,13 @@ pub fn conv_str_from_mpfr_compat(s: String) -> Result<String, Box<dyn std::error
     }
 }
 
-pub fn get_random_rnd_pair() -> (RoundingMode, rnd_t) {
+pub fn get_random_rnd_pair() -> (RoundingMode, Rnd) {
     match test_random::<u8>() % 5 {
-        0 => (RoundingMode::ToEven, rnd_t::RNDN),
-        1 => (RoundingMode::Up, rnd_t::RNDU),
-        2 => (RoundingMode::Down, rnd_t::RNDD),
-        3 => (RoundingMode::FromZero, rnd_t::RNDA),
-        _ => (RoundingMode::ToZero, rnd_t::RNDZ),
+        0 => (RoundingMode::ToEven, Rnd::Nearest),
+        1 => (RoundingMode::Up, Rnd::Up),
+        2 => (RoundingMode::Down, Rnd::Down),
+        3 => (RoundingMode::FromZero, Rnd::AwayZero),
+        _ => (RoundingMode::ToZero, Rnd::Zero),
     }
 }
 
@@ -556,12 +518,12 @@ pub fn zenith_binop(
     }
 }
 
-fn mpfr_binop(r: &mut Float, a: &Float, b: &Float, op: BinOp, rnd: rnd_t) -> i32 {
+fn mpfr_binop(r: &mut Float, a: &Float, b: &Float, op: BinOp, rnd: Rnd) -> i32 {
     match op {
-        BinOp::Add => unsafe { mpfr::add(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
-        BinOp::Sub => unsafe { mpfr::sub(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
-        BinOp::Mul => unsafe { mpfr::mul(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
-        BinOp::Div => unsafe { mpfr::div(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
+        BinOp::Add => mpfr::add(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd),
+        BinOp::Sub => mpfr::sub(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd),
+        BinOp::Mul => mpfr::mul(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd),
+        BinOp::Div => mpfr::div(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd),
     }
 }
 
@@ -590,7 +552,7 @@ pub fn mpfr_reference_with<F>(
     f: F,
 ) -> Result<(Float, bool), Box<dyn std::error::Error>>
 where
-    F: Fn(&mut Float, rnd_t) -> i32,
+    F: Fn(&mut Float, Rnd) -> i32,
 {
     mpfr_reference_shifted(p, rm, 0, f)
 }
@@ -608,7 +570,7 @@ pub fn mpfr_reference_shifted<F>(
     f: F,
 ) -> Result<(Float, bool), Box<dyn std::error::Error>>
 where
-    F: Fn(&mut Float, rnd_t) -> i32,
+    F: Fn(&mut Float, Rnd) -> i32,
 {
     // `RoundingMode::None` skips the final rounding and keeps the storage precision: the result is the value cut
     // toward zero at rp(p, 64) bits (FIXLIST ZF-M27, Jeff 2026-10-30; 64-bit only, so rp(p, word) = rp(p, 64);
@@ -617,22 +579,22 @@ where
     if rm == RoundingMode::None {
         return mpfr_reference_shifted(storage_bits(p)?, RoundingMode::ToZero, shift, f);
     }
-    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    let (old_min, old_max) = (mpfr::get_emin(), mpfr::get_emax());
     let (emin, emax) = emulated_range(p, shift);
-    unsafe {
-        mpfr::set_emax(emax as mpfr::exp_t);
-        mpfr::set_emin(emin as mpfr::exp_t);
+    {
+        mpfr::set_emax(emax as mpfr::ExpT);
+        mpfr::set_emin(emin as mpfr::ExpT);
     }
     let rnd = match rm {
-        RoundingMode::ToEven => Some(rnd_t::RNDN),
-        RoundingMode::Up => Some(rnd_t::RNDU),
-        RoundingMode::Down => Some(rnd_t::RNDD),
-        RoundingMode::ToZero => Some(rnd_t::RNDZ),
-        RoundingMode::FromZero => Some(rnd_t::RNDA),
+        RoundingMode::ToEven => Some(Rnd::Nearest),
+        RoundingMode::Up => Some(Rnd::Up),
+        RoundingMode::Down => Some(Rnd::Down),
+        RoundingMode::ToZero => Some(Rnd::Zero),
+        RoundingMode::FromZero => Some(Rnd::AwayZero),
         RoundingMode::ToOdd => None,
         RoundingMode::None => {
             // handled at the top (toward zero at the storage precision)
-            unsafe {
+            {
                 mpfr::set_emin(old_min);
                 mpfr::set_emax(old_max);
             }
@@ -642,28 +604,26 @@ where
     let out = if let Some(rnd) = rnd {
         let mut r = Float::new(p);
         let t = f(&mut r, rnd);
-        let t2 = unsafe { mpfr::subnormalize(r.as_raw_mut(), t, rnd) };
+        let t2 = mpfr::subnormalize(r.as_raw_mut(), t, rnd);
         let inexact = t2 != 0 || t != 0;
         (r, inexact)
     } else {
         // Two binades below the smallest subnormal so that results in `[g / 2, g)` survive the truncation.
-        unsafe {
+        {
             let lo = widen(mpfr::get_emin_min());
-            mpfr::set_emin((emin - 2).max(lo) as mpfr::exp_t);
+            mpfr::set_emin((emin - 2).max(lo) as mpfr::ExpT);
         }
         let mut w = Float::new(p + 1);
-        unsafe { mpfr::clear_overflow() };
-        let t = f(&mut w, rnd_t::RNDZ);
-        unsafe {
-            mpfr::set_emin(emin as mpfr::exp_t);
-        }
+        mpfr::clear_overflow();
+        let t = f(&mut w, Rnd::Zero);
+        mpfr::set_emin(emin as mpfr::ExpT);
         // Above the range nearest-ties-to-odd is nearest: `RNDZ` clamped `w` to the largest finite value, so the
         // overflow is redone with `RNDN` (an exact midpoint above the largest finite value has `p + 1` bits all
         // ones; none of the callers produce one).
-        if unsafe { mpfr::overflow_p() } != 0 {
+        if mpfr::overflow_p() != 0 {
             let mut r = Float::new(p);
-            let t = f(&mut r, rnd_t::RNDN);
-            unsafe {
+            let t = f(&mut r, Rnd::Nearest);
+            {
                 mpfr::set_emin(old_min);
                 mpfr::set_emax(old_max);
             }
@@ -677,7 +637,7 @@ where
         let exp = if w.is_zero() || !w.is_finite() {
             None
         } else {
-            Some(unsafe { mpfr::get_exp(w.as_raw()) })
+            Some(mpfr::get_exp(w.as_raw()))
         };
         // At or below `2^(grid exponent)` no mantissa bit is left: the neighbours are 0 and the smallest
         // subnormal `g`, the midpoint `g / 2` is representable in `w`, so `|w| >= g / 2` (with the tie going
@@ -688,27 +648,18 @@ where
             if i128::from(widen(e)) <= grid {
                 let neg = w.is_sign_negative();
                 // Build 1 (exponent 1) under the widest range: the emulated `emin` can be far above it.
-                unsafe {
-                    mpfr::set_emin(mpfr::get_emin_min());
-                }
+                mpfr::set_emin(mpfr::get_emin_min());
                 let mut half = Float::with_val(64, 1);
                 let mut g = Float::with_val(p, 1);
-                unsafe {
-                    mpfr::mul_2si(
-                        half.as_raw_mut(),
-                        half.as_raw(),
-                        (grid - 1) as _,
-                        rnd_t::RNDN,
-                    );
-                    mpfr::mul_2si(g.as_raw_mut(), g.as_raw(), grid as _, rnd_t::RNDN);
-                }
+                mpfr::mul_2si_self(half.as_raw_mut(), (grid - 1) as _, Rnd::Nearest);
+                mpfr::mul_2si_self(g.as_raw_mut(), grid as _, Rnd::Nearest);
                 let r = if Float::with_val(p + 1, w.abs_ref()) >= half {
                     g
                 } else {
                     Float::with_val(p, 0)
                 };
                 let r = if neg { -r } else { r };
-                unsafe {
+                {
                     mpfr::set_emin(old_min);
                     mpfr::set_emax(old_max);
                 }
@@ -723,16 +674,15 @@ where
             _ => p,
         };
         let mut w2 = Float::new(bits + 1);
-        let t2 = unsafe { mpfr::set(w2.as_raw_mut(), w.as_raw(), rnd_t::RNDZ) };
+        let t2 = mpfr::set(w2.as_raw_mut(), w.as_raw(), Rnd::Zero);
         let t = if t2 != 0 { 1 } else { t };
         let mut lo = Float::new(bits);
         let mut hi = Float::new(bits);
-        unsafe {
-            mpfr::set(lo.as_raw_mut(), w2.as_raw(), rnd_t::RNDZ);
-            mpfr::set(hi.as_raw_mut(), w2.as_raw(), rnd_t::RNDA);
+        {
+            mpfr::set(lo.as_raw_mut(), w2.as_raw(), Rnd::Zero);
+            mpfr::set(hi.as_raw_mut(), w2.as_raw(), Rnd::AwayZero);
         }
-        let odd =
-            |x: &Float, n: u32| !x.is_zero() && unsafe { mpfr::min_prec(x.as_raw()) } as u32 == n;
+        let odd = |x: &Float, n: u32| !x.is_zero() && mpfr::min_prec(x.as_raw()) as u32 == n;
         let chosen = if lo == hi {
             lo
         } else if t == 0 {
@@ -748,12 +698,12 @@ where
         } else {
             lo
         };
-        let inexact = t != 0 || unsafe { mpfr::min_prec(w2.as_raw()) } as u32 > bits;
+        let inexact = t != 0 || mpfr::min_prec(w2.as_raw()) as u32 > bits;
         let mut v = Float::new(p);
-        unsafe { mpfr::set(v.as_raw_mut(), chosen.as_raw(), rnd_t::RNDZ) };
+        mpfr::set(v.as_raw_mut(), chosen.as_raw(), Rnd::Zero);
         (v, inexact)
     };
-    unsafe {
+    {
         mpfr::set_emin(old_min);
         mpfr::set_emax(old_max);
     }
@@ -770,7 +720,7 @@ pub fn storage_bits(p: u32) -> Result<u32, Box<dyn std::error::Error>> {
 /// MPFR `(emin, emax)` that emulates the zenith range scaled by `2^shift` at precision `p`, clamped to
 /// what MPFR allows.
 pub fn emulated_range(p: u32, shift: i64) -> (i64, i64) {
-    let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
+    let (lo, hi) = (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max()));
     let emin =
         (EXPONENT_MIN as i128 + i128::from(shift) - i128::from(p) + 1).max(i128::from(lo)) as i64;
     let emax = EXPONENT_MAX.saturating_add(shift).min(hi);
@@ -781,7 +731,7 @@ pub fn emulated_range(p: u32, shift: i64) -> (i64, i64) {
 /// clamping. A positive shift may clamp the top of the scaled range: callers using one (the bottom-edge
 /// tests) keep their results far below `EXPONENT_MAX`, so only the unshifted top must fit.
 pub fn emulated_range_ok(p: u32, shift: i64) -> bool {
-    let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
+    let (lo, hi) = (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max()));
     EXPONENT_MIN as i128 + i128::from(shift) - i128::from(p) + 1 >= i128::from(lo)
         && EXPONENT_MAX.saturating_add(shift.min(0)) <= hi
 }
@@ -794,12 +744,12 @@ pub fn exact_mpfr_shifted(n: &ExactNum, shift: i64) -> Result<Float, Box<dyn std
         return Ok(if n.is_negative() { -z } else { z });
     }
     let (words, sign, e) = value_parts(n).ok_or("not a finite number")?;
-    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
-    unsafe {
+    let (old_min, old_max) = (mpfr::get_emin(), mpfr::get_emax());
+    {
         mpfr::set_emin(mpfr::get_emin_min());
         mpfr::set_emax(mpfr::get_emax_max());
     }
-    let mut z = rug::Integer::new();
+    let mut z = crate::mpfr::mp::Integer::new();
     for w in words.iter().rev() {
         z <<= 64;
         z += *w;
@@ -807,13 +757,11 @@ pub fn exact_mpfr_shifted(n: &ExactNum, shift: i64) -> Result<Float, Box<dyn std
     let bits = (64 * words.len()) as u32;
     let mut got = Float::with_val(bits.max(64), &z);
     let sh = e + shift - 64 * words.len() as i64;
-    unsafe {
-        mpfr::mul_2si(got.as_raw_mut(), got.as_raw(), sh as _, rnd_t::RNDN);
-    }
+    mpfr::mul_2si_self(got.as_raw_mut(), sh as _, Rnd::Nearest);
     if sign == Sign::Neg {
         got = -got;
     }
-    unsafe {
+    {
         mpfr::set_emin(old_min);
         mpfr::set_emax(old_max);
     }
@@ -857,12 +805,12 @@ pub fn assert_exact_eq(
     // Exact value of the zenith number, rebuilt from its words (parsing would flush
     // subnormals): sum of word_i * 2^(64 i) * 2^(e - 64 len), with the widest MPFR range.
     let (words, sign, e) = value_parts(n).ok_or("none value")?;
-    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
-    unsafe {
+    let (old_min, old_max) = (mpfr::get_emin(), mpfr::get_emax());
+    {
         mpfr::set_emin(mpfr::get_emin_min());
         mpfr::set_emax(mpfr::get_emax_max());
     }
-    let mut z = rug::Integer::new();
+    let mut z = crate::mpfr::mp::Integer::new();
     for w in words.iter().rev() {
         z <<= 64;
         z += *w;
@@ -874,9 +822,9 @@ pub fn assert_exact_eq(
         got = -got;
     }
     let mut want = Float::with_val(bits.max(64), 0);
-    unsafe { mpfr::set(want.as_raw_mut(), f.as_raw(), rnd_t::RNDN) };
+    mpfr::set(want.as_raw_mut(), f.as_raw(), Rnd::Nearest);
     let equal = got == want;
-    unsafe {
+    {
         mpfr::set_emin(old_min);
         mpfr::set_emax(old_max);
     }
@@ -895,7 +843,7 @@ pub fn show_mp(f: &Float) -> String {
     if !f.is_normal() {
         return format!("{f}");
     }
-    let e = unsafe { (*f.as_raw()).exp };
+    let e = f.as_raw().exp;
     with_full_range(|| {
         let frac = Float::with_val(f.prec(), f >> (e as isize));
         format!("{frac:x} * 2^{e}")

@@ -5,21 +5,21 @@ use crate::mpfr::common::get_float_pair;
 use crate::mpfr::common::get_random_rnd_pair;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_zf_op_no_cc;
-use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::float::Special;
-use rug::Float;
+use crate::mpfr::mp::mpfr::{self, ExpT};
+use crate::mpfr::mp::Float;
+use crate::mpfr::mp::Special;
 use zenith_float_num::{
     Consts, ExactNum, Exponent, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS,
     WORD_BIT_SIZE,
 };
 
 fn set_mpfr_exp_range() {
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as exp_t);
-        mpfr::set_emax(EXPONENT_MAX as exp_t);
+    {
+        mpfr::set_emin(EXPONENT_MIN as ExpT);
+        mpfr::set_emax(EXPONENT_MAX as ExpT);
     }
-    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
-    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
+    assert_eq!(EXPONENT_MIN, mpfr::get_emin());
+    assert_eq!(EXPONENT_MAX, mpfr::get_emax());
 }
 
 fn run_copysign_pairs(
@@ -99,7 +99,7 @@ fn mpfr_compare_copysign_specials() -> Result<(), Box<dyn std::error::Error>> {
     set_mpfr_exp_range();
     let p = 2 * WORD_BIT_SIZE;
     let rm = RoundingMode::ToEven;
-    let rnd = gmp_mpfr_sys::mpfr::rnd_t::RNDN;
+    let rnd = mpfr::Rnd::Nearest;
 
     let mut pz = ExactNum::new(p);
     pz.set_sign(Sign::Pos);

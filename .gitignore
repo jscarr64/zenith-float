@@ -9,3 +9,5 @@ __pycache__/
 zenith-float-bound/tests/goldens/slices/**/*_heavy.txt
 !zenith-float-bound/tests/goldens/slices/matrix/matrix_rows_heavy.txt
 !zenith-float-bound/tests/goldens/slices/qr/la_qr_enc4096_heavy.txt
+# Gen mode's readable copy of the MPFR golden streams (tools/mpfr_golden/gen.sh; read by crosscheck.py), not committed
+zenith-float-num/tests/mpfr/golden-full/

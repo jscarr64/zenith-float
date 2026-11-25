@@ -37,7 +37,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `std` | yes | `Display`, `LowerExp`, `UpperExp`, `Binary`, `Octal`, `UpperHex`, `LowerHex`, `FromStr`, `std::error::Error` for `Error`, `SharedConsts`, serde when `serde` is also on |
 | `random` | no | `ExactNum::random_normal`, `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED` |
 | `serde` | no | `Serialize` / `Deserialize` for `ExactNum` / `ExactComplex` / `ExactRational` / `ExactInt` / arrays / `Ball`; decimal strings carry `@p=`; implies `std` |
-| `mpfr-tests` | no | Optional MPFR bit-oracle tests; Linux x86_64 + `rug` only; not a runtime dependency |
+| `mpfr-tests` | no | Optional MPFR bit-oracle tests (committed golden streams; no C library); not a runtime dependency |
 
 `no_std` is supported when a global allocator is available (`default-features = false`). Formatting traits require `std`.
 

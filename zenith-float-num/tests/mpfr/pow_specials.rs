@@ -4,10 +4,9 @@
 //! other case disagrees.
 
 use crate::mpfr::common::{assert_exact_eq, mpfr_reference_with};
+use crate::mpfr::mp::Float;
+use crate::mpfr::mp::Special;
 use crate::mpfr::retry_budget::{round_of, ternary};
-use rug::float::Special;
-use rug::ops::{AssignRound, Pow};
-use rug::Float;
 use std::collections::BTreeSet;
 use std::ops::Neg;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -55,7 +54,7 @@ impl Cases {
         &mut self,
         label: String,
         got: &ExactNum,
-        f: impl Fn(&mut Float, rug::float::Round) -> std::cmp::Ordering,
+        f: impl Fn(&mut Float, crate::mpfr::mp::Round) -> std::cmp::Ordering,
     ) {
         self.checked += 1;
         let cc = &mut self.cc;
@@ -114,7 +113,7 @@ fn pow_inf_and_signed_zero_powers_match_mpfr() -> Res {
             let mut cc = Consts::new()?;
             let got = b.pow(e, P, RM, &mut cc);
             c.check(format!("pow({bl}, {el})"), &got, |r, rd| {
-                r.assign_round((&fb).pow(fe), rd)
+                r.assign_round(fb.pow(fe), rd)
             });
         }
     }
@@ -123,13 +122,13 @@ fn pow_inf_and_signed_zero_powers_match_mpfr() -> Res {
         for n in 0..=4usize {
             let got = b.powi(n, P, RM);
             c.check(format!("powi({bl}, {n})"), &got, |r, rd| {
-                r.assign_round((&fb).pow(n as u32), rd)
+                r.assign_round(fb.pow(n as u32), rd)
             });
         }
         for n in -4i64..=4 {
             let got = b.powsi(n, P, RM);
             c.check(format!("powsi({bl}, {n})"), &got, |r, rd| {
-                r.assign_round((&fb).pow(n as i32), rd)
+                r.assign_round(fb.pow(n as i32), rd)
             });
         }
     }

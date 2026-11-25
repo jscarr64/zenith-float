@@ -36,23 +36,30 @@ fn subnormal_band_every_mode() -> Result<(), Box<dyn std::error::Error>> {
                     (
                         "add",
                         ExactNum::add_ref(&x, &z, p, rm),
-                        sh::ref_sum(&[tx.ldexp(0), tz.ldexp(0)], q, rm)?,
+                        sh::ref_sum_parts(&[(&tx, false), (&tz, false)], q, rm)?,
                     ),
                     (
                         "sub",
                         ExactNum::sub_ref(&x, &z, p, rm),
-                        sh::ref_sum(&[tx.ldexp(0), tz.neg()], q, rm)?,
+                        sh::ref_sum_parts(&[(&tx, false), (&tz, true)], q, rm)?,
                     ),
                     (
                         "fma",
                         x.fma(&y, &z, p, rm),
-                        sh::ref_sum(&[tx.mul(&ty), tz.ldexp(0)], q, rm)?,
+                        sh::ref_sum_parts(&[(&tx.mul(&ty), false), (&tz, false)], q, rm)?,
                     ),
-                    (
-                        "ldexp",
-                        mk_x()?.ldexp(-k, p, rm),
-                        sh::ref_sum(&[tx.ldexp(-i128::from(k))], q, rm)?,
-                    ),
+                    ("ldexp", mk_x()?.ldexp(-k, p, rm), {
+                        // x * 2^-k: a fresh term of x with its exponent moved
+                        let t = sh::term_of(&mk_x()?)?;
+                        sh::ref_sum(
+                            &[sh::Term {
+                                m: t.m,
+                                k: t.k - i128::from(k),
+                            }],
+                            q,
+                            rm,
+                        )?
+                    }),
                 ];
                 for (name, got, want) in cases.iter() {
                     let info = format!("{name} p={p} {rm:?} x={x:?}");

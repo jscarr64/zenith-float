@@ -7,10 +7,9 @@
 use crate::mpfr::common::{
     assert_exact_eq, conv_str_to_mpfr_compat, conv_to_mpfr, mpfr_reference_with,
 };
-use gmp_mpfr_sys::mpfr::rnd_t;
-use rug::float::Round;
-use rug::ops::AssignRound;
-use rug::Float;
+use crate::mpfr::mp::Float;
+use crate::mpfr::mp::Rnd;
+use crate::mpfr::mp::Round;
 use zenith_float_num::{Consts, ExactNum, Exponent, Radix, RoundingMode};
 
 /// Precision (a multiple of the word size) at which the original failure was found.
@@ -45,12 +44,12 @@ const NONE_GAP_MODES: [RoundingMode; 6] = [
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
-pub fn round_of(rnd: rnd_t) -> Round {
+pub fn round_of(rnd: Rnd) -> Round {
     match rnd {
-        rnd_t::RNDZ => Round::Zero,
-        rnd_t::RNDU => Round::Up,
-        rnd_t::RNDD => Round::Down,
-        rnd_t::RNDA => Round::AwayZero,
+        Rnd::Zero => Round::Zero,
+        Rnd::Up => Round::Up,
+        Rnd::Down => Round::Down,
+        Rnd::AwayZero => Round::AwayZero,
         _ => Round::Nearest,
     }
 }
@@ -89,7 +88,7 @@ fn check(
     rm: RoundingMode,
     info: &str,
     cc: &mut Consts,
-    want: impl Fn(&mut Float, rnd_t) -> i32,
+    want: impl Fn(&mut Float, Rnd) -> i32,
 ) -> Res {
     let (w, _) = mpfr_reference_with(p as u32, rm, want)?;
     // Out-of-domain arguments: both sides must be NaN; everything else must be a number (never the
@@ -156,9 +155,6 @@ fn mp_cos(r: &mut Float, a: &Float, round: Round) -> std::cmp::Ordering {
 /// (and the nearest modes) need about `2p` working bits.
 #[test]
 fn cos_four_pi_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits("cos_four_pi_at_100032_bits") {
-        return Ok(());
-    }
     let mut cc = Consts::new()?;
     let x = pi_times_2k(&mut cc, P, 2);
     run_unary("cos", "4 pi", P, &x, &mut cc, cos_of, mp_cos)
@@ -183,9 +179,6 @@ fn mp_tan(r: &mut Float, a: &Float, round: Round) -> std::cmp::Ordering {
 /// `cos` of 2 pi and of pi / 2 (a result of about `2^-p`: needs `2p` bits of the argument reduction).
 #[test]
 fn cos_two_pi_and_half_pi_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits("cos_two_pi_and_half_pi_at_100032_bits") {
-        return Ok(());
-    }
     let mut cc = Consts::new()?;
     let x = pi_times_2k(&mut cc, P, 1);
     run_unary("cos", "2 pi", P, &x, &mut cc, cos_of, mp_cos)?;
@@ -196,9 +189,6 @@ fn cos_two_pi_and_half_pi_at_100032_bits() -> Res {
 /// `sin` near multiples of pi (tiny result) and near pi / 2 (result `1 - tiny`).
 #[test]
 fn sin_near_pi_multiples_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits("sin_near_pi_multiples_at_100032_bits") {
-        return Ok(());
-    }
     let mut cc = Consts::new()?;
     for (label, k) in [("4 pi", 2), ("pi", 0), ("pi/2", -1)] {
         let x = pi_times_2k(&mut cc, P, k);
@@ -210,9 +200,6 @@ fn sin_near_pi_multiples_at_100032_bits() -> Res {
 /// `tan` near multiples of pi (tiny result) and near pi / 2 (huge result).
 #[test]
 fn tan_near_pi_multiples_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits("tan_near_pi_multiples_at_100032_bits") {
-        return Ok(());
-    }
     let mut cc = Consts::new()?;
     for (label, k) in [("4 pi", 2), ("pi/2", -1)] {
         let x = pi_times_2k(&mut cc, P, k);
@@ -224,10 +211,6 @@ fn tan_near_pi_multiples_at_100032_bits() -> Res {
 /// `sin_cos` returns both values; each is compared with MPFR.
 #[test]
 fn sin_cos_near_pi_multiples_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits("sin_cos_near_pi_multiples_at_100032_bits")
-    {
-        return Ok(());
-    }
     let mut cc = Consts::new()?;
     for (label, k) in [("4 pi", 2), ("pi/2", -1)] {
         let x = pi_times_2k(&mut cc, P, k);
@@ -258,9 +241,6 @@ fn sin_cos_near_pi_multiples_at_100032_bits() -> Res {
 /// `exp(2^-p)` is `1 + 2^-p + 2^(-2p-1) + ...`: the midpoint of two neighbours plus a `2^-2p` term.
 #[test]
 fn exp_just_above_a_tie_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits("exp_just_above_a_tie_at_100032_bits") {
-        return Ok(());
-    }
     let mut cc = Consts::new()?;
     let x = pow2(P, -(P as Exponent));
     run_unary(
@@ -277,9 +257,6 @@ fn exp_just_above_a_tie_at_100032_bits() -> Res {
 /// `expm1(2^(1-p)) = x + x^2/2 + x^3/6`: the midpoint between two neighbours plus a `2^-2p` term.
 #[test]
 fn expm1_just_above_a_tie_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits("expm1_just_above_a_tie_at_100032_bits") {
-        return Ok(());
-    }
     let mut cc = Consts::new()?;
     let d = pow2(P, 1 - P as Exponent);
     run_unary(
@@ -296,11 +273,6 @@ fn expm1_just_above_a_tie_at_100032_bits() -> Res {
 /// `log1p(2^(1-p)) = x - x^2/2 + x^3/3`: a grid point of `p` bits plus a term of relative size `2^-2p`.
 #[test]
 fn log1p_just_above_a_grid_point_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits(
-        "log1p_just_above_a_grid_point_at_100032_bits",
-    ) {
-        return Ok(());
-    }
     let mut cc = Consts::new()?;
     let d = pow2(P, 1 - P as Exponent);
     run_unary(
@@ -335,10 +307,6 @@ fn ln_just_above_a_grid_point_at_40064_bits() -> Res {
 /// `cosh(x) - 1 = x^2/2 + ...` with `x^2/2` within `2^-2p` of the midpoint `2^-p`.
 #[test]
 fn cosh_sinh_tanh_near_a_tie_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits("cosh_sinh_tanh_near_a_tie_at_100032_bits")
-    {
-        return Ok(());
-    }
     let mut cc = Consts::new()?;
     let half = -(P as Exponent) / 2;
     let xc = sqrt_times_2k(2, half, P);
@@ -436,15 +404,15 @@ fn log_with_base_near_a_grid_point_at_40064_bits() -> Res {
 /// MPFR's default exponent range is narrower than zenith-float's: widen it to the library's for this thread so
 /// that the operand (and the expected value) can be built at any exponent.
 pub fn use_full_exponent_range() {
-    use gmp_mpfr_sys::gmp::exp_t;
-    use gmp_mpfr_sys::mpfr;
+    use crate::mpfr::mp::mpfr;
+    use mpfr::ExpT;
     // SAFETY: only sets MPFR's thread-local exponent bounds, as the other tests of this suite do.
-    unsafe {
+    {
         // MPFR's widest range: its `emin_min` is `EXPONENT_MIN` once the exponent is 62 bits, so a value
         // below it (a zenith subnormal) has no MPFR counterpart here; the shifted references hold those.
         // (A bound past MPFR's limits is refused and would leave the default 32-bit range in place.)
-        let lo = (zenith_float_num::EXPONENT_MIN as exp_t - 1024).max(mpfr::get_emin_min());
-        let hi = (zenith_float_num::EXPONENT_MAX as exp_t).min(mpfr::get_emax_max());
+        let lo = (zenith_float_num::EXPONENT_MIN as ExpT - 1024).max(mpfr::get_emin_min());
+        let hi = (zenith_float_num::EXPONENT_MAX as ExpT).min(mpfr::get_emax_max());
         assert_eq!(mpfr::set_emin(lo), 0, "set_emin({lo})");
         assert_eq!(mpfr::set_emax(hi), 0, "set_emax({hi})");
     }
@@ -641,7 +609,7 @@ fn pow_of_a_power_of_two_is_exact_at_the_ends_of_the_range() -> Res {
                     let got = base.pow(&ex, p, rm, &mut cc);
                     let info = format!("({}2^{k})^{n}", if base_negative { "-" } else { "" });
                     check(&got, p, rm, &info, &mut cc, |r, rnd| {
-                        ternary(r.assign_round(rug::ops::Pow::pow(&fb, &fe), round_of(rnd)))
+                        ternary(r.assign_round(fb.pow(&fe), round_of(rnd)))
                     })?;
                 }
             }
@@ -886,9 +854,6 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
 /// series is about `2^-p` (exponents `-p/2` and `-p`) and at the bottom of the range.
 #[test]
 fn wide_exponent_range_at_100032_bits() -> Res {
-    if crate::mpfr::common::fast_tier_skips_100032_bits("wide_exponent_range_at_100032_bits") {
-        return Ok(());
-    }
     let w = P as Exponent;
     let exponents = [Exponent::MIN + 1, -(w + 1), -w, -(w / 2 + 1), -(w / 2)];
     sweep(P, &exponents, &ALL_NAMES)

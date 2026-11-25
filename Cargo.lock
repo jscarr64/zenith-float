@@ -108,12 +108,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
-name = "az"
-version = "1.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be5eb007b7cacc6c660343e96f650fedf4b5a77512399eb952ca6642cf8d13f7"
-
-[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -424,16 +418,6 @@ name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
-
-[[package]]
-name = "gmp-mpfr-sys"
-version = "1.6.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60f8970a75c006bb2f8ae79c6768a116dd215fa8346a87aed99bf9d82ca43394"
-dependencies = [
- "libc",
- "windows-sys",
-]
 
 [[package]]
 name = "half"
@@ -797,17 +781,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "rug"
-version = "1.20.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "240ad7cbc5fc7cea4592203f8f6100835e8ad083196491b8a9c84ce84711ff68"
-dependencies = [
- "az",
- "gmp-mpfr-sys",
- "libc",
-]
 
 [[package]]
 name = "rustix"
@@ -1297,11 +1270,9 @@ name = "zenith-float-num"
 version = "2.0.0"
 dependencies = [
  "criterion",
- "gmp-mpfr-sys",
  "itertools",
  "proptest",
  "rand 0.8.8",
- "rug",
  "serde",
  "serde_json",
  "zenith-float-testkit",

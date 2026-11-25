@@ -62,7 +62,7 @@ zenith-float was developed with the help of AI assistants from SpaceXAI, Anthrop
 | `std` | yes | Formatting, `FromStr`, serde (when enabled) |
 | `random` | no | `ExactNum::random_normal` for tests and fuzzing |
 | `serde` | no | Serialize/deserialize as a decimal string or integer (`std` required) |
-| `mpfr-tests` | no | Optional MPFR comparison tests (Linux x86_64, needs `rug`) |
+| `mpfr-tests` | no | Optional MPFR comparison tests (replay committed MPFR golden streams; no C library) |
 
 `std` is on by default (formatting and `FromStr`):
 

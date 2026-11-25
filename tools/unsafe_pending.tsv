@@ -1,20 +1,2 @@
-# Known-pending unsafe (test-only), removed in a separate step (Jeff 2026-11-24 1:17 PM CT: "unsafe tests as a separate step after").
-# path<TAB>count<TAB>note. Read by tools/no_suppress_scan.py: each count is EXACT (no growth, no stale pin); lines only ever leave this file.
-zenith-float-num/tests/mpfr/all_modes_jacobi_airy.rs	7	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/common.rs	48	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/compare_complex_test.rs	10	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/compare_const_test.rs	11	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/compare_copysign_test.rs	3	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/compare_ops_test.rs	16	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/compare_special_fn_test.rs	21	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/compare_special_test.rs	8	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/exact_bit_binary.rs	13	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/exact_bit_functions.rs	32	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/exact_p_consts.rs	4	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/extra_modes_seeded.rs	32	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/fuzz_round_modes.rs	12	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/i64_edges.rs	11	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/overflow_modes.rs	18	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/rem_exact.rs	4	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/retry_budget.rs	1	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
-zenith-float-num/tests/mpfr/shifted.rs	28	MPFR FFI via gmp-mpfr-sys (feature mpfr-tests)
+# Pending unsafe inventory: CLOSED AT 0 (r6 item 6, Paul call 2026-11-24; the MPFR tests replay committed goldens, no FFI).
+# tools/no_suppress_scan.py fails on any data line here: unsafe is removed, never pinned.

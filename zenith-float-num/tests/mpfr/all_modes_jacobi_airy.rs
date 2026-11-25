@@ -16,9 +16,9 @@
 //! Bi' overflow are the ZF-M27 overflow rows (F-2), and are not pinned here.
 
 use crate::mpfr::common::{conv_str_to_mpfr_compat, mpfr_reference_with};
+use crate::mpfr::mp::mpfr;
+use crate::mpfr::mp::Float;
 use crate::mpfr::retry_budget::use_full_exponent_range;
-use gmp_mpfr_sys::mpfr;
-use rug::Float;
 use zenith_float_num::{
     Consts, Error, ExactNum, Radix, RoundingMode, EXPONENT_MIN, INF_NEG, INF_POS,
 };
@@ -56,15 +56,15 @@ fn to_mpfr(x: &ExactNum, cc: &mut Consts) -> Result<Option<Float>, E> {
     let bits = u32::try_from(x.mantissa_max_bit_len().ok_or("not finite")?)?;
     let text = conv_str_to_mpfr_compat(x.format(Radix::Bin, RoundingMode::ToEven, cc)?)?;
     let parsed = Float::parse_radix(text, 2)?;
-    let (f, ord) = Float::with_val_round(bits, parsed, rug::float::Round::Nearest);
+    let (f, ord) = Float::with_val_round(bits, parsed, crate::mpfr::mp::Round::Nearest);
     if ord != std::cmp::Ordering::Equal {
         return Err(format!("{x:?} is not exact in {bits} bits").into());
     }
     Ok(Some(f))
 }
 
-fn set_from(src: &Float) -> impl Fn(&mut Float, mpfr::rnd_t) -> i32 + '_ {
-    move |r, rnd| unsafe { mpfr::set(r.as_raw_mut(), src.as_raw(), rnd) }
+fn set_from(src: &Float) -> impl Fn(&mut Float, mpfr::Rnd) -> i32 + '_ {
+    move |r, rnd| mpfr::set(r.as_raw_mut(), src.as_raw(), rnd)
 }
 
 /// The expected results of `f` at `p`, one per mode of [`MODES`], and the subnormal bracket when there is one.
@@ -286,7 +286,7 @@ fn bracket_expect_matches_mpfr() -> Res {
         let one = ExactNum::from_u8(1, 64);
         let tie = two_ties(p);
         type Zf<'a> = Box<dyn Fn(usize, RoundingMode, &mut Consts) -> ExactNum + 'a>;
-        type Mp = Box<dyn Fn(&mut Float, mpfr::rnd_t) -> i32>;
+        type Mp = Box<dyn Fn(&mut Float, mpfr::Rnd) -> i32>;
         let f3 = Float::with_val(64, 3);
         let f9 = Float::with_val(64, 9);
         let fm = to_mpfr(&xm, &mut cc)?.ok_or("operand 5")?;
@@ -297,27 +297,27 @@ fn bracket_expect_matches_mpfr() -> Res {
             (
                 "sqrt(9) exact",
                 Box::new(|p, rm, _| x9.sqrt(p, rm)),
-                Box::new(move |r, d| unsafe { mpfr::sqrt(r.as_raw_mut(), f9.as_raw(), d) }),
+                Box::new(move |r, d| mpfr::sqrt(r.as_raw_mut(), f9.as_raw(), d)),
             ),
             (
                 "sqrt(3)",
                 Box::new(|p, rm, _| x3.sqrt(p, rm)),
-                Box::new(move |r, d| unsafe { mpfr::sqrt(r.as_raw_mut(), f3.as_raw(), d) }),
+                Box::new(move |r, d| mpfr::sqrt(r.as_raw_mut(), f3.as_raw(), d)),
             ),
             (
                 "exp(-1/3)",
                 Box::new(|p, rm, cc| xm.exp(p, rm, cc)),
-                Box::new(move |r, d| unsafe { mpfr::exp(r.as_raw_mut(), fm.as_raw(), d) }),
+                Box::new(move |r, d| mpfr::exp(r.as_raw_mut(), fm.as_raw(), d)),
             ),
             (
                 "ai(-1/3)",
                 Box::new(|p, rm, cc| xm.ai(p, rm, cc)),
-                Box::new(move |r, d| unsafe { mpfr::ai(r.as_raw_mut(), fm2.as_raw(), d) }),
+                Box::new(move |r, d| mpfr::ai(r.as_raw_mut(), fm2.as_raw(), d)),
             ),
             (
                 "1 + 2^-p exact tie",
                 Box::new(|p, rm, _| ExactNum::add_ref(&one, &tie, p, rm)),
-                Box::new(move |r, d| unsafe { mpfr::set(r.as_raw_mut(), ftie.as_raw(), d) }),
+                Box::new(move |r, d| mpfr::set(r.as_raw_mut(), ftie.as_raw(), d)),
             ),
         ];
         for (name, zf, mp) in &cases {
@@ -427,7 +427,7 @@ fn airy_all_seven_modes() -> Res {
             }
             let fx = to_mpfr(x, &mut cc)?.ok_or("argument")?;
             for rm in MODES {
-                let (w, ix) = mpfr_reference_with(u32::try_from(p)?, rm, |r, d| unsafe {
+                let (w, ix) = mpfr_reference_with(u32::try_from(p)?, rm, |r, d| {
                     mpfr::ai(r.as_raw_mut(), fx.as_raw(), d)
                 })?;
                 let got = x.ai(p, rm, &mut cc);

@@ -9,8 +9,7 @@
 
 use crate::mpfr::common::{conv_to_mpfr, mpfr_reference, reset_test_rng, zenith_binop, BinOp};
 use crate::mpfr::exact_bit_functions::{exact_input, input, MODES};
-use rug::ops::AssignRound;
-use rug::Float;
+use crate::mpfr::mp::Float;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, WORD_BIT_SIZE};
 
 fn storage(p: usize) -> usize {
@@ -52,7 +51,7 @@ fn binary_ops_match_mpfr_at_every_small_precision_and_word_boundary(
             for op in [BinOp::Add, BinOp::Sub, BinOp::Mul, BinOp::Div] {
                 let got = zenith_binop(x, y, op, p, RoundingMode::None);
                 let mut want = Float::new(sp);
-                let rz = rug::float::Round::Zero;
+                let rz = crate::mpfr::mp::Round::Zero;
                 match op {
                     BinOp::Add => want.assign_round(&fx + &fy, rz),
                     BinOp::Sub => want.assign_round(&fx - &fy, rz),

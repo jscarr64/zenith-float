@@ -6,7 +6,8 @@
 //! rounding mode (`ToEven`, `Up`, `Down`, `ToZero`, `FromZero`) at exactly `p`
 //! bits over the i64 exponent range.
 //!
-//! Digamma rows at p >= 16384 run only with `MPFR_TIER=full` (see `full_tier_only`). `EXCLUDED_IDS` (empty since S3) never run.
+//! Every row runs in every build (r6: the `MPFR_TIER` switch is gone). Digamma rows at p >= 16384 (`full_tier_only`) give
+//! the digamma table the full-tier budgets. `EXCLUDED_IDS` (empty since S3) never run.
 //! `POLE08_ZETA_HELD` (the five zeta(1) rows, known-wrong NaN) never run either; `s9_zeta` counts them.
 //!
 //! One test per function. A test fails when any of its rows differs, times out,
@@ -252,12 +253,7 @@ fn run_row(row: &Value, cc: &mut Consts) -> Result<(), String> {
     }
 }
 
-/// `MPFR_TIER=full` (as in `tools/full_gate.sh`) also runs the full-tier rows.
-fn full_tier() -> bool {
-    std::env::var("MPFR_TIER").is_ok_and(|t| t == "full")
-}
-
-/// Full-tier rows: digamma at p >= 16384. ψ(½) = −γ − 2 ln 2 needs Euler γ at the working
+/// Full-tier rows: digamma at p >= 16384 (they always run; a table holding one gets the full-tier budgets). ψ(½) = −γ − 2 ln 2 needs Euler γ at the working
 /// precision; since S3 (binary-splitting B1) that is 0.49 s release at p=65536 (was 44 s).
 fn full_tier_only(row: &Value) -> bool {
     row.get("fn").and_then(Value::as_str) == Some("digamma")
@@ -309,7 +305,6 @@ fn rows_for(func: &str) -> Result<Vec<Value>, String> {
         }
         let row: Value = serde_json::from_str(line).map_err(|e| format!("json: {e}"))?;
         if row.get("fn").and_then(Value::as_str) == Some(func)
-            && (full_tier() || !full_tier_only(&row))
             && !row_id_in(&row, EXCLUDED_IDS)
             && !row_id_in(&row, POLE08_ZETA_HELD)
         {
@@ -331,6 +326,7 @@ fn check(func: &'static str) -> Result<(), String> {
         Ok(s) => time_factor_milli(Some(&s))?,
     };
     let rows = rows_for(func)?;
+    let full_tier_table = rows.iter().any(full_tier_only);
     let total = rows.len();
     if total == 0 {
         return Err(format!("{func}: no golden rows"));
@@ -362,7 +358,7 @@ fn check(func: &'static str) -> Result<(), String> {
     // The default-tier row/table budgets are timing limits: release step only (Jeff 2026-11-23 23:04 CT,
     // shared switch test_time::LIMITS_ENFORCED). A debug build runs every row under the full-tier budgets,
     // which stay as the hang watchdog.
-    let (native_row, native_fn) = if full_tier() || !test_time::LIMITS_ENFORCED {
+    let (native_row, native_fn) = if full_tier_table || !test_time::LIMITS_ENFORCED {
         (FULL_ROW_BUDGET, FULL_FN_BUDGET)
     } else {
         (ROW_BUDGET, FN_BUDGET)

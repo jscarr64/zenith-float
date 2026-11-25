@@ -11,6 +11,8 @@ description = "Software big-float kernel for zenith-float."
 readme = "README.md"
 keywords = ["arbitrary-precision", "bigfloat", "numeric", "no-std"]
 categories = ["mathematics", "no-std", "science"]
+# MPFR golden streams (tests/mpfr/golden, feature mpfr-tests; r6 item 6) stay in the repo, not in the published crate.
+exclude = ["tests/mpfr/golden/", "tests/mpfr/golden-full/"]
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -48,10 +50,6 @@ required-features = ["random"]
 name = "integration_tests"
 required-features = ["mpfr-tests"]
 
-[target.'cfg(all(target_arch = "x86_64", target_os = "linux"))'.dev-dependencies]
-rug = { version = "~1.20.0", features = ["float", "rand", "integer", "rational"] }
-gmp-mpfr-sys = { version = "~1.6.0", features = [] }
-
 [dependencies]
 serde = { version = "1.0.147", optional = true }
 rand = { version = "0.8.5", optional = true }
@@ -62,5 +60,7 @@ default = ["std"]
 std = []
 random = ["dep:rand", "std"]
 serde = ["dep:serde", "std"]
-# Optional MPFR golden tests (slow; enable with --features mpfr-tests).
+# MPFR comparison tests against committed python-flint goldens (tests/mpfr/golden, see tools/mpfr_golden).
 mpfr-tests = ["random"]
+# Regenerates the goldens: the tests send each query to tools/mpfr_golden/gen.py (run tools/mpfr_golden/gen.sh).
+mpfr-golden-gen = ["mpfr-tests"]

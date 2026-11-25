@@ -11,7 +11,7 @@ FAILS on (file:line [form] text), every git-tracked file, all crates, tests/, be
                         strings and char literals stripped first, so prose and fixtures in strings do not count; doc
                         comments are doctest source and ARE scanned, hidden `# ` doctest lines included)
   [cfg_attr-allow]      `#[cfg_attr(<pred>, allow(..))]` / `expect(..)`, inner or outer
-  [unsafe]              the token `unsafe` in code, anywhere except the known-pending inventory below
+  [unsafe]              the token `unsafe` in code, anywhere
   [cargo-lint]          any `[lints.*]` / `[workspace.lints.*]` entry of any Cargo.toml at level "allow" or "warn"
                         (string or `{ level = .. }` form)
   [clippy-config]       any clippy.toml / .clippy.toml key except the `disallowed-*` lists: thresholds (`*-threshold`,
@@ -24,14 +24,8 @@ FAILS on (file:line [form] text), every git-tracked file, all crates, tests/, be
                         unless its Cargo.toml has `[lints.rust] unsafe_code = "forbid"` (or `[lints] workspace = true`
                         with that in `[workspace.lints.rust]`)
 
-KNOWN-PENDING UNSAFE (Paul call 2026-11-24, recorded in WORK2; Jeff 1:17 PM CT: "unsafe tests as a separate step after"):
-tools/unsafe_pending.tsv lists `path<TAB>count<TAB>note` for the test-only unsafe that a later step removes (the MPFR FFI
-tests under zenith-float-num/tests/mpfr/ and nostd-tests/src/bin/nostd-host.rs). The scan prints every pending file with
-its count and the total. A pending file must hold EXACTLY its pinned count: more fails (it cannot grow), fewer fails too
-(lower the pin in the same commit, so it cannot grow back). A library file (a crate's src/ outside nostd-tests) can never
-be pending, and an unsafe line in any file not on the list fails. A pending bin root is exempt from [no-forbid] only
-while it is listed. Only lines can leave this file; nothing is ever added to it: [pending-grew] fails any version (in git
-history from HEAD, then the working tree) that lists a file its previous version did not, or a higher pin (Spence m2).
+PENDING INVENTORY CLOSED AT 0 (r6 item 6, Paul call 2026-11-24): the MPFR FFI tests now replay committed goldens and hold
+no unsafe, so tools/unsafe_pending.tsv lists nothing. Any data line in it fails ([pending]): there is no exemption left.
 
 Test: tools/no_suppress_selftest.sh (fixture repos: each planted form fails by name, doc comments included; plain comments,
   strings, raw strings,
@@ -167,40 +161,6 @@ FLAG_CTX = re.compile(r"RUSTFLAGS|RUSTDOCFLAGS|\bcargo\b|\bclippy\b|\brustc\b|ru
 FLAG = re.compile(r"(?<![\w-])(-A\s*[\"']?[a-z_]+(?:::[a-z_]+)?\b|--allow\b|--cap-lints\b)")
 
 
-def parse_pending(text):
-    """path -> pin from unsafe_pending.tsv text (malformed lines are reported by main, skipped here)."""
-    out = {}
-    for l in text.split("\n"):
-        t = l.split("\t")
-        if l.strip() and not l.lstrip().startswith("#") and len(t) >= 3 and t[1].isdigit():
-            out[t[0]] = int(t[1])
-    return out
-
-
-def pending_history(root, current):
-    """Spence m2: the inventory only shrinks. Every version of PENDING_FILE in git history (oldest first, topo order,
-    from HEAD), then the working tree; each version after the first may hold only files of the version before it, at a
-    pin no higher. Returns findings. Outside a git repo or with no history: [] (the exact-pin checks still run)."""
-    try:
-        revs = subprocess.run(["git", "-C", root, "log", "--reverse", "--topo-order", "--format=%H", "--", PENDING_FILE],
-                              check=True, capture_output=True, text=True).stdout.split()
-    except (subprocess.CalledProcessError, OSError):
-        return []
-    versions = []
-    for c in revs:
-        g = subprocess.run(["git", "-C", root, "show", f"{c}:{PENDING_FILE}"], capture_output=True, text=True)
-        versions.append((c[:10], parse_pending(g.stdout) if g.returncode == 0 else {}))
-    versions.append(("working tree", current))
-    out = []
-    for (_, prev), (c, cur) in zip(versions, versions[1:]):
-        for f, n in sorted(cur.items()):
-            if f not in prev:
-                out.append(f"{f} [pending-grew] new file in {PENDING_FILE} at {c}: the inventory only shrinks")
-            elif n > prev[f]:
-                out.append(f"{f} [pending-grew] pin {prev[f]} -> {n} at {c}: the inventory only shrinks")
-    return out
-
-
 def main(argv):
     root = None
     if "--root" in argv:
@@ -227,10 +187,8 @@ def main(argv):
                 findings.append(f"{PENDING_FILE}:{k} [pending] malformed (want path<TAB>count<TAB>note): {l[:120]}")
                 continue
             pending[t[0]] = int(t[1])
-    findings += pending_history(root, pending)
     for f in pending:
-        if is_lib(f):
-            findings.append(f"{PENDING_FILE}: {f} [pending] is a library file: library unsafe is never pending")
+        findings.append(f"{PENDING_FILE}: {f} [pending] the inventory is closed at 0 (r6 item 6): remove the unsafe, not pin it")
     unsafe_by_file, stripped = {}, {}
     pkgs = []
     for f in files:
@@ -288,20 +246,10 @@ def main(argv):
                     find(f, k, "lint-flag", l.strip()); continue
                 if FLAG_CTX.search(code) and FLAG.search(code):
                     find(f, k, "lint-flag", l.strip())
-    # unsafe: library never, elsewhere only the pinned pending inventory, exact counts
-    total_pending = 0
+    # unsafe: nowhere
     for f, lns in sorted(unsafe_by_file.items()):
-        if f in pending and not is_lib(f):
-            if len(lns) != pending[f]:
-                findings.append(f"{f}: {len(lns)} unsafe, pinned {pending[f]} [pending] "
-                                f"({'it grew' if len(lns) > pending[f] else 'lower the pin in tools/unsafe_pending.tsv'})")
-            total_pending += len(lns)
-            continue
         for ln in lns:
             find(f, ln, "unsafe", open(os.path.join(root, f), encoding="utf-8", errors="replace").read().split("\n")[ln - 1].strip())
-    for f in pending:
-        if f not in unsafe_by_file and not is_lib(f):
-            findings.append(f"{f}: 0 unsafe, pinned {pending[f]} [pending] (remove the line from {PENDING_FILE})")
     # crate roots must forbid unsafe_code
     ws = {}
     rt = os.path.join(root, "Cargo.toml")
@@ -332,20 +280,13 @@ def main(argv):
                 continue
             if forbid or re.search(r"#!\s*\[\s*forbid\s*\(\s*([^)]*\b)?unsafe_code\b", stripped[r]):
                 continue
-            if r in pending:
-                continue
             findings.append(f"{r} [no-forbid] crate root without #![forbid(unsafe_code)] (and no Cargo [lints.rust] unsafe_code = \"forbid\")")
     for x in findings:
         print(x)
-    if pending:
-        print(f"no_suppress_scan: known-pending unsafe (separate step; exact pins in {PENDING_FILE}): "
-              f"{len(pending)} files, {total_pending} sites")
-        for f in sorted(pending):
-            print(f"  pending {f}\t{len(unsafe_by_file.get(f, []))}")
     if findings:
         print(f"no_suppress_scan: FAIL {len(findings)} finding(s); fix the code, nothing is allow-listed")
         return 1
-    print(f"no_suppress_scan: ok ({len(files)} files; 0 allow/expect, 0 lint relaxations, 0 unsafe outside the pending inventory)")
+    print(f"no_suppress_scan: ok ({len(files)} files; 0 allow/expect, 0 lint relaxations, 0 unsafe; pending inventory 0)")
     return 0
 
 

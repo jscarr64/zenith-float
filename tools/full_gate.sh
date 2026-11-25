@@ -122,9 +122,9 @@ run build-nostd "cargo build --no-default-features && cargo build -p zenith-floa
 run features-random-serde "bash scripts/gate_serde_evidence.sh run '$T/$tag-features-random-serde.evidence' tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
 run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
 run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
-# MPFR_TIER selects the MPFR tier (tests/mpfr/common.rs): the gate runs `full` (every run count, the
-# 100032-bit tests) unless the caller sets MPFR_TIER=fast.
-run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $TT"
+# MPFR comparison suite (r6 item 6): replays the committed golden streams (tests/mpfr/golden, SHA256SUMS-checked);
+# one tier only, every run count and the 100032-bit tests (the MPFR_TIER switch is gone).
+run mpfr "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $TT"
 # K11 (Paul 2026-11-10): no machine path in shipped scripts; every oracle generator refuses a forged wrong-pin env
 run oracle-env "tools/oracle_env_selftest.sh"
 run audit "cargo audit --deny warnings"
