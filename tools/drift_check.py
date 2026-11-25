@@ -14,6 +14,10 @@ checked the same way unless it sits on a local branch tip (then that branch cove
 unpushed (the new one would exceed the cap); ages are not checked there. An unborn branch has 0. Used by
 .githooks/pre-commit. git gives a pre-commit hook no way to tell an amend apart, so `git commit --amend` of the one
 unpushed commit is refused too: push it, then amend is a new commit.
+--scan DIR: DIR itself and each direct child of DIR that has a .git (file or directory). One whose .git cannot be
+read as the top of a work tree (missing gitdir, corrupt HEAD, ...) is named and gives rc 2 (fail closed); a
+directory without .git (a plain dir, a bare repo) is skipped. Linked worktrees share branches: each branch of a
+repository is reported once per run.
 Read-only: every git call uses --no-optional-locks and drops GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR.
 rc 0 ok, 1 drift, 2 usage or git error (fail closed).
 """
@@ -121,8 +125,11 @@ def head_state(repo):
         return True, sha
 
 
-def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False):
+def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=None):
+    """seen: set of (common git dir, branch) already checked; linked worktrees share branches, report each once."""
     bad = 0
+    seen = set() if seen is None else seen
+    common = os.path.realpath(os.path.join(repo, git(repo, "rev-parse", "--git-common-dir").strip()))
     detached, head = head_state(repo)
     if pre_commit:
         if detached:
@@ -141,6 +148,9 @@ def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False):
     tips = set()
     for name, up, sha in branches(repo):
         tips.add(sha)
+        if (common, name) in seen:
+            continue
+        seen.add((common, name))
         n, oldest = unpushed(repo, name, up)
         short = name[len("refs/heads/"):]
         if n > max_ahead:
@@ -183,18 +193,35 @@ def main(argv=None):
             print("drift_check: %s is not the top of a git work tree" % r, file=sys.stderr)
             return 2
         repos.append(r)
-    if not repos:
-        print("drift_check: give --repo", file=sys.stderr)
+    unreadable = []
+    for d in a.scan:
+        if not os.path.isdir(d):
+            print("drift_check: %s is not a directory" % d, file=sys.stderr)
+            return 2
+        for c in [d] + sorted(os.path.join(d, c) for c in os.listdir(d)):
+            if not os.path.lexists(os.path.join(c, ".git")):
+                continue
+            if is_work_tree(c):
+                repos.append(c)
+            else:
+                unreadable.append(c)
+    if not a.repo and not a.scan:
+        print("drift_check: give --repo or --scan", file=sys.stderr)
         return 2
     bad = 0
+    seen = set()
+    for c in unreadable:
+        print("drift_check: ERROR %s has a .git but is not a readable work tree" % c, file=sys.stderr)
     try:
         for r in repos:
-            bad |= check_repo(r, now, a.max_ahead, max_age, report, a.pre_commit)
+            bad |= check_repo(r, now, a.max_ahead, max_age, report, a.pre_commit, seen)
     except GitError as e:
         print("drift_check: %s" % e, file=sys.stderr)
         return 2
     print("drift_check: %s (%d repo(s), max %d ahead, max age %g min)"
           % ("FAIL" if bad else "ok", len(repos), a.max_ahead, a.max_age_min))
+    if unreadable:
+        return 2
     return 1 if bad else 0
 
 
