@@ -118,8 +118,11 @@ def dirty_oldest(repo):
     return oldest
 
 
-def check_repo(repo, now, max_ahead, max_age, pre_commit, report):
+def check_repo(repo, now, max_ahead, max_age, pre_commit, report, seen=None):
+    """seen: set of (common git dir, branch) already checked; linked worktrees share branches, report each once."""
     bad = 0
+    seen = set() if seen is None else seen
+    common = os.path.realpath(os.path.join(repo, git(repo, "rev-parse", "--git-common-dir").strip()))
     detached, head = head_state(repo)
     if pre_commit:
         if detached:
@@ -138,6 +141,9 @@ def check_repo(repo, now, max_ahead, max_age, pre_commit, report):
     tips = set()
     for name, up, sha in branches(repo):
         tips.add(sha)
+        if (common, name) in seen:
+            continue
+        seen.add((common, name))
         n, oldest = unpushed(repo, name, up)
         short = name[len("refs/heads/"):]
         if n > max_ahead:
@@ -185,9 +191,10 @@ def main(argv=None):
         print("drift_check: give --repo or --scan", file=sys.stderr)
         return 2
     bad = 0
+    seen = set()
     try:
         for r in repos:
-            bad |= check_repo(r, now, a.max_ahead, max_age, a.pre_commit, lambda s: print("drift_check: " + s))
+            bad |= check_repo(r, now, a.max_ahead, max_age, a.pre_commit, lambda s: print("drift_check: " + s), seen)
     except GitError as e:
         print("drift_check: %s" % e, file=sys.stderr)
         return 2

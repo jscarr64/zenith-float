@@ -109,6 +109,12 @@ r=$(fresh drn); git -C "$r" mv f.txt g.txt; touch -d "@$((NOW-60))" "$r/g.txt"; 
 # a GIT_DIR exported by a hook (git does this) must not redirect the check to another repo
 r=$(fresh ge);  commit_at "$r" 60 e1; commit_at "$r" 50 e2; o=$(fresh geo)
                 expect "GIT_DIR of another repo in the env is ignored" 1 env GIT_DIR="$o/.git" python3 -B "$dc" --now "$NOW" --repo "$r"
+# linked worktrees share branches: a bad branch is reported once, not once per worktree
+r=$(fresh wt); git -C "$r" switch -q -c side2; commit_at "$r" 60 a1; commit_at "$r" 50 a2; git -C "$r" switch -q w
+git -C "$r" worktree add -q --detach "$r-l1" w 2>/dev/null; git -C "$r" worktree add -q --detach "$r-l2" w 2>/dev/null
+out=$(python3 -B "$dc" --now "$NOW" --repo "$r" --repo "$r-l1" --repo "$r-l2" 2>&1); rc=$?
+k=$(printf '%s\n' "$out" | grep -c 'side2: 2 commits ahead')
+[ $rc = 1 ] && [ "$k" = 1 ] && ok "branch shared by 3 worktrees reported once" || bad "branch shared by 3 worktrees reported once (rc=$rc, reported $k times)"
 # pre-commit mode
 r=$(fresh pc0); expect "pre-commit, 0 unpushed"            0 run --pre-commit --repo "$r"
 r=$(fresh pc1); commit_at "$r" 10 p1

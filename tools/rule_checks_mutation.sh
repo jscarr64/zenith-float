@@ -34,6 +34,9 @@ D18|tools/drift_check.py|1|if xy[0] in "RC": ==> if False:
 D19|tools/drift_check.py|1|m = index_mtime ==> m = 0
 D20|tools/drift_check.py|1|    return 1 if bad else 0 ==>     return 0
 D21|tools/drift_check.py|1|bad |= check_repo ==> bad = check_repo
+D23|tools/drift_check.py|1|if (common, name) in seen: ==> if False:
+D24|tools/drift_check.py|1|seen.add((common, name)) ==> pass
+D25|tools/drift_check.py|1|lambda s: print("drift_check: " + s), seen) ==> lambda s: print("drift_check: " + s))
 D22|tools/drift_check.py|1|if detached and head not in tips: ==> if False:
 H01|.githooks/pre-push|1|unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES ==> :
 H02|.githooks/pre-push|1|(cd "$t" && bash tools/rules_scan.sh ==> (cd "$src" && bash tools/rules_scan.sh
