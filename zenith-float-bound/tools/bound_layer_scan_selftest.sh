@@ -278,6 +278,19 @@ ck; git commit -qm bad; scan "$base..HEAD" >/dev/null && fail "range clone not f
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(x: &S) { let y = x.clone(); let _ = r.unwrap(); }\n}\n' > src/x.rs
 ck; git add -A; git commit -qm t; scan "$base..HEAD" >/dev/null && fail "cfg(test) additions not flagged"
 
+# folded layout (Paul 2026-11-24): the crate is a SUBDIRECTORY of a bigger repo (zenith-float/zenith-float-bound). Only the
+# crate's own added lines are scanned, under crate-relative paths; the outer repo's tests/ are not this crate's tests/.
+f="$t/fold"; mkdir -p "$f/tests" "$f/zb/src" "$f/zb/tools"; cd "$f" || exit 1
+git init -q . && git config user.email a@b && git config user.name t
+cp "$g"/tools/*.txt zb/tools/; printf 'fn a() {}\n' > zb/src/x.rs; printf 'fn l() {}\n' > tests/lib.rs; git add -A; git commit -qm base; fb=$(git rev-parse HEAD)
+printf 'fn l(x: &S) { let y = x.clone(); }\n' > tests/lib.rs; git add -A; git commit -qm outer
+export RULES_SCAN_ROOT="$f/zb"; RULES_SCAN_SKIP_COUNT=1; export RULES_SCAN_SKIP_COUNT
+ck; scan "$fb..HEAD" >/dev/null || fail "folded layout: the outer repo's tests/ scanned as the crate's: $(scan "$fb..HEAD")"
+printf 'fn a() {}\nfn b() { let _ = r.unwrap(); }\n' > zb/src/x.rs
+ck; { scan --working || true; } | grep -q '^src/x.rs:2 \[unwrap\]' || fail "folded layout: crate working-tree addition not flagged at src/x.rs:2: $(scan --working)"
+ck; git add -A; git commit -qm inner; { scan "$fb..HEAD" || true; } | grep -q '^src/x.rs:2 \[unwrap\]' || fail "folded layout: crate range addition not flagged at src/x.rs:2: $(scan "$fb..HEAD")"
+cd "$g" || exit 1; export RULES_SCAN_ROOT="$g"; unset RULES_SCAN_SKIP_COUNT
+
 # clone-count baseline: may only go down
 printf 'fn a(x: &S) { let y = x.clone(); }\n' > src/x.rs; git add -A; git commit -qm c
 echo 1 > tools/clone_count_baseline.txt
@@ -442,5 +455,5 @@ for mode in --working --staged; do
   ck; grep -c "git diff .*failed" <<< "$out" > /dev/null || { rm -rf "$nogit"; fail "$mode: no git failure message: $out"; }
 done
 rm -rf "$nogit"
-st_done bound_layer_scan 318   # WANT: cases this script runs (tools/selftest_cases.sh)
+st_done bound_layer_scan 321   # WANT: cases this script runs (tools/selftest_cases.sh)
 echo "bound_layer_scan selftest: ok"

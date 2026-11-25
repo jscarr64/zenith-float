@@ -151,6 +151,9 @@ def strip(line):
 
 
 def git(*args):
+    # Every diff is taken with --relative: ROOT is zenith-float-bound/, a subdirectory of the folded zenith-float repo, and a
+    # plain `git -C ROOT diff` names paths from the repo root, so the library's tests/*.rs were scanned as if they were this
+    # crate's tests/ and this crate's own files (zenith-float-bound/...) matched no scanned path (Paul 2026-11-24, ZB scan exit 1).
     return subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True)
 
 
@@ -753,7 +756,7 @@ def main(argv):
         text = open(argv[argv.index("--diff-file") + 1], errors="replace").read()
     elif "--staged" in argv or "--working" in argv:
         what = ["--cached"] if "--staged" in argv else ["HEAD"]
-        r = git("diff", *what, "--no-color", "--no-ext-diff", "-U0")
+        r = git("diff", *what, "--relative", "--no-color", "--no-ext-diff", "-U0")
         if r.returncode != 0:  # never a vacuous "0 flagged" when git cannot diff
             print("bound_layer_scan: git diff %s failed: %s" % (what[0], r.stderr.strip()))
             return 2
@@ -763,7 +766,7 @@ def main(argv):
         rng = args[0] if args else "origin/main..HEAD"
         if ".." not in rng:
             rng += "..HEAD"
-        r = git("diff", rng, "--no-color", "--no-ext-diff", "-U0")
+        r = git("diff", rng, "--relative", "--no-color", "--no-ext-diff", "-U0")
         if r.returncode != 0:
             print("bound_layer_scan: git diff %s failed: %s" % (rng, r.stderr.strip()))
             return 2

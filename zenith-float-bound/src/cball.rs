@@ -913,37 +913,58 @@ impl Neg for CBall {
 mod tests {
     use super::*;
 
+    /// `Err(what)` unless `ok` (the layer scan bans the assert family in every scanned file, tests included).
+    fn check(ok: bool, what: &str) -> Result<(), String> {
+        if ok {
+            Ok(())
+        } else {
+            Err(String::from(what))
+        }
+    }
+
     /// R1 (Spence PR #40): `mag_sub_upper`'s clamp at 0, which its only caller (`arb_div_wide`'s straddling branch,
     /// entered only when rad > |mid|) cannot reach, and `mag_add_lower`'s fallback for an operand outside zf's range.
     #[test]
-    fn mag_sub_upper_clamps_and_mag_add_lower_falls_back() -> Result<(), BoundError> {
-        let one = Mag::finite(MAG_HALF, 1)?;
-        let num = |v: i64, e: i64| ExactNum::from(v).ldexp(e, 64, RoundingMode::None);
-        assert!(
-            mag_sub_upper(&one, &num(2, 0))?.is_zero(),
-            "1 - 2 clamps to 0"
-        );
-        assert!(mag_sub_upper(&one, &num(1, 0))?.is_zero(), "1 - 1 is 0");
-        assert!(mag_sub_upper(&one, &num(-1, 0))?.is_zero(), "|m| is used");
-        assert!(mag_sub_upper(&Mag::infinity(), &num(2, 0))?.is_infinity());
-        let half = mag_sub_upper(&one, &num(1, -1))?;
-        assert_eq!(
-            (half.mant(), half.exp()),
-            (Some(MAG_HALF), Some(0)),
-            "1 - 1/2 = 1/2 exactly"
-        );
+    fn mag_sub_upper_clamps_and_mag_add_lower_falls_back() -> Result<(), String> {
+        let e = |x: BoundError| format!("{x:?}");
+        let one = Mag::finite(MAG_HALF, 1).map_err(e)?;
+        let num = |v: i64, x: i64| ExactNum::from(v).ldexp(x, 64, RoundingMode::None);
+        check(
+            mag_sub_upper(&one, &num(2, 0)).map_err(e)?.is_zero(),
+            "1 - 2 clamps to 0",
+        )?;
+        check(
+            mag_sub_upper(&one, &num(1, 0)).map_err(e)?.is_zero(),
+            "1 - 1 is 0",
+        )?;
+        check(
+            mag_sub_upper(&one, &num(-1, 0)).map_err(e)?.is_zero(),
+            "|m| is used",
+        )?;
+        check(
+            mag_sub_upper(&Mag::infinity(), &num(2, 0))
+                .map_err(e)?
+                .is_infinity(),
+            "inf - 2 is inf",
+        )?;
+        let half = mag_sub_upper(&one, &num(1, -1)).map_err(e)?;
+        check(
+            (half.mant(), half.exp()) == (Some(MAG_HALF), Some(0)),
+            "1 - 1/2 = 1/2 exactly",
+        )?;
         // 2^(EXPONENT_MIN - 200) has no ExactNum value: the lower bound of the sum is the larger operand.
-        let tiny = Mag::finite(MAG_HALF, EXPONENT_MIN - 200)?;
+        let tiny = Mag::finite(MAG_HALF, EXPONENT_MIN - 200).map_err(e)?;
         for (x, y) in [(&tiny, &one), (&one, &tiny)] {
-            let r = mag_add_lower(x, y)?;
-            assert_eq!((r.mant(), r.exp()), (one.mant(), one.exp()));
+            let r = mag_add_lower(x, y).map_err(e)?;
+            check(
+                (r.mant(), r.exp()) == (one.mant(), one.exp()),
+                "in-range operand is the lower bound",
+            )?;
         }
-        let both = mag_add_lower(&tiny, &tiny)?;
-        assert_eq!(
-            (both.mant(), both.exp()),
-            (tiny.mant(), tiny.exp()),
-            "max of two out-of-range operands"
-        );
-        Ok(())
+        let both = mag_add_lower(&tiny, &tiny).map_err(e)?;
+        check(
+            (both.mant(), both.exp()) == (tiny.mant(), tiny.exp()),
+            "max of two out-of-range operands",
+        )
     }
 }
