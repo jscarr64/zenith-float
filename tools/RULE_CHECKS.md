@@ -18,18 +18,24 @@ remote-tracking ref (`refs/remotes/*`). With no upstream, an upstream that is go
 - its newest change is at most **24 h** old (`--active-window-min 1440`; exactly 24 h is active). The changes
   counted are the HEAD commit time, the index mtime, the `logs/HEAD` mtime and the newest dirty file; or
 - it has dirty work **under 30 min** old, whatever the window; or
+- it has dirty work **over 30 min** old (that is the violation itself, so it is never skipped as idle), whatever the
+  window (Cassie R2-B2d); or
 - it is listed with `--include DIR` or in `--include-file FILE` (one path per line, `#` comments); or
 - its activity cannot be read (fail closed: the tree is checked, and a git error then gives rc 2).
 
 In an active scanned tree the HEAD branch is checked, plus other local branches whose tip is at most 24 h old.
 Idle trees and branches print `skip`. `--all` is the full sweep; `--repo` and `--include` trees are always checked
-in full. A `--scan` child that has a `.git` but cannot be read (missing gitdir, corrupt HEAD) is named and gives
-rc 2; a child without `.git` (a plain dir, a bare repo) is skipped. Linked worktrees share branches, so each branch
+in full. `--scan DIR` checks DIR itself and its direct children. A child that has a `.git` but cannot be read
+(missing gitdir, corrupt HEAD), or whose `.git` cannot even be looked up (no permission, e.g. mode 000), is named and
+gives rc 2; a child without `.git` (a plain dir, a bare repo) is skipped. An unreadable DIR gives rc 2. Linked worktrees share branches, so each branch
 of a repository is reported once.
 
 Options: `drift_check.py --repo DIR | --scan DIR [--all] [--include DIR] [--include-file FILE]
 [--active-window-min 1440] [--max-ahead 1] [--max-age-min 30] [--pre-commit] [--now EPOCH]`;
 `pr_done_check.py --repo OWNER/NAME [--since YYYY-MM-DD] [--limit 1000]` (GH=<gh binary>; GET calls only).
+`--max-age-min` and `--active-window-min` must be finite and >= 0 (`nan`, `inf` or a negative value gives rc 2).
+`--include-file` entries are paths as written, resolved against the current directory: use absolute paths.
+`pr_done_check.py` fails closed (rc 2) on any malformed gh output, including a list entry that is not an object.
 `--since` must be a real `YYYY-MM-DD` date. It is compared with the **UTC** date of mergedAt / closedAt, so a PR
 merged 2026-11-24 9 PM CST (03:00Z on 11-25) counts as 2026-11-25.
 
@@ -60,9 +66,34 @@ fixture, so update that test in the same merge.
 ## Tests
 
 `tools/drift_check_selftest.sh`, `tools/pr_done_check_selftest.sh` (mock gh that honours `--state` and `--limit`),
-`tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), and `tools/rule_checks_mutation.sh`
-(102 mutants, including Cassie's 16; every one must be killed). Each behavior landed as one red commit, then one
-fix commit. full_gate.sh runs all four as step `rule-checks`.
+`tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), `tools/rule_checks_daily_selftest.sh`,
+`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (143 mutants, including Cassie's
+16 round-1 and 12 round-2 rows; every one must be killed). Each behavior landed as one red commit, then one fix
+commit. full_gate.sh runs all six as step `rule-checks`.
+
+## Scoped gate (in the repo)
+
+`tools/scoped_gate.sh rules` is the scoped gate for a PR that changes only these tools (Jeff Q6: a scoped gate per PR,
+the full gate at tier boundaries). Steps: `full-gate-syntax` (`bash -n tools/full_gate.sh`), `rules-scan` and
+`rule-checks` (their commands are read verbatim from `tools/full_gate.sh`, so the two cannot drift),
+`gate-tool-checks` and `full-gate-poplog`. Each step is one `poprun --step`; all steps run; rc 1 names the failed
+ones. `--list` / `--dry-run` print the plan. Run it from a clean checkout of the PR head:
+
+    PYTHONDONTWRITEBYTECODE=1 ~/pop-logs/bin/poprun --agent spence --job scoped-gate-rules -- bash tools/scoped_gate.sh rules
+
+The poprun footer must say `RESULT: PASS` and `gate-commit: <PR head> (clean at start and end)`. It is not
+full_gate evidence: it covers 2 of full_gate's 25 run steps (no Rust builds or tests).
+
+## Daily full sweep (Jeff 2026-11-25 5:20 PM CT)
+
+"Yes, add a daily full sweep over every worktree that fails on any drift." Active mode hides idle drift (Cassie N1),
+so once a day `tools/rule_checks_daily.sh` runs `drift_check.py --all` (every tree and every branch, nothing skipped)
+over every root and FAILs (rc 1) on any drift; rc 2 on no roots, a bad root or a git error.
+- Roots are dirs or quoted globs of dirs: on Pop `/mnt/hub/{paul,rusty,spence,vera}-work` and
+  `/mnt/hub/home-moved/*`. Non-dir matches are ignored.
+- Any root with a `MathWorks` path component, as given or after resolving symlinks, is left out (named
+  `excluded`). Trees elsewhere whose git data lives in MathWorks are still read (read-only), like in the 15-minute run.
+- The summary line counts the FAIL (finding) and ERROR lines, roots and exclusions.
 
 ## 15-minute scheduler on Pop
 
@@ -74,6 +105,11 @@ A systemd **user** timer, the same pattern as `poprotate.timer`. No cron, no sys
   It runs `drift_check.py --scan` (active mode) over `/mnt/hub/{paul,rusty,spence,vera}-work` with
   `--include-file rule-checks-bin/include.txt`, then `pr_done_check.py` on `jscarr64/zenith-float` and
   `jscarr64/zenith-bound`. Output is appended to `/home/jsc64/pop-logs/spence/rule-checks/YYYY-MM-DD.log`.
-- To repin after a merge, copy the two tools at the new sha into `rule-checks-bin/<sha>/`, write `SHA256SUMS`,
-  and change `PIN` in `run.sh`. To stop it: `systemctl --user disable --now zf-rule-checks.timer`.
-- The user manager has Linger=no, so the timer runs only while jsc64 has a session on Pop.
+- Daily: `zf-rule-checks-daily.timer` (`OnCalendar=*-*-* 06:00`, `Persistent=true`) starts
+  `zf-rule-checks-daily.service` (oneshot, `ExecStart=/mnt/hub/spence-work/rule-checks-bin/run-daily.sh`). It checks
+  the same pinned `SHA256SUMS` and runs the pinned `rule_checks_daily.sh` over the roots above. Output:
+  `/home/jsc64/pop-logs/spence/rule-checks/YYYY-MM-DD-daily.log`.
+- To repin after a merge, copy `drift_check.py`, `pr_done_check.py` and `rule_checks_daily.sh` at the new sha into
+  `rule-checks-bin/<sha>/`, write `SHA256SUMS`, and change `PIN` in `run.sh` and `run-daily.sh`. To stop them:
+  `systemctl --user disable --now zf-rule-checks.timer zf-rule-checks-daily.timer`.
+- Linger is on for jsc64 (Jeff 2026-11-25), so both timers run without a session on Pop.

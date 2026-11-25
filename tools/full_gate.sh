@@ -93,9 +93,9 @@ run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-f
 run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests -- --test-threads=1"
 # ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
 run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
-# rule checks (plan v2 step 1, Jeff 2026-11-25): drift cap, pre-commit unpushed cap, pre-push hook, PR-done; selftests
+# rule checks (plan v2 step 1, Jeff 2026-11-25): drift cap, pre-commit unpushed cap, pre-push hook, PR-done, daily sweep, scoped gate; selftests
 # plus the hand-mutation sweep (every flipped comparison/threshold must be caught). No network, no cargo. See tools/RULE_CHECKS.md
-run rule-checks "tools/drift_check_selftest.sh && tools/pr_done_check_selftest.sh && tools/pre_push_selftest.sh && tools/rule_checks_mutation.sh"
+run rule-checks "tools/drift_check_selftest.sh && tools/pr_done_check_selftest.sh && tools/pre_push_selftest.sh && tools/rule_checks_daily_selftest.sh && tools/scoped_gate_selftest.sh && tools/rule_checks_mutation.sh"
 # informational: remaining violations are a tracked count (must only go down; hard fail is for the final step)
 run no-clone-progress "tools/no_clone_selftest.sh && { tools/no_clone.sh | tail -1; tools/no_clone.sh --helpers | tail -1; true; }"
 run fmt "cargo fmt --all -- --check"
