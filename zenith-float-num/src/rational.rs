@@ -378,8 +378,8 @@ fn format_terminating(num: &ExactInt, den: &ExactInt, rdx: Radix) -> Option<Stri
 
 fn format_fixed(n: &ExactInt, frac_digits: usize, rdx: Radix) -> String {
     let neg = n.is_negative();
-    let abs = if neg { n.neg() } else { n.clone() };
-    let mut digits = to_radix_digits(&abs, rdx);
+    // `to_radix_digits` writes the digits of `|n|` itself.
+    let mut digits = to_radix_digits(n, rdx);
     let mut k = frac_digits;
     while k > 0 && digits.ends_with('0') {
         digits.pop();
@@ -417,15 +417,20 @@ fn to_radix_digits(n: &ExactInt, rdx: Radix) -> String {
         return String::from("0");
     }
     let r = ExactInt::from_u64(rdx.value() as u64);
-    let mut v = if n.is_negative() { n.neg() } else { n.clone() };
+    // `None` is `n` itself, read in place by the first division: the digits come from the
+    // remainder's magnitude, which `div_rem` computes from the magnitudes, so the sign of the
+    // running quotient does not matter.
+    let mut v: Option<ExactInt> = None;
     let mut digits = Vec::new();
-    while !v.is_zero() {
+    while !v.as_ref().unwrap_or(n).is_zero() {
         let (q, rem) = v
+            .as_ref()
+            .unwrap_or(n)
             .div_rem(&r)
             .unwrap_or((ExactInt::zero(), ExactInt::zero()));
         let d = rem.low_word() as u8;
         digits.push(if d < 10 { b'0' + d } else { b'a' + (d - 10) });
-        v = q;
+        v = Some(q);
     }
     digits.reverse();
     String::from_utf8(digits).unwrap_or_else(|_| String::from("0"))

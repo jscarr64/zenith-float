@@ -563,7 +563,7 @@ fn jacobi_agm(
         if agm_small(&cc_seq[n as usize], &aa[n as usize], p)? {
             break;
         }
-        let ai = aa[n as usize].clone()?;
+        let ai = &aa[n as usize];
         let c_next = ai
             .sub(&b, p, RoundingMode::None)?
             .div(&two, p, RoundingMode::None)?;

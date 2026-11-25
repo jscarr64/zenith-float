@@ -701,8 +701,9 @@ fn gauss_hermite_nodes(
         if !finite(&x) || !finite(&w) {
             return None;
         }
-        nodes.push((x.clone(), w.clone()));
-        nodes.push((x.neg(), w));
+        let x_neg = x.neg_ref();
+        nodes.push((x, w.clone()));
+        nodes.push((x_neg, w));
     }
     if nodes.len() != n {
         return None;

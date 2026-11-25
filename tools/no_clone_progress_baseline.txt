@@ -3,12 +3,13 @@
 # Lowered 2026-11-23 16:40 CT (Jeff 16:35 CT go) to the measured counts of 98f9c5b: clone() 475->467, cloned() 5->4, derive(Clone) 11->9, total 497->486, helper_copies 321->317.
 # Lowered 2026-11-24 (r6 item 3, Jeff 4:40/4:42 PM CT fix-everything): measured counts after the ieee_soft/array.rs clone removals, then roots.rs.
 # Lowered 2026-11-24 22:40 CT (Paul 10:00 PM, item 3 batch 3): measured counts after special.rs, gauss_kronrod.rs, ode.rs, heun_fox.rs, integer.rs, modular.rs, ext.rs and the mp.rs derive fix: clone() 407->320, total 425->338.
-clone()	320
+# Lowered 2026-11-24 23:10 CT (Paul 10:00 PM, item 3 batch 4, unlisted clone sites 0): clone() 320->291, total 338->309.
+clone()	291
 to_vec()	4
 cloned()	4
 Clone::clone	0
 clone_from	0
 impl Clone	1
 derive(Clone)	9
-total	338
+total	309
 helper_copies	317

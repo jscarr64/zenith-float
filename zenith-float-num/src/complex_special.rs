@@ -425,8 +425,7 @@ where
             None => return nan_pair(Error::InvalidArgument),
         };
         let z = compute(p_x);
-        let mut re = z.re().clone();
-        let mut im = z.im().clone();
+        let (mut re, mut im) = z.into_parts();
         let ok_re = re.try_set_precision(p, rm, p_wrk);
         let ok_im = im.try_set_precision(p, rm, p_wrk);
         if ok_re && ok_im {
@@ -1357,13 +1356,14 @@ impl ExactComplex {
         let sqrt_pi = pi.sqrt(p, RoundingMode::None);
         let scale = ExactNum::from_u8(2, p).div(&sqrt_pi, p, RoundingMode::None);
         let u2 = u.mul(u, p, RoundingMode::None);
-        let mut upow = u.clone();
+        // The power and the sum both start at `u` itself: `None` reads the borrowed `u`.
+        let mut upow: Option<Self> = None;
         let mut nfact = ExactNum::from_u8(1, p);
-        let mut sum = u.clone();
+        let mut sum: Option<Self> = None;
         let mut n: u32 = 1;
-        loop {
+        let sum = loop {
             nfact = nfact.mul(&ExactNum::from_u32(n, p), p, RoundingMode::None);
-            upow = upow.mul(&u2, p, RoundingMode::None);
+            let upow_new = upow.as_ref().unwrap_or(u).mul(&u2, p, RoundingMode::None);
             let two_n_1 = n
                 .checked_mul(2)
                 .and_then(|v| v.checked_add(1))
@@ -1372,19 +1372,22 @@ impl ExactComplex {
                 return nan_pair(Error::PrecisionRetryExhausted);
             };
             let den = two_n_1.mul(&nfact, p, RoundingMode::None);
-            let mut t = upow.div(&ExactComplex::from_real(den, p), p, RoundingMode::None);
+            let mut t = upow_new.div(&ExactComplex::from_real(den, p), p, RoundingMode::None);
             if n % 2 == 1 {
                 t = neg_c(t);
             }
-            sum = sum.add(&t, p, RoundingMode::None);
+            let sum_new =
+                ExactComplex::add_ref(sum.as_ref().unwrap_or(u), &t, p, RoundingMode::None);
             if term_negligible(&t, p) {
-                break;
+                break sum_new;
             }
             let Some(next) = n.checked_add(1) else {
                 return nan_pair(Error::PrecisionRetryExhausted);
             };
+            upow = Some(upow_new);
+            sum = Some(sum_new);
             n = next;
-        }
+        };
         ExactComplex::from_real(scale, p).mul(&sum, dest_p, RoundingMode::None)
     }
 

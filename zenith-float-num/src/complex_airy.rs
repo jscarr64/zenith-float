@@ -75,9 +75,11 @@ fn omega_pair(p: usize) -> (ExactComplex, ExactComplex) {
         .sqrt(p, RoundingMode::None)
         .mul(&half, p, RoundingMode::None);
     let re = half.neg();
+    // `-s3h` is formed from the borrow before `s3h` moves into the first value.
+    let s3h_neg = s3h.neg_ref();
     (
-        ExactComplex::new(re.clone(), s3h.clone()),
-        ExactComplex::new(re, s3h.neg()),
+        ExactComplex::new(re.clone(), s3h),
+        ExactComplex::new(re, s3h_neg),
     )
 }
 
@@ -86,10 +88,9 @@ fn exp_i_pi_6(p: usize, cc: &mut Consts) -> (ExactComplex, ExactComplex) {
         .pi(p, RoundingMode::None)
         .div(&ExactNum::from_u8(6, p), p, RoundingMode::None);
     let (s, c) = a.sin_cos(p, RoundingMode::None, cc);
-    (
-        ExactComplex::new(c.clone(), s.clone()),
-        ExactComplex::new(c, s.neg()),
-    )
+    // `-s` is formed from the borrow before `s` moves into the first value.
+    let s_neg = s.neg_ref();
+    (ExactComplex::new(c.clone(), s), ExactComplex::new(c, s_neg))
 }
 
 fn two_pi_over_three(p: usize, cc: &mut Consts) -> ExactNum {
@@ -247,11 +248,12 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut tf = ExactComplex::one(p);
         let mut f = one;
-        let mut tg = self.clone();
-        let mut g = self.clone();
+        // `g` and its term `tg` both start at `z` itself: `None` reads the borrowed `self`.
+        let mut tg: Option<ExactComplex> = None;
+        let mut g: Option<ExactComplex> = None;
         // Terms peak near k ≈ |ξ|/2 and need ≈ e|ξ| more to fall below 2^-p.
         let mut k: u32 = 1;
-        loop {
+        let g = loop {
             let Some(k3n) = k.checked_mul(3) else {
                 return (
                     nan_pair(Error::PrecisionRetryExhausted),
@@ -279,14 +281,15 @@ impl ExactComplex {
                 RoundingMode::None,
             );
             f = f.add(&tf, p, RoundingMode::None);
-            tg = tg.mul(&x3, p, RoundingMode::None).div(
-                &k3p1.mul(&k3, p, RoundingMode::None),
-                p,
-                RoundingMode::None,
-            );
-            g = g.add(&tg, p, RoundingMode::None);
-            if term_negligible(&tf, p) && term_negligible(&tg, p) {
-                break;
+            let tg_new = tg
+                .as_ref()
+                .unwrap_or(self)
+                .mul(&x3, p, RoundingMode::None)
+                .div(&k3p1.mul(&k3, p, RoundingMode::None), p, RoundingMode::None);
+            let g_new =
+                ExactComplex::add_ref(g.as_ref().unwrap_or(self), &tg_new, p, RoundingMode::None);
+            if term_negligible(&tf, p) && term_negligible(&tg_new, p) {
+                break g_new;
             }
             let Some(next) = k.checked_add(1) else {
                 return (
@@ -294,8 +297,10 @@ impl ExactComplex {
                     nan_pair(Error::PrecisionRetryExhausted),
                 );
             };
+            tg = Some(tg_new);
+            g = Some(g_new);
             k = next;
-        }
+        };
         (f, g)
     }
 
@@ -345,7 +350,8 @@ impl ExactComplex {
         let mut u = ExactComplex::one(p);
         let mut sum = one;
         let mut prev_abs = ExactNum::from_u8(1, p);
-        let mut xi_pow = xi.clone();
+        // `xi^1` is `xi` itself (`None`, read through the borrow); higher powers are owned.
+        let mut xi_pow: Option<ExactComplex> = None;
         let mut k: u32 = 1;
         loop {
             let Some(n1) = k.checked_mul(6).and_then(|v| v.checked_sub(5)) else {
@@ -360,7 +366,7 @@ impl ExactComplex {
                 ExactNum::from_u32(72, p).mul(&ExactNum::from_u32(k, p), p, RoundingMode::None);
             let ratio = ExactComplex::from_real(num.div(&den, p, RoundingMode::None), p);
             u = u.mul(&ratio, p, RoundingMode::None);
-            let mut t = u.div(&xi_pow, p, RoundingMode::None);
+            let mut t = u.div(xi_pow.as_ref().unwrap_or(xi), p, RoundingMode::None);
             if alt && k % 2 == 1 {
                 t = neg_c(t);
             }
@@ -373,7 +379,7 @@ impl ExactComplex {
                 break;
             }
             prev_abs = ta;
-            xi_pow = xi_pow.mul(xi, p, RoundingMode::None);
+            xi_pow = Some(xi_pow.as_ref().unwrap_or(xi).mul(xi, p, RoundingMode::None));
             let Some(next) = k.checked_add(1) else {
                 return nan_pair(Error::PrecisionRetryExhausted);
             };

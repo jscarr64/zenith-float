@@ -216,8 +216,9 @@ impl ExactNumNumber {
         let mut tf = Self::from_word(1, p)?;
         let mut f = Self::from_word(1, p)?;
         let mut fp = Self::new2(p, Sign::Pos, false)?;
-        let mut tg = self.clone()?;
-        let mut g = self.clone()?;
+        // `g` and its term `tg` both start at `x` itself: `None` reads the borrowed `self`.
+        let mut tg_own: Option<Self> = None;
+        let mut g_own: Option<Self> = None;
         let mut gp = one;
         let mut k: usize = 1;
         loop {
@@ -234,12 +235,19 @@ impl ExactNumNumber {
                 .mul(&k3, p, RoundingMode::None)?
                 .div(self, p, RoundingMode::None)?;
             fp = fp.add(&dtf, p, RoundingMode::None)?;
-            tg = tg.mul(&x3, p, RoundingMode::None)?.div(
-                &k3p1.mul(&k3, p, RoundingMode::None)?,
-                p,
-                RoundingMode::None,
-            )?;
-            g = g.add(&tg, p, RoundingMode::None)?;
+            let tg = tg_own
+                .as_ref()
+                .unwrap_or(self)
+                .mul(&x3, p, RoundingMode::None)?
+                .div(
+                    &k3p1.mul(&k3, p, RoundingMode::None)?,
+                    p,
+                    RoundingMode::None,
+                )?;
+            let g = g_own
+                .as_ref()
+                .unwrap_or(self)
+                .add(&tg, p, RoundingMode::None)?;
             let dtg = tg
                 .mul(&k3p1, p, RoundingMode::None)?
                 .div(self, p, RoundingMode::None)?;
@@ -249,6 +257,8 @@ impl ExactNumNumber {
             if tf_done && tg_done {
                 return Ok((f, g, fp, gp));
             }
+            tg_own = Some(tg);
+            g_own = Some(g);
             k = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
     }
@@ -541,7 +551,8 @@ fn airy_uv_sums(
     let mut sum_u = ExactNumNumber::from_word(1, p)?;
     let mut sum_v = one;
     let mut prev_u = ExactNumNumber::from_word(1, p)?;
-    let mut xi_pow = xi.clone()?;
+    // `xi^1` is `xi` itself (`None`, read through the borrow); higher powers are owned.
+    let mut xi_pow: Option<ExactNumNumber> = None;
     let cap = p.saturating_add(8);
     for k in 1..=cap {
         let num = ExactNumNumber::from_word((6 * k - 5) as Word, p)?.mul(
@@ -557,7 +568,7 @@ fn airy_uv_sums(
         u = u
             .mul(&num, p, RoundingMode::None)?
             .div(&den, p, RoundingMode::None)?;
-        let mut tu = u.div(&xi_pow, p, RoundingMode::None)?;
+        let mut tu = u.div(xi_pow.as_ref().unwrap_or(xi), p, RoundingMode::None)?;
         // v_k = −(6k+1)/(6k−1) · u_k (DLMF 9.7.2).
         let vfac = ExactNumNumber::from_word((6 * k + 1) as Word, p)?
             .div(
@@ -580,7 +591,12 @@ fn airy_uv_sums(
             break;
         }
         prev_u = tu.abs()?;
-        xi_pow = xi_pow.mul(xi, p, RoundingMode::None)?;
+        xi_pow = Some(
+            xi_pow
+                .as_ref()
+                .unwrap_or(xi)
+                .mul(xi, p, RoundingMode::None)?,
+        );
     }
     Ok((sum_u, sum_v))
 }

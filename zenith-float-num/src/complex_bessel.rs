@@ -441,7 +441,8 @@ fn real_part_only(v: ExactComplex, p: usize) -> ExactComplex {
     if v.is_nan() {
         return v;
     }
-    ExactComplex::new(v.re().clone(), ExactNum::new(p))
+    let (re, _) = v.into_parts();
+    ExactComplex::new(re, ExactNum::new(p))
 }
 
 /// \(e^{\nu\pi i}\) when `upper`, else \(e^{-\nu\pi i}\).

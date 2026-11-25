@@ -1044,8 +1044,11 @@ fn kelvin_k_arg(x: &ExactNum, p: usize, _cc: &mut Consts) -> ExactComplex {
     // x exp(πi/4) = x (√2/2 + i √2/2)
     let two = ExactNum::from_u8(2, p);
     let s = two.sqrt(p, RoundingMode::None);
-    let h = ExactNum::div_ref(x, &s, p, RoundingMode::None);
-    ExactComplex::new(h.clone(), h)
+    // Both parts are `x / √2`: each is its own (deterministic, bit-identical) quotient.
+    ExactComplex::new(
+        ExactNum::div_ref(x, &s, p, RoundingMode::None),
+        ExactNum::div_ref(x, &s, p, RoundingMode::None),
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -1649,7 +1652,7 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::scorer_hi`].
     fn scorer_hi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         // DLMF 9.12.29: Hi(+∞)=+∞. DLMF 9.12.27: Hi(−∞)=+0 (∼1/(πx)).
         if self.is_inf_pos() {
@@ -2114,9 +2117,15 @@ impl ExactNum {
         let Some(s_i) = i64::try_from(s).ok() else {
             return cat_nan();
         };
-        let mut aa = a.clone();
+        // The shifted parameter starts at `a` itself (`None`, read through the borrow); every
+        // shift `a + k` is owned.
+        let mut aa_own: Option<ExactNum> = None;
         let mut extra = ExactNum::new(wrk);
-        while matches!(aa.compare(&ExactNum::from_u8(1, wrk)), Some(c) if c < 0) {
+        loop {
+            let aa = aa_own.as_ref().unwrap_or(a);
+            if !matches!(aa.compare(&ExactNum::from_u8(1, wrk)), Some(c) if c < 0) {
+                break;
+            }
             if aa.is_zero() || (aa.is_int() && !aa.is_positive()) {
                 return cat_nan();
             }
@@ -2129,10 +2138,19 @@ impl ExactNum {
                 wrk,
                 RoundingMode::None,
             );
-            aa = aa.add(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None);
+            aa_own = Some(ExactNum::add_ref(
+                aa,
+                &ExactNum::from_u8(1, wrk),
+                wrk,
+                RoundingMode::None,
+            ));
         }
         finish(
-            hurwitz_em(s, &aa, wrk, cc).add(&extra, wrk, RoundingMode::None),
+            hurwitz_em(s, aa_own.as_ref().unwrap_or(a), wrk, cc).add(
+                &extra,
+                wrk,
+                RoundingMode::None,
+            ),
             p,
             rm,
         )

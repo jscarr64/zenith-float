@@ -225,11 +225,10 @@ impl Ball {
     }
 
     fn nan_ball(p: usize) -> Self {
-        let n = ExactNum::nan(Some(Error::InvalidArgument));
         let _ = p;
         Ball {
-            mid: n.clone(),
-            rad: n,
+            mid: ExactNum::nan(Some(Error::InvalidArgument)),
+            rad: ExactNum::nan(Some(Error::InvalidArgument)),
         }
     }
 
@@ -291,10 +290,10 @@ impl ComplexBall {
     }
 
     fn nan_disk() -> Self {
-        let n = ExactNum::nan(Some(Error::InvalidArgument));
+        let nan = || ExactNum::nan(Some(Error::InvalidArgument));
         ComplexBall {
-            mid: ExactComplex::new(n.clone(), n.clone()),
-            rad: n,
+            mid: ExactComplex::new(nan(), nan()),
+            rad: nan(),
         }
     }
 

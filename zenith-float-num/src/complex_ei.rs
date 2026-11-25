@@ -325,25 +325,31 @@ impl ExactComplex {
     fn ei_series(&self, p: usize, cc: &mut Consts) -> Self {
         let g = ExactComplex::from_real(cc.euler_gamma(p, RoundingMode::None), p);
         let lnz = self.ln(p, RoundingMode::None, cc);
-        let mut term = self.clone();
-        let mut sum = term.clone();
+        // The first term and the sum both start at `z` itself: `None` reads the borrowed `self`.
+        let mut term: Option<Self> = None;
+        let mut sum: Option<Self> = None;
         // Terms peak near n = |z| and then decay; run until the tail is below 2^{-p}.
         let mut n: u32 = 2;
-        loop {
+        let sum = loop {
             let nw = ExactComplex::from_real(ExactNum::from_u32(n, p), p);
-            term = term
+            let term_new = term
+                .as_ref()
+                .unwrap_or(self)
                 .mul(self, p, RoundingMode::None)
                 .div(&nw, p, RoundingMode::None);
-            let piece = term.div(&nw, p, RoundingMode::None);
-            sum = sum.add(&piece, p, RoundingMode::None);
+            let piece = term_new.div(&nw, p, RoundingMode::None);
+            let sum_new =
+                ExactComplex::add_ref(sum.as_ref().unwrap_or(self), &piece, p, RoundingMode::None);
             if term_negligible(&piece, p) {
-                break;
+                break sum_new;
             }
             let Some(next) = n.checked_add(1) else {
                 return nan_pair(Error::PrecisionRetryExhausted);
             };
+            term = Some(term_new);
+            sum = Some(sum_new);
             n = next;
-        }
+        };
         g.add(&lnz, p, RoundingMode::None)
             .add(&sum, p, RoundingMode::None)
     }
@@ -354,7 +360,7 @@ impl ExactComplex {
             .exp(p, RoundingMode::None, cc)
             .div(self, p, RoundingMode::None);
         let mut term = ExactComplex::one(p);
-        let mut s = term.clone();
+        let mut s = ExactComplex::one(p);
         let mut prev_e = Exponent::MIN;
         let mut k: u32 = 1;
         loop {
@@ -418,8 +424,8 @@ impl ExactComplex {
             work_p,
             RoundingMode::None,
         );
-        let arg_z = self.ln(work_p, RoundingMode::None, cc).im().clone();
-        let arg_p = iz.ln(work_p, RoundingMode::None, cc).im().clone();
+        let (_, arg_z) = self.ln(work_p, RoundingMode::None, cc).into_parts();
+        let (_, arg_p) = iz.ln(work_p, RoundingMode::None, cc).into_parts();
         let (_, arg_m) = neg_c(iz).ln(work_p, RoundingMode::None, cc).into_parts();
         let corr = arg_z.sub(
             &arg_p

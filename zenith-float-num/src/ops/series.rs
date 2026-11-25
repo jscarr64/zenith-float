@@ -432,14 +432,22 @@ fn series_horner<T: PolycoeffGen>(
     }
 
     let last_coeff = polycoeff_gen.next(RoundingMode::None)?;
-    let mut acc = last_coeff.clone()?;
+    // Horner starts at the generator's last coefficient, read through its borrow; every step
+    // after it is owned (`mul` and `add` read their operands by reference).
+    let mut acc: Option<ExactNumNumber> = None;
 
     for coeff in cache.iter().rev() {
-        acc = acc.mul(&x_step, p, RoundingMode::None)?;
-        acc = acc.add(coeff, p, RoundingMode::None)?;
+        let t = acc
+            .as_ref()
+            .unwrap_or(last_coeff)
+            .mul(&x_step, p, RoundingMode::None)?;
+        acc = Some(t.add(coeff, p, RoundingMode::None)?);
     }
 
-    acc = acc.mul(&x_first, p, RoundingMode::None)?;
+    let acc = acc
+        .as_ref()
+        .unwrap_or(last_coeff)
+        .mul(&x_first, p, RoundingMode::None)?;
 
     add.add(&acc, p, RoundingMode::None)
 }
