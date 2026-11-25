@@ -521,7 +521,8 @@ impl ExactNumNumber {
     ///
     /// ## Errors
     ///
-    ///  - InvalidArgument: `self == 1` (the pole), or the precision is incorrect.
+    ///  - DivisionByZero: `self == 1`, the pole (POLE-08: ζ(1) = +Inf, divideByZero, exact; the caller maps it to +Inf).
+    ///  - InvalidArgument: the precision is incorrect.
     ///  - ExponentOverflow: the result overflows (very negative `self`).
     pub(crate) fn zeta_real(
         &self,
@@ -539,7 +540,7 @@ impl ExactNumNumber {
             return Ok(h);
         }
         if self.cmp(&one) == 0 {
-            return Err(Error::InvalidArgument);
+            return Err(Error::DivisionByZero);
         }
         if self.is_negative() && self.is_even_int() {
             // Trivial zeros ζ(-2k) are +0.

@@ -60,10 +60,15 @@ def inf(sign: str) -> dict:
 
 
 def overflow(sign: str, prec: int, rm: str, sig: int | None = None) -> dict:
-    """Overflow result: largest finite when the mode rounds toward zero for this sign, else Inf."""
+    """Overflow result: largest finite when the mode rounds toward zero for this sign, else Inf.
+
+    `None` is toward zero at the storage precision (FIXLIST ZF-M27; the 12:03 / 12:15 PM CT rulings M27-FB and
+    M27-OVF): a finite result past the range is the signed MAX, inexact, never +-Inf."""
     if sig is None:
         sig = prec
-    toward_zero = (rm == "ToZero") or (rm == "Down" and sign == "+") or (rm == "Up" and sign == "-")
+    toward_zero = (
+        rm in ("ToZero", "None") or (rm == "Down" and sign == "+") or (rm == "Up" and sign == "-")
+    )
     if toward_zero:
         mant = ((1 << sig) - 1) << (prec - sig)
         return {"k": "f", "s": sign, "e": EMAX, "m": words_of(mant, prec)}

@@ -21,3 +21,11 @@
   and covers all 7 modes, tests/mpfr/mp.rs drops its f64 conversions (fuzz_round_modes checks the MPFR product
   with integer bounds), `ci_no_intrinsics.sh` also catches suffixed float literals (`1.5_f64`), and the
   rules-enforcement fixtures carry the unlisted-clone baseline.
+- Batch 4 (Paul 12:32 AM CT items 3, 4): `riemann_zeta(1)` is `+Inf`, exact, divideByZero (POLE-08); the 12 held
+  zeta(1) golden rows (POLE08_ZETA_HELD, s9 EXCLUDED_IDS) are gone and run every time. The golden generators give the
+  ZF-M27 ruled `None` overflow (signed MAX at the storage precision, inexact; gen_oracle_goldens.py and
+  mpfr_oracle.c agree), so edges.jsonl's 60 F-B rows now expect MAX. The library still returns +-Inf there, so
+  those 60 rows stay held: they run every time and must still give +-Inf (the test fails when one matches its
+  golden). gen_specials_goldens.py resolves each row with a Ziv loop (it used to inherit the previous row's
+  precision) and carries the right E(fl(pi/2)|1) note for p=512; a full regeneration of all three generators
+  is byte-identical to the committed goldens (checked against FLINT arb and mpmath).

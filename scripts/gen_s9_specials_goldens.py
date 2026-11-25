@@ -485,7 +485,7 @@ def build_cases():
         add("zeta", "cosmology", [d(s)], ps=[24, 53, 113], resid=(-1 if s == "1e-60" else 1))
     add("zeta", "cosmology", [d("1e60")], resid=1, ps=[24, 53], note="1 + 2^-s")
     add("zeta", "extreme", [("pow2", E_TOP)], resid=1, ps=[24, 53])
-    add("zeta", "pole", [d("1")], outcome="nan", ps=[53])
+    add("zeta", "pole", [d("1")], outcome="+inf", ps=[53])  # POLE-08: +Inf, divideByZero, exact
     add("zeta", "large-prec", [d("2")], ps=[16384, 65536])
     # ---------------- beta
     for a, b in [("0.5", "0.5"), ("1.5", "2.25"), ("3.5", "0.25"), ("-0.5", "0.25"), ("10.5", "20.25")]:

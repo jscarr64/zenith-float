@@ -244,7 +244,8 @@ def call_mp(op: str, args: list, extra: dict):
         return mp.clcos(3, a[0])
     if op == "riemann_zeta":
         if a[0] == 1:
-            return "nan"
+            # POLE-08: zeta(1) = +Inf, divideByZero, exact (mpmath raises at the pole).
+            return mp.inf
         return mp.zeta(a[0])
     if op == "hurwitz_zeta":
         return mp.hurwitz(a[0], a[1])
@@ -523,11 +524,38 @@ def eval_row(op: str, raw_args: list[str], p: int, rm: str, extra: dict) -> dict
                     parsed_extra[key].append(mpf_arg(str(item), p))
     if "decimal" in extra:
         parsed_extra["decimal"] = extra["decimal"]
-    try:
-        value = call_mp(op, nums, parsed_extra)
-    except (ValueError, ZeroDivisionError):
-        value = "nan"
-    return pack(value, p, rm)
+    return resolved(lambda: call_mp(op, nums, parsed_extra), p, rm)
+
+
+def has_zero_part(packed: dict) -> bool:
+    """A packed golden with a zero real value or a zero complex part."""
+    parts = [packed["re"], packed["im"]] if packed.get("k") == "c" else [packed]
+    return any(q.get("k") == "f" and all(w == "0" * 16 for w in q.get("m", [])) for q in parts)
+
+
+def resolved(compute, p: int, rm: str) -> dict:
+    """Ziv loop on the golden itself: pack the oracle value at working precision P and 2P, doubling P until the two
+    agree, so a row never depends on the precision a previous row left in mp.mp. A zero value or part (an exact
+    zero, or a part cancelled away as in K_1(-500) = -K_1(500) - i pi I_1(500), whose real part ~2^-725 sits 1443
+    bits under the imaginary part) is accepted only when it still packs the same at 16P."""
+    import mpmath as mp
+
+    def at(prec: int) -> dict:
+        with mp.workprec(prec):
+            try:
+                value = compute()
+            except (ValueError, ZeroDivisionError):
+                value = "nan"
+            return pack(value, p, rm)
+
+    prec = 2 * g.round_p(p) + 256
+    while True:
+        a, b = at(prec), at(2 * prec)
+        if a == b and (not has_zero_part(a) or at(16 * prec) == a):
+            return a
+        prec *= 2
+        if prec > 1 << 20:
+            raise RuntimeError(f"golden not resolved below 2^20 bits at p={p} {rm}")
 
 
 # (op, args, exact, lost_max or None, note or None, extra or None, only_deep_toeven)
@@ -649,7 +677,7 @@ def base_cases() -> list[dict]:
     add("clausen_cl3", ["1"], exact=False, note="nonzero angle")
     # zeta(1) stays an error; non-integer s is a value (ruling 3).
     add("riemann_zeta", ["0.5"], exact=True, note="non-integer s is a value")
-    add("riemann_zeta", ["1"], note="pole stays InvalidArgument")
+    add("riemann_zeta", ["1"], note="pole: +Inf, divideByZero, exact (POLE-08)")
     add("riemann_zeta", ["4"], exact=True, note="even integer formula")
     add("hurwitz_zeta", ["3", "0.25"], exact=True)
     # Meijer / Fox exp(-1/2). Limb check: 12 stored ulps is still a miss at full word.
@@ -737,7 +765,8 @@ def phi_cases() -> list[dict]:
         (["0.2", "1.5"], "m > 1, small phi, real"),
         (["1", "1.5"], "m > 1, path not real"),
         (["2", "1"], "E(2|1) stays real"),
-        ([HALF_PI, "1"], "E(fl(pi/2)|1) = sin(fl(pi/2)) below pi/2"),
+        ([HALF_PI, "1"], "E(fl(pi/2)|1): sin(fl(pi/2)) at p=256 (fl(pi/2) < pi/2); 2 - sin(fl(pi/2)) at p=512 "
+         "(fl(pi/2) > pi/2, so E is slightly above 1 and Up/FromZero are 1+ulp)"),
         ([HALF_PI, "1.5"], "E(pi/2|m>1) is not real"),
         ([neg_half, "0.5"], "E(-fl(pi/2)|0.5) = -E(fl(pi/2)|0.5)"),
         (["inf", "0.5"], "infinity is InvalidArgument"),

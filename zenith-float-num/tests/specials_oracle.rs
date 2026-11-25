@@ -681,26 +681,8 @@ fn push_range(out: &mut String, start: usize, end: usize) {
     }
 }
 
-/// M27-POLE08 (held): `riemann_zeta(1)` rows in `specials/zeta.jsonl` (p in {53, 64, 113, 128, 256}, both tiers).
-/// The golden expects NaN(InvalidArgument); POLE-08 rules zeta(1) = +Inf, divideByZero, exact. The library still
-/// returns NaN, so the rows are left out by id (no golden regen in #39); `zeta` asserts all 7 were found. ZF-M27
-/// fixes them red-first.
-const POLE08_ZETA_HELD: &[&str] = &[
-    "riemann_zeta-53-ToEven-29",
-    "riemann_zeta-53-Up-30",
-    "riemann_zeta-113-ToEven-31",
-    "riemann_zeta-113-Up-32",
-    "riemann_zeta-64-ToEven-33",
-    "riemann_zeta-128-ToEven-34",
-    "riemann_zeta-256-ToEven-35",
-];
-
+/// Runs every row of `name` (every tier, no row left out).
 fn run_file(name: &str) -> Result<(), String> {
-    run_file_holding(name, &[]).map(|_| ())
-}
-
-/// Runs `name`, leaving out the rows whose id is in `held` (every tier); returns how many held rows it found.
-fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
     let path = format!(
         "{}/tests/oracle/goldens/specials/{name}.jsonl",
         env!("CARGO_MANIFEST_DIR")
@@ -714,7 +696,6 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(12usize);
-    let mut held_found = 0usize;
     for (idx, line) in text.lines().enumerate() {
         if line.is_empty() {
             continue;
@@ -726,10 +707,6 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             .and_then(|v| v.as_str())
             .unwrap_or("?")
             .to_string();
-        if held.contains(&id.as_str()) {
-            held_found += 1;
-            continue;
-        }
         // Every row runs every time; the row's "tier" (fast/deep) is a label only.
         ran += 1;
         let line_no = idx + 1;
@@ -774,8 +751,8 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             samples.join("\n")
         ));
     }
-    eprintln!("{name}.jsonl passed {ran}, held {held_found}");
-    Ok(held_found)
+    eprintln!("{name}.jsonl passed {ran}");
+    Ok(())
 }
 
 #[test]
@@ -850,10 +827,7 @@ fn clausen() -> Result<(), String> {
 
 #[test]
 fn zeta() -> Result<(), String> {
-    let held = run_file_holding("zeta", POLE08_ZETA_HELD)?;
-    // M27-POLE08: the 7 riemann_zeta(1) NaN rows are held, not asserted
-    assert_eq!(held, 7);
-    Ok(())
+    run_file("zeta")
 }
 
 #[test]

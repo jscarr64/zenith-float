@@ -78,9 +78,10 @@ static void emit_sign_z(int sign, mpz_t z, long ez) {
     printf(" %ld\n", ez);
 }
 
-/* Overflow: largest finite when the mode rounds toward zero for this sign, else Inf. */
+/* Overflow: largest finite when the mode rounds toward zero for this sign, else Inf. None is toward zero at the
+   storage precision (FIXLIST ZF-M27, rulings M27-FB / M27-OVF): signed MAX, as MPFR_RNDZ (rnd_of) gives. */
 static void emit_overflow(int sign, int prec, const char *rm) {
-    int toward_zero = (strcmp(rm, "ToZero") == 0) || (strcmp(rm, "Down") == 0 && sign >= 0) ||
+    int toward_zero = (strcmp(rm, "ToZero") == 0) || (strcmp(rm, "None") == 0) || (strcmp(rm, "Down") == 0 && sign >= 0) ||
                       (strcmp(rm, "Up") == 0 && sign < 0);
     if (toward_zero) {
         mpz_t z;

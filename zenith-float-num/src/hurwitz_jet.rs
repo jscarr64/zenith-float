@@ -916,9 +916,9 @@ mod tests {
             "zeta(0) is not -1/2"
         );
 
-        // Pole at s = 1.
+        // Pole at s = 1: +Inf, exact (POLE-08, divideByZero).
         let z1 = ExactNum::from_u8(1, p).riemann_zeta(p, RoundingMode::ToEven, &mut cc);
-        assert!(z1.is_nan(), "zeta(1) must refuse the pole");
+        assert!(z1.is_inf_pos(), "zeta(1) is +Inf (POLE-08)");
 
         // Trivial zeros: ζ(-2) = ζ(-4) = 0.
         for n in [-2i32, -4] {

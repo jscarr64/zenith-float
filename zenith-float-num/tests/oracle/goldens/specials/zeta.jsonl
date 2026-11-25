@@ -26,13 +26,13 @@
 {"id":"riemann_zeta-64-ToEven-26","tier":"deep","op":"riemann_zeta","p":64,"rm":"ToEven","args":["0.5"],"budget_s":10,"expect":{"k":"f","s":"-","e":1,"m":["baece583f39ff71c"]},"exact":true,"note":"non-integer s is a value"}
 {"id":"riemann_zeta-128-ToEven-27","tier":"deep","op":"riemann_zeta","p":128,"rm":"ToEven","args":["0.5"],"budget_s":10,"expect":{"k":"f","s":"-","e":1,"m":["f41a72115e5abcd1","baece583f39ff71b"]},"exact":true,"note":"non-integer s is a value"}
 {"id":"riemann_zeta-256-ToEven-28","tier":"deep","op":"riemann_zeta","p":256,"rm":"ToEven","args":["0.5"],"budget_s":10,"expect":{"k":"f","s":"-","e":1,"m":["a213afbdd40c1304","14c72921c6311823","f41a72115e5abcd1","baece583f39ff71b"]},"exact":true,"note":"non-integer s is a value"}
-{"id":"riemann_zeta-53-ToEven-29","tier":"fast","op":"riemann_zeta","p":53,"rm":"ToEven","args":["1"],"budget_s":2,"expect":{"k":"nan","err":"InvalidArgument"},"note":"pole stays InvalidArgument"}
-{"id":"riemann_zeta-53-Up-30","tier":"fast","op":"riemann_zeta","p":53,"rm":"Up","args":["1"],"budget_s":2,"expect":{"k":"nan","err":"InvalidArgument"},"note":"pole stays InvalidArgument"}
-{"id":"riemann_zeta-113-ToEven-31","tier":"fast","op":"riemann_zeta","p":113,"rm":"ToEven","args":["1"],"budget_s":2,"expect":{"k":"nan","err":"InvalidArgument"},"note":"pole stays InvalidArgument"}
-{"id":"riemann_zeta-113-Up-32","tier":"fast","op":"riemann_zeta","p":113,"rm":"Up","args":["1"],"budget_s":2,"expect":{"k":"nan","err":"InvalidArgument"},"note":"pole stays InvalidArgument"}
-{"id":"riemann_zeta-64-ToEven-33","tier":"deep","op":"riemann_zeta","p":64,"rm":"ToEven","args":["1"],"budget_s":10,"expect":{"k":"nan","err":"InvalidArgument"},"note":"pole stays InvalidArgument"}
-{"id":"riemann_zeta-128-ToEven-34","tier":"deep","op":"riemann_zeta","p":128,"rm":"ToEven","args":["1"],"budget_s":10,"expect":{"k":"nan","err":"InvalidArgument"},"note":"pole stays InvalidArgument"}
-{"id":"riemann_zeta-256-ToEven-35","tier":"deep","op":"riemann_zeta","p":256,"rm":"ToEven","args":["1"],"budget_s":10,"expect":{"k":"nan","err":"InvalidArgument"},"note":"pole stays InvalidArgument"}
+{"id":"riemann_zeta-53-ToEven-29","tier":"fast","op":"riemann_zeta","p":53,"rm":"ToEven","args":["1"],"budget_s":2,"expect":{"k":"inf","s":"+"},"note":"pole: +Inf, divideByZero, exact (POLE-08)"}
+{"id":"riemann_zeta-53-Up-30","tier":"fast","op":"riemann_zeta","p":53,"rm":"Up","args":["1"],"budget_s":2,"expect":{"k":"inf","s":"+"},"note":"pole: +Inf, divideByZero, exact (POLE-08)"}
+{"id":"riemann_zeta-113-ToEven-31","tier":"fast","op":"riemann_zeta","p":113,"rm":"ToEven","args":["1"],"budget_s":2,"expect":{"k":"inf","s":"+"},"note":"pole: +Inf, divideByZero, exact (POLE-08)"}
+{"id":"riemann_zeta-113-Up-32","tier":"fast","op":"riemann_zeta","p":113,"rm":"Up","args":["1"],"budget_s":2,"expect":{"k":"inf","s":"+"},"note":"pole: +Inf, divideByZero, exact (POLE-08)"}
+{"id":"riemann_zeta-64-ToEven-33","tier":"deep","op":"riemann_zeta","p":64,"rm":"ToEven","args":["1"],"budget_s":10,"expect":{"k":"inf","s":"+"},"note":"pole: +Inf, divideByZero, exact (POLE-08)"}
+{"id":"riemann_zeta-128-ToEven-34","tier":"deep","op":"riemann_zeta","p":128,"rm":"ToEven","args":["1"],"budget_s":10,"expect":{"k":"inf","s":"+"},"note":"pole: +Inf, divideByZero, exact (POLE-08)"}
+{"id":"riemann_zeta-256-ToEven-35","tier":"deep","op":"riemann_zeta","p":256,"rm":"ToEven","args":["1"],"budget_s":10,"expect":{"k":"inf","s":"+"},"note":"pole: +Inf, divideByZero, exact (POLE-08)"}
 {"id":"riemann_zeta-53-ToEven-36","tier":"fast","op":"riemann_zeta","p":53,"rm":"ToEven","args":["4"],"budget_s":2,"expect":{"k":"f","s":"+","e":1,"m":["8a8991563ec24000"]},"exact":true,"note":"even integer formula"}
 {"id":"riemann_zeta-53-Up-37","tier":"fast","op":"riemann_zeta","p":53,"rm":"Up","args":["4"],"budget_s":2,"expect":{"k":"f","s":"+","e":1,"m":["8a8991563ec24800"]},"exact":true,"note":"even integer formula"}
 {"id":"riemann_zeta-113-ToEven-38","tier":"fast","op":"riemann_zeta","p":113,"rm":"ToEven","args":["4"],"budget_s":2,"expect":{"k":"f","s":"+","e":1,"m":["f91211196e520000","8a8991563ec241b5"]},"exact":true,"note":"even integer formula"}

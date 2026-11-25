@@ -7,8 +7,7 @@
 //! bits over the i64 exponent range.
 //!
 //! Every row runs in every build (r6: the `MPFR_TIER` switch is gone). Digamma rows at p >= 16384 (`full_tier_only`) give
-//! the digamma table the full-tier budgets. `EXCLUDED_IDS` (empty since S3) never run.
-//! `POLE08_ZETA_HELD` (the five zeta(1) rows, known-wrong NaN) never run either; `s9_zeta` counts them.
+//! the digamma table the full-tier budgets. No row is left out (the zeta(1) rows are +Inf, POLE-08).
 //!
 //! One test per function. A test fails when any of its rows differs, times out,
 //! or has no directed implementation yet (`Unsupported`).
@@ -263,40 +262,6 @@ fn full_tier_only(row: &Value) -> bool {
             .is_some_and(|p| p >= 16384)
 }
 
-/// Rows excluded from every tier by id. Empty: ψ(½)@65536 (s9-digamma-65536-*) runs in the
-/// full tier again since S3 made Euler γ 0.49 s (release) at p=65536.
-const EXCLUDED_IDS: &[&str] = &[];
-
-/// M27-POLE08 (held): the zeta(1) rows at p = 53, one per mode. The golden expects NaN(InvalidArgument); POLE-08
-/// rules zeta(1) = +Inf, divideByZero, exact. The library still returns NaN, so the rows are left out by id (no
-/// golden regen in #39); `s9_zeta` asserts all 5 are in the goldens. ZF-M27 fixes them red-first.
-const POLE08_ZETA_HELD: &[&str] = &[
-    "s9-zeta-53-ToEven-4580",
-    "s9-zeta-53-Up-4581",
-    "s9-zeta-53-Down-4582",
-    "s9-zeta-53-ToZero-4583",
-    "s9-zeta-53-FromZero-4584",
-];
-
-/// How many golden rows have an id in `ids`.
-fn held_rows(ids: &[&str]) -> Result<usize, String> {
-    let mut n = 0usize;
-    for line in GOLDS.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let row: Value = serde_json::from_str(line).map_err(|e| format!("json: {e}"))?;
-        n += usize::from(row_id_in(&row, ids));
-    }
-    Ok(n)
-}
-
-fn row_id_in(row: &Value, ids: &[&str]) -> bool {
-    row.get("id")
-        .and_then(Value::as_str)
-        .is_some_and(|id| ids.contains(&id))
-}
-
 fn rows_for(func: &str) -> Result<Vec<Value>, String> {
     let mut out = Vec::new();
     for line in GOLDS.lines() {
@@ -304,10 +269,7 @@ fn rows_for(func: &str) -> Result<Vec<Value>, String> {
             continue;
         }
         let row: Value = serde_json::from_str(line).map_err(|e| format!("json: {e}"))?;
-        if row.get("fn").and_then(Value::as_str) == Some(func)
-            && !row_id_in(&row, EXCLUDED_IDS)
-            && !row_id_in(&row, POLE08_ZETA_HELD)
-        {
+        if row.get("fn").and_then(Value::as_str) == Some(func) {
             out.push(row);
         }
     }
@@ -464,8 +426,6 @@ fn s9_bessel_j1() -> Result<(), String> {
 
 #[test]
 fn s9_zeta() -> Result<(), String> {
-    // M27-POLE08: the 5 zeta(1) NaN rows are held, not asserted
-    assert_eq!(held_rows(POLE08_ZETA_HELD)?, 5);
     check("zeta")
 }
 

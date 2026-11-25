@@ -2157,7 +2157,7 @@ impl ExactNum {
     }
 
     /// Riemann \(\zeta(s)\) for real \(s\). \(\zeta(-2k)=+0\); the pole \(s=1\) is
-    /// `NaN(InvalidArgument)`. `self` is \(s\).
+    /// `+Inf`, exact (POLE-08, divideByZero). `self` is \(s\).
     ///
     /// Accuracy: unspecified
     pub fn riemann_zeta(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
