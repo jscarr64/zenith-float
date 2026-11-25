@@ -100,5 +100,23 @@ expect "a subdir of a work tree, not its top"            2 run --repo "$r/sub"
 expect "no target given"                                 2 run
 r=$(fresh gx); commit_at "$r" 60 x1; commit_at "$r" 50 x2; h=$(git -C "$r" rev-parse HEAD); rm -f "$r/.git/objects/${h:0:2}/${h:2}"
 expect "missing commit object: git error"                2 run --repo "$r"
+# ---- unpushed age: FAIL when the OLDEST unpushed commit is more than 30 min old (exactly 30 min passes) ----
+r=$(fresh a1x); commit_at "$r" 1800 c1
+                expect "1 ahead, exactly 30 min"           0 run --repo "$r"
+r=$(fresh a1y); commit_at "$r" 1801 c1
+                expect "1 ahead, 30 min + 1 s"             1 run --repo "$r"
+r=$(fresh a1z); commit_at "$r" 1799 c1
+                expect "1 ahead, 30 min - 1 s"             0 run --repo "$r"
+r=$(fresh am5); commit_at "$r" 600 c1
+                expect "10 min old with --max-age-min 5"   1 run --repo "$r" --max-age-min 5
+# the OLDEST commit decides, not the newest (Cassie B5a)
+r=$(fresh oa1); commit_at "$r" 1801 c1; commit_at "$r" 60 c2
+                expect "oldest of 2 is 30 min + 1 s (--max-ahead 2)" 1 run --repo "$r" --max-ahead 2
+r=$(fresh oa0); commit_at "$r" 1800 c1; commit_at "$r" 60 c2
+                expect "oldest of 2 is exactly 30 min (--max-ahead 2)" 0 run --repo "$r" --max-ahead 2
+r=$(fresh dha); git -C "$r" switch -q --detach; commit_at "$r" 1800 d1
+                expect "detached HEAD, 1 unpushed exactly 30 min" 0 run --repo "$r"
+r=$(fresh dhb); git -C "$r" switch -q --detach; commit_at "$r" 1801 d1
+                expect "detached HEAD, 1 unpushed 30 min + 1 s"   1 run --repo "$r"
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
