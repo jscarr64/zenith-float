@@ -2,7 +2,8 @@
 """drift_check: no work piles up unpushed (Jeff 2026-11-25: "We should be able to push and merge as we go").
 
 Plan v2 C-DRIFT / C-AHEAD. FAIL (rc 1) when, in a checked work tree,
-  * a local branch, or a detached HEAD, is more than MAX_AHEAD (default 1) commits ahead of what is pushed.
+  * a local branch, or a detached HEAD, is more than MAX_AHEAD (default 1) commits ahead of what is pushed, or
+  * its OLDEST unpushed commit (committer time) is older than MAX_AGE (default 30 min; exactly 30 min passes).
 "Ahead of what is pushed" = commits on the branch that are not on its upstream, when the upstream is a
 remote-tracking ref (refs/remotes/*) that exists; otherwise (no upstream, an upstream that is gone, or an upstream
 that is another LOCAL branch) commits that are on no remote-tracking ref (`--not --remotes`). A detached HEAD is
@@ -86,7 +87,7 @@ def head_state(repo):
         return True, sha
 
 
-def check_repo(repo, now, max_ahead, report):
+def check_repo(repo, now, max_ahead, max_age, report):
     bad = 0
     detached, head = head_state(repo)
     tips = set()
@@ -96,10 +97,14 @@ def check_repo(repo, now, max_ahead, report):
         short = name[len("refs/heads/"):]
         if n > max_ahead:
             report("FAIL %s %s: %d commits ahead of what is pushed (max %d)" % (repo, short, n, max_ahead)); bad = 1
+        elif n and now - oldest > max_age:
+            report("FAIL %s %s: unpushed commit %d s old (max %d s)" % (repo, short, now - oldest, max_age)); bad = 1
     if detached and head not in tips:
         n, oldest = unpushed(repo, "HEAD", "")
         if n > max_ahead:
             report("FAIL %s detached HEAD: %d commits not on any remote ref (max %d)" % (repo, n, max_ahead)); bad = 1
+        elif n and now - oldest > max_age:
+            report("FAIL %s detached HEAD: unpushed commit %d s old (max %d s)" % (repo, now - oldest, max_age)); bad = 1
     if not bad:
         report("ok   %s" % repo)
     return bad
@@ -119,6 +124,7 @@ def main(argv=None):
     ap.add_argument("--active-window-min", type=float, default=1440)
     a = ap.parse_args(argv)
     now = time.time() if a.now is None else a.now
+    max_age = a.max_age_min * 60
     report = lambda s: print("drift_check: " + s)
     repos = []
     for r in a.repo:
@@ -132,11 +138,12 @@ def main(argv=None):
     bad = 0
     try:
         for r in repos:
-            bad |= check_repo(r, now, a.max_ahead, report)
+            bad |= check_repo(r, now, a.max_ahead, max_age, report)
     except GitError as e:
         print("drift_check: %s" % e, file=sys.stderr)
         return 2
-    print("drift_check: %s (%d repo(s), max %d ahead)" % ("FAIL" if bad else "ok", len(repos), a.max_ahead))
+    print("drift_check: %s (%d repo(s), max %d ahead, max age %g min)"
+          % ("FAIL" if bad else "ok", len(repos), a.max_ahead, a.max_age_min))
     return 1 if bad else 0
 
 
