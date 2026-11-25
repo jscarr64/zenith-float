@@ -1,3 +1,49 @@
 #!/usr/bin/env bash
-# zenith-float pre-push hook (scaffold: no check yet; the scan of the pushed commit lands with its red test first).
-exit 0
+# zenith-float pre-push hook (plan v2 C-HOOK; Jeff 2026-11-25: push every small step, gate on Pop).
+# Judges the PUSHED commit, never the pusher's working tree. For every pushed ref (deletions skipped):
+#   a clean `git clone --shared --no-checkout` of this repo, checked out at the pushed sha under
+#   ${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-push (never /tmp), and inside that clone:
+#   1. tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..<sha>"   the CI rules-scan command; REQUIRED (missing = FAIL)
+#   2. tools/no_suppress_scan.py --root <clone>                  run when the pushed tree has it (reported if absent)
+# Why (2026-11-25 2:11 PM CT refusal of d41d938, reproduced in tools/pre_push_selftest.sh against #40's hook):
+#   * git exports GIT_DIR=<gitdir> to hooks; from a linked worktree it is absolute, so `git -C <clone> checkout`
+#     acted on the pusher's repo and the clone stayed empty -> "could not check out ... no no_suppress_scan.py".
+#     This hook unsets GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE / GIT_COMMON_DIR before any git call.
+#   * rules_scan ran in the pusher's worktree, and its count checks read working-tree files, so dirty files could
+#     fail (or pass) a clean commit. Here every scanner runs inside the clean clone.
+# The hook never runs tests, so a deliberate red-first commit (tests that fail, no fix yet) pushes.
+# A FAIL stops the push; fix it, never push with --no-verify. Enable: git config core.hooksPath .githooks
+# Test: tools/pre_push_selftest.sh
+set -u
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+src="$(git rev-parse --show-toplevel)" || exit 2
+base="${RATCHET_BASE:-c74e834^}"
+zero=0000000000000000000000000000000000000000
+rc=0
+n=0
+scratch="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-push"
+mkdir -p "$scratch" || exit 2
+tmp=$(mktemp -d "$scratch/run.XXXXXX") || exit 2
+trap 'rm -rf "$tmp"' EXIT       # every clone lives under $tmp
+while read -r lref lsha rref rsha; do
+  [ -z "${lsha:-}" ] && continue
+  if [ "$lsha" = "$zero" ]; then echo "pre-push: $rref deleted, nothing to scan"; continue; fi
+  n=$((n + 1)); t="$tmp/$n"          # one clone per ref: the same sha may be pushed to two refs
+  if ! { git clone -q --shared --no-checkout "$src" "$t" && git -C "$t" checkout -q --detach "$lsha"; }; then
+    echo "pre-push: FAIL could not check out $lsha in a clean clone of $src"; rc=1; continue
+  fi
+  echo "pre-push: == rules-scan (clean clone at $lsha): tools/rules_scan.sh $base..$lsha ($lref -> $rref)"
+  if [ ! -f "$t/tools/rules_scan.sh" ]; then
+    echo "pre-push: FAIL rules-scan: $lsha has no tools/rules_scan.sh"; rc=1
+  elif (cd "$t" && bash tools/rules_scan.sh "$base..$lsha"); then echo "pre-push: ok rules-scan"
+  else echo "pre-push: FAIL rules-scan"; rc=1; fi
+  if [ -f "$t/tools/no_suppress_scan.py" ]; then
+    echo "pre-push: == no-suppress (clean clone at $lsha)"
+    if (cd "$t" && python3 -B tools/no_suppress_scan.py --root "$t"); then echo "pre-push: ok no-suppress"
+    else echo "pre-push: FAIL no-suppress"; rc=1; fi
+  else
+    echo "pre-push: note: $lsha has no tools/no_suppress_scan.py (lands with #40); skipped"
+  fi
+done
+if [ $rc -eq 0 ]; then echo "pre-push: ok"; else echo "pre-push: FAIL (push refused; fix it, never --no-verify)"; fi
+exit $rc
