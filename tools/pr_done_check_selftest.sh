@@ -108,5 +108,28 @@ m="$work/m-two"; mkdir -p "$m/compare" "$m/branches"; echo "[$(pr 19 OPEN f/t tt
 MOCK="$m" python3 -B "$pc" --repo o/bad --repo o/good >/dev/null 2>&1; rc=$?; [ $rc = 1 ] && ok "bad repo then good repo (rc=1)" || bad "bad repo then good repo (rc=$rc)"
 # usage
 python3 -B "$pc" >/dev/null 2>&1; rc=$?; [ $rc = 2 ] && ok "no --repo is a usage error (rc=2)" || bad "no --repo (rc=$rc)"
+# ---- branch-not-deleted: a landed PR (merged, or closed with its head on the base) whose branch still exists ----
+scenario "merged and closed, branch deleted"          0 "[$(pr 5 MERGED f/e eeee '"2026-11-07T16:23:25Z"')]"
+scenario "merged and closed, branch kept"             1 "[$(pr 6 MERGED f/g gggg '"2026-11-07T16:23:25Z"')]" branch:f/g=gggg re:'#6.*branch-not-deleted'
+scenario "merged, branch name reused at other sha"    1 "[$(pr 7 MERGED f/h hhhh '"2026-11-07T16:23:25Z"')]" branch:f/h=zzzz re:'#7.*branch-not-deleted'
+scenario "closed unmerged, head not on main, branch kept" 0 "[$(pr 8 CLOSED f/i iiii)]" compare:iiii=diverged branch:f/i=iiii
+scenario "closed unmerged, head on main, branch kept (landed outside GitHub)" 1 "[$(pr 9 CLOSED f/j jjjj)]" compare:jjjj=behind branch:f/j=jjjj re:'#9.*branch-not-deleted'
+scenario "closed unmerged, head on main, branch deleted" 0 "[$(pr 10 CLOSED f/k kkkk)]" compare:kkkk=identical
+scenario "mix: merged with branch kept among good"   1 "[$(pr 21 OPEN f/v vvvv),$(pr 12 MERGED f/m mmmm '"2026-11-01T00:00:00Z"')]" compare:vvvv=ahead branch:f/m=mmmm re:'#12.*branch-not-deleted'
+scenario "branch lookup error fails closed" 2 "[$(pr 14 MERGED f/o oooo '"2026-11-07T16:23:25Z"')]" flag:fail-branch
+scenario "cross-repo PR is skipped, not failed" 0 "$(printf '[{"number":16,"state":"MERGED","headRefName":"f/q","headRefOid":"qqqq","baseRefName":"main","mergedAt":"2026-11-07T16:23:25Z","isCrossRepository":true,"url":"u"},{"number":22,"state":"OPEN","headRefName":"f/w","headRefOid":"wwww","baseRefName":"main","mergedAt":null,"isCrossRepository":true,"url":"u"}]')" branch:f/q=qqqq compare:wwww=identical
+# --since: landed PRs merged before the date (UTC) are not checked for branch deletion
+m="$work/m-since"; mkdir -p "$m/compare" "$m/branches"; echo "[$(pr 17 MERGED f/r rrrr '"2026-10-01T00:00:00Z"')]" > "$m/prs.json"; echo rrrr > "$m/branches/f__r"
+MOCK="$m" python3 -B "$pc" --repo o/r --since 2026-11-01 >/dev/null 2>&1; rc=$?; [ $rc = 0 ] && ok "--since skips older merges (rc=0)" || bad "--since skips older merges (rc=$rc)"
+MOCK="$m" python3 -B "$pc" --repo o/r --since 2026-09-01 >/dev/null 2>&1; rc=$?; [ $rc = 1 ] && ok "--since includes newer merges (rc=1)" || bad "--since includes newer merges (rc=$rc)"
+m="$work/m-since-eq"; mkdir -p "$m/compare" "$m/branches"; echo "[$(pr 18 MERGED f/s ssss '"2026-11-01T09:00:00Z"')]" > "$m/prs.json"; echo ssss > "$m/branches/f__s"
+MOCK="$m" python3 -B "$pc" --repo o/r --since 2026-11-01 >/dev/null 2>&1; rc=$?; [ $rc = 1 ] && ok "--since includes a merge on that date (rc=1)" || bad "--since boundary (rc=$rc)"
+# the UTC date decides: merged 2026-11-24 9 PM CST = 2026-11-25T03:00Z counts as 11-25
+m="$work/m-utc"; mkdir -p "$m/compare" "$m/branches"; echo "[$(pr 23 MERGED f/x xxxx '"2026-11-25T03:00:00Z"')]" > "$m/prs.json"; echo xxxx > "$m/branches/f__x"
+MOCK="$m" python3 -B "$pc" --repo o/r --since 2026-11-25 >/dev/null 2>&1; rc=$?; [ $rc = 1 ] && ok "--since uses the UTC date of mergedAt (rc=1)" || bad "--since UTC date (rc=$rc)"
+# Cassie B9: a --since that is not a real YYYY-MM-DD date is a usage error, not a silent skip
+for bd in yesterday 2026-1-5 2026-02-30 20261105 ""; do
+  MOCK="$m" python3 -B "$pc" --repo o/r --since "$bd" >/dev/null 2>&1; rc=$?; [ $rc = 2 ] && ok "--since '$bd' is a usage error (rc=2)" || bad "--since '$bd' (want rc=2, got rc=$rc)"
+done
 echo "pr_done_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
