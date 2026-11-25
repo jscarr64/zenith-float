@@ -6,7 +6,8 @@
 //!
 //! Replay (CONTRACT 16.LA.4, 16.LA.5, 16.LA3.3): every row at each of `PRECS`. A value passes when every returned ball contains
 //! the exact value; here, when it covers the gold `[lo256, hi256]` (sufficient, 16.LA.5). A ball that only overlaps it would be
-//! re-decided against the heavy enc4096 block, which the gate tier does not carry, so it is reported as a failure naming the entry.
+//! re-decided against the heavy enc4096 block (committed la_qr_enc4096_heavy.txt, la3_qr_hilbert_256_contains_by_heavy_tier);
+//! the plain replay reports it as a failure naming the entry.
 //! lstsq value rows carry the format-2 cond columns (16.LA.5, scripts/la_cond_cols.py la_cond_cols_lstsq); the replay is
 //! containment-only for now (the `k_row` tightness bound is a follow-up commit), the columns themselves are checked below.
 
@@ -691,8 +692,8 @@ const HILBERT_TIERS: [(&str, usize); 8] = [
 /// Rows still only overlapping at enc16384: `containment_only` with a recorded reason (none: every row resolved at enc4096, 2026-10-29).
 const HILBERT_CONTAINMENT_ONLY: [(&str, &str); 0] = [];
 
-fn heavy_rows(dir: &str, name: &str) -> Result<Option<String>, String> {
-    let path = std::path::Path::new(dir).join(name);
+fn heavy_rows(name: &str) -> Result<Option<String>, String> {
+    let path = golden_dir().join("slices").join("qr").join(name);
     if path.exists() {
         std::fs::read_to_string(&path)
             .map(Some)
@@ -725,22 +726,12 @@ fn pair_at(p: &[&str], k: usize) -> Result<(ExactNum, ExactNum), String> {
 }
 
 #[test]
-#[ignore = "heavy tier (16.LA.5): set ZB_QR_HEAVY_DIR to the dir with la_qr_enc4096_heavy.txt (scripts/gen_la_goldens.py --heavy DIR; sha256 in HEAVY.SHA256) and optionally la_qr_enc16384_heavy.txt"]
 fn la3_qr_hilbert_256_contains_by_heavy_tier() -> Result<(), String> {
-    // As s6_heavy_rows_replay_through_zb (ZB-P03): with ZB_QR_HEAVY_DIR unset this ignored test skips with a visible
-    // SKIP line, so a `--ignored` run without the heavy files is not red; it runs nothing and says so.
-    let dir = match std::env::var("ZB_QR_HEAVY_DIR") {
-        Ok(d) => d,
-        Err(std::env::VarError::NotPresent) => {
-            println!("SKIP la3_qr_hilbert_256_contains_by_heavy_tier: ZB_QR_HEAVY_DIR unset, no heavy rows run");
-            return Ok(());
-        }
-        Err(std::env::VarError::NotUnicode(v)) => {
-            return Err(format!("ZB_QR_HEAVY_DIR is not unicode: {v:?}"))
-        }
-    };
-    let e4 = heavy_rows(&dir, "la_qr_enc4096_heavy.txt")?.ok_or("no la_qr_enc4096_heavy.txt")?;
-    let e16 = heavy_rows(&dir, "la_qr_enc16384_heavy.txt")?;
+    // 16.LA.5 heavy tier. la_qr_enc4096_heavy.txt is committed (r6 item b; sha256 pinned in HEAVY.SHA256): no env var, no
+    // ignore, no skip. la_qr_enc16384_heavy.txt is not committed; no row needs it (HILBERT_TIERS), and a row that did
+    // fails naming the file.
+    let e4 = heavy_rows("la_qr_enc4096_heavy.txt")?.ok_or("no la_qr_enc4096_heavy.txt")?;
+    let e16 = heavy_rows("la_qr_enc16384_heavy.txt")?;
     let text = gold_text("la_qr.txt")?;
     let mut got: Vec<(String, usize)> = Vec::new();
     for toks in data_rows(&text) {

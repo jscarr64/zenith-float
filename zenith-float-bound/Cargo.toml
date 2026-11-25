@@ -10,6 +10,8 @@ homepage.workspace = true
 description = "Bound layer (ball arithmetic) of zenith-float 2.0, re-exported as zenith_float::bound. Pre-release: nothing is guaranteed yet."
 # Part of the one zenith-float 2.0 library, reached through the facade's `bound` feature; never released on its own.
 publish = false
+# The committed heavy-tier goldens (tens of MB) stay out of any package (r6 item b).
+exclude = ["tests/goldens/slices/**/*_heavy.txt"]
 
 [dependencies]
 # Intra-library dependency: path only (Jeff 2026-11-10 3:28 PM CT; no crates.io pin, git rev or version key).

@@ -2,7 +2,7 @@
 # Heavy-tier check (ZB-P03, Paul 2026-10-30). libtest has no runtime skip: an early-return SKIP reports "passed", so the gate reads the output.
 #   --heavy LOG          PASS only with exactly one `HEAVY s6_heavy_rows_replay_through_zb: rows run=30 passed=30 ` line and no SKIP line.
 #   --logs DIR TAG [SELF] FAIL (NOT-RUN) when any DIR/TAG-*.log (except TAG-SELF.log) has a SKIP word; FAIL when there are no logs at all.
-#   --pin PINFILE FILE   PASS only when sha256(FILE) equals PINFILE's `  matrix_rows_heavy.txt` line.
+#   --pin PINFILE FILE   PASS only when sha256(FILE) equals PINFILE's line for FILE's base name (e.g. `  matrix_rows_heavy.txt`).
 # Exit 0 pass, 1 fail, 2 usage or grep error.
 set -u
 export LC_ALL=C
@@ -27,7 +27,7 @@ case ${1:-} in
   --pin)
     [ $# -eq 3 ] || { echo "usage: $0 --pin PINFILE FILE"; exit 2; }
     [ -f "$3" ] || { echo "heavy_check: FAIL: no heavy file $3"; exit 1; }
-    want=$(awk '$2 == "matrix_rows_heavy.txt" { print $1 }' "$2") || exit 2
+    want=$(awk -v n="${3##*/}" '$2 == n { print $1 }' "$2") || exit 2
     got=$(sha256sum "$3" | awk '{ print $1 }') || exit 2
     [ -n "$want" ] && [ "$want" = "$got" ] || { echo "heavy_check: FAIL: $3 sha256 $got != pin '${want}' ($2)"; exit 1; }
     echo "heavy_check: PASS pin $got" ;;

@@ -2,7 +2,7 @@
 //! Goldens: tests/goldens/slices/matrix/ (its own SHA256SUMS and GENERATORS). Mutants: tools/mutants/manifest.d/matrix.txt, ids 900..=999.
 //! Golden file headers for this slice are declared here, not in tests/common/goldens.rs.
 //! CONTRACT 16.S6.0 to 16.S6.12 (16.S6.12 triangular solves: rows `tri.*`). Oracle: exact Fraction golds from scripts/gen_matrix_goldens.py (gate file matrix_rows.txt; the heavy
-//! file matrix_rows_heavy.txt is replayed by the ignored heavy test when ZB_MATRIX_HEAVY points at it), plus hand rows below.
+//! file matrix_rows_heavy.txt, committed and pinned by HEAVY.SHA256, is replayed by the heavy test on every run), plus hand rows below.
 //! COVERS: MagArray::from_mags, MagArray::get, MagArray::shape, MagArray::rank, MagArray::len, MagArray::is_empty, MagArray::as_slice, MagArray::into_parts, BallArray::add, BallArray::sub, BallArray::mid_rad, BallArray::from_mid_rad, BallVec::dot, BallVec::norm_inf, BallVec::norm_1, BallVec::norm_2_up, BallMat::matvec, BallMat::matmul, BallMat::norm_inf, BallMat::norm_1, BallMat::norm_frob_up, BallVec::add, BallVec::sub, BallMat::add, BallMat::sub, BallMat::solve_lower, BallMat::solve_upper, BallMat::solve_lower_mat, BallMat::solve_upper_mat
 
 use crate::common::goldens::golden_dir;
@@ -368,24 +368,12 @@ fn s6_gate_rows_replay_through_zb() -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "heavy tier (16.S6.10): set ZB_MATRIX_HEAVY to matrix_rows_heavy.txt (scripts/gen_matrix_goldens.py --heavy DIR; sha256 in HEAVY.SHA256)"]
 fn s6_heavy_rows_replay_through_zb() -> Result<(), String> {
-    // ZB-P03: with ZB_MATRIX_HEAVY unset this ignored test skips with a visible SKIP line instead of failing, so a
-    // `--ignored` run without the heavy file is not red; it runs nothing and says so. Set, it replays every heavy row
-    // and prints the row count it ran (replay_text checks the count against the header and HEAVY_ROWS).
-    let path = match std::env::var("ZB_MATRIX_HEAVY") {
-        Ok(p) => p,
-        Err(std::env::VarError::NotPresent) => {
-            println!("SKIP s6_heavy_rows_replay_through_zb: ZB_MATRIX_HEAVY unset, 0 of {HEAVY_ROWS} heavy rows run");
-            return Ok(());
-        }
-        Err(std::env::VarError::NotUnicode(v)) => {
-            return Err(format!("ZB_MATRIX_HEAVY is not unicode: {v:?}"))
-        }
-    };
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
-    replay_text(&text, HEAVY_ROWS)?;
-    println!("HEAVY s6_heavy_rows_replay_through_zb: rows run={HEAVY_ROWS} passed={HEAVY_ROWS} file={path}");
+    // 16.S6.10 heavy tier. The file is committed (r6 item b): no env var, no ignore, no skip. Its sha256 is pinned in
+    // HEAVY.SHA256 (checked by the gate's matrix-heavy step); replay_text checks the row count against the header and
+    // HEAVY_ROWS, and the HEAVY line is what tools/heavy_check.sh --heavy reads.
+    replay_text(&read_gold("matrix_rows_heavy.txt")?, HEAVY_ROWS)?;
+    println!("HEAVY s6_heavy_rows_replay_through_zb: rows run={HEAVY_ROWS} passed={HEAVY_ROWS} file=matrix_rows_heavy.txt");
     Ok(())
 }
 
