@@ -12,8 +12,8 @@ and 10_000 also 10^k for k in +-61, +-120, +-300 rounded down and up to P bits.
 PAIRS (D rows), per value a: (0) b = a with a random 64-bit word added at a random bit j < P (cancellation to about
 P - j bits); (1) b = a cut to its top P/2 bits (|a - b| is the low half); (2) b = -a mirror; (3) b a fresh random value.
 The radius is a Mag at, one ulp below or one ulp above |a - b| (or the top binade of the larger operand when the gap is
->= 100_000 binades). EXCLUDED: D rows whose |a - b| lies above EXPONENT_MAX (the known 16.S2.2 red,
-harper_s2_diff_overflow.rs); they are counted, not written.
+>= 100_000 binades). A pair whose |a - b| lies above EXPONENT_MAX (16.S2.2) is written like any other; none is drawn
+at this seed (the 16.S2.2 overflow rows are bridge_cmp.txt's, asserted in harper_s2_diff_overflow.rs too).
 STREAMING: one row at a time. SIZE: about 1 MB (the 100_000-bit values appear in a handful of rows).
 """
 import os
@@ -30,7 +30,6 @@ SEED_SUITE = 301
 PLAN = ((2048, 60), (10_000, 16), (100_000, 3))
 COSMO = (203, -203, 399, -399, 997, -997)
 DECIMAL_K = (61, -61, 120, -120, 300, -300)
-SKIPPED = [0]
 
 
 def wide_mant(rng, p):
@@ -110,9 +109,6 @@ def x_rows(rng, x, p):
     for kind in (0, 1 + rng.next() % 3):
         b = partner(rng, x, p, kind)
         d = abs_diff(x, b)
-        if d is not None and d[1] and B.top_e(d[1], d[2]) > B.EXPONENT_MAX:
-            SKIPPED[0] += 1
-            continue
         if d is None:
             big = max(B.top_e(x[1], x[2]), B.top_e(b[1], b[2]))
             r = (B.TOP, big + (rng.next() % 3) - 1)
@@ -145,8 +141,8 @@ def write(path, limit):
                 break
             fh.write((row + "\n").encode("ascii"))
             count += 1
-    print("gen_bridge_wide_goldens: %d rows, %d skipped (above EXPONENT_MAX), %d bytes, max RSS %d KiB"
-          % (count, SKIPPED[0], os.path.getsize(path), resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
+    print("gen_bridge_wide_goldens: %d rows, %d bytes, max RSS %d KiB"
+          % (count, os.path.getsize(path), resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
 
 
 def main(argv):

@@ -96,3 +96,5 @@
 - Batch 22 (ZF-M27 item 3): `tools/no_held_scan.sh` fails on any held marker or counter, None-gap mode list, known-wrong
   list, "today it returns" expectation, ignored or xfail test, or mode `continue` left in the tree (HOLD files
   excepted). It runs in the pre-commit hook and in the full gate, with its selftest.
+- Batch 23 (16.S2.2 leftover): the bridge_wide golden generator no longer skips pairs whose difference lies above
+  `EXPONENT_MAX` (a stale "known red" exclusion that never fired at its seed); the golden is unchanged.

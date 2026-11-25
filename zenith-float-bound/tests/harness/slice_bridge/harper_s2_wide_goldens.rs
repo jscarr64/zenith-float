@@ -1,9 +1,8 @@
 //! Harper S2 wide goldens: every row of tests/goldens/slices/bridge/bridge_wide.txt (scripts/gen_bridge_wide_goldens.py:
 //! seeded random 2048-, 10_000- and 100_000-bit mantissas at cosmology binades (1e+-61, 1e+-120, 1e+-300), near 0, near
 //! EXPONENT_MAX/EXPONENT_MIN and uniform over the range, 10^k rounded to P bits, and cancellation pairs) is asserted exactly
-//! (CONTRACT 16.S2.1, 16.S2.2, 16.S2.4). N rows: `Mag::cmp_exact_num`; D rows: `Mag::cmp_exact_diff` (rows with |a - b|
-//! above EXPONENT_MAX are the known red of harper_s2_diff_overflow.rs and are not generated); U rows: `Mag::from_exact_num`
-//! and `Mag::from_exact_num_lower`. Each kind's row count is pinned.
+//! (CONTRACT 16.S2.1, 16.S2.2, 16.S2.4). N rows: `Mag::cmp_exact_num`; D rows: `Mag::cmp_exact_diff` (|a - b| above
+//! EXPONENT_MAX: harper_s2_diff_overflow.rs); U rows: `Mag::from_exact_num` and `Mag::from_exact_num_lower`. Each kind's row count is pinned.
 //! COVERS: Mag::cmp_exact_num, Mag::cmp_exact_diff, Mag::from_exact_num, Mag::from_exact_num_lower
 
 use zenith_float_bound::mag::Mag;
