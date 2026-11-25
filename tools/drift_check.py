@@ -23,6 +23,7 @@ Active mode (Jeff 2026-11-25 3:55 PM CT: "limit the check to active work trees")
   * its newest change is at most WINDOW old (--active-window-min, default 1440 = 24 h; exactly 24 h is active):
     HEAD commit time, index mtime, logs/HEAD mtime, newest dirty file mtime; or
   * it has dirty work less than MAX_AGE (30 min) old, whatever the window; or
+  * it has dirty work MORE than MAX_AGE old (that is the violation itself), whatever the window; or
   * it is listed with --include PATH or in --include-file FILE (one path per line, # comments); or
   * its activity cannot be read (fail closed: it is checked, and a git error then gives rc 2).
   In an active scanned tree the HEAD branch is checked, plus other local branches whose tip commit is at most WINDOW
@@ -135,11 +136,13 @@ def activity(repo, now, window, max_age):
             p = os.path.join(gd, f)
             if os.path.exists(p):
                 times.append(os.stat(p).st_mtime)
-        _, newest = dirty_span(repo)
+        oldest, newest = dirty_span(repo)
     except (GitError, OSError, ValueError) as e:
         return True, "activity unknown, checked (%s)" % str(e).splitlines()[0][:120]
     if newest is not None and now - newest < max_age:
         return True, "dirty work under %d s old" % max_age
+    if oldest is not None and now - oldest > max_age:
+        return True, "dirty work over %d s old (a violation, always checked)" % max_age
     if newest is not None:
         times.append(newest)
     last = max(times)
