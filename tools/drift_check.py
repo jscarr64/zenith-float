@@ -18,6 +18,16 @@ unpushed commit is refused too: push it, then amend is a new commit.
 read as the top of a work tree (missing gitdir, corrupt HEAD, ...) is named and gives rc 2 (fail closed); a
 directory without .git (a plain dir, a bare repo) is skipped. Linked worktrees share branches: each branch of a
 repository is reported once per run.
+Active mode (Jeff 2026-11-25 3:55 PM CT: "limit the check to active work trees"): a --scan tree is checked only when
+  * its newest change is at most WINDOW old (--active-window-min, default 1440 = 24 h; exactly 24 h is active):
+    HEAD commit time, index mtime, logs/HEAD mtime, newest dirty file mtime; or
+  * it has dirty work less than MAX_AGE (30 min) old, whatever the window; or
+  * it is listed with --include PATH or in --include-file FILE (one path per line, # comments); or
+  * its activity cannot be read (fail closed: it is checked, and a git error then gives rc 2).
+  In an active scanned tree the HEAD branch is checked, plus other local branches whose tip commit is at most WINDOW
+  old (a tip with no commit date is checked). Idle trees and branches are named as "skip".
+  --all checks every scanned tree and every branch (the full sweep). --repo and --include trees are always checked
+  in full.
 Read-only: every git call uses --no-optional-locks and drops GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR.
 rc 0 ok, 1 drift, 2 usage or git error (fail closed).
 """
@@ -77,10 +87,11 @@ def unpushed(repo, ref, upstream):
 
 def branches(repo):
     rows = []
-    for line in git(repo, "for-each-ref", "--format=%(refname)%00%(upstream)%00%(objectname)", "refs/heads").splitlines():
+    fmt = "--format=%(refname)%00%(upstream)%00%(objectname)%00%(committerdate:unix)"
+    for line in git(repo, "for-each-ref", fmt, "refs/heads").splitlines():
         if line:
-            name, up, sha = line.split("\0")
-            rows.append((name, up, sha))
+            name, up, sha, when = line.split("\0")
+            rows.append((name, up, sha, int(when) if when.isdigit() else None))
     return rows
 
 
@@ -112,6 +123,28 @@ def dirty_span(repo):
     return oldest, newest
 
 
+def activity(repo, now, window, max_age):
+    """(active?, reason) for a --scan tree. Anything unreadable counts as active (fail closed)."""
+    try:
+        gd = git(repo, "rev-parse", "--absolute-git-dir").strip()
+        times = [int(git(repo, "log", "-1", "--format=%ct", "HEAD").strip())]
+        for f in ("index", os.path.join("logs", "HEAD")):
+            p = os.path.join(gd, f)
+            if os.path.exists(p):
+                times.append(os.stat(p).st_mtime)
+        _, newest = dirty_span(repo)
+    except (GitError, OSError, ValueError) as e:
+        return True, "activity unknown, checked (%s)" % str(e).splitlines()[0][:120]
+    if newest is not None and now - newest < max_age:
+        return True, "dirty work under %d s old" % max_age
+    if newest is not None:
+        times.append(newest)
+    last = max(times)
+    if now - last <= window:
+        return True, "last change %d s ago" % (now - last)
+    return False, "idle: last change %d s ago (window %d s)" % (now - last, window)
+
+
 def head_state(repo):
     """(detached?, head sha or None)."""
     try:
@@ -125,8 +158,9 @@ def head_state(repo):
         return True, sha
 
 
-def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=None):
-    """seen: set of (common git dir, branch) already checked; linked worktrees share branches, report each once."""
+def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=None, window=None):
+    """seen: set of (common git dir, branch) already checked; linked worktrees share branches, report each once.
+    window: None checks every branch; else only the HEAD branch and branches whose tip is at most window old."""
     bad = 0
     seen = set() if seen is None else seen
     common = os.path.realpath(os.path.join(repo, git(repo, "rev-parse", "--git-common-dir").strip()))
@@ -146,8 +180,12 @@ def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=Non
             return 1
         return 0
     tips = set()
-    for name, up, sha in branches(repo):
+    head_ref = git(repo, "symbolic-ref", "-q", "HEAD").strip() if head and not detached else None
+    for name, up, sha, when in branches(repo):
         tips.add(sha)
+        if window is not None and name != head_ref and when is not None and now - when > window:
+            report("skip %s %s: branch tip %d s old (window %d s)" % (repo, name[len("refs/heads/"):], now - when, window))
+            continue
         if (common, name) in seen:
             continue
         seen.add((common, name))
@@ -186,13 +224,24 @@ def main(argv=None):
     a = ap.parse_args(argv)
     now = time.time() if a.now is None else a.now
     max_age = a.max_age_min * 60
+    window = a.active_window_min * 60
+    if window < 0:
+        print("drift_check: --active-window-min must be >= 0", file=sys.stderr)
+        return 2
     report = lambda s: print("drift_check: " + s)
+    explicit = list(a.repo) + list(a.include)
+    for f in a.include_file:
+        try:
+            explicit += [l.strip() for l in open(f) if l.strip() and not l.strip().startswith("#")]
+        except OSError as e:
+            print("drift_check: --include-file %s: %s" % (f, e), file=sys.stderr)
+            return 2
     repos = []
-    for r in a.repo:
+    for r in explicit:
         if not is_work_tree(r):
             print("drift_check: %s is not the top of a git work tree" % r, file=sys.stderr)
             return 2
-        repos.append(r)
+        repos.append((r, None))
     unreadable = []
     for d in a.scan:
         if not os.path.isdir(d):
@@ -202,24 +251,39 @@ def main(argv=None):
             if not os.path.lexists(os.path.join(c, ".git")):
                 continue
             if is_work_tree(c):
-                repos.append(c)
+                repos.append((c, "scan"))
             else:
                 unreadable.append(c)
-    if not a.repo and not a.scan:
+    if not explicit and not a.scan:
         print("drift_check: give --repo or --scan", file=sys.stderr)
         return 2
     bad = 0
     seen = set()
     for c in unreadable:
         print("drift_check: ERROR %s has a .git but is not a readable work tree" % c, file=sys.stderr)
+    done = set()
+    checked = skipped = 0
     try:
-        for r in repos:
-            bad |= check_repo(r, now, a.max_ahead, max_age, report, a.pre_commit, seen)
+        for r, how in repos:
+            key = os.path.realpath(r)
+            if key in done:
+                continue
+            done.add(key)
+            win = None
+            if how == "scan" and not a.all:
+                act, why = activity(r, now, window, max_age)
+                if not act:
+                    report("skip %s (%s)" % (r, why)); skipped += 1
+                    continue
+                win = window
+            checked += 1
+            bad |= check_repo(r, now, a.max_ahead, max_age, report, a.pre_commit, seen, win)
     except GitError as e:
         print("drift_check: %s" % e, file=sys.stderr)
         return 2
-    print("drift_check: %s (%d repo(s), max %d ahead, max age %g min)"
-          % ("FAIL" if bad else "ok", len(repos), a.max_ahead, a.max_age_min))
+    print("drift_check: %s (%d repo(s) checked, %d idle skipped, max %d ahead, max age %g min, %s)"
+          % ("FAIL" if bad else "ok", checked, skipped, a.max_ahead, a.max_age_min,
+             "all work trees" if a.all else "active window %g min" % a.active_window_min))
     if unreadable:
         return 2
     return 1 if bad else 0
