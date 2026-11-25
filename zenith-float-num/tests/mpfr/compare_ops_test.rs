@@ -8,6 +8,7 @@ use std::ops::Add;
 use crate::mpfr::common::get_prec_rng;
 use crate::mpfr::common::test_zf_op;
 use crate::mpfr::common::test_zf_op_no_cc;
+use crate::mpfr::common::Rnd;
 use crate::mpfr::common::{
     assert_float_close, conv_to_mpfr, draw_seed, get_float_pair, get_random_rnd_pair,
     normal_from_seed, reset_test_rng, test_random, test_zf_fma, test_zf_rem_pi,
@@ -15,6 +16,7 @@ use crate::mpfr::common::{
 use crate::mpfr::common::{RAND_EMAX, RAND_EMIN};
 use crate::mpfr::mp::mpfr::{self, ExpT};
 use crate::mpfr::mp::Float;
+use zenith_float_num::RoundingMode;
 use zenith_float_num::Word;
 use zenith_float_num::EXPONENT_BIT_SIZE;
 use zenith_float_num::{Consts, ExactNum, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
@@ -62,6 +64,144 @@ fn mpfr_compare_ops_large() -> Result<(), Box<dyn std::error::Error>> {
     let p_min_large = 1563;
 
     run_compare_ops(run_cnt_large, p_rng_large, p_min_large)?;
+    Ok(())
+}
+
+/// Exact ties for the five rounding modes (r6 item 6 follow-up, Paul call 2026-11-24 9:41 PM CT): every exact result here has
+/// exactly one bit more than the output precision `p`, and that bit is 1, so round-to-nearest must break the tie to even.
+/// The random operands of `mpfr_compare_ops` never land on such a tie, so a `round_mag` in `exact.rs` that rounds ties
+/// away from zero went unseen; these rows catch it (half of them have an even truncated mantissa, where the two differ).
+///   add/sub: M +- 1/2 with M a p-bit integer, both signs;  mul: 3 M with M = 2^(p-1) + c (3 M has p + 1 bits, odd);
+///   div: (3 Q) / 3 with Q = 2^p + c (p + 1 bits, odd).  p is 64 and 128.
+#[test]
+fn mpfr_compare_ops_exact_ties() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
+    let _range = MpfrExpRange::widen();
+    let modes = [
+        (RoundingMode::ToEven, Rnd::Nearest),
+        (RoundingMode::Up, Rnd::Up),
+        (RoundingMode::Down, Rnd::Down),
+        (RoundingMode::FromZero, Rnd::AwayZero),
+        (RoundingMode::ToZero, Rnd::Zero),
+    ];
+    let word = |w: Word| ExactNum::from_word(w, WORD_BIT_SIZE);
+    // 2^k + c, exact
+    let pow2_plus = |k: Exponent, c: Word| {
+        word(1)
+            .ldexp(k, 3 * WORD_BIT_SIZE, RoundingMode::None)
+            .add_full_prec(&word(c))
+    };
+    let sanity = word(2).add_full_prec(&word(1));
+    if sanity != word(3) || pow2_plus(1, 1) != word(3) {
+        return Err("exact_ties: operand construction is not exact".into());
+    }
+    let mut rows = 0usize;
+    for p in [WORD_BIT_SIZE, 2 * WORD_BIT_SIZE] {
+        let pe = Exponent::try_from(p)?;
+        let wide = p + 2 * WORD_BIT_SIZE; // operand precision that holds every operand below exactly
+                                          // add, sub: M (p bits) and +-1/2
+        for (k, c) in [(pe - 1, 0), (pe - 1, 1), (pe - 1, 2), (pe - 1, 3), (pe, 0), (pe, 1)] {
+            for (neg, half_neg) in [(false, false), (true, true), (false, true), (true, false)] {
+                for (rm, rnd) in modes {
+                    // (pe, 0) and (pe, 1) are 2^p - 1 and 2^p - 2: p-bit integers just below 2^p
+                    let m = || {
+                        let v = if k == pe {
+                            pow2_plus(pe, 0).sub_full_prec(&word(c + 1))
+                        } else {
+                            pow2_plus(k, c)
+                        };
+                        if neg {
+                            -v
+                        } else {
+                            v
+                        }
+                    };
+                    let half = word(1).ldexp(-1, WORD_BIT_SIZE, RoundingMode::None);
+                    let half = if half_neg { -half } else { half };
+                    let (fm, fh) = (
+                        conv_to_mpfr(wide, &m(), &mut cc)?,
+                        conv_to_mpfr(wide, &half, &mut cc)?,
+                    );
+                    test_zf_op_no_cc!(
+                        true,
+                        m(),
+                        half,
+                        add,
+                        fm,
+                        fh,
+                        add,
+                        p,
+                        rm,
+                        rnd,
+                        (&m(), &half, p, rm, "add tie"),
+                        cc
+                    );
+                    test_zf_op_no_cc!(
+                        true,
+                        m(),
+                        half,
+                        sub,
+                        fm,
+                        fh,
+                        sub,
+                        p,
+                        rm,
+                        rnd,
+                        (&m(), &half, p, rm, "sub tie"),
+                        cc
+                    );
+                    rows += 2;
+                }
+            }
+        }
+        // mul: 3 * (2^(p-1) + c), div: 3 (2^p + c) / 3, c odd
+        for c in [1, 3, 5, 7] {
+            for neg in [false, true] {
+                for (rm, rnd) in modes {
+                    let three = if neg { -word(3) } else { word(3) };
+                    let m = || pow2_plus(pe - 1, c);
+                    let (fm, f3) = (
+                        conv_to_mpfr(wide, &m(), &mut cc)?,
+                        conv_to_mpfr(wide, &three, &mut cc)?,
+                    );
+                    test_zf_op_no_cc!(
+                        true,
+                        m(),
+                        three,
+                        mul,
+                        fm,
+                        f3,
+                        mul,
+                        p,
+                        rm,
+                        rnd,
+                        (&m(), &three, p, rm, "mul tie"),
+                        cc
+                    );
+                    let x = || pow2_plus(pe, c).mul_full_prec(&word(3));
+                    let fx = conv_to_mpfr(wide, &x(), &mut cc)?;
+                    test_zf_op_no_cc!(
+                        true,
+                        x(),
+                        three,
+                        div,
+                        fx,
+                        f3,
+                        div,
+                        p,
+                        rm,
+                        rnd,
+                        (&x(), &three, p, rm, "div tie"),
+                        cc
+                    );
+                    rows += 2;
+                }
+            }
+        }
+    }
+    if rows != 2 * (6 * 4 * 5 * 2 + 4 * 2 * 5 * 2) {
+        return Err(format!("exact_ties: {rows} rows").into());
+    }
     Ok(())
 }
 

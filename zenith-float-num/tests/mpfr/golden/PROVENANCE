@@ -6,6 +6,7 @@ compare_complex_test__mpfr_compare_complex.gold team-env=oracle-2026-10-30
 compare_complex_test__mpfr_compare_complex_real_axis.gold team-env=oracle-2026-10-30
 compare_const_test__mpfr_compare_const.gold team-env=oracle-2026-10-30
 compare_ops_test__mpfr_compare_ops.gold team-env=oracle-2026-10-30
+compare_ops_test__mpfr_compare_ops_exact_ties.gold team-env=oracle-2026-10-30
 compare_ops_test__mpfr_compare_ops_large.gold team-env=oracle-2026-10-30
 compare_ops_test__run_compare_ops_restores_the_mpfr_exponent_range.gold team-env=oracle-2026-10-30
 compare_rational_test__mpfr_compare_exact_rational_gmp.gold team-env=oracle-2026-10-30
