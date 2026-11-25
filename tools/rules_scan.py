@@ -9,6 +9,7 @@ Usage:
   tools/rules_scan.sh --staged             # git diff --cached
   tools/rules_scan.sh --working            # git diff HEAD (staged + unstaged)
   tools/rules_scan.sh --diff-file F        # a saved unified diff (used by the self-test)
+  tools/rules_scan.sh --list-unlisted-clones  # every .clone( line with no allowlist entry of its own (UNLISTED CLONES below)
   tools/rules_scan.sh --list-test-panics   # every unwrap/expect/panic!/... site in test code (file:line [kind]), then the count
   tools/rules_scan.sh --count-only         # only the count baseline checks (clone, helper-copy, ref, neg_via_mul ratchets) and the exception checks
   tools/rules_scan.sh --update-baseline    # lower the baselines to the current counts (never raises one)
@@ -31,6 +32,10 @@ ONLY JEFF MAY EXTEND IT (.github/CODEOWNERS requires his review), by his own ent
 CLONE COUNT: total `.clone(` occurrences in ALL scanned code, test code included (the four library dirs and
 no_clone.TEST_DIRS; tools/ and target dirs excluded) must never go up versus tools/clone_count_baseline.txt. The
 baseline is only ever lowered, with --update-baseline.
+
+UNLISTED CLONES (Paul steer 2026-11-24 9:53 PM CT): a `.clone(` line counted above with no rules_allowlist.txt entry of its
+own (one entry covers one line; lines sharing a listed key's text beyond the one its reason names are unlisted). Their site
+count is ratcheted against tools/unlisted_clone_baseline.txt toward 0; at 0 every unlisted clone fails the count checks.
 
 HELPER-COPY COUNT: total uses of the hidden copy helpers (no_clone.HELPERS: exact_copy_ext, exact_copy, exact_operand,
 copy_p, svd_copy_prec, lift_num) in non-definition positions, plus Rc::clone / Arc::clone in zenith-float-compare/src
@@ -1238,9 +1243,48 @@ def guarded(name, fn, *args):
     return rc, ("ok" if rc == 0 else "FAIL")
 
 
+def unlisted_clone_sites():
+    """every `.clone(` line (library + test dirs, as clone_count counts them) that has no tools/rules_allowlist.txt entry of
+    its own (nor a tools/clone_allowlist.txt exception) -> [(rel, line, clones, key, code)]. A line is listed when its key (path:sha1 of the whitespace-collapsed line)
+    has an entry; one entry covers ONE line: when several lines share a listed key (same text), only the line nearest the
+    `path:LINE` the entry's reason names is listed, the others are not (Paul steer 2026-11-24 9:53 PM CT)."""
+    named = {}
+    p = os.path.join(ROOT, "tools", "rules_allowlist.txt")
+    if os.path.exists(p):
+        for l in open(p):
+            l = l.rstrip("\n")
+            if l.strip() and not l.lstrip().startswith("#"):
+                k, _, reason = l.partition("\t")
+                m = re.match(r"\s*\S+:(\d+)\s", reason)
+                named[k.strip()] = int(m.group(1)) if m else 0
+    # a site excepted in tools/clone_allowlist.txt (constant caches, no_clone.scan) has its written entry there
+    excepted = collections.Counter((h[0], h[1]) for h in no_clone.scan()["allowed"])
+    by_key, out = collections.defaultdict(list), []
+    for rel, path in no_clone.rs_files():
+        for i, l in enumerate(open(path, errors="replace").read().split("\n"), 1):
+            c = len(re.findall(r"\.clone\(", strip(l))) - excepted[(rel, i)]
+            if c <= 0:
+                continue
+            key = "%s:%s" % (rel, hashlib.sha1(" ".join(l.split()).encode()).hexdigest()[:12])
+            row = (rel, i, c, key, " ".join(l.split()))
+            (by_key[key] if key in named else out).append(row)
+    for key, rows in by_key.items():
+        keep = min(rows, key=lambda r: (abs(r[1] - named[key]), r[1]))
+        out += [r for r in rows if r is not keep]
+    return sorted(out)
+
+
+def unlisted_clone_check(update=False):
+    """`.clone(` sites without an allowlist entry of their own: ratcheted to 0 (tools/unlisted_clone_baseline.txt); at 0,
+    any unlisted clone fails. --list-unlisted-clones prints them."""
+    sites = unlisted_clone_sites()
+    return ratchet("unlisted clone", "unlisted_clone_baseline.txt", sum(r[2] for r in sites), update, what="site count",
+                   extra=" (%d lines; tools/rules_scan.sh --list-unlisted-clones)" % len(sites) if sites else "")
+
+
 COUNT_CHECKS = (("clone", count_check), ("helper-copy", helper_count_check), ("exceptions", exception_check),
                 ("test-panic", test_panic_check), ("neg_via_mul", neg_via_mul_check), ("combined", ruling_check),
-                ("borrow", borrow_check))
+                ("borrow", borrow_check), ("unlisted-clone", unlisted_clone_check))
 
 
 def both_count_checks(update=False):
@@ -1302,6 +1346,12 @@ def main(argv):
         if NO_RISE is None:
             print("rules_scan: FAIL --no-rise: could not count the tree at %s" % NO_RISE_REV)
             return 2
+    if "--list-unlisted-clones" in argv:
+        sites = unlisted_clone_sites()
+        for rel, n, c, key, code in sites:
+            print("%s:%d\t%d\t%s\t%s" % (rel, n, c, key, code[:140]))
+        print("rules_scan: %d unlisted clone sites on %d lines" % (sum(r[2] for r in sites), len(sites)))
+        return 0
     if "--list-test-panics" in argv:
         sites = test_panic_sites()
         for rel, n, label in sites:

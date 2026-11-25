@@ -7,7 +7,9 @@ set -u
 unset RULES_SCAN_FAULT   # the fault hook is set per call below, never inherited
 zf_tmp="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/rules-scan-selftest"; mkdir -p "$zf_tmp" || exit 2  # job scratch, never /tmp (Spence n3)
 here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d "$zf_tmp/run.XXXXXX")"; trap 'rm -rf "$t"' EXIT
-scan() { "$here/rules_scan.sh" "$@"; }
+# The unlisted-clone ratchet is exercised in its own block (UNLISTED_LIVE=1); elsewhere its baseline is held at 99 so the
+# other blocks' fixtures (unlisted clones by design) and their --update-baseline calls test only what they name.
+scan() { [ -n "${UNLISTED_LIVE:-}" ] || [ ! -d "${RULES_SCAN_ROOT:-/nonexistent}/tools" ] || echo 99 > "$RULES_SCAN_ROOT/tools/unlisted_clone_baseline.txt"; "$here/rules_scan.sh" "$@"; }
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 mkdiff() { # mkdiff <path> <added line...>  -> fixture diff on stdout
   local p="$1"; shift
@@ -15,7 +17,7 @@ mkdiff() { # mkdiff <path> <added line...>  -> fixture diff on stdout
   for l in "$@"; do printf '+%s\n' "$l"; done
 }
 LIB=zenith-float-num/src/foo.rs
-export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/helper_copy_count_baseline.txt"; echo 0 > "$t/tools/exception_count_baseline.txt"; echo 0 > "$t/tools/test_panic_count_baseline.txt"; echo 0 > "$t/tools/neg_via_mul_count_baseline.txt"
+export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/helper_copy_count_baseline.txt"; echo 0 > "$t/tools/exception_count_baseline.txt"; echo 0 > "$t/tools/test_panic_count_baseline.txt"; echo 0 > "$t/tools/neg_via_mul_count_baseline.txt"; echo 99 > "$t/tools/unlisted_clone_baseline.txt"
 export RULES_SCAN_SKIP_COUNT=1   # fixture diffs have no tree to count
 
 mkdiff $LIB 'let a = 1 + 2;' 'let s = a.max(b);' > "$t/clean.diff"
@@ -98,7 +100,7 @@ scan --diff-file "$t/d.diff" >/dev/null || fail "allowlisted site still flagged"
 # git modes in a throwaway repo
 g="$t/repo"; mkdir -p "$g/zenith-float-num/src" "$g/tools"; cd "$g" || exit 1
 git init -q . && git config user.email a@b && git config user.name t
-cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt; echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/test_panic_count_baseline.txt; echo 0 > tools/neg_via_mul_count_baseline.txt
+cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt; echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/test_panic_count_baseline.txt; echo 0 > tools/neg_via_mul_count_baseline.txt; echo 99 > tools/unlisted_clone_baseline.txt
 printf 'fn a() {}\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm base; base=$(git rev-parse HEAD)
 export RULES_SCAN_ROOT="$g"; unset RULES_SCAN_SKIP_COUNT
 scan "$base..HEAD" >/dev/null || fail "empty range flagged"
@@ -122,6 +124,25 @@ echo 0 > tools/clone_count_baseline.txt; scan --count-only >/dev/null && fail "c
 echo 5 > tools/clone_count_baseline.txt; scan --count-only | grep -qi "lower" || fail "no hint to lower baseline"
 scan --update-baseline >/dev/null || fail "lowering baseline failed"; [ "$(tr -d '[:space:]' < tools/clone_count_baseline.txt)" = 1 ] || fail "baseline not lowered"
 echo 0 > tools/clone_count_baseline.txt; scan --update-baseline >/dev/null && fail "raising baseline allowed"; [ "$(tr -d '[:space:]' < tools/clone_count_baseline.txt)" = 0 ] || fail "baseline raised"
+
+# unlisted clones (Paul steer 2026-11-24 9:53 PM CT): one allowlist entry covers one line; at baseline 0 an unlisted clone fails
+A='fn a(x: &S) { let y = x.clone(); }'; B='fn b(x: &S) { let y = x.clone(); }'
+ka="zenith-float-num/src/x.rs:$(printf '%s' "$A" | sha1sum | cut -c1-12)"
+UNLISTED_LIVE=1; echo 99 > tools/clone_count_baseline.txt; echo 0 > tools/unlisted_clone_baseline.txt; cp tools/rules_allowlist.txt "$t/allow.keep"
+printf '%s\n%s\n' "$A" "$B" > zenith-float-num/src/x.rs
+scan --count-only >/dev/null && fail "unlisted clones passed at unlisted baseline 0"
+printf '%s\tzenith-float-num/src/x.rs:1 [clone] selftest\n' "$ka" >> tools/rules_allowlist.txt
+out="$(scan --list-unlisted-clones)"; echo "$out" | grep -q '^zenith-float-num/src/x.rs:2	1	' || fail "line 2 (no entry) not listed: $out"
+echo "$out" | grep -q '^zenith-float-num/src/x.rs:1	' && fail "listed line 1 shown as unlisted: $out"
+scan --count-only >/dev/null && fail "the line without an entry passed"
+printf '%s\n%s\n' "$A" "$A" > zenith-float-num/src/x.rs
+out="$(scan --list-unlisted-clones)"; echo "$out" | grep -q '^zenith-float-num/src/x.rs:2	1	' || fail "a second line with a listed line's text rode on its entry: $out"
+scan --count-only >/dev/null && fail "one entry covered two lines"
+printf '%s\n' "$A" > zenith-float-num/src/x.rs
+scan --count-only >/dev/null || fail "the one listed clone line failed: $(scan --count-only)"
+echo 1 > tools/unlisted_clone_baseline.txt; scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/unlisted_clone_baseline.txt)" = 0 ] || fail "unlisted baseline not lowered to 0"
+cp "$t/allow.keep" tools/rules_allowlist.txt; unset UNLISTED_LIVE; echo 99 > tools/unlisted_clone_baseline.txt; echo 0 > tools/clone_count_baseline.txt
+printf 'fn a() {}\n' > zenith-float-num/src/x.rs
 
 # ---- borrowing ops (add_ref/sub_ref/mul_ref/div_ref): no copy token anywhere in their call graph ----
 mkdir -p zenith-float-num/src/mantissa
@@ -655,8 +676,8 @@ echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/helper_copy_count_ba
 git add -A; git commit -qm clean-end --allow-empty
 out="$(scan --count-only)" || fail "clean tree at baseline 0 failed: $out"
 echo "$out" | head -1 | grep -q '^rules_scan: zenith-float LIBRARY scanner (tools/rules_scan.py' || fail "no library banner first: $(echo "$out" | head -1)"
-CHECKS="clone helper-copy exceptions test-panic neg_via_mul combined borrow"
-echo "$out" | grep -q "^rules_scan: checks: clone=ok helper-copy=ok exceptions=ok test-panic=ok neg_via_mul=ok combined=ok borrow=ok$" \
+CHECKS="clone helper-copy exceptions test-panic neg_via_mul combined borrow unlisted-clone"
+echo "$out" | grep -q "^rules_scan: checks: clone=ok helper-copy=ok exceptions=ok test-panic=ok neg_via_mul=ok combined=ok borrow=ok unlisted-clone=ok$" \
   || fail "no per-check summary line: $out"
 for chk in $CHECKS; do
   out="$(RULES_SCAN_FAULT=$chk scan --count-only 2>&1)" && fail "a crash in check $chk exited 0: $out"
