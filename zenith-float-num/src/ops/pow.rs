@@ -876,9 +876,10 @@ impl ExactNumNumber {
         }
 
         // A power `N / 2^j` (j <= POW_ROOT_STEPS) of a value whose 2^j-th root is exact is exact or one
-        // rounding of an exact product: 9^0.5 = 3, 4^(-1.5) = 1/8, 16^0.75 = 8, 81^(-0.25) = 1/3.
+        // rounding of an exact product: 9^0.5 = 3, 4^(-1.5) = 1/8, 16^0.75 = 8, 81^(-0.25) = 1/3. Public `None`
+        // too (F-A, ZF-M27): the logarithm path never decides an exact result at its toward-zero cut.
         const POW_ROOT_STEPS: Exponent = 6;
-        if !rm.skips_rounding()
+        if rm != RoundingMode::Work
             && !n.inexact()
             && !self.inexact()
             && self.is_positive()

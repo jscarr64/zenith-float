@@ -29,19 +29,6 @@ const MODES: [RoundingMode; 7] = [
     RoundingMode::None,
 ];
 
-/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
-/// Up, Down, ToZero, FromZero), for the families that fail the strict None oracle. NONE-GAP F-A: an exact `nth_root`
-/// result comes back as its predecessor at rp(p, 64), flagged inexact (`log` of an exact power of its base too).
-/// NONE-GAP F-C: `log` with a base near a grid point is 1 ulp below the toward-zero cut.
-const NONE_GAP_MODES: [RoundingMode; 6] = [
-    RoundingMode::ToEven,
-    RoundingMode::ToOdd,
-    RoundingMode::Up,
-    RoundingMode::Down,
-    RoundingMode::ToZero,
-    RoundingMode::FromZero,
-];
-
 type Res = Result<(), Box<dyn std::error::Error>>;
 
 pub fn round_of(rnd: Rnd) -> Round {
@@ -375,8 +362,7 @@ fn log_with_base_near_a_grid_point_at_40064_bits() -> Res {
     let x = one_plus_pow2(PM, 2 - PM as Exponent);
     let fb = conv_to_mpfr(PM, &b, &mut cc)?;
     let fx = conv_to_mpfr(PM, &x, &mut cc)?;
-    // NONE-GAP F-C: 1 ulp below the toward-zero cut under None (ZF-M27)
-    for rm in NONE_GAP_MODES {
+    for rm in MODES {
         let got = x.log(&b, PM, rm, &mut cc);
         check(
             &got,
@@ -814,8 +800,7 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
                 &format!("nth_root({base}^{n},{n})"),
                 &|rm| v.nth_root(n, p, rm),
                 &|r, rd| r.assign_round(fv.root_ref(n as u32), rd),
-                // NONE-GAP F-A: nth_root(2^4, 4) at p=64 is the predecessor of 2, flagged inexact (ZF-M27)
-                &NONE_GAP_MODES,
+                &MODES,
                 cc,
             )?;
         }
@@ -824,8 +809,7 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
             let v = int(b.pow(j), p);
             let base = int(b, p);
             let want = Float::with_val(p as u32, j);
-            // NONE-GAP F-A: log(2^5, 2) = 5 at p=64 is the predecessor of 5, flagged inexact (ZF-M27)
-            for rm in NONE_GAP_MODES {
+            for rm in MODES {
                 let got = v.log(&base, p, rm, cc);
                 check(
                     &got,

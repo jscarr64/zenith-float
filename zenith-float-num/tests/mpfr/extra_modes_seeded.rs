@@ -5,8 +5,8 @@
 //! - `ToOdd`: nearest with ties to odd, as the library defines it (defs.rs `ToOdd`), derived from MPFR toward zero at
 //!   p + 1 bits and the ternary value (`mpfr_reference_with`). Normal-range results only.
 //!
-//! A family that fails is left out of these passes unless the failure is F-A, F-B or F-C shaped. Any other failure
-//! is a new finding, reported and not listed as an exception.
+//! No family is left out for a None gap (the ZF-M27 gaps F-A, F-B and F-C are fixed). A failure is a finding,
+//! reported and not listed as an exception.
 //!
 //! Families: ops, special_fn (positive arguments), const, special values, complex add. Not here:
 //! - copysign: NEW FINDING N-4. At p = 65 and 100 it rounds at rp(p, 64), not p, in every mode (round_p in

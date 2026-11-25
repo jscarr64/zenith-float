@@ -12,6 +12,9 @@
 //! error bound. It does not check `f`'s algorithm (the digests are mpmath-verified for that), except for `ai`, which
 //! MPFR checks.
 //!
+//! A bracket that is the largest value on one side and +-Inf on the other is an overflow, checked against the
+//! M27-OVF ruling ([`Expect::Overflow`]); a subnormal bracket rounds at `p` on that precision's subnormal grid.
+//!
 //! Inputs: the digest's operands, which avoid Bi and Bi' overflow. Under None, ToZero and truncating Up/Down, Bi and
 //! Bi' overflow are the ZF-M27 overflow rows (F-2), and are not pinned here.
 
@@ -41,11 +44,14 @@ const MODES: [RoundingMode; 7] = [
 pub enum Expect {
     /// The MPFR value and the inexact flag.
     Strict(Float, bool),
-    /// A subnormal bracket (`Bracket::grid`), with no MPFR counterpart: the mode picks its low or high end
-    /// (nearest: either), flagged inexact; or the one exact subnormal value.
+    /// A subnormal bracket (`Bracket::grid`), with no MPFR counterpart: the value rounds at `p` as the bracket's
+    /// midpoint does, on the subnormal grid of `p` (`mismatch`).
     Grid,
     /// NaN, or an infinity of this sign.
     Special(Option<bool>),
+    /// An overflow of this sign (negative: true): the largest value on the toward-zero side, flagged inexact, and
+    /// +-Inf otherwise (ZF-M27 M27-OVF; `None` at the storage precision rp(p, 64)).
+    Overflow(bool),
 }
 
 /// `x` as an MPFR number holding all its bits; `None` for a subnormal (below MPFR's range).
@@ -88,6 +94,15 @@ pub fn bracket_expect(
 ) -> Result<Bracket, E> {
     let ph = p.div_ceil(64) * 64 + 128;
     let (lo, hi) = (f(ph, RoundingMode::Down, cc), f(ph, RoundingMode::Up, cc));
+    // A finite largest value at `PH` on one side and an infinity of the same sign on the other: an overflow.
+    if !lo.is_nan()
+        && !hi.is_nan()
+        && lo.is_inf() != hi.is_inf()
+        && lo.is_negative() == hi.is_negative()
+    {
+        let neg = lo.is_negative();
+        return Ok(all(|| Expect::Overflow(neg)));
+    }
     if lo.is_nan() || hi.is_nan() || lo.is_inf() || hi.is_inf() {
         if lo.is_nan() && hi.is_nan() {
             return Ok(all(|| Expect::Special(None)));
@@ -103,7 +118,7 @@ pub fn bracket_expect(
             return Err(format!("bracket at {ph} bits is one value but inexact: {lo:?}").into());
         }
         let Some(v) = to_mpfr(&lo, cc)? else {
-            // an exact subnormal is on the one subnormal grid, so it is the value at every p
+            // an exact subnormal: rounded at `p` on that precision's subnormal grid (`mismatch`)
             return Ok(Bracket {
                 grid: Some((lo, hi)),
                 ..all(|| Expect::Grid)
@@ -158,6 +173,7 @@ fn mismatch(
     got: &ExactNum,
     want: &Expect,
     grid: Option<&(ExactNum, ExactNum)>,
+    p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Result<Option<String>, E> {
@@ -188,20 +204,34 @@ fn mismatch(
                 }
             }
         }
+        Expect::Overflow(neg) => {
+            let toward_zero = matches!(rm, RoundingMode::ToZero | RoundingMode::None)
+                || (rm == RoundingMode::Down && !*neg)
+                || (rm == RoundingMode::Up && *neg);
+            let ok = if toward_zero {
+                let mut max = ExactNum::max_value(p);
+                if rm != RoundingMode::None {
+                    max.set_precision(p, RoundingMode::ToZero)?;
+                }
+                !got.is_inf()
+                    && got.is_negative() == *neg
+                    && got.abs_cmp(&max) == Some(0)
+                    && got.inexact()
+            } else {
+                got.is_inf() && got.is_negative() == *neg
+            };
+            (!ok).then(|| format!("want the overflow (negative {neg}) of {rm:?}, got {got:?}"))
+        }
         Expect::Grid => {
+            // The bracket is adjacent on the `PH`-bit grid (or one exact value). The subnormal grid at `p`,
+            // 2^(EXPONENT_MIN - p), is coarser, and neither its points nor its midpoints lie inside the bracket, so
+            // the value rounds at `p` as the bracket's midpoint does: one `ldexp` rounding, subnormal grid included.
             let (lo, hi) = grid.ok_or("Grid without a bracket")?;
-            let is = |x: &ExactNum| got.compare(x) == Some(0);
-            let exact = lo.compare(hi) == Some(0);
-            let pos = lo.is_positive() || (lo.is_zero() && hi.is_positive());
-            let ok = match rm {
-                _ if exact => is(lo) && !got.inexact(),
-                RoundingMode::Down => is(lo),
-                RoundingMode::Up => is(hi),
-                RoundingMode::ToZero | RoundingMode::None => is(if pos { lo } else { hi }),
-                RoundingMode::FromZero => is(if pos { hi } else { lo }),
-                _ => is(lo) || is(hi),
-            } && (exact || got.inexact());
-            (!ok).then(|| format!("want one of {lo:?} {hi:?}, got {got:?}"))
+            let want = lo.add_full_work(hi).ldexp(-1, p, rm);
+            let ok = got.compare(&want) == Some(0)
+                && got.is_negative() == want.is_negative()
+                && got.inexact() == want.inexact();
+            (!ok).then(|| format!("want {want:?} (bracket {lo:?} {hi:?}), got {got:?}"))
         }
     })
 }
@@ -223,7 +253,7 @@ fn check_all(
     };
     for (rm, w) in MODES.into_iter().zip(&b.want) {
         let got = f(p, rm, cc);
-        if let Some(m) = mismatch(&got, w, b.grid.as_ref(), rm, cc)? {
+        if let Some(m) = mismatch(&got, w, b.grid.as_ref(), p, rm, cc)? {
             fails.push(format!("{name} p={p} {rm:?}: {m}"));
         }
     }
@@ -339,7 +369,7 @@ fn bracket_expect_matches_mpfr() -> Res {
     Ok(())
 }
 
-/// Spence item 2: the thirteen Jacobi functions on the digest's `u` (but operand 21, HELD) and `m`, at 64, 100
+/// Spence item 2: the thirteen Jacobi functions on the digest's `u` and `m`, at 64, 100
 /// and 128 bits, in all seven modes.
 #[test]
 fn jacobi_all_seven_modes() -> Res {
@@ -370,12 +400,9 @@ fn jacobi_all_seven_modes() -> Res {
     let mut cc = Consts::new()?;
     let (mut fails, mut n) = (Vec::new(), 0usize);
     for (name, f) in fns {
-        // HELD F-21 (N-6), F-22 (N-7): the digest's tiny operand 21 (u = 3 * 2^(EXPONENT_MIN - 19)) is left out. At that u, ToZero,
-        // FromZero, Up and Down return NaN(PrecisionRetryExhausted) for am (m != 0), sn, cn, cd, sc and sd, and Down is
-        // in the digest pin (N-6). None returns exactly 1 for cn(u|1) and dn(u|m > 0), whose values are below 1, and
-        // dn and nd at m = 1/2 and 3/8 come back flagged exact (N-7). Neither is F-A/F-B/F-C shaped. ns, cs and ds
-        // at that u overflow; None saturates to +-MAX there (F-B, M27-OVF).
-        for i in [0usize, 1, 2, 3, 5, 7] {
+        // Operand 21 is the digest's tiny u = 3 * 2^(EXPONENT_MIN - 19) (F-21/F-22, fixed in b17: the leading term
+        // of the series, rounded by the side of the next term); ns, cs and ds overflow there (+-MAX toward zero, F-B).
+        for i in [0usize, 1, 2, 3, 5, 7, 21] {
             let u = operand(i);
             for (mi, m) in ms.iter().enumerate() {
                 for p in [64usize, 100, 128] {
@@ -386,7 +413,7 @@ fn jacobi_all_seven_modes() -> Res {
             }
         }
     }
-    assert_eq!(n, 13 * 6 * 5 * 3 * 7);
+    assert_eq!(n, 13 * 7 * 5 * 3 * 7);
     report("jacobi", n, &fails)
 }
 
@@ -431,7 +458,7 @@ fn airy_all_seven_modes() -> Res {
                     mpfr::ai(r.as_raw_mut(), fx.as_raw(), d)
                 })?;
                 let got = x.ai(p, rm, &mut cc);
-                if let Some(m) = mismatch(&got, &Expect::Strict(w, ix), None, rm, &mut cc)? {
+                if let Some(m) = mismatch(&got, &Expect::Strict(w, ix), None, p, rm, &mut cc)? {
                     fails.push(format!("ai(x{k}) vs mpfr_ai p={p} {rm:?}: {m}"));
                 }
                 n += 1;

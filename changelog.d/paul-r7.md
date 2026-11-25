@@ -85,3 +85,8 @@
   +-MAX (was +-Inf), and cancelling products give the correctly rounded part, on the gradual subnormal grid. `None`
   forms the products exactly too. A part whose mate overflowed is flagged inexact. The complex grid digest hashes
   every cell (the held lists and `src/grid_held/` are gone; ToOdd has its own digest).
+- Batch 20 (F-A, F-C, ZF-M27): under `None`, exact `pow`/`root` results are decided exactly (were
+  NaN(PrecisionRetryExhausted)), and the inexact flag is set only by bits dropped below the word cut `rp(p, 64)`
+  (an exact result was flagged inexact when it had bits below `p`). Every MPFR suite now runs all modes, `None`
+  included (the None-gap mode arrays and the KNOWN GAP list are gone); the Jacobi harness checks overflow brackets
+  (+-MAX inexact on the toward-zero side) and the subnormal midpoint through `ldexp`.

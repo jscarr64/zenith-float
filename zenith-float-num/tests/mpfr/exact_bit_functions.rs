@@ -28,18 +28,6 @@ pub const MODES: [RoundingMode; 7] = [
     RoundingMode::None,
 ];
 
-/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
-/// Up, Down, ToZero, FromZero), for the families that fail the strict None oracle. NONE-GAP F-A: an exact `pow` /
-/// `nth_root` result comes back as its predecessor at rp(p, 64), flagged inexact.
-pub const NONE_GAP_MODES: [RoundingMode; 6] = [
-    RoundingMode::ToEven,
-    RoundingMode::ToOdd,
-    RoundingMode::Up,
-    RoundingMode::Down,
-    RoundingMode::ToZero,
-    RoundingMode::FromZero,
-];
-
 /// A `p`-bit input in `2^elo ..= 2^ehi`, stored at the word precision zenith uses for `p`.
 /// Its accumulated `inexact` flag is set so that a result cannot pass by inheriting it.
 pub fn input(

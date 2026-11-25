@@ -5,7 +5,7 @@ use crate::mpfr::common::assert_exact_eq;
 use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::exact_bit_functions::{
-    check, exact_input, input, MODES, NONE_GAP_MODES, P14_PRECISIONS, PRECISIONS,
+    check, exact_input, input, MODES, P14_PRECISIONS, PRECISIONS,
 };
 use crate::mpfr::mp::mpfr;
 use crate::mpfr::mp::Float;
@@ -119,8 +119,7 @@ fn exact_bit_pow_atan2() -> Result<(), Box<dyn std::error::Error>> {
                 conv_to_mpfr(storage(p), &x, &mut cc)?,
                 conv_to_mpfr(storage(p), &y, &mut cc)?,
             );
-            // NONE-GAP F-A: exact pow results, e.g. pow(4, 1/2) (ZF-M27)
-            for rm in NONE_GAP_MODES {
+            for rm in MODES {
                 let got = x.pow(&y, p, rm, &mut cc);
                 let info = format!("pow p={p} {rm:?} {x:?} {y:?}");
                 check(&got, p, rm, &info, &mut cc, |r, rnd| {
@@ -173,8 +172,7 @@ fn exact_bit_powi_root_reciprocal() -> Result<(), Box<dyn std::error::Error>> {
                     mpfr::ui_div(r.as_raw_mut(), 1, fx.as_raw(), rnd)
                 })?;
             }
-            // NONE-GAP F-A: exact nth_root results, e.g. nth_root(16, 4) (ZF-M27)
-            for rm in NONE_GAP_MODES {
+            for rm in MODES {
                 if !x.is_negative() {
                     for n in [4usize, 5] {
                         let got = x.nth_root(n, p, rm);

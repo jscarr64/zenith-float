@@ -1008,7 +1008,9 @@ impl Mantissa {
         if rm.skips_rounding() {
             *check_roundable = false;
 
-            // inexact?
+            // inexact? Public `None` keeps every bit above the word cut rp(p, 64), so only the bits below that cut
+            // count (F-A, ZF-M27); `Work` reports any bit below `p`.
+            let n = if rm == RoundingMode::None { n - n % WORD_BIT_SIZE } else { n };
             if !(*inexact)
                 && n > 0
                 && n < self.max_bit_len()
@@ -1462,7 +1464,13 @@ impl Mantissa {
             src[..w].iter().all(|v| v == &0) && (b == 0 || src[w] << (WORD_BIT_SIZE - b) == 0)
         };
         let up = match rm {
-            RoundingMode::None | RoundingMode::Work => {
+            RoundingMode::None => {
+                // The low `t` bits of word `k` stay: public `None` truncates at the word cut rp(p, 64), so only
+                // the bits below that cut make it inexact (F-A, ZF-M27).
+                *inexact |= !zero_below(k * WORD_BIT_SIZE);
+                None
+            }
+            RoundingMode::Work => {
                 // `round_mantissa` only records inexactness: the low `t` bits of word `k` stay.
                 *inexact |= !zero_below(drop);
                 None

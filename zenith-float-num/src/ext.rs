@@ -7488,7 +7488,10 @@ mod grid_digest_tests {
             println!("round_grid_digest ToOdd digest = {}", h_odd.finish());
             // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
             assert_eq!(h_odd.finish(), 6_694_869_305_830_813_196);
-            assert_eq!(h.finish(), 10_921_324_020_573_550_304);
+            // Re-pinned (ZF-M27 F-A, None inexact at the word cut): was 10_921_324_020_573_550_304. Three cells
+            // changed, round(x, n, None) for n = 5, 63, 64 on a 64-bit operand: None cuts at rp(n, 64) = 64 bits,
+            // nothing is dropped, so the op is exact (value unchanged, op inexact now false).
+            assert_eq!(h.finish(), 5_868_964_292_525_031_674);
         }
         Ok(())
     }

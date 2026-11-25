@@ -32,18 +32,6 @@ const MODES: [RoundingMode; 7] = [
     RoundingMode::None,
 ];
 
-/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
-/// Up, Down, ToZero, FromZero), for the families that fail the strict None oracle. NONE-GAP F-A: an exact `pow` /
-/// `nth_root` result comes back as its predecessor at rp(p, 64), flagged inexact.
-const NONE_GAP_MODES: [RoundingMode; 6] = [
-    RoundingMode::ToEven,
-    RoundingMode::ToOdd,
-    RoundingMode::Up,
-    RoundingMode::Down,
-    RoundingMode::ToZero,
-    RoundingMode::FromZero,
-];
-
 /// Result precisions: tiny (1 to 5 bits), around one and two words, and a few in between.
 const PRECISIONS: [usize; 10] = [1, 2, 3, 5, 24, 53, 64, 65, 128, 200];
 
@@ -373,8 +361,7 @@ fn nth_root_over_the_whole_range() -> Res {
                 precisions: &[1, 3, 24, 64, 65, 128],
                 flags: true,
                 skip: no_skip,
-                // NONE-GAP F-A: exact nth_root results in the grid (ZF-M27)
-                modes: &NONE_GAP_MODES,
+                modes: &MODES,
             },
             |x, p, rm| x.nth_root(n, p, rm),
             |x, p, rm| sh::ref_root(x, n as u32, p, rm),
@@ -397,8 +384,7 @@ fn nth_root_over_the_whole_range() -> Res {
             precisions: &[1, 2, 24, 64, 128],
             flags: true,
             skip: no_skip,
-            // NONE-GAP F-A: exact nth_root results (ZF-M27)
-            modes: &NONE_GAP_MODES,
+            modes: &MODES,
         },
         |x, p, rm| x.nth_root(5, p, rm),
         |x, p, rm| sh::ref_root(x, 5, p, rm),
@@ -419,8 +405,7 @@ fn nth_root_exact_result_is_not_inexact() -> Res {
             precisions: &[24, 64, 65, 128, 200],
             flags: true,
             skip: no_skip,
-            // NONE-GAP F-A: exact nth_root results (ZF-M27)
-            modes: &NONE_GAP_MODES,
+            modes: &MODES,
         },
         |x, p, rm| x.nth_root(7, p, rm),
         |x, p, rm| sh::ref_root(x, 7, p, rm),
@@ -660,8 +645,7 @@ fn primitives_at_20000_bits() -> Res {
 // ---- W1b: regressions for four wrong answers found in published 1.0.12 --------------------------------------------
 //
 // 1.0.12 returned a wrong value for each of these; the branch's exact-`p`-bit kernels were expected to be right, and
-// these tests keep them so (each is checked against MPFR in every mode, flags included; None too, except the queued
-// NONE-GAP rows).
+// these tests keep them so (each is checked against MPFR in every mode, flags included, None too).
 
 /// Operands of the composite-`n` root sweep: the end-of-range grid plus ordinary operands (the 1.0.12 error was at
 /// ordinary exponents: it rounded after each square or cube root).
@@ -691,8 +675,7 @@ fn nth_root_with_a_composite_n() -> Res {
                 precisions: &[1, 2, 3, 5, 24, 53, 64, 65, 128, 200],
                 flags: true,
                 skip: no_skip,
-                // NONE-GAP F-A: exact nth_root results in the grid (ZF-M27)
-                modes: &NONE_GAP_MODES,
+                modes: &MODES,
             },
             |x, p, rm| x.nth_root(n, p, rm),
             |x, p, rm| sh::ref_root(x, n as u32, p, rm),
@@ -717,8 +700,7 @@ fn nth_root_with_a_composite_n() -> Res {
                 precisions: &[1, 2, 24, 64, 128],
                 flags: true,
                 skip: no_skip,
-                // NONE-GAP F-A: exact nth_root results (ZF-M27)
-                modes: &NONE_GAP_MODES,
+                modes: &MODES,
             },
             |x, p, rm| x.nth_root(n, p, rm),
             |x, p, rm| sh::ref_root(x, n as u32, p, rm),
@@ -1083,14 +1065,7 @@ fn pow_sweep(
 fn pow_of_exact_and_small_cases() -> Res {
     let mut run = Run::new(true)?;
     let precisions = [1usize, 2, 3, 5, 24, 53, 64, 65, 128, 200, 256];
-    pow_sweep(
-        &mut run,
-        &POW_BASES,
-        &pow_exponents(),
-        &precisions,
-        // NONE-GAP F-A: exact pow results (ZF-M27)
-        &NONE_GAP_MODES,
-    );
+    pow_sweep(&mut run, &POW_BASES, &pow_exponents(), &precisions, &MODES);
     run.finish("pow small exact", 1000);
     Ok(())
 }
@@ -1111,8 +1086,7 @@ fn pow_of_exact_and_small_cases_at_large_precision() -> Res {
         (3, -1, false),
         (3, -2, false),
     ];
-    // NONE-GAP F-A: exact pow results (ZF-M27)
-    pow_sweep(&mut run, &bases, &exps, &[1024, 4096], &NONE_GAP_MODES);
+    pow_sweep(&mut run, &bases, &exps, &[1024, 4096], &MODES);
     run.finish("pow large precision", 100);
     Ok(())
 }
@@ -1126,14 +1100,7 @@ fn pow_of_a_negative_base_with_an_integer_exponent() -> Res {
         .into_iter()
         .filter(|&(_, k, _)| k == 0)
         .collect();
-    pow_sweep(
-        &mut run,
-        &bases,
-        &exps,
-        &[1, 24, 64, 65, 128, 256],
-        // NONE-GAP F-A: exact pow results flagged inexact (ZF-M27)
-        &NONE_GAP_MODES,
-    );
+    pow_sweep(&mut run, &bases, &exps, &[1, 24, 64, 65, 128, 256], &MODES);
     run.finish("pow negative base", 500);
     Ok(())
 }
@@ -1165,8 +1132,7 @@ fn pow_of_exact_quarter_powers() -> Res {
         &bases,
         &exps,
         &[1, 2, 3, 24, 53, 64, 65, 128, 256],
-        // NONE-GAP F-A: exact pow results (ZF-M27)
-        &NONE_GAP_MODES,
+        &MODES,
     );
     run.finish("pow exact quarter powers", 2000);
     Ok(())
