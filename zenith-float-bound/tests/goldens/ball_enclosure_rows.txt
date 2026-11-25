@@ -2,7 +2,7 @@
 # row: OP PREC W AMID ARAD [BMID BRAD] LO HI RREF ; OP in add sub mul div sqrt (sqrt has no B) ; W = 2*PREC + 64
 # a value is 'SIGN EXP MANT': value = (-1)^SIGN * 0.MANT * 2^EXP = MANT * 2^(EXP - bitlen(MANT)), MANT lowercase hex and odd, zero is '0 0 0'
 # input balls are [MID - RAD, MID + RAD] (exact, RAD >= 0); [LO, HI] is the exact image rounded outward to W bits (LO down, HI up)
-# RREF = max over sample points s of |f(s) - f(m)| + U (U = one ulp of f(m)'s binade at PREC), rounded up to 64 bits; NOT asserted (D2 open)
+# RREF = max over sample points s of |f(s) - f(m)| + U (U = one ulp of f(m)'s binade at PREC), rounded up to 64 bits; asserted rad <= 2*RREF (tau = 2, Paul call 2026-11-25)
 # containment check for any mode: output ball contains [LO, HI]. Divisors exclude 0, sqrt inputs lie in [0, inf)
 # rows sorted by (OP order above, PREC, row text); draws: goldlib.SplitMix64 from stream_seed(2, 1), not bit-identical to the Rust draws
 # generated in the oracle venv (mpmath 1.3.0, sympy 1.14.0, gmpy2 2.3.2, python-flint 0.9.0); see scripts/README.md

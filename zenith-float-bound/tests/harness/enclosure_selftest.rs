@@ -2,8 +2,8 @@
 //! L0b-7 (TEST_PLAN section 9): the committed ball enclosure rows (tests/goldens/ball_enclosure_rows.txt, scripts/gen_ball_enclosure.py) at the
 //! full precision schedule PS. SCOPE, stated plainly: these are STRUCTURAL checks only (row shape, W = 2*PREC + 64, canonical values, non-negative
 //! radii, LO <= HI, a positive RREF, every op at every PS precision). The interval values themselves are guaranteed by the generator's exact
-//! Fraction computation and its mpmath.iv cross-check; there is no Ball type in src yet to test against. Consumers assert CONTAINMENT only: the
-//! tight/loose checks against RREF need tau and lambda, which are undecided (D2), so nothing here asserts them.
+//! Fraction computation and its mpmath.iv cross-check. The consumer (slice_arith.rs enclosure_rows_contained) asserts containment and the tight
+//! check rad <= 2*RREF (ENCLOSURE_TAU, a Paul call of 2026-11-25 derived from Arb's error analysis); nothing here asserts them.
 
 use std::cmp::Ordering;
 use std::collections::BTreeSet;

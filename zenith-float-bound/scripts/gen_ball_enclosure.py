@@ -8,8 +8,8 @@ the input ball(s), rounded OUTWARD to W = 2*PREC + 64 bits, and the reference ra
     ~/team-env/oracle-2026-10-30/bin/python scripts/gen_ball_enclosure.py --check DIR  regenerate into DIR (never tests/goldens) and compare byte for byte
     ~/team-env/oracle-2026-10-30/bin/python scripts/gen_ball_enclosure.py --selftest   the generator's own negative tests
 
-CONTAINMENT ONLY. A consumer asserts that its output ball contains [LO, HI]. The tight and loose checks (rad <= tau*R_ref, rad <= lambda*R_ref) are NOT
-asserted anywhere: tau and lambda are placeholders (D2, Rusty). RREF is recorded so they can be added when D2 is decided.
+CONTAINMENT AND TIGHTNESS. A consumer asserts that its output ball contains [LO, HI] and that rad <= 2*RREF (tau = 2 for every op here: a Paul call,
+2026-11-25, derived from Arb's error analysis in tests/harness/slice_arith.rs ENCLOSURE_TAU and recorded in WORK2.md). lambda (loose) stays D2.
 
 INDEPENDENCE. LO/HI come from exact Fractions (corner analysis: add, sub, mul, div are monotone in each argument on a box that excludes a zero divisor;
 sqrt is increasing) and goldlib.round_fraction with Down/Up (sqrt: integer square roots, floor for LO and ceiling for HI). Every row is cross-checked
@@ -45,7 +45,7 @@ HEADER = [
     "# row: OP PREC W AMID ARAD [BMID BRAD] LO HI RREF ; OP in add sub mul div sqrt (sqrt has no B) ; W = 2*PREC + 64",
     "# a value is 'SIGN EXP MANT': value = (-1)^SIGN * 0.MANT * 2^EXP = MANT * 2^(EXP - bitlen(MANT)), MANT lowercase hex and odd, zero is '0 0 0'",
     "# input balls are [MID - RAD, MID + RAD] (exact, RAD >= 0); [LO, HI] is the exact image rounded outward to W bits (LO down, HI up)",
-    "# RREF = max over sample points s of |f(s) - f(m)| + U (U = one ulp of f(m)'s binade at PREC), rounded up to 64 bits; NOT asserted (D2 open)",
+    "# RREF = max over sample points s of |f(s) - f(m)| + U (U = one ulp of f(m)'s binade at PREC), rounded up to 64 bits; asserted rad <= 2*RREF (tau = 2, Paul call 2026-11-25)",
     "# containment check for any mode: output ball contains [LO, HI]. Divisors exclude 0, sqrt inputs lie in [0, inf)",
     "# rows sorted by (OP order above, PREC, row text); draws: goldlib.SplitMix64 from stream_seed(2, 1), not bit-identical to the Rust draws",
     "# generated in the oracle venv (mpmath 1.3.0, sympy 1.14.0, gmpy2 2.3.2, python-flint 0.9.0); see scripts/README.md",

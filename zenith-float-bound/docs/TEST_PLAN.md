@@ -476,7 +476,7 @@ When the pin SHA changes: grid digests may change (they are our outputs; PLAN Pa
 | # | Decision | Owner | Default being built | Blocks |
 |---|---|---|---|---|
 | D1 | ~~Who writes the zf-side oracle harness and edge/pattern generators~~ **RESOLVED** (reported 11:04 PM CT): Rusty does not write it; Harper builds the shared harness S1, S6 to S9 (section 16). Open remainder: owners for S2 and S11 | Paul | Harper for S1, S6 to S9; S2 and S11 unowned | S2, S11 |
-| D2 | **Metrics and factors:** `tau_op`, `lambda`, `R_ref`, `allowance(n, prec)` for chains, and truth source (`mpmath.iv` vs `mp` cross-check) per op (section 9) | **Rusty** | placeholders in section 9 | tight/loose assertions only; containment tests do not wait |
+| D2 | **Metrics and factors** (enclosure rows, `tests/goldens/ball_enclosure_rows.txt`: tau = 2 for add/sub/mul/div/sqrt, asserted; Paul call 2026-11-25 from Arb's error analysis, WORK2.md and slice_arith.rs `ENCLOSURE_TAU`; the rest below stays open): `tau_op`, `lambda`, `R_ref`, `allowance(n, prec)` for chains, and truth source (`mpmath.iv` vs `mp` cross-check) per op (section 9) | **Rusty** | placeholders in section 9 | tight/loose assertions only; containment tests do not wait |
 | D3 | **Tools:** hand-written mutant patches as baseline, `cargo-mutants` addition; `cargo-fuzz` for the decoder only (installed on Pop, needs `libfuzzer-sys`, nightly); replacing PLAN's `cfg(zb_shrink_radius)` with a patch | **Rusty** | patches only, no `cargo-fuzz` | nightly mutation scope |
 | D4 | `cargo-llvm-cov` (needs `llvm-tools` toolchain component) | Rusty | off | optional metric only |
 | D5 | Golden size policy (commit up to about 5 MB per level, else hash-only) | Rusty | as stated | repo size |
@@ -728,7 +728,7 @@ _Audit 2026-10-23 (Harper, at 2d12c51): a box is ticked only where the named too
 - [x] S9 rules-scan rule for `-(b-a)` / `.sub(..).neg()` plus self-test case (protected file path, section 16)  **Owner: Harper.**  **Checked 2026-10-23 at 4990e5b:** tools/bound_layer_scan.py neg_sub_* rules, cases in tools/bound_layer_scan_selftest.sh, gate step rules-scan.
 - [x] S10 clippy `wildcard_enum_match_arm` deny: check the tree stays clean first  **Checked 2026-10-23 at 4990e5b:** Cargo.toml wildcard_enum_match_arm = "deny", tools/wildcard_enum_selftest.sh, gate step wildcard-enum.
 - [ ] S11 zf-side oracle harness **Owner: unassigned** (Rusty declined, D1; not on Harper's list) (needs the zf pin)
-- [ ] S12 tightness report and ratchet file  **Open (Spence, 2026-10-23):** gate step exists; baseline empty until D2.
+- [ ] S12 tightness report and ratchet file  **Open (Spence, 2026-10-23):** gate step exists; baseline empty until D2. Enclosure rows: tight check rad <= 2*RREF asserted (Paul call 2026-11-25); the report and ratchet file remain open.
 - [ ] S13 cross-target grid-digest job (D8)
 - [ ] S14 whole-tree grep for forbidden impls on `Ball` (`PartialEq`, `PartialOrd`, `From<Ball>`, `From<f64>`), in the tools, no `trybuild` `[Cas-1]`
 - [x] S15 settle `Tri` semantics and the corner numbering (D14): done 2026-10-16 (CONTRACT 15.2, 10.2a to 10.2e); the `Tri` tests may now be written `[Cas-2]` `[Cas-6]`

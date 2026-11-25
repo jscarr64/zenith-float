@@ -782,6 +782,42 @@ fn row_val(s: &str, e: &str, m: &str) -> Result<ExactNum, String> {
     Ok(if s == "1" { -x } else { x })
 }
 
+/// Tightness factor for the enclosure rows: `rad <= ENCLOSURE_TAU * RREF` for add, sub, mul, div and sqrt (Paul call,
+/// 2026-11-25, WORK2.md; D2). Derived from Arb's error analysis, not fitted: Arb's propagated radius for these ops is the
+/// worst-corner half-width H of the exact image (add/sub ra + rb, mul |a|rb + |b|ra + ra rb, div (|a|rb + |b|ra) /
+/// (|b|(|b| - rb)), sqrt r / (sqrt(m) + sqrt(m - r))) up to 30-bit magnitude round-up, (1 + 2^-28)·H; the rounded mid adds
+/// at most one ulp U of its binade, two when the rounding carries into the next binade. RREF >= H + U (the sample points
+/// include the corners and the ops are monotone on the box), so rad <= (1 + 2^-28)·H + 2U <= 2·(H + U) <= 2·RREF.
+/// Measured 2026-11-25 (r7-tools/rref): Arb (python-flint) max 1.0101 (sqrt), this library max 2.0 (sqrt, 2-ulp mid
+/// term with H negligible), every other op <= 1.000001.
+const ENCLOSURE_TAU: i64 = 2;
+
+/// `rad <= ENCLOSURE_TAU * rref`, compared exactly; an infinite radius is never within.
+fn enclosure_tight(line: &str, res: &Ball, rref: &ExactNum) -> Result<(), String> {
+    let within = !res.rad().is_infinity()
+        && match res
+            .rad()
+            .to_exact_num()
+            .map_err(|e| format!("{}: rad to exact: {:?}", line, e))?
+            .partial_cmp(&rref.mul_full_prec(&num(ENCLOSURE_TAU)))
+        {
+            Some(core::cmp::Ordering::Less | core::cmp::Ordering::Equal) => true,
+            Some(core::cmp::Ordering::Greater) => false,
+            None => return Err(format!("{}: rad vs bound unordered", line)),
+        };
+    if within {
+        Ok(())
+    } else {
+        Err(format!(
+            "{}: TIGHT: rad {:?} > {}·RREF {:?}",
+            line,
+            res.rad(),
+            ENCLOSURE_TAU,
+            rref
+        ))
+    }
+}
+
 #[test]
 fn enclosure_rows_contained() -> Result<(), String> {
     let path = golden_dir().join("ball_enclosure_rows.txt");
@@ -822,6 +858,7 @@ fn enclosure_rows_contained() -> Result<(), String> {
         let res = ok(line, res)?;
         want_contains(line, &res, &v(lo_at)?)?;
         want_contains(line, &res, &v(lo_at + 3)?)?;
+        enclosure_tight(line, &res, &v(lo_at + 6)?)?;
         checked += 1;
     }
     if checked != 1185 {

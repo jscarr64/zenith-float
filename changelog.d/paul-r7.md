@@ -105,3 +105,5 @@
 - Batch 26 (N-4): `copysign` and `next_after` work at the requested precision `p` instead of `p` rounded up to whole
   words: copysign of a 128-bit value at p = 65 now rounds at 65 bits (inexact), and next_after(1, 2, 65) is
   1 + 2^-64. `RoundingMode::None` still keeps the storage precision (ruling 10).
+- Batch 27 (D2, Paul call): the ball enclosure rows now assert tightness, rad <= 2·RREF for add, sub, mul, div and sqrt,
+  a factor derived from Arb's error analysis (WORK2.md); the golden's rows are unchanged, its header says so.

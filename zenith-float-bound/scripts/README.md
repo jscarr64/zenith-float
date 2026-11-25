@@ -45,7 +45,7 @@ The gate wrappers (`tools/full_gate.sh`, `tools/goldens_regen.sh`) export `PYTHO
 ## gen_ball_enclosure.py
 
 L0b-7 ball enclosure rows (TEST_PLAN section 9) at the full schedule PS: truth interval rounded outward at W = 2*PREC + 64 and R_ref, for
-containment checks only (tau and lambda are D2, not asserted). Exact Fractions, cross-checked with mpmath.iv.
+containment and tight checks (rad <= 2*RREF, tau = 2: Paul call 2026-11-25; lambda stays D2). Exact Fractions, cross-checked with mpmath.iv.
 
     ~/team-env/oracle-2026-10-30/bin/python scripts/gen_ball_enclosure.py            # writes tests/goldens/ball_enclosure_rows.txt
     ~/team-env/oracle-2026-10-30/bin/python scripts/gen_ball_enclosure.py --check DIR # regenerates and compares with DIR/ball_enclosure_rows.txt
