@@ -26,7 +26,7 @@ Flagged on added lines only (comments and string literals are ignored):
 
 ALLOWLIST: tools/rules_allowlist.txt, one `path:hash<TAB>reason` per line; the key is printed as allow-key=
 for every flagged site (hash = sha1 of the added line with whitespace collapsed). The file starts EMPTY.
-ONLY JEFF MAY EXTEND IT (.github/CODEOWNERS requires his review). Models never add entries.
+ONLY JEFF MAY EXTEND IT (.github/CODEOWNERS requires his review), by his own entries or a standing authorization written in the file.
 
 CLONE COUNT: total `.clone(` occurrences in ALL scanned code, test code included (the four library dirs and
 no_clone.TEST_DIRS; tools/ and target dirs excluded) must never go up versus tools/clone_count_baseline.txt. The

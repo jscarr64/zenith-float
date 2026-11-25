@@ -165,17 +165,17 @@ macro_rules! impl_ieee_array {
                 (self.rows, self.cols)
             }
 
-            /// Reinterpret the same buffer as `rows×cols` when the product matches.
-            pub fn reshape(&self, rows: usize, cols: usize) -> Option<Self> {
-                let n = rows.checked_mul(cols)?;
-                if n != self.bits.len() {
-                    return None;
+            /// Reinterpret the same buffer as `rows×cols` when the product matches. The buffer is moved, not
+            /// copied; on a size mismatch the array is returned unchanged as the `Err`.
+            pub fn reshape(self, rows: usize, cols: usize) -> Result<Self, Self> {
+                match rows.checked_mul(cols) {
+                    Some(n) if n == self.bits.len() => Ok(Self {
+                        bits: self.bits,
+                        rows,
+                        cols,
+                    }),
+                    _ => Err(self),
                 }
-                Some(Self {
-                    bits: self.bits.clone(),
-                    rows,
-                    cols,
-                })
             }
 
             /// Number of lanes.
@@ -822,17 +822,16 @@ impl ExactNumArray {
     }
 
     /// Reinterpret the same buffer as `rows×cols` when the product matches.
-    pub fn reshape(&self, rows: usize, cols: usize) -> Option<Self> {
-        let n = rows.checked_mul(cols)?;
-        if n != self.vals.len() {
-            return None;
+    pub fn reshape(self, rows: usize, cols: usize) -> Result<Self, Self> {
+        match rows.checked_mul(cols) {
+            Some(n) if n == self.vals.len() => Ok(Self {
+                p: self.p,
+                vals: self.vals,
+                rows,
+                cols,
+            }),
+            _ => Err(self),
         }
-        Some(Self {
-            p: self.p,
-            vals: self.vals.clone(),
-            rows,
-            cols,
-        })
     }
 
     /// Number of lanes.
@@ -1346,16 +1345,19 @@ impl ExactNumArray {
                 }
                 perm.swap(k, piv);
             }
-            let akk = a[ix(k, k)].clone();
+            // The pivot is moved out while row k's tail is read and rows below are updated (the loop never
+            // touches a[k][k]), then moved back.
+            let akk = core::mem::replace(&mut a[ix(k, k)], ExactNum::from_u8(0, p));
             for i in (k + 1)..n {
                 let old = core::mem::replace(&mut a[ix(i, k)], ExactNum::from_u8(0, p));
-                let lik = old.div(&akk, p, rm);
-                lvals[i * n + k] = lik.clone();
+                lvals[i * n + k] = old.div(&akk, p, rm);
+                let lik = &lvals[i * n + k];
                 for j in (k + 1)..m {
-                    let t = ExactNum::mul_ref(&lik, &a[ix(k, j)], p, rm);
+                    let t = ExactNum::mul_ref(lik, &a[ix(k, j)], p, rm);
                     a[ix(i, j)] = t.neg().add(&a[ix(i, j)], p, rm);
                 }
             }
+            a[ix(k, k)] = akk;
         }
         Some((
             Self {
@@ -1374,7 +1376,36 @@ impl ExactNumArray {
         ))
     }
 
-    /// Row–column transpose.
+    /// Row–column transpose of an owned array: the values are moved into place by swaps along the
+    /// permutation's cycles, nothing is copied. Same result as [`Self::transpose`].
+    pub fn into_transpose(self) -> Self {
+        let (rows, cols) = (self.rows, self.cols);
+        let mut vals = self.vals;
+        let len = vals.len();
+        let mut placed = alloc::vec![false; len];
+        for start in 0..len {
+            let mut cur = start;
+            while !placed[cur] {
+                placed[cur] = true;
+                // the value at row-major (i, j) of a rows x cols array goes to (j, i) of the cols x rows one
+                let dest = (cur % cols) * rows + cur / cols;
+                if dest == start {
+                    break;
+                }
+                vals.swap(start, dest);
+                cur = dest;
+            }
+        }
+        Self {
+            p: self.p,
+            vals,
+            rows: cols,
+            cols: rows,
+        }
+    }
+
+    /// Row–column transpose of a borrowed array: a new array, so each value is copied (the matrix copy
+    /// of P16). An owned array uses [`Self::into_transpose`], which copies nothing.
     pub fn transpose(&self) -> Self {
         let mut vals = Vec::with_capacity(self.vals.len());
         for j in 0..self.cols {
@@ -1411,14 +1442,14 @@ impl ExactNumArray {
             for i in 0..jlim {
                 let mut dot = ExactNum::from_u8(0, p);
                 for t in 0..m {
-                    let qi = q[t * k + i].clone();
-                    dot = dot.add(&qi.mul(&v[t], p, rm), p, rm);
+                    dot = dot.add(&ExactNum::mul_ref(&q[t * k + i], &v[t], p, rm), p, rm);
                 }
-                r[i * n + j] = dot.clone();
                 for t in 0..m {
-                    let qi = q[t * k + i].clone();
-                    v[t] = ExactNum::mul_ref(&dot, &qi, p, rm).neg().add(&v[t], p, rm);
+                    v[t] = ExactNum::mul_ref(&dot, &q[t * k + i], p, rm)
+                        .neg()
+                        .add(&v[t], p, rm);
                 }
+                r[i * n + j] = dot;
             }
             if j < k {
                 let mut nrm = ExactNum::from_u8(0, p);
@@ -1426,12 +1457,12 @@ impl ExactNumArray {
                     nrm = nrm.add(&vt.sqr(p, rm), p, rm);
                 }
                 nrm = nrm.sqrt(p, rm);
-                r[j * n + j] = nrm.clone();
                 if !nrm.is_zero() {
                     for (t, vt) in v.into_iter().enumerate().take(m) {
                         q[t * k + j] = vt.div(&nrm, p, rm);
                     }
                 }
+                r[j * n + j] = nrm;
             }
         }
         Some((
@@ -1469,10 +1500,10 @@ impl ExactNumArray {
             }
         }
         if m < n {
-            let (ut, s, vtt) = self.transpose().svd_decomp(p, rm)?;
-            return Some((vtt.transpose(), s, ut.transpose()));
+            let (ut, s, vtt) = svd_decomp_tall(self, true, p, rm)?;
+            return Some((vtt.into_transpose(), s, ut.into_transpose()));
         }
-        svd_decomp_tall(self, p, rm)
+        svd_decomp_tall(self, false, p, rm)
     }
 
     /// Symmetric QR eigendecomposition at `(p, rm)`.
@@ -1648,18 +1679,19 @@ fn svd_norm(xs: &[ExactNum], p: usize, rm: RoundingMode) -> ExactNum {
 }
 
 fn svd_householder(
-    x: &[ExactNum],
+    x: Vec<ExactNum>,
     p: usize,
     rm: RoundingMode,
 ) -> Option<(Vec<ExactNum>, ExactNum)> {
     if x.is_empty() {
         return None;
     }
-    let norm = svd_norm(x, p, rm);
+    let norm = svd_norm(&x, p, rm);
     if norm.is_zero() {
         return None;
     }
-    let mut v = x.to_vec();
+    // the caller's owned column copy becomes the Householder vector
+    let mut v = x;
     let signed = if v[0].is_negative() { norm.neg() } else { norm };
     v[0] = signed.add(&v[0], p, rm);
     let mut vtv = svd_zero(p);
@@ -1755,8 +1787,9 @@ fn svd_apply_givens_cols(
     rm: RoundingMode,
 ) {
     for i in 0..rows {
-        let a = mat[i * cols + j0].clone();
-        let b = mat[i * cols + j1].clone();
+        // both entries are overwritten below: move them out
+        let a = core::mem::replace(&mut mat[i * cols + j0], svd_zero(p));
+        let b = core::mem::replace(&mut mat[i * cols + j1], svd_zero(p));
         mat[i * cols + j0] =
             ExactNum::mul_ref(cs, &a, p, rm).add(&ExactNum::mul_ref(sn, &b, p, rm), p, rm);
         mat[i * cols + j1] = b.mul(cs, p, rm).sub(&a.mul(sn, p, rm), p, rm);
@@ -1823,8 +1856,14 @@ fn svd_qr_sweep(
     (p, rm): (usize, RoundingMode),
 ) {
     let last = q_blk - 1;
-    let e_prev = if last >= p_blk + 2 { e[last - 2].clone() } else { svd_zero(p) };
-    let shift = svd_wilkinson_shift(&d[last - 1], &d[last], &e_prev, &e[last - 1], p, rm);
+    let zero;
+    let e_prev = if last >= p_blk + 2 {
+        &e[last - 2]
+    } else {
+        zero = svd_zero(p);
+        &zero
+    };
+    let shift = svd_wilkinson_shift(&d[last - 1], &d[last], e_prev, &e[last - 1], p, rm);
     let mut f = ExactNum::add_ref(&d[p_blk], &d[last], p, rm)
         .mul(&ExactNum::sub_ref(&d[p_blk], &d[last], p, rm), p, rm)
         .add(&shift, p, rm);
@@ -1834,9 +1873,10 @@ fn svd_qr_sweep(
         if j > p_blk {
             e[j - 1] = r;
         }
-        let dj = d[j].clone();
-        let ej = e[j].clone();
-        let dj1 = d[j + 1].clone();
+        // d[j], e[j] and d[j + 1] are all overwritten in this step: move them out
+        let dj = core::mem::replace(&mut d[j], svd_zero(p));
+        let ej = core::mem::replace(&mut e[j], svd_zero(p));
+        let dj1 = core::mem::replace(&mut d[j + 1], svd_zero(p));
         f = ExactNum::mul_ref(&cs, &dj, p, rm).add(&ExactNum::mul_ref(&sn, &ej, p, rm), p, rm);
         e[j] = ej.mul(&cs, p, rm).sub(&dj.mul(&sn, p, rm), p, rm);
         g = ExactNum::mul_ref(&sn, &dj1, p, rm);
@@ -1845,10 +1885,12 @@ fn svd_qr_sweep(
 
         let (cs, sn, r) = svd_rotg(&f, &g, p, rm);
         d[j] = r;
-        let ej = e[j].clone();
-        let dj1 = d[j + 1].clone();
-        f = ExactNum::mul_ref(&cs, &ej, p, rm).add(&ExactNum::mul_ref(&sn, &dj1, p, rm), p, rm);
-        d[j + 1] = dj1.mul(&cs, p, rm).sub(&ej.mul(&sn, p, rm), p, rm);
+        let ej = &e[j];
+        let dj1 = core::mem::replace(&mut d[j + 1], svd_zero(p));
+        f = ExactNum::mul_ref(&cs, ej, p, rm).add(&ExactNum::mul_ref(&sn, &dj1, p, rm), p, rm);
+        d[j + 1] = dj1
+            .mul(&cs, p, rm)
+            .sub(&ExactNum::mul_ref(ej, &sn, p, rm), p, rm);
         if j + 1 < last {
             g = ExactNum::mul_ref(&sn, &e[j + 1], p, rm);
             let old = core::mem::replace(&mut e[j + 1], svd_zero(p));
@@ -1869,8 +1911,7 @@ fn svd_zero_last_super(
     rm: RoundingMode,
 ) {
     let k = q_blk - 1;
-    let mut f = e[k - 1].clone();
-    e[k - 1] = svd_zero(p);
+    let mut f = core::mem::replace(&mut e[k - 1], svd_zero(p));
     for j in (p_blk..k).rev() {
         let (cs, sn, t) = svd_rotg(&d[j], &f, p, rm);
         d[j] = t;
@@ -1891,8 +1932,7 @@ fn svd_zero_first_super(
     p: usize,
     rm: RoundingMode,
 ) {
-    let mut f = e[p_blk].clone();
-    e[p_blk] = svd_zero(p);
+    let mut f = core::mem::replace(&mut e[p_blk], svd_zero(p));
     for j in (p_blk + 1)..q_blk {
         let (cs, sn, t) = svd_rotg(&d[j], &f, p, rm);
         d[j] = t;
@@ -1904,13 +1944,21 @@ fn svd_zero_first_super(
     }
 }
 
-fn svd_take_cols(vals: &[ExactNum], rows: usize, cols: usize, k: usize, p: usize) -> ExactNumArray {
-    let mut out = Vec::with_capacity(rows * k);
-    for i in 0..rows {
-        for j in 0..k {
-            out.push(vals[i * cols + j].clone());
-        }
-    }
+fn svd_take_cols(
+    vals: Vec<ExactNum>,
+    rows: usize,
+    cols: usize,
+    k: usize,
+    p: usize,
+) -> ExactNumArray {
+    // the first k columns, row-major, moved out of the owned buffer
+    let out: Vec<ExactNum> = vals
+        .into_iter()
+        .enumerate()
+        .filter(|(ix, _)| ix % cols < k)
+        .map(|(_, x)| x)
+        .take(rows * k)
+        .collect();
     ExactNumArray {
         p,
         vals: out,
@@ -1919,50 +1967,63 @@ fn svd_take_cols(vals: &[ExactNum], rows: usize, cols: usize, k: usize, p: usize
     }
 }
 
-fn svd_vt_from_v(v: &[ExactNum], n: usize, k: usize, p: usize) -> ExactNumArray {
-    let mut out = Vec::with_capacity(k * n);
-    for j in 0..k {
-        for i in 0..n {
-            out.push(v[i * n + j].clone());
-        }
-    }
+fn svd_vt_from_v(v: Vec<ExactNum>, n: usize, k: usize, p: usize) -> ExactNumArray {
+    // V^T: the first k columns of the n x n V, transposed by moving (no copy)
     ExactNumArray {
         p,
-        vals: out,
-        rows: k,
+        vals: v,
+        rows: n,
         cols: n,
     }
+    .into_transpose()
+    .take_rows(k)
 }
 
 fn svd_decomp_tall(
     a0: &ExactNumArray,
+    transposed: bool,
     p: usize,
     rm: RoundingMode,
 ) -> Option<(ExactNumArray, ExactNumArray, ExactNumArray)> {
-    let m = a0.rows;
-    let n = a0.cols;
-    let mut a: Vec<ExactNum> = a0.vals.iter().map(|x| svd_copy_prec(x, p, rm)).collect();
+    // `transposed`: decompose a0^T, reading a0 in transposed order; no transposed copy is built.
+    let (m, n) = if transposed { (a0.cols, a0.rows) } else { (a0.rows, a0.cols) };
+    let mut a: Vec<ExactNum> = (0..m * n)
+        .map(
+            |ix| {
+                if transposed {
+                    &a0.vals[(ix % n) * m + ix / n]
+                } else {
+                    &a0.vals[ix]
+                }
+            },
+        )
+        .map(|x| svd_copy_prec(x, p, rm))
+        .collect();
     let mut u = svd_identity(m, p)?;
     let mut v = svd_identity(n, p)?;
 
     for k in 0..n {
         let x: Vec<ExactNum> = (k..m).map(|i| a[i * n + k].clone()).collect();
-        if let Some((hv, beta)) = svd_householder(&x, p, rm) {
+        if let Some((hv, beta)) = svd_householder(x, p, rm) {
             svd_apply_house_left(&mut a, n, [k, k], &hv, &beta, p, rm);
             svd_apply_house_right(&mut u, [m, m], [0, k], &hv, &beta, p, rm);
         }
         if k + 1 < n {
             let x: Vec<ExactNum> = ((k + 1)..n).map(|j| a[k * n + j].clone()).collect();
-            if let Some((hv, beta)) = svd_householder(&x, p, rm) {
+            if let Some((hv, beta)) = svd_householder(x, p, rm) {
                 svd_apply_house_right(&mut a, [m, n], [k, k + 1], &hv, &beta, p, rm);
                 svd_apply_house_right(&mut v, [n, n], [0, k + 1], &hv, &beta, p, rm);
             }
         }
     }
 
-    let mut d: Vec<ExactNum> = (0..n).map(|i| a[i * n + i].clone()).collect();
+    // a is not read again: move its diagonal and superdiagonal out
+    let mut a: Vec<Option<ExactNum>> = a.into_iter().map(Some).collect();
+    let mut d: Vec<ExactNum> = (0..n).map(|i| a[i * n + i].take()).collect::<Option<_>>()?;
     let mut e: Vec<ExactNum> = if n >= 2 {
-        (0..n - 1).map(|i| a[i * n + i + 1].clone()).collect()
+        (0..n - 1)
+            .map(|i| a[i * n + i + 1].take())
+            .collect::<Option<_>>()?
     } else {
         Vec::new()
     };
@@ -2009,9 +2070,21 @@ fn svd_decomp_tall(
 
         let mut did_split = false;
         for i in p_blk..q {
-            let el = if i > p_blk { e[i - 1].clone() } else { svd_zero(p) };
-            let er = if i + 1 < q { e[i].clone() } else { svd_zero(p) };
-            if svd_negligible(&d[i], &el, &er, p, rm) {
+            let zl;
+            let zr;
+            let el = if i > p_blk {
+                &e[i - 1]
+            } else {
+                zl = svd_zero(p);
+                &zl
+            };
+            let er = if i + 1 < q {
+                &e[i]
+            } else {
+                zr = svd_zero(p);
+                &zr
+            };
+            if svd_negligible(&d[i], el, er, p, rm) {
                 d[i] = svd_zero(p);
                 if i == q - 1 && i > p_blk {
                     svd_zero_last_super(&mut d, &mut e, &mut v, n, [p_blk, q], p, rm);
@@ -2062,18 +2135,18 @@ fn svd_decomp_tall(
 
     let k = n;
     let mut sigma = try_alloc_vec(k.checked_mul(k)?, svd_zero(p))?;
-    for i in 0..k {
-        sigma[i * k + i] = d[i].clone();
+    for (i, di) in d.into_iter().enumerate().take(k) {
+        sigma[i * k + i] = di;
     }
     Some((
-        svd_take_cols(&u, m, m, k, p),
+        svd_take_cols(u, m, m, k, p),
         ExactNumArray {
             p,
             vals: sigma,
             rows: k,
             cols: k,
         },
-        svd_vt_from_v(&v, n, k, p),
+        svd_vt_from_v(v, n, k, p),
     ))
 }
 
@@ -2114,15 +2187,17 @@ fn eigen_qr_sweep(
     let last = q_blk - 1;
     let mu = eigen_wilkinson(&d[last - 1], &e[last - 1], &d[last], p, rm);
     let mut f = mu.neg().add(&d[p_blk], p, rm);
-    let mut g = e[p_blk].clone();
+    // g starts as e[p_blk], read in place until a step sets it
+    let mut g: Option<ExactNum> = None;
     for k in p_blk..last {
-        let (cs, sn, r) = svd_rotg(&f, &g, p, rm);
+        let (cs, sn, r) = svd_rotg(&f, g.as_ref().unwrap_or(&e[p_blk]), p, rm);
         if k > p_blk {
             e[k - 1] = r;
         }
-        let d0 = d[k].clone();
-        let ee = e[k].clone();
-        let d1 = d[k + 1].clone();
+        // d[k], e[k] and d[k + 1] are all overwritten in this step: move them out
+        let d0 = core::mem::replace(&mut d[k], svd_zero(p));
+        let ee = core::mem::replace(&mut e[k], svd_zero(p));
+        let d1 = core::mem::replace(&mut d[k + 1], svd_zero(p));
         let c2 = cs.sqr(p, rm);
         let s2 = sn.sqr(p, rm);
         let cs2 = ExactNum::mul_ref(&cs, &sn, p, rm);
@@ -2142,9 +2217,10 @@ fn eigen_qr_sweep(
             .add(&c2.sub(&s2, p, rm).mul(&ee, p, rm), p, rm);
         svd_apply_givens_cols(q, [n, n], [k, k + 1], [&cs, &sn], p, rm);
         if k + 1 < last {
-            let ek1 = e[k + 1].clone();
-            f = e[k].clone();
-            g = sn.mul(&ek1, p, rm);
+            // e[k + 1] is overwritten here and e[k] by the next step's `e[k - 1] = r`: move both out
+            let ek1 = core::mem::replace(&mut e[k + 1], svd_zero(p));
+            f = core::mem::replace(&mut e[k], svd_zero(p));
+            g = Some(sn.mul(&ek1, p, rm));
             e[k + 1] = cs.mul(&ek1, p, rm);
         }
     }
@@ -2160,15 +2236,19 @@ fn eigen_decomp_sym(
     let mut q = svd_identity(n, p)?;
     for k in 0..n.saturating_sub(2) {
         let x: Vec<ExactNum> = ((k + 1)..n).map(|i| a[i * n + k].clone()).collect();
-        if let Some((hv, beta)) = svd_householder(&x, p, rm) {
+        if let Some((hv, beta)) = svd_householder(x, p, rm) {
             svd_apply_house_left(&mut a, n, [k + 1, k], &hv, &beta, p, rm);
             svd_apply_house_right(&mut a, [n, n], [0, k + 1], &hv, &beta, p, rm);
             svd_apply_house_right(&mut q, [n, n], [0, k + 1], &hv, &beta, p, rm);
         }
     }
-    let mut d: Vec<ExactNum> = (0..n).map(|i| a[i * n + i].clone()).collect();
+    // a is not read again: move its diagonal and superdiagonal out
+    let mut a: Vec<Option<ExactNum>> = a.into_iter().map(Some).collect();
+    let mut d: Vec<ExactNum> = (0..n).map(|i| a[i * n + i].take()).collect::<Option<_>>()?;
     let mut e: Vec<ExactNum> = if n >= 2 {
-        (0..n - 1).map(|i| a[i * n + i + 1].clone()).collect()
+        (0..n - 1)
+            .map(|i| a[i * n + i + 1].take())
+            .collect::<Option<_>>()?
     } else {
         Vec::new()
     };
@@ -2267,6 +2347,14 @@ impl ExactNumArray {
     /// The row-major values, moved out (no copy).
     pub(crate) fn into_vals(self) -> Vec<ExactNum> {
         self.vals
+    }
+
+    /// The first `k` rows (all of them when `k >= rows`), keeping the buffer.
+    fn take_rows(mut self, k: usize) -> Self {
+        let k = k.min(self.rows);
+        self.vals.truncate(k * self.cols);
+        self.rows = k;
+        self
     }
 }
 
@@ -2673,9 +2761,39 @@ mod tests {
         assert!(Ieee64Array::from_shape(2, 2, &[Ieee64::from_i32(1)]).is_none());
         let row = Ieee64Array::from_values(&[Ieee64::from_i32(1); 4]);
         assert_eq!(row.shape(), (1, 4));
-        let sq = row.reshape(2, 2).ok_or(crate::Error::InvalidArgument)?;
+        let sq = row
+            .reshape(2, 2)
+            .map_err(|_| crate::Error::InvalidArgument)?;
         assert_eq!(sq.shape(), (2, 2));
+        let row = Ieee64Array::from_values(&[Ieee64::from_i32(1); 4]);
         assert!(row.add(&sq).is_none());
+        // a size mismatch hands the array back unchanged
+        let back = row
+            .reshape(3, 2)
+            .err()
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(back.shape(), (1, 4));
+        Ok(())
+    }
+
+    #[test]
+    fn into_transpose_matches_transpose_on_every_shape() -> Result<(), crate::Error> {
+        let p = 64;
+        for (rows, cols) in [(1, 1), (1, 5), (5, 1), (2, 2), (3, 4), (4, 3), (6, 7), (8, 8)] {
+            let vals: Vec<ExactNum> = (0..rows * cols)
+                .map(|k| ExactNum::from_u8(u8::try_from(k).unwrap_or(u8::MAX), p))
+                .collect();
+            let a = ExactNumArray::from_shape(p, rows, cols, &vals)
+                .ok_or(crate::Error::InvalidArgument)?;
+            let want = a.transpose();
+            let got = a.into_transpose();
+            assert_eq!(got.shape(), (cols, rows), "{rows}x{cols}");
+            for k in 0..rows * cols {
+                let (g, w) = (got.get(k), want.get(k));
+                assert!(g.is_some() && w.is_some(), "{rows}x{cols} entry {k}");
+                assert!(g == w, "{rows}x{cols} entry {k}");
+            }
+        }
         Ok(())
     }
 
