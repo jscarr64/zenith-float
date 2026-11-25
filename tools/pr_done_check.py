@@ -5,14 +5,19 @@
 FAIL (rc 1):
   merged-open         an OPEN PR whose head is already on its base branch (compare base...head is identical or
                       behind), i.e. it landed but the PR was left open;
-  (branch-not-deleted lands next, with its red test first; --since is accepted and not used yet.)
+  branch-not-deleted  a landed PR (MERGED, or CLOSED with its head on the base) whose head branch still exists.
+Cross-repository PRs are skipped (their branch is not ours to delete). --since YYYY-MM-DD limits the branch check
+to PRs merged or closed on or after that date. The date compared is the UTC date of mergedAt / closedAt (GitHub
+gives them in UTC), so a PR merged 2026-11-24 9 PM CST (03:00Z on 11-25) counts as 2026-11-25.
 --limit N (default 1000) is the most PRs read per repo; a list that reaches N may be truncated, so it fails (rc 2).
 Read-only: only `gh pr list` and `gh api` GET calls.
 rc 0 ok, 1 not done, 2 usage or gh error of any kind (fails closed). GH=<path> selects the gh binary.
 """
 import argparse
+import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -44,6 +49,10 @@ def head_on_base(repo, base, sha):
     return r["status"] in LANDED
 
 
+def branch_exists(repo, name):
+    return gh("api", "repos/%s/git/ref/heads/%s" % (repo, name), allow_404=True) is not None
+
+
 def check(repo, since, limit, report):
     prs = gh("pr", "list", "-R", repo, "--state", "all", "--limit", str(limit), "--json",
              "number,state,headRefName,headRefOid,baseRefName,mergedAt,closedAt,isCrossRepository,url")
@@ -54,13 +63,32 @@ def check(repo, since, limit, report):
                       % (repo, len(prs), limit))
     bad = 0
     for pr in prs:
+        if pr.get("isCrossRepository"):
+            continue
         n, state, base = pr["number"], pr["state"], pr["baseRefName"]
         if state == "OPEN":
             if head_on_base(repo, base, pr["headRefOid"]):
                 report("FAIL %s#%d merged-open: head %s is on %s but the PR is still open (%s)"
                        % (repo, n, pr["headRefOid"][:9], base, pr["url"])); bad = 1
             continue
+        when = (pr.get("mergedAt") or pr.get("closedAt") or "")[:10]
+        if since and when and when < since:
+            continue
+        landed = state == "MERGED" or (state == "CLOSED" and head_on_base(repo, base, pr["headRefOid"]))
+        if landed and branch_exists(repo, pr["headRefName"]):
+            report("FAIL %s#%d branch-not-deleted: %s landed (%s) but branch %s still exists (%s)"
+                   % (repo, n, state.lower(), when or "?", pr["headRefName"], pr["url"])); bad = 1
     return bad, len(prs)
+
+
+def valid_date(s):
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        return False
+    try:
+        datetime.date.fromisoformat(s)
+    except ValueError:
+        return False
+    return True
 
 
 def main(argv=None):
@@ -71,6 +99,9 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if not a.repo:
         print("pr_done_check: give --repo OWNER/NAME", file=sys.stderr)
+        return 2
+    if a.since is not None and not valid_date(a.since):
+        print("pr_done_check: --since must be a real date YYYY-MM-DD (UTC), got %r" % a.since, file=sys.stderr)
         return 2
     bad = 0
     try:
