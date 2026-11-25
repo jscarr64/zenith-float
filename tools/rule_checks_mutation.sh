@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Hand mutation test for the shell/Python rule checks (no cargo-mutants for these; plan v2 step 1).
 # Each row flips one comparison, threshold, guard or exit code in a scratch copy of a check and runs that
-# check's selftest against the mutant (via DRIFT_CHECK / PR_DONE_CHECK / PRE_COMMIT_HOOK / PRE_PUSH_HOOK).
+# check's selftest against the mutant (via DRIFT_CHECK / PR_DONE_CHECK / PRE_COMMIT_HOOK / PRE_PUSH_HOOK /
+# RULE_CHECKS_DAILY / SCOPED_GATE).
 # KILLED = the selftest fails on the mutant. Any SURVIVED row fails this script (rc 1).
 # Usage: tools/rule_checks_mutation.sh [-j N]      Scratch: ${ZF_SCRATCH:-$HOME/.cache/zenith-float} (never /tmp)
 set -u
@@ -79,7 +80,7 @@ H09|.githooks/pre-push|1|scratch="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-p
 H10|.githooks/pre-push|1|exit $rc ==> exit 0
 H12|.githooks/pre-push|1|rc=1; continue ==> continue
 H13|.githooks/pre-push|1|n=$((n + 1)); t="$tmp/$n" ==> t="$tmp/$lsha"
-N01|tools/drift_check.py|1|if not os.path.lexists(os.path.join(c, ".git")): ==> if not os.path.isdir(os.path.join(c, ".git")):
+N01|tools/drift_check.py|1|except (FileNotFoundError, NotADirectoryError): ==> except OSError:
 N02|tools/drift_check.py|1|unreadable.append(c) ==> pass
 N03|tools/drift_check.py|1|    if unreadable: ==>     if False:
 P01|tools/pr_done_check.py|1|LANDED = ("identical", "behind") ==> LANDED = ("identical",)
@@ -114,6 +115,47 @@ X14|.githooks/pre-push|1|base="${RATCHET_BASE:-c74e834^}" ==> base="${RATCHET_BA
 X15|.githooks/pre-push|1|trap 'rm -rf "$tmp"' EXIT ==> :
 X16|.githooks/pre-commit|1||| { echo "pre-commit: not in a git work tree" >&2; exit 2; } ==> || true
 X18|tools/pr_done_check.py|1|    if p.returncode != 0: ==>     if p.returncode > 1:
+Y01|tools/drift_check.py|1|except (GitError, OSError, ValueError) as e: ==> except GitError as e:
+Y02|tools/drift_check.py|1|if os.path.exists(p): ==> if False:
+Y03|tools/drift_check.py|1|last = max(times) ==> last = min(times)
+Y04|tools/drift_check.py|1|if head and not detached else None ==> if False else None
+Y05|tools/drift_check.py|1|except OSError as e: ==> except ImportError as e:
+Y05b|tools/drift_check.py|2|except OSError as e: ==> except ImportError as e:
+Y06|tools/drift_check.py|1|if not act: ==> if act:
+Y07|tools/pr_done_check.py|1|except (GhError, KeyError, ValueError, TypeError) as e: ==> except (GhError, KeyError, ValueError) as e:
+Y08|tools/pr_done_check.py|1|if since and when and when < since: ==> if since and when < since:
+Y10|tools/drift_check.py|1|if window < 0: ==> if window <= 0:
+Y12|tools/drift_check.py|1|int(when) if when.isdigit() else None ==> None
+Y16|tools/drift_check.py|1|for c in [d] + sorted( ==> for c in sorted(
+Y19|tools/pr_done_check.py|1|or pr.get("closedAt") or "")[:10] ==> or pr.get("closedAt") or "")[:9]
+Z01|tools/drift_check.py|1|unreadable.append(c)  # EACCES ==> pass  # EACCES
+Z02|tools/drift_check.py|1|if not math.isfinite(a.max_age_min) or a.max_age_min < 0: ==> if a.max_age_min < 0:
+Z03|tools/drift_check.py|1|if not math.isfinite(a.max_age_min) or a.max_age_min < 0: ==> if not math.isfinite(a.max_age_min):
+Z04|tools/drift_check.py|1|or a.max_age_min < 0: ==> or a.max_age_min <= 0:
+Z05|tools/drift_check.py|1|if not math.isfinite(a.active_window_min): ==> if False:
+Z06|tools/drift_check.py|1|if oldest is not None and now - oldest > max_age: ==> if oldest is not None and now - oldest >= max_age:
+Z07|tools/drift_check.py|1|if oldest is not None and now - oldest > max_age: ==> if False:
+Z08|tools/pr_done_check.py|1|if not isinstance(pr, dict): ==> if False:
+Z11|tools/rule_checks_daily.sh|1|--all "${args[@]}" ==> "${args[@]}"
+Z12|tools/rule_checks_daily.sh|1|excl=(MathWorks) ==> excl=()
+Z13|tools/rule_checks_daily.sh|1|for p in "$1" "$real"; do ==> for p in "$1"; do
+Z14|tools/rule_checks_daily.sh|1|case "/$p/" in */"$x"/*) return 0 ==> case "/$p/" in *"$x"*) return 0
+Z15|tools/rule_checks_daily.sh|1|[ -d "$m" ] || continue ==> :
+Z16|tools/rule_checks_daily.sh|1|[ -d "$p" ] || { ==> true || {
+Z17|tools/rule_checks_daily.sh|1|[ ${#roots[@]} -gt 0 ] || { ==> true || {
+Z18|tools/rule_checks_daily.sh|1|excl+=("$2") ==> :
+Z19|tools/rule_checks_daily.sh|1|nf=$(grep -Ev "$sumre" <<<"$out" | grep -c '^drift_check: FAIL ') ==> nf=$(grep -c '^drift_check: FAIL ' <<<"$out")
+Z20|tools/rule_checks_daily.sh|1|1) v=FAIL;; ==> 1) v=PASS;;
+Z21|tools/rule_checks_daily.sh|1|exit $rc ==> exit 0
+Z22|tools/rule_checks_daily.sh|1|*[\*\?\[]*) ==> *[\?\[]*)
+Z30|tools/scoped_gate.sh|1|[ "$k" = 1 ] || ==> [ "$k" -ge 1 ] ||
+Z31|tools/scoped_gate.sh|1|failed+=("${names[$i]}") ==> :
+Z32|tools/scoped_gate.sh|1|exit 1; fi ==> exit 0; fi
+Z33|tools/scoped_gate.sh|1|[ -x "$poprun" ] || ==> true ||
+Z34|tools/scoped_gate.sh|1|"rules-scan|@full_gate" ==> "rules-scan|echo skipped"
+Z35|tools/scoped_gate.sh|1|cd "$repo" || ==> cd "$here" ||
+Z36|tools/scoped_gate.sh|1|--step "${names[$i]}" ==> --step main
+Z37|tools/scoped_gate.sh|1|[ -n "$c" ] || ==> true ||
 T
 }
 one() {  # id file occ old new
@@ -134,6 +176,8 @@ PY
     .githooks/pre-commit) st=tools/drift_check_selftest.sh; env="PRE_COMMIT_HOOK=$m";;
     tools/pr_done_check.py) st=tools/pr_done_check_selftest.sh; env="PR_DONE_CHECK=$m";;
     .githooks/pre-push) st=tools/pre_push_selftest.sh; env="PRE_PUSH_HOOK=$m";;
+    tools/rule_checks_daily.sh) st=tools/rule_checks_daily_selftest.sh; env="RULE_CHECKS_DAILY=$m";;
+    tools/scoped_gate.sh) st=tools/scoped_gate_selftest.sh; env="SCOPED_GATE=$m";;
   esac
   if env "$env" ZF_SCRATCH="$d/scratch" bash "$st" >"$d/log" 2>&1; then
     echo "$id SURVIVED $f: '$old' -> '$new'"
