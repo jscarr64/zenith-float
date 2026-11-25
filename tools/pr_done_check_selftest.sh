@@ -31,6 +31,7 @@ case "$1 $2" in
     [ -f "$MOCK/empty-list" ] && exit 0
     [ -f "$MOCK/garbage-list" ] && { echo "not json"; exit 0; }
     [ -f "$MOCK/object-list" ] && { echo '{"number":1}'; exit 0; }
+    [ -f "$MOCK/scalar-list" ] && { echo '[1]'; exit 0; }
     st=all; lim=30; prev=""; for a in "$@"; do [ "$prev" = "--state" ] && st="$a"; [ "$prev" = "--limit" ] && lim="$a"; prev="$a"; done
     # like gh: --state filters, --limit caps the rows (gh's own default is 30)
     python3 -c 'import json,sys; st=sys.argv[2].upper(); d=json.load(open(sys.argv[1])); print(json.dumps([p for p in d if st=="ALL" or p["state"]==st][:int(sys.argv[3])]))' "$f" "$st" "$lim"; exit 0;;
@@ -131,5 +132,9 @@ MOCK="$m" python3 -B "$pc" --repo o/r --since 2026-11-25 >/dev/null 2>&1; rc=$?;
 for bd in yesterday 2026-1-5 2026-02-30 20261105 ""; do
   MOCK="$m" python3 -B "$pc" --repo o/r --since "$bd" >/dev/null 2>&1; rc=$?; [ $rc = 2 ] && ok "--since '$bd' is a usage error (rc=2)" || bad "--since '$bd' (want rc=2, got rc=$rc)"
 done
+# ---- round 2 (Cassie R2-B3): malformed entries and dates fail closed; a landed PR with no date is still checked ----
+scenario "list entry that is not an object fails closed (R2-B3a)" 2 '[]' flag:scalar-list
+scenario "mergedAt that is a number fails closed (TypeError, Cassie Y07)" 2 "[$(pr 30 MERGED f/w wwww 5)]" branch:f/w=wwww
+EXTRA="--since 2026-11-01" scenario "landed PR with no merge/close date under --since: branch still checked (Cassie Y08)" 1 "[$(pr 31 MERGED f/y yyyy)]" branch:f/y=yyyy re:'#31.*branch-not-deleted'
 echo "pr_done_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
