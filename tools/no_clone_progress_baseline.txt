@@ -10,12 +10,13 @@
 # Lowered 2026-11-25 02:49 CT (Paul 12:32 AM round 7 item 1, batch 6, c7381ef: modular abs_int/egcd, Integer shl/shr by value, exp_bb chunk): clone() 196->191, total 214->209.
 # Lowered 2026-11-25 03:00 CT (round 7 item 1, batch 7, 8138e75: zero_like for the zero shortcuts, Cow for aprcl nth_root, add_ui_c, z_on_lower_cut): clone() 191->183, total 209->201.
 # Lowered 2026-11-25 03:03 CT (round 7 item 1, batch 8: elliptic_e_word takes its working copy by value): clone() 183->182, total 201->200.
-clone()	182
+# Lowered 2026-11-25 03:35 CT (round 7, batch 9: radix_roundtrip's TODO keep builds -k directly): clone() 182->181, total 200->199.
+clone()	181
 to_vec()	4
 cloned()	4
 Clone::clone	0
 clone_from	0
 impl Clone	1
 derive(Clone)	9
-total	200
+total	199
 helper_copies	443

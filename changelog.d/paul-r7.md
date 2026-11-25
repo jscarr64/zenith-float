@@ -51,3 +51,5 @@
   returns it as is. Clones 183 -> 182. The other equal-to-input shortcuts (ExactInt `add` x2 / `gcd` x2, number
   and ExactNum `rem`, poly `primitive_monic` x2) stay: a by-value probe broke ~45 callers that still need the
   receiver, so the signature change would add more copies than it removes.
+- Batch 9: radix_roundtrip's negative mirror is built as `from_i32(-k, p)` (its `[clone] TODO` keep is gone).
+  Clones 182 -> 181.

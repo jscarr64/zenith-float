@@ -334,8 +334,7 @@ fn zf_format_exact_negatives_match_positive_mirrors() -> Result<(), Box<dyn std:
         for &(k, base, compact) in expected {
             let rdx = Radix::try_new(base)?;
             let pos = ExactNum::from_i32(k, p);
-            let mut neg = pos.clone();
-            neg.set_sign(Sign::Neg);
+            let neg = ExactNum::from_i32(-k, p);
             let want_neg = format!("-{compact}");
             for rm in modes {
                 let sp = pos.format(rdx, rm, &mut cc)?;
