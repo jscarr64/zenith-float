@@ -119,6 +119,22 @@ impl ExactNumNumber {
         })
     }
 
+    /// A zero equal to `self` (a zero): the same sign, exponent, precision and flags, built fresh. A zero has no
+    /// payload, so nothing is copied.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    pub(crate) fn zero_like(&self) -> Result<Self, Error> {
+        Ok(ExactNumNumber {
+            m: Mantissa::new(self.m.max_bit_len())?,
+            e: self.e,
+            s: self.s,
+            inexact: self.inexact,
+            op_inexact: self.op_inexact,
+        })
+    }
+
     /// Returns a new number with value of 0, precision of `p` bits, sign `s`, and marked as inexact if `inexact` is true.
     /// Precision is rounded upwards to the word size.
     ///
@@ -788,7 +804,7 @@ impl ExactNumNumber {
         }
 
         if self.m.is_zero() {
-            return self.clone();
+            return self.zero_like();
         }
 
         // represent as mN * 2 ^ eNeff

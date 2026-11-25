@@ -8,7 +8,6 @@
 # restructured ownership, Cow, mem::take/replace, references); one that has no other way stays and is documented here directly
 # with a one-line reason, tagged [Jeff 4:42 PM CT]. Clone counts and baselines still only go down.
 nostd-tests/src/lib.rs:d6b5c59d22e3	nostd-tests/src/lib.rs:160 [cloned] [traced, compile-tested] ExactNumArray has no pop/move-out (tried y.pop(): E0599); adding one only for this test is the awkward API Jeff ruled out
-zenith-float-num/src/aprcl.rs:a3ff24e1572e	zenith-float-num/src/aprcl.rs:196 [clone] [traced-B7] n (ExactInt) in nth_root k==1 / n==1: Returns an owned root equal to the input; the signature returns ExactInt and a borrowed return would force Cow on every caller.
 zenith-float-num/src/aprcl.rs:b7feb1721620	zenith-float-num/src/aprcl.rs:1786 [clone] [traced-B7] a (Vec<u64>) in add_mod test: add_mod_limbs mutates dest in place while a must stay intact for the reference sum; an owned copy is the operation under test.
 zenith-float-num/src/aprcl.rs:d1dac7b3eb45	zenith-float-num/src/aprcl.rs:1791 [clone] [traced-B7] a (Vec<u64>) in sub_mod test: Same as 1786 for sub_mod_limbs.
 zenith-float-num/src/catalog.rs:54f548662cce	zenith-float-num/src/catalog.rs:65 [clone] [traced] b borrows from the even-Bernoulli cache inside the with_even_bernoulli guard; From<Num> for ExactNum consumes, and the cache must keep its entry
@@ -51,10 +50,8 @@ zenith-float-num/src/complex_elliptic.rs:6840f4dafbf7	zenith-float-num/src/compl
 zenith-float-num/src/complex_elliptic.rs:9806c4cb5dc7	zenith-float-num/src/complex_elliptic.rs:1064 [clone] [traced-B7] x0,y0,z0,p0,a0 seeding R_J duplication: Duplication rewrites x,y,z,pv,am every step while the originals x0..a0 are still read for the final Taylor terms.
 zenith-float-num/src/complex_elliptic.rs:011d85d26ede	zenith-float-num/src/complex_elliptic.rs:1065 [clone] [traced-B7] x0,y0,z0,p0,a0 seeding R_J duplication: Duplication rewrites x,y,z,pv,am every step while the originals x0..a0 are still read for the final Taylor terms.
 zenith-float-num/src/complex_elliptic.rs:004212e2dd7a	zenith-float-num/src/complex_elliptic.rs:1077 [clone] [traced-B7] x0,y0,z0,p0,a0 seeding R_J duplication: Duplication rewrites x,y,z,pv,am every step while the originals x0..a0 are still read for the final Taylor terms.
+zenith-float-num/src/complex_hypergeom.rs:0628bd16dda7	zenith-float-num/src/complex_hypergeom.rs:35 [clone] [traced] z borrowed; on the cut the result is (re(z), -0): the real part goes into the new owned value (off the cut z is now borrowed, round 7)
 zenith-float-num/src/complex_hypergeom.rs:6ba85a625dc8	zenith-float-num/src/complex_hypergeom.rs:36 [clone] [traced] z borrowed; clone + set_sign(Neg) keeps the input's inexact flag exactly (neg_ref would rebuild flags)
-zenith-float-num/src/complex_hypergeom.rs:0ffc47682a0a	zenith-float-num/src/complex_hypergeom.rs:38 [clone] [traced] z borrowed; the real part goes into the new owned value
-zenith-float-num/src/complex_hypergeom.rs:5a45a1e5e80b	zenith-float-num/src/complex_hypergeom.rs:40 [clone] [traced] z_on_lower_cut(&z) -> owned: off the cut the result is the input itself
-zenith-float-num/src/complex_special.rs:76d3edf52614	zenith-float-num/src/complex_special.rs:163 [clone] [traced] add_ui_c(&z, 0) returns z itself as an owned value; z borrowed
 zenith-float-num/src/complex_special.rs:20a2c395dad7	zenith-float-num/src/complex_special.rs:229 [clone] [traced] rising2_ui_rs(&x, 1) returns (x, 1) with x owned; x borrowed and read again for n >= 2
 zenith-float-num/src/complex_special.rs:be2d0145cad0	zenith-float-num/src/complex_special.rs:286 [clone] [traced] c[i] is read again by the derivative loop at 295 (mul_ref(&c[i], i)), so c cannot be consumed here
 zenith-float-num/src/complex_special.rs:54f548662cce	zenith-float-num/src/complex_special.rs:451 [clone] [traced] b borrows from the even-Bernoulli cache inside the guard; From<Num> consumes and the cache keeps its entry
@@ -74,7 +71,6 @@ zenith-float-num/src/complex_special.rs:f69a2ddc0aae	zenith-float-num/src/comple
 zenith-float-num/src/conv.rs:dd197c0a307d	zenith-float-num/src/conv.rs:831 [clone] [traced] mul_base_pow(&self) zero/exp 0: owned result rounded with set_precision(..)? whose error must propagate; rounded_to swallows it
 zenith-float-num/src/conv.rs:e7537444e747	zenith-float-num/src/conv.rs:1179 [clone] [traced] bn1 (base^n) is loop-invariant in the Ziv loop (head 1118) and read again at 1218
 zenith-float-num/src/conv.rs:f351ed8f6e16	zenith-float-num/src/conv.rs:1256 [clone] [traced] bn1 is a borrowed parameter, compared again at 1272
-zenith-float-num/src/conv.rs:3dcecda6715d	zenith-float-num/src/conv.rs:1324 [clone] [traced] try_round_scaled_to_int(y: &Self) zero: the owned result equals the borrowed input
 zenith-float-num/src/conv.rs:2399afdee345	zenith-float-num/src/conv.rs:1422 [clone] [traced] fract(mut self) consumes, and the borrowed y is read again at 1434/1448
 zenith-float-num/src/ext.rs:2d9311fc0db9	zenith-float-num/src/ext.rs:408 [clone] [traced] two_sum_rounded NaN: both owned outputs are the same NaN (with its error kind)
 zenith-float-num/src/ext.rs:6d1a09032f4f	zenith-float-num/src/ext.rs:2040 [clone] [traced] try_to_number(&self) returns an owned Num from the borrowed inner value
@@ -99,7 +95,6 @@ zenith-float-num/src/num/zfn01.rs:a763cd4aba38	zenith-float-num/src/num/zfn01.rs
 zenith-float-num/src/ops/airy.rs:6c5400053da6	zenith-float-num/src/ops/airy.rs:178 [clone] [traced] airy_all returns (values, scales), and each scale equals its value; both arrays are owned
 zenith-float-num/src/ops/airy.rs:7f157b6733e0	zenith-float-num/src/ops/airy.rs:196 [clone] [traced] same as 178 [ref 178: airy_all returns (values, scales), and each scale equals its value; both arrays are owned]
 zenith-float-num/src/ops/airy.rs:d05937ffa710	zenith-float-num/src/ops/airy.rs:395 [clone] [traced] scales repeats amp and amp_p (two entries each); one copy of each is required
-zenith-float-num/src/ops/bernoulli_rev.rs:f83f73bc109c	zenith-float-num/src/ops/bernoulli_rev.rs:192 [clone] [traced] nearest_unique_int(x: &Num) with x == 0: n is an owned result (mutated below) equal to the borrowed x
 zenith-float-num/src/ops/bernoulli_rev.rs:701a0e40fb5e	zenith-float-num/src/ops/bernoulli_rev.rs:272 [clone] [traced] h (the sum) starts at the first term, and term keeps being consumed by ldexp each step
 zenith-float-num/src/ops/exp_bb.rs:05280450125b	zenith-float-num/src/ops/exp_bb.rs:122 [clone] [traced] binary-splitting leaf: P is owned and x is borrowed (reused by the sibling splits at 128-129)
 zenith-float-num/src/ops/exp_bb.rs:1b4d955db10d	zenith-float-num/src/ops/exp_bb.rs:124 [clone] [traced] leaf T equals P; both are owned outputs
@@ -156,7 +151,6 @@ zenith-float-num/src/integer.rs:9d0158393f68	zenith-float-num/src/integer.rs:207
 zenith-float-num/src/integer.rs:4b98d0f52cac	zenith-float-num/src/integer.rs:261 [clone] [Jeff 4:42 PM CT] neg builds a new owned Integer from the borrowed self: the magnitude limbs are copied under the flipped sign
 zenith-float-num/src/integer.rs:ce37449896d4	zenith-float-num/src/integer.rs:427 [clone] [Jeff 4:42 PM CT] Euclid's loop owns and replaces both values every step; its first value is |self| from the borrowed self (gcd(a, 0) = |a| returns it as is)
 zenith-float-num/src/integer.rs:af2bfee7c3d3	zenith-float-num/src/integer.rs:428 [clone] [Jeff 4:42 PM CT] Euclid's loop owns and replaces both values every step; its second value is |rhs| from the borrowed rhs (gcd(0, b) = |b| returns it as is)
-zenith-float-num/src/num.rs:9d0158393f68	zenith-float-num/src/num.rs:791 [clone] [Jeff 4:42 PM CT] rem(0, d) = 0 with self's sign: the API borrows its operands and returns an owned value; on this shortcut the result equals the borrowed self
 zenith-float-num/src/num.rs:4730914761c1	zenith-float-num/src/num.rs:870 [clone] [Jeff 4:42 PM CT] rem(x, d) = x when |x| < |d|: the API borrows its operands and returns an owned value; on this shortcut the result equals the borrowed self
 zenith-float-num/src/num.rs:fce36470c29d	zenith-float-num/src/num.rs:875 [clone] [Jeff 4:42 PM CT] the divisor mantissa is lengthened in place by set_length; when normalize returned no new mantissa the borrowed d2.m is the start
 zenith-float-num/src/num.rs:509a5cc1404d	zenith-float-num/src/num.rs:884 [clone] [Jeff 4:42 PM CT] pow2 shifts the dividend mantissa in place before rem; the borrowed self.m is the start
@@ -172,7 +166,6 @@ zenith-float-num/src/complex_elliptic.rs:5a45a1e5e80b	zenith-float-num/src/compl
 zenith-float-num/src/complex_elliptic.rs:e73e54b4ea6f	zenith-float-num/src/complex_elliptic.rs:1263 [clone] [Jeff 4:42 PM CT] bump_real returns a new owned point from the borrowed z: the real part is kept and the imaginary part replaced by eps
 zenith-float-num/src/complex_elliptic.rs:5a45a1e5e80b	zenith-float-num/src/complex_elliptic.rs:1265 [clone] [Jeff 4:42 PM CT] bump_real of a non-real z is z: the function returns an owned point from the borrowed z
 zenith-float-num/src/complex_elliptic.rs:9d0158393f68	zenith-float-num/src/complex_elliptic.rs:1672 [clone] [Jeff 4:42 PM CT] E(z | 1) = z: the API borrows self and returns an owned value equal to it
-zenith-float-num/src/conv.rs:3dcecda6715d	zenith-float-num/src/conv.rs:1417 [clone] [Jeff 4:42 PM CT] a zero significand rounds to itself: the function returns an owned value equal to the borrowed y (sign, precision and flags kept)
 zenith-float-num/src/macro_util.rs:68d30f6dcca6	zenith-float-num/src/macro_util.rs:593 [clone] [Jeff 4:42 PM CT] nc toggles its inexact flags in place for each sample, while n1 and n2 stay the pair's unflagged values for the enclosing checks
 zenith-float-num/src/mantissa/base.rs:37806f3f96f6	zenith-float-num/src/mantissa/base.rs:694 [clone] [Jeff 4:42 PM CT] square-and-multiply accumulator: replaced each step and returned as is for i = 1; self is still read as the multiplier
 zenith-float-num/src/poly.rs:4730914761c1	zenith-float-num/src/poly.rs:257 [clone] [Jeff 4:42 PM CT] primitive_monic: a polynomial whose integer content is 1 is itself before the leading-coefficient scaling, which consumes the owned copy's coefficients (into_iter) and returns it on the early exits

@@ -11,6 +11,7 @@
 use crate::modular::{is_even, miller_rabin, mod_pow, rem_nonneg, two};
 use crate::primality::{bpsw, jacobi, lucas_uv, primes_upto};
 use crate::ExactInt;
+use alloc::borrow::Cow;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -188,13 +189,19 @@ fn is_square(n: &ExactInt) -> bool {
     r.mul(&r) == *n
 }
 
-fn nth_root(n: &ExactInt, k: u32) -> ExactInt {
+/// `floor(n^(1/k))`: `n` itself (borrowed) for `k == 1` or `n == 1`.
+fn nth_root(n: &ExactInt, k: u32) -> Cow<'_, ExactInt> {
     if k == 0 || n.is_zero() {
-        return ExactInt::zero();
+        return Cow::Owned(ExactInt::zero());
     }
     if k == 1 || n.is_one() {
-        return n.clone();
+        return Cow::Borrowed(n);
     }
+    Cow::Owned(nth_root_ge2(n, k))
+}
+
+/// `floor(n^(1/k))` for `k >= 2` and `n >= 2`.
+fn nth_root_ge2(n: &ExactInt, k: u32) -> ExactInt {
     if k == 2 {
         return isqrt(n);
     }

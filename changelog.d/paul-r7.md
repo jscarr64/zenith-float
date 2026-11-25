@@ -43,3 +43,7 @@
   `Cow` (borrowed when non-negative), owned values use `into_abs`, `gcd` callers drop the `|.|` (gcd reads
   magnitudes), and `egcd` is `bezout_if_coprime` (only mod_inv's coefficients are built; the gcd is only tested).
   exp_bb's last chunk borrows t. Clones 196 -> 191.
+- Batch 7 (item 1, part 2): a zero result equal to a zero input is built fresh (`ExactNumNumber::zero_like`: same
+  sign, exponent, precision and flags, no payload to copy) in conv's two integer roundings, `rem(0, d)` and
+  bernoulli_rev; aprcl's `nth_root`, complex_special's `add_ui_c` and complex_hypergeom's `z_on_lower_cut` return a
+  `Cow` that borrows the input on their equal-to-input shortcuts. Clones 191 -> 183.

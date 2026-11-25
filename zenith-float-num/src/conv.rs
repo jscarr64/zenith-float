@@ -1325,7 +1325,7 @@ impl ExactNumNumber {
         y_is_half: bool,
     ) -> Result<Option<Self>, Error> {
         if y.is_zero() {
-            return Ok(Some(y.clone()?));
+            return Ok(Some(y.zero_like()?));
         }
         if y.is_negative() {
             return Err(Error::InvalidArgument);
@@ -1414,7 +1414,7 @@ impl ExactNumNumber {
         sign: Sign,
     ) -> Result<Option<Self>, Error> {
         if y.is_zero() {
-            return Ok(Some(y.clone()?));
+            return Ok(Some(y.zero_like()?));
         }
         if y.is_negative() {
             return Err(Error::InvalidArgument);

@@ -19,6 +19,7 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use crate::Word;
 use crate::WORD_BIT_SIZE;
+use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
@@ -158,12 +159,13 @@ fn stirling_choose_n(log2z: i128, argf: i128, digamma: bool, prec: usize) -> usi
     nbest
 }
 
-fn add_ui_c(z: &ExactComplex, n: usize, p: usize) -> ExactComplex {
+/// `z + n`: `z` itself (borrowed) for `n == 0`.
+fn add_ui_c(z: &ExactComplex, n: usize, p: usize) -> Cow<'_, ExactComplex> {
     if n == 0 {
-        return ExactComplex::new(z.re().clone(), z.im().clone());
+        return Cow::Borrowed(z);
     }
     let add = ExactComplex::from_real(exact_from_usize(n, p), p);
-    ExactComplex::add_ref(z, &add, p, RoundingMode::None)
+    Cow::Owned(ExactComplex::add_ref(z, &add, p, RoundingMode::None))
 }
 
 fn exact_from_usize(n: usize, p: usize) -> ExactNum {

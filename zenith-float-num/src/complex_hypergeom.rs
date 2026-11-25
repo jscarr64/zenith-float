@@ -16,6 +16,7 @@ use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
+use alloc::borrow::Cow;
 
 fn rm() -> RoundingMode {
     RoundingMode::None
@@ -24,16 +25,17 @@ fn rm() -> RoundingMode {
 /// On the branch cut `Re(z) > 1` with `Im(z) = 0`, both signs of zero take the
 /// lower side, like Arb: `z = 2 + 0i` is treated as `2 − 0i`. Off the cut, and
 /// at the branch point `z = 1`, a signed zero still selects the side.
-fn z_on_lower_cut(z: &ExactComplex, p: usize) -> ExactComplex {
+fn z_on_lower_cut(z: &ExactComplex, p: usize) -> Cow<'_, ExactComplex> {
     if z.im().is_zero()
         && !z.im().is_negative()
         && matches!(z.re().compare(&ExactNum::from_u8(1, p)), Some(cmp) if cmp > 0)
     {
         let mut im = z.im().clone();
         im.set_sign(crate::Sign::Neg);
-        ExactComplex::new(z.re().clone(), im)
+        Cow::Owned(ExactComplex::new(z.re().clone(), im))
     } else {
-        z.clone()
+        // off the cut: z itself, borrowed
+        Cow::Borrowed(z)
     }
 }
 

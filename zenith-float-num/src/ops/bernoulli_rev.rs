@@ -189,7 +189,7 @@ fn nearest_unique_int(x: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
     let mut half = ExactNumNumber::from_word(1, p)?;
     half = half.ldexp(-1, p, RoundingMode::None)?;
     let mut n = if x.is_zero() {
-        x.clone()?
+        x.zero_like()?
     } else if x.is_positive() {
         x.add(&half, p, RoundingMode::None)?.floor()?
     } else {
