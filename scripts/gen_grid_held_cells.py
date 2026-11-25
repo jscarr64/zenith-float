@@ -8,7 +8,8 @@ Laurent series in t; t is far below any ulp, so the value is the leading term c0
 non-zero later term decides a sticky/tie. K = 0: normal range. K = -1: c0 * 2^EXPONENT_MAX (overflow iff the rounded
 |c0| >= 1). K <= -2: overflow. K >= 1: below 2^(EXPONENT_MIN-1): judged only with ZF_SUBNORMAL_MODEL=1, else TINY.
 Expected per mode at p (None: toward zero at rp(p,64)). Overflow: +-Inf for nearest/away, +-MAX for toward-zero side
-(the 12:15 PM CT ruling). Exact rationals only (no mpmath needed). Usage: gen_grid_held_cells.py DUMP OUT_TSV (dump: ZF_DIGEST_DUMP of a run that hashes every cell)
+(the 12:15 PM CT ruling). ToOdd is nearest with ties to odd (`RoundingMode::ToOdd`), so it overflows to +-Inf.
+Exact rationals only (no mpmath needed). Usage: gen_grid_held_cells.py DUMP OUT_TSV (dump: ZF_DIGEST_DUMP of a run that hashes every cell)
        ZF_SUBNORMAL_MODEL=1 gen_grid_held_cells.py DUMP OUT_TSV (also judge the subnormal range);
        gen_grid_held_cells.py --emit-rust CLASSES_TSV DUMP OUT_DIR
 """
@@ -74,7 +75,7 @@ def rnd(x, d, P, mode, emin=None):
         if d == 0: return Fr(0), False
         # an infinitesimal of sign d below the whole grid: 0 or one grid step 2^(emin-P), per mode
         neg = d < 0
-        upmag = {'ToZero': False, 'FromZero': True, 'Up': not neg, 'Down': neg, 'ToEven': False}[mode]
+        upmag = {'ToZero': False, 'FromZero': True, 'Up': not neg, 'Down': neg, 'ToEven': False, 'ToOdd': False}[mode]
         r = pw(emin - P) if upmag else Fr(0)
         return (-r if neg else r), True
     neg = x < 0; a = -x if neg else x; dm = -d if neg else d
@@ -93,11 +94,11 @@ def rnd(x, d, P, mode, emin=None):
     inexact = not (frc[0] == 0 and frc[1] == 0)
     if not inexact: return (-a if neg else a), False
     upmag = {'ToZero': False, 'FromZero': True, 'Up': not neg, 'Down': neg}.get(mode)
-    if mode == 'ToEven':
+    if mode in ('ToEven', 'ToOdd'):
         f, e2 = frc
         if f > Fr(1, 2) or (f == Fr(1, 2) and e2 > 0): upmag = True
         elif f < Fr(1, 2) or (f == Fr(1, 2) and e2 < 0): upmag = False
-        else: upmag = fl % 2 == 1
+        else: upmag = (fl % 2 == 1) == (mode == 'ToEven')
     q = fl + (1 if upmag else 0)
     r = q * pw(E - P)
     return (-r if neg else r), True

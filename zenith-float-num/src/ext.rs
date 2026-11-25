@@ -7381,30 +7381,6 @@ mod grid_digest_tests {
             }
     }
 
-    /// A known-wrong cell of a held finding (queued as a ZF-M27 exception, or reported for an id): counted in `held`
-    /// and left out of the pinned digest, so the pin does not hold wrong bits. The fix puts the cell back, red first.
-    /// The cell ids (dump lines) are listed in the PR #39 body.
-    fn dd_held(
-        h: &mut DefaultHasher,
-        held: &mut usize,
-        wrong: bool,
-        cell: DigestCell<'_>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let DigestCell {
-            op,
-            args,
-            ints,
-            p,
-            rm,
-            r,
-        } = cell;
-        if wrong {
-            *held += 1;
-            return Ok(());
-        }
-        dd(h, op, args, ints, p, rm, r)
-    }
-
     #[test]
     fn ldexp_and_scalb_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let shifts = [
@@ -7932,39 +7908,25 @@ mod grid_digest_tests {
     }
 
     /// `ExactComplex::mul` and `div` over parts that include zeros, Inf, NaN, inexact and subnormal values.
+    ///
+    /// Every cell is hashed (ToOdd in its own digest). Each finite part is the exact value rounded once at `(p, rm)`,
+    /// on the gradual subnormal grid, with a toward-zero overflow at +-MAX: checked against the exact rational oracle
+    /// `scripts/gen_grid_held_cells.py` (both subnormal models, every mode) on the dump of this test.
     #[test]
     fn complex_mul_div_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         use crate::ExactComplex;
         const COP: &str = "cplx_md";
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        let mut held = 0usize;
-        let mut held_f18 = 0usize;
-        let mut held_spur = 0usize;
-        let mut held_tzud = 0usize;
-        // F-25: complex cancellation. Cells (1-based position in this loop) whose part is not the correctly rounded
-        // value against an exact rational oracle (`scripts/gen_grid_held_cells.py`), per mode in `RMS` order.
-        const F25_NORMAL: &[u32] = &include!("grid_held/f25_normal.in");
-        // F-25, subnormal range: true value below 2^(EXPONENT_MIN - 1), library part not the correctly rounded value on
-        // the gradual grid 2^(EXPONENT_MIN - p), and wrong under the ruled target contract (P20 / UFL-01, no subnormals).
-        const F25_SUBNORMAL: &[u32] = &include!("grid_held/f25_subnormal.in");
         let mut cell = 0u32;
-        let mut held_f25n = [0usize; 7];
-        let mut held_f25s = [0usize; 7];
         for a in parts {
             for b in parts {
                 for c in parts {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
-                                // HELD F-18 (N-3): (0 + s i) / (0 + s i), s subnormal, gives NaN, not 1, in every
-                                // mode, and the ToOdd cells are not checked (no single-rounding oracle for complex
-                                // mul/div). ToOdd gets its own digest after the ZF-M27 fix.
-                                if rm == RoundingMode::ToOdd {
-                                    continue;
-                                }
-                                let hh = &mut h;
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [z1().mul(&z2(), p, rm), z1().div(&z2(), p, rm)]
@@ -7975,61 +7937,46 @@ mod grid_digest_tests {
                                     let finite = x.iter().all(|v| !v.is_inf() && !v.is_nan());
                                     let div_nonzero = k == 1 && !(x[2].is_zero() && x[3].is_zero());
                                     for (part, v) in [r.re(), r.im()].into_iter().enumerate() {
-                                        cell += 1;
-                                        // F-18 (N-3): a quotient of finite parts by a nonzero divisor with a subnormal
-                                        // part (operand 21) is NaN(InvalidArgument), not the quotient.
-                                        let f18 = div_nonzero && finite && v.is_nan();
-                                        // Spurious overflow (finding id pending): re of (1/3 - i/3) / (s + s i) and of
-                                        // (-1/3 + i/3) / (s + s i) is about 2^(EXPONENT_MAX - 50), finite, but +-Inf.
-                                        let spur = div_nonzero
-                                            && finite
-                                            && v.is_inf()
-                                            && part == 0
-                                            && matches!((a, b), (4, 5) | (5, 4))
-                                            && c == 21
-                                            && d == 21;
-                                        held_f18 += usize::from(f18);
-                                        // NONE-GAP F-B / M27-TZ/UD: an overflow of finite parts (not a division by zero)
-                                        // in a toward-zero direction is +-Inf where the 12:15 PM CT ruling is +-MAX.
-                                        let tzud = finite
-                                            && (k == 0 || div_nonzero)
-                                            && !spur
-                                            && tz_overflow(rm, v);
-                                        held_spur += usize::from(spur);
-                                        held_tzud += usize::from(tzud);
-                                        // F-25 (complex cancellation): a finite part that is not the correctly rounded
-                                        // value, e.g. im of (-7 - 7i)(1/3 - i/3) at p = 1 is -6.3e-20, but Up gives 2.
-                                        let f25n = F25_NORMAL.binary_search(&cell).is_ok();
-                                        let f25s = F25_SUBNORMAL.binary_search(&cell).is_ok();
-                                        assert!(!(f25n && f25s));
-                                        let f25 = f25n || f25s;
-                                        assert!(
-                                            !f25 || (finite
-                                                && !v.is_nan()
-                                                && !v.is_inf()
-                                                && !(f18 || tzud))
-                                        );
-                                        if f25 {
-                                            let m =
-                                                RMS.iter().position(|&q| q == rm).ok_or("mode")?;
-                                            if f25n {
-                                                held_f25n[m] += 1;
-                                            } else {
-                                                held_f25s[m] += 1;
-                                            }
+                                        if finite && (k == 0 || div_nonzero) {
+                                            // F-18 (N-3): a quotient by a divisor with a subnormal part is the
+                                            // quotient, not NaN(InvalidArgument).
+                                            assert!(
+                                                !v.is_nan(),
+                                                "{a} {b} {c} {d} p={p} {rm:?} k={k}"
+                                            );
+                                            // M27-TZ/UD: a toward-zero overflow of finite parts is +-MAX, not +-Inf.
+                                            assert!(
+                                                !tz_overflow(rm, v),
+                                                "{a} {b} {c} {d} p={p} {rm:?} k={k}"
+                                            );
+                                            // Spurious overflow: re of (+-1/3 -+ i/3) / (s + s i) is about
+                                            // 2^(EXPONENT_MAX - 50), finite.
+                                            let spur = k == 1
+                                                && part == 0
+                                                && matches!((a, b), (4, 5) | (5, 4))
+                                                && c == 21
+                                                && d == 21;
+                                            assert!(
+                                                !(spur && v.is_inf()),
+                                                "{a} {b} {c} {d} p={p} {rm:?}"
+                                            );
                                         }
-                                        dd_held(
+                                        let hh = if rm == RoundingMode::ToOdd {
+                                            &mut h_odd
+                                        } else {
+                                            &mut h
+                                        };
+                                        if rm != RoundingMode::ToOdd {
+                                            cell += 1;
+                                        }
+                                        dd(
                                             &mut *hh,
-                                            &mut held,
-                                            f18 || spur || tzud || f25,
-                                            DigestCell {
-                                                op: COP,
-                                                args: &[&x[0], &x[1], &x[2], &x[3]],
-                                                ints: &[i128::try_from(k)?, i128::try_from(part)?],
-                                                p,
-                                                rm,
-                                                r: v,
-                                            },
+                                            COP,
+                                            &[&x[0], &x[1], &x[2], &x[3]],
+                                            &[i128::try_from(k)?, i128::try_from(part)?],
+                                            p,
+                                            rm,
+                                            v,
                                         )?;
                                     }
                                     count += 1;
@@ -8040,28 +7987,31 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * (RMS.len() - 1) * 2);
-        // F-18 (N-3, ZF-M27): the NaN quotients of finite parts by a nonzero divisor are not hashed (495 per mode)
-        assert_eq!(held_f18, 495 * (RMS.len() - 1));
-        // Spurious overflow (finding id pending): the finite re parts given as +-Inf are not hashed (6 per mode)
-        assert_eq!(held_spur, 6 * (RMS.len() - 1));
-        // NONE-GAP F-B / M27-TZ/UD (ZF-M27): None 579, ToZero 579, Up 342 (-overflow), Down 237 (+overflow)
-        assert_eq!(held_tzud, 579 + 579 + 342 + 237);
-        // F-25 (ZF-M27): normal-range cancellation cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero
-        assert_eq!(held_f25n, [488, 128, 0, 406, 937, 894, 468]);
-        // F-25 (ZF-M27): subnormal-range cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero. 1158 are outside the
-        // interval any grid allows; 60 more (Up 18, Down 8, FromZero 34; p = 64 and 128) overshoot the gradual-grid value
-        // by one grid unit (each product is rounded before the sum) and are also wrong under P20 / UFL-01.
-        assert_eq!(held_f25s, [64, 0, 0, 44, 447, 408, 255]);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * RMS.len() * 2);
         assert_eq!(cell, 294_912);
-        assert_eq!(
-            held,
-            held_f18
-                + held_spur
-                + held_tzud
-                + held_f25n.iter().sum::<usize>()
-                + held_f25s.iter().sum::<usize>()
+        // F-18 (N-3): (0 + s i) / (0 + s i) is 1 + 0i, exact, in every mode.
+        for rm in RMS {
+            let s = || ExactComplex::new(operand(0), operand(21));
+            let q = s().div(&s(), 64, rm);
+            let one = ExactNum::from_u8(1, 64);
+            assert!(
+                q.re().is_positive() && q.re().abs_cmp(&one) == Some(0),
+                "{rm:?}"
+            );
+            assert!(q.im().is_zero() && !q.inexact(), "{rm:?}");
+        }
+        // F-25: im of (-7 - 7i)(1/3 - i/3) is 7 (t192 - t64) = -6.3e-20 (t_k = 1/3 rounded at k bits); at p = 1 Up
+        // gives -2^-64, not 2.
+        let z = ExactComplex::new(operand(3), operand(3)).mul(
+            &ExactComplex::new(operand(4), operand(5)),
+            1,
+            RoundingMode::Up,
         );
+        assert_eq!(z.im().leading_bit_exponent(), Some(-64));
+        assert!(z.im().is_negative());
+        println!("complex mul/div grid digest ToOdd = {}", h_odd.finish());
+        // New ToOdd digest (ZF-M27): every cell checked against the exact rational oracle.
+        assert_eq!(h_odd.finish(), 4_318_073_604_767_137_797);
         println!("complex mul/div grid digest = {}", h.finish());
         // Re-pinned (F9d-8): was 11_266_967_239_943_518_429, with the 2970 F-18 NaN cells in.
         // Re-pinned (F9d-9): was 5_139_542_158_601_803_449, with the 36 spurious-overflow cells in.
@@ -8073,7 +8023,10 @@ mod grid_digest_tests {
         // Re-pinned (Tier 1 ZF-18 c.mul): was 9_830_385_385_956_693_375. Directed modes form the four products exactly
         // and round each part once (3400 cells change, every one checked against the exact single-rounding model, none
         // worse than before); a product of nonzero operands that underflows keeps the per-product rounding.
-        assert_eq!(h.finish(), 518_216_661_662_630_842);
+        // Re-pinned (ZF-M27 F-18, spur, M27-TZ/UD, F-25): was 518_216_661_662_630_842. Every part is the exact value
+        // rounded once (scaled exact terms, `round_ratio`), the held cells are in, and an exact part whose mate
+        // overflowed is flagged inexact; no cell is wrong against the oracle on either subnormal model.
+        assert_eq!(h.finish(), 9_068_156_981_783_930_298);
         Ok(())
     }
 

@@ -4,11 +4,14 @@ use crate::common::util::round_p;
 use crate::complex_ball::CB;
 use crate::complex_ball::RB;
 use crate::defs::DEFAULT_P;
+use crate::defs::EXPONENT_MAX;
+use crate::defs::EXPONENT_MIN;
 use crate::Consts;
 use crate::ExactNum;
 use crate::Exponent;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
+use alloc::vec::Vec;
 use core::ops::Neg;
 
 /// True for a finite nonzero value (the factors the complex Ziv loops can refine).
@@ -94,6 +97,188 @@ fn exact_sum(a: &ExactNum, b: &ExactNum, sub: bool, p: usize) -> ExactNum {
             }
         }
     }
+}
+
+/// A finite nonzero value `v · 2^s`, `v` exact in `[1, 2)` and `s` wide. The parts of a complex product or quotient
+/// far outside the exponent range (a subnormal part squared, a product past `2^EXPONENT_MAX`) stay exact this way,
+/// and each part is rounded once at the end (ZF-M27 F-18, F-25, M27-TZ/UD).
+struct Scaled {
+    v: ExactNum,
+    s: i128,
+}
+
+/// A sum of [`Scaled`] terms: exactly zero, or a value.
+enum Folded {
+    Zero,
+    Value(Scaled),
+}
+
+impl Scaled {
+    /// `x` as `v · 2^s` with `v` in `[1, 2)`, exactly; `None` for zero, Inf and NaN.
+    fn of(x: &ExactNum) -> Option<Self> {
+        if !finite_nonzero(x) {
+            return None;
+        }
+        let lb = x.leading_bit_exponent()?;
+        let len = x.mantissa_max_bit_len()?;
+        let v = x.ldexp_ref(lb.checked_neg()?, len, RoundingMode::ToZero);
+        finite_nonzero(&v).then_some(Self {
+            v,
+            s: i128::from(lb),
+        })
+    }
+
+    /// `v · 2^s` normalized.
+    fn new(v: &ExactNum, s: i128) -> Option<Self> {
+        let r = Self::of(v)?;
+        Some(Self {
+            v: r.v,
+            s: r.s.checked_add(s)?,
+        })
+    }
+
+    /// The exact product.
+    fn mul(&self, o: &Self) -> Option<Self> {
+        Self::new(&self.v.mul_full_work(&o.v), self.s.checked_add(o.s)?)
+    }
+
+    /// `-1` or `1`.
+    fn sign(&self) -> i8 {
+        if self.v.is_negative() {
+            -1
+        } else {
+            1
+        }
+    }
+
+    /// `v · 2^d`, exactly (`d` is bounded by the callers: a guard or a mantissa width).
+    fn shifted(&self, d: i128) -> Option<ExactNum> {
+        let len = self.v.mantissa_max_bit_len()?;
+        let r = self
+            .v
+            .ldexp_ref(i64::try_from(d).ok()?, len, RoundingMode::ToZero);
+        finite_nonzero(&r).then_some(r)
+    }
+}
+
+/// The exact sum of `terms`, largest scale first, while the terms left can still change it: once the running sum
+/// exceeds every remaining term by `2^guard` it is returned as it stands. With at most four terms (each `v < 2`)
+/// the remaining ones sum to less than `2^(s + 3)`, so `guard = 4` keeps the sign exact; a wide guard keeps the
+/// value to `2^-guard` relative. The running sum's lowest bit is never below the smallest scale taken minus a
+/// mantissa width, so every shift stays bounded. `None`: a step failed.
+fn fold(mut terms: Vec<Scaled>, guard: i128) -> Option<Folded> {
+    terms.sort_by_key(|x| core::cmp::Reverse(x.s));
+    let mut acc: Option<Scaled> = None;
+    for t in terms {
+        acc = match acc {
+            None => Some(t),
+            Some(a) if a.s.saturating_sub(t.s) >= guard => return Some(Folded::Value(a)),
+            Some(a) => {
+                let m = a.s.min(t.s);
+                let sum = a.shifted(a.s - m)?.add_full_work(&t.shifted(t.s - m)?);
+                if sum.is_zero() {
+                    None
+                } else {
+                    Some(Scaled::new(&sum, m)?)
+                }
+            }
+        };
+    }
+    Some(acc.map_or(Folded::Zero, Folded::Value))
+}
+
+/// The nonzero exact terms `±x·y` of a part (a zero factor makes its product an exact zero, which is left out).
+fn scaled_terms(list: &[(&ExactNum, &ExactNum, bool)]) -> Option<Vec<Scaled>> {
+    let mut out = Vec::with_capacity(list.len());
+    for &(x, y, neg) in list {
+        if x.is_zero() || y.is_zero() {
+            continue;
+        }
+        let t = Scaled::of(x)?.mul(&Scaled::of(y)?)?;
+        out.push(if neg { Scaled { v: -t.v, s: t.s } } else { t });
+    }
+    Some(out)
+}
+
+/// One part `N / D` of finite exact terms (`D > 0`; `D = 1` when `d` is empty), rounded once at `(p, rm)`, on the
+/// gradual subnormal grid, with an overflow at +-MAX on the toward-zero side and +-Inf otherwise (`ldexp`).
+///
+/// `q ≈ N / D` to `2^-(w + 16)` gives `t`, `q` truncated at `w = round_p(p) + 2` words, up to one grid step; two
+/// exact sign tests of `N - g·D` fix the cell of the `w`-bit grid that holds `q`, and a sticky `2^-(w + 4)` marks
+/// its side. Every `p`-bit (and subnormal) grid point and midpoint is a `w`-bit grid point, so the one rounding of
+/// that value is the rounding of `q`. An exact zero `N` (terms that cancel) is the zero of `x - x` in `rm`.
+/// `None`: a step failed, or `N` has no terms (the caller signs that zero).
+fn round_ratio(
+    n: &[(&ExactNum, &ExactNum, bool)],
+    d: &[(&ExactNum, &ExactNum, bool)],
+    p: usize,
+    rm: RoundingMode,
+) -> Option<ExactNum> {
+    let w = round_p(p).checked_add(2 * WORD_BIT_SIZE)?;
+    let wide = i128::try_from(w).ok()?.checked_add(16)?;
+    let den = || {
+        let mut ts = scaled_terms(d)?;
+        if ts.is_empty() {
+            ts.push(Scaled::of(&ExactNum::from_u8(1, WORD_BIT_SIZE))?);
+        }
+        Some(ts)
+    };
+    let nt = scaled_terms(n)?;
+    if nt.is_empty() {
+        return None;
+    }
+    let na = match fold(nt, wide)? {
+        Folded::Zero => {
+            let one = ExactNum::from_u8(1, WORD_BIT_SIZE);
+            return Some(ExactNum::sub_ref(&one, &one, p, rm));
+        }
+        Folded::Value(v) => v,
+    };
+    let Folded::Value(da) = fold(den()?, wide)? else {
+        return None;
+    };
+    let t = Scaled::new(
+        &na.v.div(&da.v, w, RoundingMode::ToZero),
+        na.s.checked_sub(da.s)?,
+    )?;
+    // The side of q against g, away from zero positive: the sign of (N - g·D) · sign(g).
+    let side = |g: &Scaled| -> Option<i8> {
+        let mut ts = scaled_terms(n)?;
+        for x in den()? {
+            let gx = g.mul(&x)?;
+            ts.push(Scaled { v: -gx.v, s: gx.s });
+        }
+        Some(match fold(ts, 4)? {
+            Folded::Zero => 0,
+            Folded::Value(v) => v.sign() * g.sign(),
+        })
+    };
+    let s0 = side(&t)?;
+    let (g, dir) = if s0 <= 0 {
+        (t, s0)
+    } else {
+        let one_up = ExactNum::pow2(1 - i64::try_from(w).ok()?, WORD_BIT_SIZE).ok()?;
+        let up = if t.v.is_negative() { -one_up } else { one_up };
+        let g1 = Scaled::new(&t.v.add_full_work(&up), t.s)?;
+        match side(&g1)? {
+            s1 if s1 >= 0 => (g1, s1),
+            _ => (t, 1),
+        }
+    };
+    let mut x = if dir == 0 {
+        g.v
+    } else {
+        let tiny = ExactNum::pow2(-4 - i64::try_from(w).ok()?, WORD_BIT_SIZE).ok()?;
+        let tiny = if (g.sign() * dir) < 0 { -tiny } else { tiny };
+        g.v.add_full_work(&tiny)
+    };
+    x.set_inexact(false);
+    // Far below the least subnormal (or above the largest value) every scale rounds alike.
+    let lo = i128::from(EXPONENT_MIN) - i128::try_from(w.checked_add(8 * WORD_BIT_SIZE)?).ok()?;
+    let hi = i128::from(EXPONENT_MAX) + 8;
+    let s = Exponent::try_from(g.s.clamp(lo, hi)).ok()?;
+    let r = x.ldexp(s, p, rm);
+    (!r.is_nan()).then_some(r)
 }
 
 /// Compact signed zero with no dest-sized mantissa.
@@ -323,44 +508,57 @@ impl ExactComplex {
     /// `self * rhs` at precision `p`.
     ///
     /// The products `ac`, `bd`, `ad`, `bc` are formed exactly, and `ac−bd` and `ad+bc` are each
-    /// rounded once at `(p, rm)`, so each part is correctly rounded. Callers that pass
-    /// [`RoundingMode::None`] keep the products rounded at `p` (series paths).
+    /// rounded once at `(p, rm)`, so each part is correctly rounded, also when a product leaves the
+    /// exponent range. The working mode [`RoundingMode::Work`] keeps the products rounded at `p`.
     ///
     /// Accuracy: correctly-rounded
     pub fn mul(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         let this = self.exact_copy();
         let rhs_c = rhs.exact_copy();
         let inputs = self.inexact_accumulated() || rhs.inexact_accumulated();
-        Self::per_op(inputs, this.mul_word(&rhs_c, p, rm))
+        let finite = self.is_finite() && rhs.is_finite();
+        Self::per_op(
+            inputs,
+            this.mul_word(&rhs_c, p, rm).overflow_flagged(finite),
+        )
+    }
+
+    /// `self` with both parts flagged inexact when a part of a result of finite operands (not at a pole) is
+    /// +-Inf: that part overflowed, a rounding, and +-Inf carries no flag of its own.
+    fn overflow_flagged(mut self, finite: bool) -> Self {
+        if finite && (self.re.is_inf() || self.im.is_inf()) {
+            self.set_inexact(true);
+        }
+        self
     }
 
     /// Implementation of [`Self::mul`] on operands without inexact history.
     fn mul_word(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        if !rm.skips_rounding() {
+        if rm != RoundingMode::Work {
             // Rounding the products first and then their sum rounded twice (1 ulp off), so the
-            // products are formed exactly and each part is rounded once.
+            // products are formed exactly and each part is rounded once (`None` too: toward zero at
+            // the storage precision, ZF-M27 F-25).
             let ac = self.re.mul_full_work(&rhs.re);
             let bd = self.im.mul_full_work(&rhs.im);
             let ad = self.re.mul_full_work(&rhs.im);
             let bc = self.im.mul_full_work(&rhs.re);
-            // An exact product below the exponent range comes back as zero or with bits lost, and a
-            // directed sum would then miss the least subnormal. Only then, round each product at
-            // (p, rm) first (the per-product path below), so the directed step survives.
-            let underflow = |x: &ExactNum, y: &ExactNum, xy: &ExactNum| {
-                !x.is_zero()
-                    && !y.is_zero()
-                    && !x.is_inf()
-                    && !y.is_inf()
-                    && !x.is_nan()
-                    && !y.is_nan()
-                    && (xy.is_zero() || xy.inexact())
+            // An exact product outside the exponent range comes back as zero, with bits lost, or as
+            // +-Inf. Only then, the parts are formed as scaled exact values and rounded once
+            // (`round_ratio`, ZF-M27 F-25 / M27-TZ/UD).
+            let out_of_range = |x: &ExactNum, y: &ExactNum, xy: &ExactNum| {
+                finite_nonzero(x)
+                    && finite_nonzero(y)
+                    && (xy.is_zero() || xy.inexact() || xy.is_inf() || xy.is_nan())
             };
-            if !(underflow(&self.re, &rhs.re, &ac)
-                || underflow(&self.im, &rhs.im, &bd)
-                || underflow(&self.re, &rhs.im, &ad)
-                || underflow(&self.im, &rhs.re, &bc))
+            if !(out_of_range(&self.re, &rhs.re, &ac)
+                || out_of_range(&self.im, &rhs.im, &bd)
+                || out_of_range(&self.re, &rhs.im, &ad)
+                || out_of_range(&self.im, &rhs.re, &bc))
             {
                 return Self::new(ac.sub(&bd, p, rm), ad.add(&bc, p, rm));
+            }
+            if let Some(r) = self.mul_scaled(rhs, (&ac, &bd, &ad, &bc), p, rm) {
+                return r;
             }
         }
         let ac = ExactNum::mul_ref(&self.re, &rhs.re, p, rm);
@@ -376,6 +574,55 @@ impl ExactComplex {
         r
     }
 
+    /// Both parts finite.
+    fn is_finite(&self) -> bool {
+        !(self.re.is_nan() || self.re.is_inf() || self.im.is_nan() || self.im.is_inf())
+    }
+
+    /// [`Self::mul_word`] of finite parts with a product outside the exponent range: each part is the exact
+    /// `ac - bd` / `ad + bc` rounded once ([`round_ratio`]). An exact zero part of zero products is their sum
+    /// (`prods` holds the exact products). `None` (non-finite parts, or a step failed): the caller's path.
+    fn mul_scaled(
+        &self,
+        rhs: &Self,
+        prods: (&ExactNum, &ExactNum, &ExactNum, &ExactNum),
+        p: usize,
+        rm: RoundingMode,
+    ) -> Option<Self> {
+        if !(self.is_finite() && rhs.is_finite()) {
+            return None;
+        }
+        let (ac, bd, ad, bc) = prods;
+        let (a, b, c, d) = (&self.re, &self.im, &rhs.re, &rhs.im);
+        let re = round_ratio(&[(a, c, false), (b, d, true)], &[], p, rm)
+            .or_else(|| (ac.is_zero() && bd.is_zero()).then(|| ExactNum::sub_ref(ac, bd, p, rm)))?;
+        let im = round_ratio(&[(a, d, false), (b, c, false)], &[], p, rm)
+            .or_else(|| (ad.is_zero() && bc.is_zero()).then(|| ExactNum::add_ref(ad, bc, p, rm)))?;
+        Some(Self::new(re, im))
+    }
+
+    /// [`Self::div_word`] of finite parts by a nonzero divisor, in every mode but `Work`: each part is the exact
+    /// `(ac + bd) / (c^2 + d^2)` / `(bc - ad) / (c^2 + d^2)` rounded once ([`round_ratio`]), with no step bounded
+    /// by the exponent range (a subnormal divisor part, ZF-M27 F-18; a quotient near `2^EXPONENT_MAX`, the
+    /// spurious overflow). A numerator of zero products is their exact signed zero. `None`: the caller's path.
+    fn div_scaled(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Option<Self> {
+        if !(self.is_finite() && rhs.is_finite()) || (rhs.re.is_zero() && rhs.im.is_zero()) {
+            return None;
+        }
+        let (a, b, c, d) = (&self.re, &self.im, &rhs.re, &rhs.im);
+        let den = [(c, c, false), (d, d, false)];
+        let one = ExactNum::from_u8(1, WORD_BIT_SIZE);
+        let zero_part = |x: &ExactNum, y: &ExactNum, sub: bool| {
+            let s = if sub { x.sub_full_work(y) } else { x.add_full_work(y) };
+            s.is_zero().then(|| s.div(&one, p, rm))
+        };
+        let re = round_ratio(&[(a, c, false), (b, d, false)], &den, p, rm)
+            .or_else(|| zero_part(&a.mul_full_work(c), &b.mul_full_work(d), false))?;
+        let im = round_ratio(&[(b, c, false), (a, d, true)], &den, p, rm)
+            .or_else(|| zero_part(&b.mul_full_work(c), &a.mul_full_work(d), true))?;
+        Some(Self::new(re, im))
+    }
+
     /// `self / rhs` at precision `p`.
     ///
     /// Accuracy: correctly-rounded
@@ -383,7 +630,11 @@ impl ExactComplex {
         let this = self.exact_copy();
         let rhs_c = rhs.exact_copy();
         let inputs = self.inexact_accumulated() || rhs.inexact_accumulated();
-        Self::per_op(inputs, this.div_word(&rhs_c, p, rm))
+        let finite = self.is_finite() && rhs.is_finite() && !(rhs.re.is_zero() && rhs.im.is_zero());
+        Self::per_op(
+            inputs,
+            this.div_word(&rhs_c, p, rm).overflow_flagged(finite),
+        )
     }
 
     /// Implementation of [`Self::div`] on operands without inexact history.
@@ -392,6 +643,11 @@ impl ExactComplex {
     /// is the exact quotient rounded once by the final division. Rounding the numerator first
     /// rounded twice: `(-7i)/(-7i)` at `p = 1` gave `32/49` rounded, not `1`.
     fn div_word(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
+        if rm != RoundingMode::Work {
+            if let Some(r) = self.div_scaled(rhs, p, rm) {
+                return r;
+            }
+        }
         let ac = self.re.mul_full_work(&rhs.re);
         let bd = self.im.mul_full_work(&rhs.im);
         let bc = self.im.mul_full_work(&rhs.re);

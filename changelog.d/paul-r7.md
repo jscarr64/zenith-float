@@ -79,3 +79,9 @@
   term itself: directed modes no longer give NaN(PrecisionRetryExhausted), and dn/nd are flagged inexact.
 - Batch 18 (F-30, ZF-M27): am(u|m) for |u| beyond the 4K period (am(-7|1/2), am(-7|3/8)) is asserted against mpmath
   bit for bit; the hold was stale (no library change). The jacobi digest is re-pinned with the 8 cells in.
+- Batch 19 (F-18, spurious overflow, M27-TZ/UD, F-25, ZF-M27): `ExactComplex::mul` and `div` of finite parts round
+  each part once from the exact value, with no step bounded by the exponent range: a divisor with a subnormal part
+  gives the quotient (was NaN), a finite quotient near 2^EXPONENT_MAX is finite (was +-Inf), a toward-zero overflow is
+  +-MAX (was +-Inf), and cancelling products give the correctly rounded part, on the gradual subnormal grid. `None`
+  forms the products exactly too. A part whose mate overflowed is flagged inexact. The complex grid digest hashes
+  every cell (the held lists and `src/grid_held/` are gone; ToOdd has its own digest).
