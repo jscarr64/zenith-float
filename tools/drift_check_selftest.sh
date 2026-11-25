@@ -287,5 +287,17 @@ chmod +x "$work/gitstub/git"
 r=$(stale yct 172800); git -C "$r" push -q -f origin w 2>/dev/null
 out=$(STUB_CT_BAD=1 PATH="$work/gitstub:$PATH" python3 -B "$dc" --now "$NOW" --scan "$work/yct" 2>&1); rc=$?
 [ $rc = 0 ] && grep -q "ok   $r" <<<"$out" && ! grep -q "skip $r" <<<"$out" && ok "active: HEAD time not a number: activity unknown, checked, ok (rc=0)" || { bad "active: HEAD time not a number (want rc=0 and checked, got rc=$rc)"; show "$out"; }
+# ---- round 2 (Cassie R2-B2): numeric options must be finite and >= 0, else rc 2 ----
+r=$(fresh nmo); commit_at "$r" 7000 n1          # 1 unpushed commit, ~2 h old: a real age violation
+for v in nan inf -inf -1 -0.0001; do
+  expect "--max-age-min $v is a usage error"                 2 run --repo "$r" --max-age-min "$v"
+done
+c=$(fresh nmc)
+expect "--max-age-min 0 is valid (clean tree)"               0 run --repo "$c" --max-age-min 0
+for v in nan inf -inf; do
+  expect "--active-window-min $v is a usage error"           2 run --scan "$work/obo" --active-window-min "$v"
+done
+expect "--active-window-min 0 is valid (clean tree, Cassie Y10)" 0 run --repo "$c" --active-window-min 0
+expect "--active-window-min -0.0001 is a usage error"        2 run --repo "$c" --active-window-min -0.0001
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
