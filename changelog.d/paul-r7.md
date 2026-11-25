@@ -98,3 +98,5 @@
   excepted). It runs in the pre-commit hook and in the full gate, with its selftest.
 - Batch 23 (16.S2.2 leftover): the bridge_wide golden generator no longer skips pairs whose difference lies above
   `EXPONENT_MAX` (a stale "known red" exclusion that never fired at its seed); the golden is unchanged.
+- Batch 24 (HOLD H05): `zenith-float-bound/src/carlson.rs` (held, not compiled) is restored to its content before batch
+  14, which had edited it by mistake.

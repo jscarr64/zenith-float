@@ -230,7 +230,7 @@
 //     };
 //     let close = m.is_zero() || gap.is_some_and(|g| g <= EXACT_GAP);
 //     if close {
-//         Ok((Some(m.sub_full_work(&rn)), Some(m.add_full_work(&rn))))
+//         Ok((Some(m.sub_full_prec(&rn)), Some(m.add_full_prec(&rn))))
 //     } else {
 //         let p = GUARD_BITS
 //             .checked_mul(2)
@@ -256,11 +256,11 @@
 //     let mut wp = GUARD_BITS;
 //     while wp <= cap {
 //         let e_hi = cc.e(wp, RoundingMode::Up);
-//         if cmp(&x.mul_full_work(&e_hi), &minus_one).is_some_and(|o| o != Ordering::Less) {
+//         if cmp(&x.mul_full_prec(&e_hi), &minus_one).is_some_and(|o| o != Ordering::Less) {
 //             return true;
 //         }
 //         let e_lo = cc.e(wp, RoundingMode::Down);
-//         if cmp(&x.mul_full_work(&e_lo), &minus_one).is_some_and(|o| o != Ordering::Greater) {
+//         if cmp(&x.mul_full_prec(&e_lo), &minus_one).is_some_and(|o| o != Ordering::Greater) {
 //             return false;
 //         }
 //         match wp.checked_mul(2) {
@@ -319,7 +319,7 @@
 //
 // /// `wp >= prec + GUARD_BITS + 2k` where `|1 + w| ~ 2^-k` (true away from `-1`).
 // fn flat_enough(w: &ExactNum, prec: Precision, wp: Precision) -> bool {
-//     let k = match w.add_full_work(&num(1)).exponent() {
+//     let k = match w.add_full_prec(&num(1)).exponent() {
 //         Some(e) if e < 0 => usize::try_from(e.unsigned_abs()).unwrap_or(usize::MAX),
 //         Some(_) | None => return true,
 //     };
@@ -383,7 +383,7 @@
 //     if !finite(&ew) {
 //         return false;
 //     }
-//     let f = w.mul_full_work(&ew);
+//     let f = w.mul_full_prec(&ew);
 //     match (side, cmp(&f, x)) {
 //         (Side::Below, Some(Ordering::Less | Ordering::Equal))
 //         | (Side::Above, Some(Ordering::Greater | Ordering::Equal)) => true,
@@ -406,7 +406,7 @@
 //     if !finite(&lw) || !finite(&lx) {
 //         return false;
 //     }
-//     let lhs = lw.add_full_work(w);
+//     let lhs = lw.add_full_prec(w);
 //     match (side, cmp(&lhs, &lx)) {
 //         (Side::Below, Some(Ordering::Less | Ordering::Equal))
 //         | (Side::Above, Some(Ordering::Greater | Ordering::Equal)) => true,
@@ -418,9 +418,9 @@
 // /// `|x|`, exact.
 // fn abs_of(x: &ExactNum) -> ExactNum {
 //     if x.is_negative() {
-//         num(0).sub_full_work(x)
+//         num(0).sub_full_prec(x)
 //     } else {
-//         num(0).add_full_work(x)
+//         num(0).add_full_prec(x)
 //     }
 // }
 //
@@ -439,14 +439,14 @@
 //     let (branch, log_form, wp) = (at.branch, at.log_form, at.wp);
 //     // x < -1/4: seed from the branch-point series in p = sqrt(2 (1 + e x)).
 //     let near_branch =
-//         pow2(-2).is_some_and(|q| cmp(x, &num(0).sub_full_work(&q)) == Some(Ordering::Less));
+//         pow2(-2).is_some_and(|q| cmp(x, &num(0).sub_full_prec(&q)) == Some(Ordering::Less));
 //     let minus_one = num(-1);
 //     let mut w = if near_branch {
 //         let p = branch_p(x, wp, cc);
-//         let p2 = p.mul_full_work(&p).mul(&third(wp), wp, MID_RM);
+//         let p2 = p.mul_full_prec(&p).mul(&third(wp), wp, MID_RM);
 //         match branch {
-//             Branch::Principal => minus_one.add_full_work(&p).sub(&p2, wp, MID_RM),
-//             Branch::Lower => minus_one.sub_full_work(&p).sub(&p2, wp, MID_RM),
+//             Branch::Principal => minus_one.add_full_prec(&p).sub(&p2, wp, MID_RM),
+//             Branch::Lower => minus_one.sub_full_prec(&p).sub(&p2, wp, MID_RM),
 //         }
 //     } else if log_form {
 //         let big_l = abs_of(x).ln(wp, MID_RM, cc);
@@ -455,7 +455,7 @@
 //     } else if x.exponent().is_some_and(|e| e < -4) {
 //         round(x, wp, MID_RM)
 //     } else {
-//         x.add_full_work(&num(1)).ln(wp, MID_RM, cc)
+//         x.add_full_prec(&num(1)).ln(wp, MID_RM, cc)
 //     };
 //     let lx = if log_form {
 //         abs_of(x).ln(wp, MID_RM, cc)
@@ -467,7 +467,7 @@
 //         if !finite(&w) {
 //             break;
 //         }
-//         let w1 = w.add_full_work(&num(1));
+//         let w1 = w.add_full_prec(&num(1));
 //         let step = if log_form {
 //             // g = ln|w| + w - ln|x|, w -= g·w/(w+1)
 //             let g = abs_of(&w)
@@ -477,7 +477,7 @@
 //             g.mul(&w, wp, MID_RM).div(&w1, wp, MID_RM)
 //         } else {
 //             // f = w - x e^-w, w -= f/(w+1)
-//             let e = num(0).sub_full_work(&w).exp(wp, MID_RM, cc);
+//             let e = num(0).sub_full_prec(&w).exp(wp, MID_RM, cc);
 //             let f = round(&w, wp, MID_RM).sub(&e.mul(x, wp, MID_RM), wp, MID_RM);
 //             f.div(&w1, wp, MID_RM)
 //         };
@@ -521,7 +521,7 @@
 //     } else {
 //         minus_one
 //     };
-//     old.add_full_work(&bound).ldexp(-1, wp, MID_RM)
+//     old.add_full_prec(&bound).ldexp(-1, wp, MID_RM)
 // }
 //
 // /// `1/3` at `wp`.
@@ -540,8 +540,8 @@
 //     if !finite(&mid) {
 //         return Ball::all_reals(prec);
 //     }
-//     let above = round(&h.sub_full_work(&mid), 64, RoundingMode::Up);
-//     let below = round(&mid.sub_full_work(l), 64, RoundingMode::Up);
+//     let above = round(&h.sub_full_prec(&mid), 64, RoundingMode::Up);
+//     let below = round(&mid.sub_full_prec(l), 64, RoundingMode::Up);
 //     if above.is_nan() || below.is_nan() {
 //         return Err(resource(op, "radius"));
 //     }
@@ -597,7 +597,7 @@
 //                 let l = num(-1);
 //                 let h = num(k)
 //                     .div(&num(7), 400, RoundingMode::Down)
-//                     .sub_full_work(&num(1));
+//                     .sub_full_prec(&num(1));
 //                 match result("lambert_w0", &l, &h, prec) {
 //                     Ok(b) if b.contains(&l) == Tri::True && b.contains(&h) == Tri::True => {}
 //                     got => bad.push(format!("prec {} k {}: {:?}", prec, k, got)),
@@ -625,7 +625,7 @@
 //         let mut bad = Vec::new();
 //         for prec in 2..41 {
 //             for j in 8..64 {
-//                 let l = num(1).add_full_work(&tiny);
+//                 let l = num(1).add_full_prec(&tiny);
 //                 let h = num(j).div(&num(7), 400, RoundingMode::Down);
 //                 match result("lambert_w0", &l, &h, prec) {
 //                     Ok(b) if b.contains(&l) == Tri::True && b.contains(&h) == Tri::True => {}
