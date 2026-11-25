@@ -4712,7 +4712,8 @@ Accuracy: correctly-rounded",
     fn jacobi_ns_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext_rm(u.jacobi_ns(mv, p, rm, cc), false, true, p, rm)
+                // u = +-0 is a pole with the sign of u (F-28, ZF-M27)
+                Self::result_to_ext_rm(u.jacobi_ns(mv, p, rm, cc), false, !u.is_negative(), p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4862,7 +4863,8 @@ Accuracy: correctly-rounded",
     fn jacobi_cs_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext_rm(u.jacobi_cs(mv, p, rm, cc), false, true, p, rm)
+                // u = +-0 is a pole with the sign of u (F-28, ZF-M27)
+                Self::result_to_ext_rm(u.jacobi_cs(mv, p, rm, cc), false, !u.is_negative(), p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4892,7 +4894,8 @@ Accuracy: correctly-rounded",
     fn jacobi_ds_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext_rm(u.jacobi_ds(mv, p, rm, cc), false, true, p, rm)
+                // u = +-0 is a pole with the sign of u (F-28, ZF-M27)
+                Self::result_to_ext_rm(u.jacobi_ds(mv, p, rm, cc), false, !u.is_negative(), p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -8794,8 +8797,8 @@ mod grid_digest_tests {
         let mut held_f21 = 0usize;
         let mut held_tzud = 0usize;
         let mut held_f22 = 0usize;
-        let mut held_f28 = 0usize;
-        let mut held_f29 = 0usize;
+        let mut f28 = 0usize;
+        let mut f29 = 0usize;
         let mut held_f30 = 0usize;
         let ms = || {
             [
@@ -8833,23 +8836,31 @@ mod grid_digest_tests {
                                 && i == 21
                                 && (mi == 2 || mi == 3);
                             // F-28 (ZF-M27): u = +-0 is a simple real pole of ns, cs and ds for 0 <= m <= 1 (sn has a
-                            // simple zero there). The ruled value is signed +-Inf by the sign of u (P20, DOM-07,
-                            // POLE-01), in every mode; today's NaN(InvalidArgument) is known-wrong and is held.
-                            // m = 3 (mi = 4) is out of range and its NaN stays hashed.
-                            let f28 = matches!(JNAMES[fi], "ns" | "cs" | "ds")
+                            // simple zero there): the value is +-Inf by the sign of u (P20, DOM-07, POLE-01), in every
+                            // mode. m = 3 (mi = 4) is out of range: NaN.
+                            if matches!(JNAMES[fi], "ns" | "cs" | "ds") && u.is_zero() && mi <= 3 {
+                                assert!(
+                                    r.is_inf() && r.is_negative() == u.is_negative(),
+                                    "F-28 {}(u = {}0 | m{mi}) is not a signed pole",
+                                    JNAMES[fi],
+                                    if u.is_negative() { "-" } else { "+" }
+                                );
+                                f28 += 1;
+                            }
+                            // F-29 (ZF-M27): am, sn, sc and sd are odd in u, so at u = +-0 for 0 <= m <= 1 the value is
+                            // the zero of the sign of u (P20 keeps signed zeros, NAN-04).
+                            if matches!(JNAMES[fi], "am" | "sn" | "sc" | "sd")
                                 && u.is_zero()
                                 && mi <= 3
-                                && r.is_nan();
-                            // F-29 (ZF-M27): am, sn, sc and sd are odd in u (am(u|0) = u, sn(u|0) = sin u,
-                            // sn(u|1) = tanh u), so at u = -0 for 0 <= m <= 1 the value is -0 (P20 keeps signed
-                            // zeros, NAN-04). Today they return +0 (the ops/jacobi.rs u = 0 short-circuit behind F-28
-                            // ignores the sign of u), known-wrong, so they are held. m = 3 (mi = 4) stays hashed.
-                            let f29 = matches!(JNAMES[fi], "am" | "sn" | "sc" | "sd")
-                                && u.is_zero()
-                                && u.is_negative()
-                                && mi <= 3
-                                && r.is_zero()
-                                && r.is_positive();
+                            {
+                                assert!(
+                                    r.is_zero() && r.is_negative() == u.is_negative(),
+                                    "F-29 {}(u = {}0 | m{mi}) is not the signed zero",
+                                    JNAMES[fi],
+                                    if u.is_negative() { "-" } else { "+" }
+                                );
+                                f29 += usize::from(u.is_negative());
+                            }
                             // F-30 (ZF-M27): am(u+4K|m) = am(u|m) + 2π; ops/jacobi.rs:252/256-276 reduces u mod 4K
                             // for |u| > 2K and drops the 2π·n, so am(-7|1/2) and am(-7|3/8) are off by +2π; held.
                             // Operand 3 is u = -7; mi = 2, 3 are m = 1/2, 3/8, the only m in (0, 1) on this grid,
@@ -8858,13 +8869,11 @@ mod grid_digest_tests {
                             held_f21 += usize::from(f21 && !f22);
                             held_tzud += usize::from(tzud);
                             held_f22 += usize::from(f22);
-                            held_f28 += usize::from(f28);
-                            held_f29 += usize::from(f29);
                             held_f30 += usize::from(f30);
                             dd_held(
                                 &mut h,
                                 &mut held,
-                                f21 || tzud || f22 || f28 || f29 || f30,
+                                f21 || tzud || f22 || f30,
                                 DigestCell {
                                     op: JNAMES[fi],
                                     args: &[&operand(i), &m[mi]],
@@ -8890,19 +8899,16 @@ mod grid_digest_tests {
         assert_eq!(held_tzud, 0);
         // F-22 rider (N-7, ZF-M27): dn and nd at u21, m = 1/2 and 3/8, both modes, are not hashed
         assert_eq!(held_f22, 16);
-        // F-28 (ZF-M27): ns, cs and ds at u = +-0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are
-        // NaN(InvalidArgument) where the ruled pole value is signed +-Inf; they are not hashed
-        assert_eq!(held_f28, 96);
-        // F-29 (ZF-M27): am, sn, sc and sd at u = -0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are +0
-        // where the ruled value is -0 (odd functions); they are not hashed
-        assert_eq!(held_f29, 64);
+        // F-28 (ZF-M27): ns, cs and ds at u = +-0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are the signed
+        // pole +-Inf (asserted above) and hashed
+        assert_eq!(f28, 96);
+        // F-29 (ZF-M27): am, sn, sc and sd at u = -0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are -0
+        // (asserted above, with +0 at u = +0) and hashed
+        assert_eq!(f29, 64);
         // F-30 (ZF-M27): am at u = -7, m in {1/2, 3/8}, p in {64, 128}, both modes, is am(u|m) + 2π (the 4K period
         // reduction drops the 2π·n); they are not hashed
         assert_eq!(held_f30, 8);
-        assert_eq!(
-            held,
-            held_f21 + held_tzud + held_f22 + held_f28 + held_f29 + held_f30
-        );
+        assert_eq!(held, held_f21 + held_tzud + held_f22 + held_f30);
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
@@ -8921,7 +8927,10 @@ mod grid_digest_tests {
         // Re-pinned (F9d-20): was 8_207_647_167_930_223_000, with the 64 F-29 am/sn/sc/sd(-0|m) +0 cells in.
         // Re-pinned (F9d-21): was 6_388_409_464_529_934_111, with the 8 F-30 am(-7|m) period-shift cells in.
         // Re-pinned (Tier 1): was 295_760_852_189_530_323, without the 24 Down cs/ds/ns +MAX cells (+Inf before).
-        assert_eq!(h.finish(), 2_202_397_902_195_068_300);
+        // Re-pinned (ZF-M27 F-28/F-29): was 2_202_397_902_195_068_300, without the 96 F-28 and 64 F-29 cells. Cell dump
+        // diff (r7 b16): exactly those 160 cells are added (ns/cs/ds(+-0|m) = +-Inf, am/sn/sc/sd(-0|m) = -0); no other
+        // cell moved.
+        assert_eq!(h.finish(), 16_757_744_097_035_462_767);
         Ok(())
     }
 

@@ -71,3 +71,6 @@
   gives +-(1 - 2^-rp) under `None` (was +-1), and a Ziv loop under `None` no longer accepts an undecided truncation
   (`reciprocal(third(320))` at p = 200 was exactly 3). A `None` truncation to zero is the canonical zero (exponent
   0). `RoundingMode::saturates_overflow` is renamed `rounds_toward_zero`. Three grid digests re-pinned.
+- Batch 16 (F-28/F-29, ZF-M27): Jacobi functions at u = +-0 (0 <= m <= 1): am, sn, sc and sd are the zero of the
+  sign of u, and ns, cs and ds are the pole +-Inf by the sign of u, in every mode (were +0 and NaN). The jacobi
+  digest is re-pinned with the 160 cells in.

@@ -246,13 +246,13 @@ impl ExactNumNumber {
     ) -> Result<(Self, Self, Self, Self, usize), Error> {
         // Correctly rounded building blocks (sin, cos, tanh, ...) at p bits: a few ulps.
         let direct = p.saturating_sub(8);
-        let zero = Self::new2(p, Sign::Pos, false)?;
         let one = Self::from_word(1, p)?;
         if self.is_zero() {
-            // rebuilt from the literals, one owner each
+            // am and sn are odd in u: the zero of the sign of u (F-29, ZF-M27). Rebuilt from the literals, one
+            // owner each.
             return Ok((
-                zero,
-                Self::new2(p, Sign::Pos, false)?,
+                Self::new2(p, self.sign(), false)?,
+                Self::new2(p, self.sign(), false)?,
                 Self::from_word(1, p)?,
                 one,
                 p,
@@ -435,16 +435,19 @@ impl ExactNumNumber {
     }
 }
 
+/// `n / d`. A zero `d` (sn at u = +-0, the only real zero of sn, cn or dn the grid reaches exactly) is a pole:
+/// `DivisionByZero`, which the `ExactNum` wrappers map to the signed infinity (F-28, ZF-M27).
 fn div_nz(n: &ExactNumNumber, d: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Error> {
     if d.is_zero() {
-        return Err(Error::InvalidArgument);
+        return Err(Error::DivisionByZero);
     }
     n.div(d, p, RoundingMode::Work)
 }
 
+/// `1 / d`, with a zero `d` a pole as in [`div_nz`].
 fn rec_nz(d: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Error> {
     if d.is_zero() {
-        return Err(Error::InvalidArgument);
+        return Err(Error::DivisionByZero);
     }
     ExactNumNumber::from_word(1, p)?.div(d, p, RoundingMode::Work)
 }
