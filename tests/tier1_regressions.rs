@@ -5791,3 +5791,52 @@ fn b5_j_i_negative_order_at_signed_zeros_is_signed_limit() -> Result<(), String>
     }
     Ok(())
 }
+
+/// N-4 (Paul 2026-11-25 9:31 AM CT): `copysign` and `next_after` work at the caller's `p`, not at `p` rounded up to
+/// whole words. Ruling 10 (answers-group1, adopted by P20): every public rounded function is correctly rounded at
+/// `p` (bits below `p` are zero); only `RoundingMode::None` keeps the storage precision rp(p, 64). x = 2^127 + 1 has
+/// 128 bits, so at p = 65, 100, 127 copysign(x, -1) is -(x rounded at p): 2^127 toward zero, 2^127 + 2^(128 - p)
+/// away from zero (and for ToOdd at p = 127, where x is a tie), inexact; under None it is -x exact. next_after(1, 2, p) is 1 + 2^(1 - p).
+#[test]
+fn zf_n4_copysign_and_next_after_round_at_p() -> Result<(), String> {
+    let w = |e: i64| ExactNum::from_word(1, 128).ldexp(e, 128, RoundingMode::ToEven);
+    let x = w(127).add_full_work(&w(0));
+    let neg_one = ExactNum::from_i8(-1, 64);
+    for p in [65usize, 100, 127] {
+        let shift = i64::try_from(128 - p).must("shift")?;
+        for rm in MODES {
+            let got = x.copysign(&neg_one, p, rm);
+            let (mag, inexact) = match rm {
+                RoundingMode::None => (w(127).add_full_work(&w(0)), false),
+                RoundingMode::Down | RoundingMode::FromZero => {
+                    (w(127).add_full_work(&w(shift)), true)
+                }
+                // p = 127: x is the tie between 2^127 and 2^127 + 2; ties-to-odd takes the odd one.
+                RoundingMode::ToOdd if p == 127 => (w(127).add_full_work(&w(shift)), true),
+                _ => (w(127), true),
+            };
+            if !got.is_negative() || !got.add_full_work(&mag).is_zero() || got.inexact() != inexact
+            {
+                return Err(format!(
+                    "copysign(2^127 + 1, -1, {p}, {rm:?}) = {}, want -{} inexact {inexact} (got {})",
+                    fmt_real(&got),
+                    fmt_real(&mag),
+                    got.inexact()
+                ));
+            }
+        }
+        let one = ExactNum::from_u8(1, 64);
+        let two = ExactNum::from_u8(2, 64);
+        let step = i64::try_from(p).must("p")?;
+        let want = w(0).add_full_work(&w(1 - step));
+        let got = one.next_after(&two, p, RoundingMode::ToEven);
+        if !got.sub_full_work(&want).is_zero() {
+            return Err(format!(
+                "next_after(1, 2, {p}) = {}, want {}",
+                fmt_real(&got),
+                fmt_real(&want)
+            ));
+        }
+    }
+    Ok(())
+}

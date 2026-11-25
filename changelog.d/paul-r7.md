@@ -102,3 +102,6 @@
   14, which had edited it by mistake.
 - Batch 25 (P11): `tools/hold_guard.sh` pins every held file in `tools/hold_manifest.txt`; a held file changes only with
   a manifest line citing Jeff's ruling. It runs in the pre-commit hook and the full gate, with its selftest.
+- Batch 26 (N-4): `copysign` and `next_after` work at the requested precision `p` instead of `p` rounded up to whole
+  words: copysign of a 128-bit value at p = 65 now rounds at 65 bits (inexact), and next_after(1, 2, 65) is
+  1 + 2^-64. `RoundingMode::None` still keeps the storage precision (ruling 10).

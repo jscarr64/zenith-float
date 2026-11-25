@@ -1,7 +1,9 @@
 //! Sign manipulation and successor operations.
 
 use crate::common::util::{invert_rm_for_sign, round_p, sub_borrow};
-use crate::defs::{Error, Word, EXPONENT_MAX, EXPONENT_MIN, WORD_MAX, WORD_SIGNIFICANT_BIT};
+use crate::defs::{
+    Error, Exponent, Word, EXPONENT_MAX, EXPONENT_MIN, WORD_MAX, WORD_SIGNIFICANT_BIT,
+};
 use crate::num::ExactNumNumber;
 use crate::{RoundingMode, Sign};
 
@@ -63,7 +65,8 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn copysign(&self, sign: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        // Ruling 10 (P20): rounded at `p` itself; only `None` keeps the storage precision rp(p, 64) (N-4).
+        let p = if rm == RoundingMode::None { round_p(p) } else { p };
         Self::p_assertion(p)?;
 
         let s = if sign.is_negative() {
@@ -93,7 +96,6 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn next_after(&self, toward: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
         Self::p_assertion(p)?;
         // Compare the exact values: rounding both to p first could make distinct values equal.
         match self.cmp(toward) {
@@ -107,12 +109,9 @@ impl ExactNumNumber {
     /// representable at `p` goes to the nearest p-bit value strictly beyond it in that
     /// direction; past the largest finite magnitude the result is `ExponentOverflow` (±Inf).
     pub(crate) fn next_toward(&self, upward: bool, p: usize) -> Result<Self, Error> {
-        let p = round_p(p);
         Self::p_assertion(p)?;
-        let mut x = self.try_rounded_exact(
-            p,
-            if upward { RoundingMode::Up } else { RoundingMode::Down },
-        )?;
+        let dir = if upward { RoundingMode::Up } else { RoundingMode::Down };
+        let mut x = self.try_rounded_exact(p, dir)?;
         if x.inexact() || x.cmp(self) != 0 {
             // Rounding in the step direction already moved strictly past `self`.
             x.set_inexact(true);
@@ -125,6 +124,24 @@ impl ExactNumNumber {
             }
             v.set_inexact(true);
             return Ok(v);
+        }
+        // The neighbour at `p` itself (N-4): x ± t rounded at p in the step direction, where
+        // t = 2^(e - p - 2) is below the ulp at p in x's binade and in the binade under it, so the
+        // rounding lands on the adjacent p-bit value. Only where t's exponent would fall under
+        // EXPONENT_MIN does the word-level bump below run.
+        let p_e = Exponent::try_from(p).map_err(|_| Error::InvalidArgument)?;
+        let te = x.exponent().saturating_sub(p_e).saturating_sub(1);
+        if te >= EXPONENT_MIN {
+            let mut t = Self::from_word(1, 64)?;
+            t.set_exponent(te);
+            if !upward {
+                t.set_sign(Sign::Neg);
+            }
+            // x + t is a fresh value: round it in place.
+            let mut r = x.add_full_prec(&t)?;
+            r.set_precision(p, dir)?;
+            r.set_inexact(true);
+            return Ok(r);
         }
         // Up for a negative value (or down for a positive one) shrinks the magnitude.
         if upward == x.is_positive() {
