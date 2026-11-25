@@ -153,5 +153,32 @@ r=$(fresh dsm); s=$(fresh dsms)
 git -C "$r" -c protocol.file.allow=always submodule -q add "$s" sm 2>/dev/null; git -C "$r" commit -q -m sm; git -C "$r" push -q 2>/dev/null
 echo z >> "$r/sm/f.txt"; touch -d "@$((NOW-4000))" "$r/sm/f.txt" "$r/sm"
                 expect "submodule with 66 min old changes"   1 run --repo "$r"
+# ---- pre-commit cap: refuse a new commit while 1 commit is already unpushed (.githooks/pre-commit) ----
+r=$(fresh pc0); expect "pre-commit, 0 unpushed"            0 run --pre-commit --repo "$r"
+r=$(fresh pc1); commit_at "$r" 10 p1
+                expect "pre-commit, 1 unpushed (refuse)"   1 run --pre-commit --repo "$r"
+r=$(fresh pcd); git -C "$r" switch -q --detach; commit_at "$r" 10 p1
+                expect "pre-commit, detached, 1 unpushed"  1 run --pre-commit --repo "$r"
+r=$(fresh pcl); git -C "$r" switch -q -c lone; commit_at "$r" 10 p1
+                expect "pre-commit, no upstream, 1 unpushed" 1 run --pre-commit --repo "$r"
+r=$(fresh pco); commit_at "$r" 60 c1; commit_at "$r" 50 c2; git -C "$r" switch -q -c other origin/w 2>/dev/null
+                expect "pre-commit judges the current branch only" 0 run --pre-commit --repo "$r"
+e="$work/pcu"; git init -q -b w "$e"
+                expect "pre-commit, unborn branch (first commit of a new repo)" 0 run --pre-commit --repo "$e"
+# the real hook
+hook="${PRE_COMMIT_HOOK:-$here/../.githooks/pre-commit}"
+r=$(fresh hk); mkdir -p "$r/.githooks" "$r/tools"; cp "$hook" "$r/.githooks/pre-commit"; chmod +x "$r/.githooks/pre-commit"; cp "$dc" "$r/tools/drift_check.py"
+git -C "$r" config core.hooksPath .githooks
+git -C "$r" add .githooks tools; git -C "$r" commit -q -m hooks 2>/dev/null && ok "hook: 1st unpushed commit allowed" || bad "hook: 1st unpushed commit allowed"
+echo z >> "$r/f.txt"; git -C "$r" add f.txt
+if git -C "$r" commit -q -m second 2>/dev/null; then bad "hook: 2nd unpushed commit refused"; else ok "hook: 2nd unpushed commit refused"; fi
+git -C "$r" push -q 2>/dev/null
+git -C "$r" commit -q -m second 2>/dev/null && ok "hook: commit allowed again after push" || bad "hook: commit allowed again after push"
+e="$work/hku"; git init -q -b w "$e"; mkdir -p "$e/.githooks" "$e/tools"; cp "$hook" "$e/.githooks/pre-commit"; chmod +x "$e/.githooks/pre-commit"; cp "$dc" "$e/tools/drift_check.py"
+git -C "$e" config core.hooksPath .githooks; git -C "$e" add -A
+git -C "$e" commit -q -m first 2>/dev/null && ok "hook: first commit of a new repo allowed" || bad "hook: first commit of a new repo allowed"
+# outside a work tree the hook fails closed with its own message (Cassie N6 X16)
+out=$(cd "$work/notgit" && bash "$hook" 2>&1); rc=$?
+[ $rc = 2 ] && grep -q 'pre-commit: not in a git work tree' <<<"$out" && ok "hook outside a work tree: rc 2" || { bad "hook outside a work tree (rc=$rc)"; show "$out"; }
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
