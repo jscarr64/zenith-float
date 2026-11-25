@@ -6,6 +6,7 @@
 # Lowered 2026-11-24 23:10 CT (Paul 10:00 PM, item 3 batch 4, unlisted clone sites 0): clone() 320->291, total 338->309.
 # Lowered 2026-11-25 00:12 CT (Paul 11:05 PM round 7, batch 1) to the measured working-tree counts: clone() 291->204, total 309->222.
 # Lowered 2026-11-25 00:50 CT (Paul 11:05 PM round 7, batch 2): clone() 204->196, total 222->214.
+# Re-measured 2026-11-25 02:30 CT (Paul 12:32 AM round 7 item 2, no clones by another name): helper_copies now also counts the rounding helpers (rounded_to, try_rounded_to, try_rounded_exact, try_rounded_checked, finish_ref; a helper's delegation inside its own definition is not counted again): 317 -> 443 is the same tree measured wider, not new copies; 4 owned sites were moved to set_precision / a fresh value in this batch.
 clone()	196
 to_vec()	4
 cloned()	4
@@ -14,4 +15,4 @@ clone_from	0
 impl Clone	1
 derive(Clone)	9
 total	214
-helper_copies	317
+helper_copies	443

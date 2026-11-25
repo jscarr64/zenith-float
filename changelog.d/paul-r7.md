@@ -29,3 +29,11 @@
   golden). gen_specials_goldens.py resolves each row with a Ziv loop (it used to inherit the previous row's
   precision) and carries the right E(fl(pi/2)|1) note for p=512; a full regeneration of all three generators
   is byte-identical to the committed goldens (checked against FLINT arb and mpmath).
+- Batch 5 (Paul 12:32 AM CT item 2, no clones by another name): the helper-copy count also counts the rounding
+  helpers that write a new value from a borrowed one (`rounded_to`, `try_rounded_to`, `try_rounded_exact`,
+  `try_rounded_checked`, `finish_ref`); a helper's delegation inside its own definition is counted once, at the
+  outer call (no_clone selftest covers both, and a mutant that counts delegation fails it). Re-measured: helper
+  copies 317 -> 443, combined 513 -> 639 (the same tree measured wider); the per-commit rule still holds on every
+  commit of the range. Four owned sites no longer copy (catalog hypergeometric denominator, catalog_aws `u0`, two
+  tests). The other 129 rounding-helper uses each read a borrowed source: 66 inputs, 34 `&self` kernels, 12
+  goldens rounded per mode, 10 caches, 7 helper equivalence tests.

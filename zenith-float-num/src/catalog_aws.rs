@@ -1811,8 +1811,9 @@ fn panel_integral(
         UP,
     );
     if u0.abs_cmp(&fa) != Some(1) {
-        // one ulp up
-        u0 = fa.rounded_to(wp, UP);
+        // one ulp up (fa is dead after this: rounded in place)
+        u0 = fa;
+        let _ = u0.set_precision(wp, UP);
     }
     let mut major: Vec<ExactNum> = vec![u0];
     for n in 1..=n_jet + 1 {
@@ -3531,9 +3532,9 @@ mod aws_bounds {
         let mut bad = Vec::new();
         for &p in &[64usize, 256] {
             let z = crate::ext::INF_POS;
-            let zero = signed_zero(false, p);
             for &rm in &modes {
-                let want0 = crate::catalog::finish_ref(&zero, p, rm);
+                // +0 at p in every mode: built, not rounded from a shared copy.
+                let want0 = signed_zero(false, p);
                 let got_j = z.anger_j(&ExactNum::new(p), p, rm, &mut cc);
                 if got_j.compare(&want0) != Some(0) {
                     bad.push(format!("J_0(+Inf) p={p} {rm:?} got {got_j} want {want0}"));

@@ -41,7 +41,13 @@ DERIVE = re.compile(r"#\[derive\(([^)]*)\)\]")
 
 # --- helper-copy counter -------------------------------------------------------------------------------------
 # Hidden copies: each of these is a `.clone()` (plus set_inexact(false) or a precision change) the clone scan cannot see.
-HELPERS = ("exact_copy_ext", "exact_copy", "exact_operand", "copy_p", "svd_copy_prec", "lift_num", "ziv_pass_operand")
+# The rounding helpers (rounded_to, try_rounded_to, try_rounded_exact, try_rounded_checked) and the `finish_ref` wrappers
+# write a new value from a borrowed one: counted too (Paul 2026-11-25 12:32 AM CT: no clones by another name). Each
+# use has to meet the same bar as a clone: the source stays borrowed (a `&self` kernel, a `&` input, a cache) and the
+# result needs its own storage at another precision. An owned value that is dead afterwards is rounded in place
+# (`set_precision`) instead.
+HELPERS = ("exact_copy_ext", "exact_copy", "exact_operand", "copy_p", "svd_copy_prec", "lift_num", "ziv_pass_operand",
+           "rounded_to", "try_rounded_to", "try_rounded_exact", "try_rounded_checked", "finish_ref")
 # The one approved Ziv working-copy helper (exception baseline 0 -> 1, rules_scan.py ziv_helper_check): its definition file
 # is CODEOWNERS-protected, and uses inside that file (its own unit tests) are not counted; every other use is.
 ZIV_HELPER = "ziv_pass_operand"
@@ -173,21 +179,46 @@ def scan():
     return {"hits": hits, "bad": bad, "allowed": allowed, "stale": stale, "errors": errors, "entries": entries}
 
 
+def helper_bodies(lines):
+    """Line flags: inside the definition (signature and body) of a HELPERS fn. A helper's call to another helper
+    there is delegation, the one copy the outer call already counts, so it is not counted again."""
+    inside = [False] * len(lines)
+    depth, opened, active = 0, False, False
+    for i, l in enumerate(lines):
+        code = strip_code(l)
+        if not active and HELPER_DEF.search(code) and code.lstrip().find("macro_rules!") < 0:
+            active, depth, opened = True, 0, False
+        if not active:
+            continue
+        inside[i] = True
+        for ch in code:
+            if ch == "{":
+                depth += 1
+                opened = True
+            elif ch == "}":
+                depth -= 1
+        if (opened and depth <= 0) or (not opened and code.rstrip().endswith(";")):
+            active = False
+    return inside
+
+
 def helper_sites():
     """call/use sites of the hidden copy helpers, definitions excluded -> [(rel, line, name)].
     Counted: every identifier occurrence of a HELPERS name in code (comments and string literals ignored) after
-    removing `fn NAME` / `macro_rules! NAME` definitions and whole `use` lines. Plus Rc::clone / Arc::clone in
-    zenith-float-compare/src. Test code (cfg(test), tests.rs) is included."""
+    removing `fn NAME` / `macro_rules! NAME` definitions and whole `use` lines, outside the helpers' own definitions
+    (a helper calling another helper is delegation: one copy, counted at the outer call). Plus Rc::clone /
+    Arc::clone in zenith-float-compare/src. Test code (cfg(test), tests.rs) is included."""
     out = []
     for rel, p in rs_files():
         lines = open(p, errors="replace").read().split("\n")
         in_compare = rel.startswith(HANDLE_DIR + "/")
+        in_helper = helper_bodies(lines)
         for i, l in enumerate(lines):
             code = strip_code(l)
             if USE_LINE.match(code):
                 continue
             code = HELPER_DEF.sub("", code)
-            for m in HELPER_USE.finditer(code):
+            for m in HELPER_USE.finditer(code if not in_helper[i] else ""):
                 if m.group(1) == ZIV_HELPER and rel == ZIV_HELPER_FILE:
                     continue
                 out.append((rel, i + 1, m.group(1)))

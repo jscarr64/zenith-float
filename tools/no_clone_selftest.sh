@@ -51,4 +51,14 @@ echo "$out" | grep -q 'below baseline' || fail "no lower-the-baseline hint: $out
 cmp -s "$t/tools/no_clone_progress_baseline.txt" "$t/base.keep" || fail "--progress rewrote the baseline"
 printf 'clone()\t1\n' > "$t/tools/no_clone_progress_baseline.txt"
 run --progress >/dev/null && fail "a baseline without every kind passed"
+# Round 7 (Paul 2026-11-25 12:32 AM CT): the rounding helpers are copies too; a helper's delegation inside its own
+# definition is not counted a second time.
+hc() { run --helpers | sed -n 's/^helper_copies: \([0-9]*\).*/\1/p'; }
+for body in 'let y = x.rounded_to(p, rm);' 'let y = x.try_rounded_to(p, rm)?;' 'let y = x.try_rounded_exact(p, rm)?;' 'let y = x.try_rounded_checked(p, rm, s)?;' 'let y = finish_ref(&x, p, rm);'; do
+  printf 'fn f() { %s }\n' "$body" > "$t/src/a.rs"; [ "$(hc)" = 1 ] || fail "rounding helper not counted: $body"
+done
+printf 'fn finish_ref(y: &N, p: usize) -> N {\n    y.rounded_to(p, rm)\n}\nfn g() { let a = finish_ref(&x, 1); }\n' > "$t/src/a.rs"
+[ "$(hc)" = 1 ] || fail "delegation inside a helper counted again (want 1, got $(hc))"
+printf 'fn g() { let a = x.rounded_to(1, rm); }\nfn rounded_to(&self) -> Self;\nfn h() { let b = x.rounded_to(2, rm); }\n' > "$t/src/a.rs"
+[ "$(hc)" = 2 ] || fail "a bodiless helper declaration hid the next fn's use (want 2, got $(hc))"
 echo "no_clone selftest: ok"

@@ -1272,7 +1272,7 @@ mod tests {
         let _ = y0.set_precision(wrk, RoundingMode::None);
         let mut t0 = ExactNum::new(p);
         let _ = t0.set_precision(wrk, RoundingMode::None);
-        let lam_w = lam.rounded_to(wrk, RoundingMode::None);
+        let lam_w = ExactNum::from_u32(256, wrk);
         let mut pulse =
             |tt: &ExactNum, _y: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| {
                 let nt = ExactNum::mul_ref(&lam_w, tt, q, r).neg();

@@ -46,7 +46,13 @@ reported to Jeff with file:line and the reason a `Result` return cannot work; th
 
 The clone scan only sees the spelling `.clone()`. These helpers are a `.clone()` plus `set_inexact(false)` or a
 precision change and hide the copy: `exact_copy_ext`, `exact_copy`, `exact_operand`, `copy_p`, `svd_copy_prec`,
-`lift_num`. The counter counts every identifier occurrence of those names in code (comments and string literals are
+`lift_num`, `ziv_pass_operand`. Since round 7 (Paul 2026-11-25 12:32 AM CT, "no clones by another name") the rounding
+helpers that write a new value from a borrowed one are counted too: `rounded_to`, `try_rounded_to`,
+`try_rounded_exact`, `try_rounded_checked` and the `finish_ref` wrappers. Each use meets the same bar as a clone: the
+source stays borrowed (a `&self` kernel, a `&` input, a cache or a golden rounded in several modes) and the result needs
+storage of its own at another precision; an owned value that is dead afterwards is rounded in place with
+`set_precision`. A helper's call to another helper inside its own definition is delegation (one copy, counted at
+the outer call) and is not counted again. Re-measured: 443 helper copies (317 before), combined 639. The counter counts every identifier occurrence of those names in code (comments and string literals are
 ignored) after removing definitions: `fn NAME` and `macro_rules! NAME` are cut out of the line, and `use` lines are
 skipped. It also counts `Rc::clone` / `Arc::clone` in `zenith-float-compare/src` (handle shares, which the clone scan
 does not match because it looks for `.clone(` and `Clone::clone`). `no_clone.py --helpers --list` prints every site.

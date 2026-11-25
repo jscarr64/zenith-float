@@ -44,7 +44,8 @@ compiled Rust anywhere under the root fails the count checks; there is no baseli
 commented-out held files of HOLD.md (not compiled, never run, never counted) are not listed.
 
 HELPER-COPY COUNT: total uses of the hidden copy helpers (no_clone.HELPERS: exact_copy_ext, exact_copy, exact_operand,
-copy_p, svd_copy_prec, lift_num) in non-definition positions, plus Rc::clone / Arc::clone in zenith-float-compare/src
+copy_p, svd_copy_prec, lift_num, ziv_pass_operand, and the rounding helpers rounded_to, try_rounded_to, try_rounded_exact,
+try_rounded_checked, finish_ref) in non-definition positions, plus Rc::clone / Arc::clone in zenith-float-compare/src
 (see no_clone.helper_sites for exactly how they are counted). Same ratchet against tools/helper_copy_count_baseline.txt.
 
 EXCEPTIONS: tools/clone_allowlist.txt (see tools/no_clone.py and tools/NO_CLONE_RULES.md). Checked here on every

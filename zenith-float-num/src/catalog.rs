@@ -276,7 +276,8 @@ fn pfq_series(z: &ExactNum, a: &[ExactNum], b: &[ExactNum], p: usize) -> ExactNu
             for aj in a {
                 num = num.mul(&ExactNum::add_ref(&km1, aj, wrk, n), wrk, n);
             }
-            let mut den = kf.rounded_to(wrk, n);
+            // k = km1 + 1 is an integer, exact at 128 bits and at wrk: computed at wrk, not copied from kf.
+            let mut den = ExactNum::add_ref(&km1, &ExactNum::from_u8(1, wrk), wrk, n);
             for bj in b {
                 den = den.mul(&ExactNum::add_ref(&km1, bj, wrk, n), wrk, n);
             }
