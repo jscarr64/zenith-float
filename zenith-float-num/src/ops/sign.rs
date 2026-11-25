@@ -1,6 +1,6 @@
 //! Sign manipulation and successor operations.
 
-use crate::common::util::{round_p, sub_borrow};
+use crate::common::util::{invert_rm_for_sign, round_p, sub_borrow};
 use crate::defs::{Error, Word, EXPONENT_MAX, EXPONENT_MIN, WORD_MAX, WORD_SIGNIFICANT_BIT};
 use crate::num::ExactNumNumber;
 use crate::{RoundingMode, Sign};
@@ -66,15 +66,21 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
 
-        let mut ret = self.clone()?;
-        if sign.is_negative() {
-            ret.set_sign(Sign::Neg);
+        let s = if sign.is_negative() {
+            Sign::Neg
         } else if sign.is_zero() {
-            ret.set_sign(sign.sign());
+            sign.sign()
         } else {
-            ret.set_sign(Sign::Pos);
-        }
-        ret.set_precision(p, rm)?;
+            Sign::Pos
+        };
+        // The magnitude rounded under the result's sign: a directed mode flips when the sign does, and an
+        // overflow carries the result's sign, as rounding an owned copy after `set_sign(s)` would.
+        let rm_self = if s == self.sign() { rm } else { invert_rm_for_sign(rm) };
+        let mut ret = self.try_rounded_to(p, rm_self).map_err(|e| match e {
+            Error::ExponentOverflow(_) => Error::ExponentOverflow(s),
+            e => e,
+        })?;
+        ret.set_sign(s);
 
         ret.set_inexact(ret.inexact() | self.inexact() | sign.inexact());
         Ok(ret)
@@ -103,9 +109,7 @@ impl ExactNumNumber {
     pub(crate) fn next_toward(&self, upward: bool, p: usize) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
-        let mut x = self.clone()?;
-        x.set_inexact(false);
-        x.set_precision(
+        let mut x = self.try_rounded_exact(
             p,
             if upward { RoundingMode::Up } else { RoundingMode::Down },
         )?;

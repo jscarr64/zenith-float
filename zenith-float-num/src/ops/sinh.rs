@@ -37,18 +37,17 @@ impl ExactNumNumber {
 
         p_wrk += p_inc;
 
-        let mut x = self.clone()?;
-        x.set_inexact(false);
-        x.set_sign(Sign::Pos);
-
-        let ethres = (x.exponent().unsigned_abs().max(1) as usize - 1) * 2;
+        let ethres = (self.exponent().unsigned_abs().max(1) as usize - 1) * 2;
 
         loop {
+            // |self| widened to p_x (above its precision) with flags cleared: a new value each pass, which
+            // sinh_series consumes
             let p_x = p_wrk + 4;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_exact(p_x, RoundingMode::None)?;
+            x.set_sign(Sign::Pos);
 
             let mut ret = if x.exponent() <= 0 {
-                Self::sinh_series(x.clone()?, p_x, RoundingMode::None)?
+                Self::sinh_series(x, p_x, RoundingMode::None)?
             } else {
                 let mut val = if ethres > x.mantissa_max_bit_len() + 2 {
                     // e^|x| / 2 * signum(self)

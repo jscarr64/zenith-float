@@ -109,9 +109,8 @@ impl Ln10Cache {
 
         loop {
             if self.b > kext {
-                let mut ret = self.val.clone()?;
-
-                if ret.try_set_precision(k, rm, p_wrk)? {
+                // the cache keeps its full value; the caller gets it rounded to k, written straight from it
+                if let Some(ret) = self.val.try_rounded_checked(k, rm, p_wrk)? {
                     return Ok(ret);
                 }
 

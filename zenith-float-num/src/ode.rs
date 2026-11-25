@@ -55,6 +55,8 @@ const ODE_DP_MAX_CONST_C_STEPS: u32 = 1 << 14;
 /// method-selection prefix (`8 · 7` right-hand-side evaluations),
 /// far below [`ODE_DP_MAX_CONST_C_STEPS`].
 const ODE_DP_STABILITY_WINDOW: u32 = 8;
+// rk45's window start moves in on the window's first step and is compared only on a later one.
+const _: () = assert!(ODE_DP_STABILITY_WINDOW > 1);
 
 /// If `h` grows by at least `2^{ODE_DP_STABILITY_GROW_BITS}` over
 /// one [`ODE_DP_STABILITY_WINDOW`], the controller is still
@@ -658,12 +660,21 @@ where
     let mut ys = Vec::new();
     let mut stable_n: u32 = 0;
     let mut stable_h0: Option<ExactNum> = None;
-    push_pair(&mut ts, &mut ys, t.clone(), y.clone());
-    while t.compare(t1) == Some(-1) {
-        let remain = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
-        if h.compare(&remain) == Some(1) {
-            h = remain.clone();
+    // (t, y) is the newest point. It is pushed when the next point replaces it, or at the end,
+    // so the row and the integration state never need two copies of one value.
+    loop {
+        if t.compare(t1) != Some(-1) {
+            push_pair(&mut ts, &mut ys, t, y);
+            break;
         }
+        let remain_v = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
+        // A step longer than what remains is cut to it: h takes the remainder by move.
+        let remain: &ExactNum = if h.compare(&remain_v) == Some(1) {
+            h = remain_v;
+            &h
+        } else {
+            &remain_v
+        };
         let t_try = ExactNum::add_ref(&t, &h, wrk, RoundingMode::None);
         let no_progress = t_try.compare(&t) == Some(0)
             || h.is_zero()
@@ -675,13 +686,16 @@ where
             if !finite(&yp) {
                 return Err(OdeError::InvalidArgument);
             }
-            let leftover = remain.abs().mul(&yp.abs(), wrk, RoundingMode::None);
+            let leftover = remain.abs_ref().mul(&yp.abs(), wrk, RoundingMode::None);
             let scale = step_scale(atol, rtol, &y, &y, wrk);
             if leftover.is_zero()
                 || leftover.compare(&scale) == Some(-1)
                 || leftover.compare(&scale) == Some(0)
             {
-                push_pair(&mut ts, &mut ys, t1.clone(), y);
+                // The row holds y at t and again at the endpoint t1.
+                let y_end = y.clone();
+                push_pair(&mut ts, &mut ys, t, y);
+                push_pair(&mut ts, &mut ys, t1.clone(), y_end);
                 break;
             }
             return Err(OdeError::ToleranceUnreachable);
@@ -692,15 +706,19 @@ where
         let scale = step_scale(atol, rtol, &y, &y5, wrk);
         let ok = step_ok(&err, &scale);
         if ok {
-            t = t.add(&h, wrk, RoundingMode::None);
-            y = y5;
-            if t.compare(t1) == Some(1) {
-                t = t1.clone();
+            let mut t_new = ExactNum::add_ref(&t, &h, wrk, RoundingMode::None);
+            if t_new.compare(t1) == Some(1) {
+                t_new = t1.clone();
             }
-            if !finite(&t) || !finite(&y) {
+            if !finite(&t_new) || !finite(&y5) {
                 return Err(OdeError::InvalidArgument);
             }
-            push_pair(&mut ts, &mut ys, t.clone(), y.clone());
+            push_pair(
+                &mut ts,
+                &mut ys,
+                core::mem::replace(&mut t, t_new),
+                core::mem::replace(&mut y, y5),
+            );
         } else {
             // Error stuck at the rounding floor cannot be driven down at this wrk.
             let floor = ode_min_step(wrk, RoundingMode::None).mul(
@@ -741,11 +759,12 @@ where
         // plus a large constant-C projection means a crawl; a
         // finishable tail grows `h` faster than the documented bound.
         if ok {
-            if stable_n == 0 {
-                stable_h0 = Some(h_used.clone());
-            }
             stable_n = stable_n.saturating_add(1);
-            if stable_n >= ODE_DP_STABILITY_WINDOW {
+            if stable_n == 1 {
+                // The window's first step: h_used is not read again in this pass (the window
+                // is longer than one step), so it moves into the window start.
+                stable_h0 = Some(h_used);
+            } else if stable_n >= ODE_DP_STABILITY_WINDOW {
                 let grew = match stable_h0.as_ref() {
                     Some(h0) => {
                         let mark =
@@ -1133,7 +1152,7 @@ mod tests {
         );
 
         let (_te, ye) = euler(
-            |_t, y, _p, _rm| y.clone(),
+            |_t, y, p, rm| y.rounded_to(p, rm),
             &zero,
             &one,
             &one,
@@ -1143,7 +1162,7 @@ mod tests {
         )
         .ok_or(crate::Error::InvalidArgument)?;
         let (_te2, ye2) = euler(
-            |_t, y, _p, _rm| y.clone(),
+            |_t, y, p, rm| y.rounded_to(p, rm),
             &zero,
             &one,
             &one,

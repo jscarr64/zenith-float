@@ -1631,7 +1631,7 @@ impl ExactNumNumber {
     }
 
     /// Whether `self 2^k` is an integer: no one bit at or after mantissa position `e + k`.
-    fn is_int_scaled(&self, k: Exponent) -> bool {
+    pub(crate) fn is_int_scaled(&self, k: Exponent) -> bool {
         match usize::try_from(self.e.saturating_add(k)) {
             Ok(0) | Err(_) => self.is_zero(),
             Ok(u) if u < self.m.max_bit_len() => self.m.find_one_from(u).is_none(),
@@ -1641,9 +1641,16 @@ impl ExactNumNumber {
 
     /// Returns integer part of a number as built-in integer.
     pub(super) fn int_as_usize(&self) -> Result<usize, Error> {
-        if self.e > 0 {
-            if (self.e as usize) <= WORD_BIT_SIZE {
-                let shift = WORD_BIT_SIZE - self.e as usize;
+        self.int_as_usize_scaled(0)
+    }
+
+    /// The integer part of `self * 2^k` (a normal `self`, `k` small) as a built-in integer, read without a
+    /// scaled copy.
+    pub(super) fn int_as_usize_scaled(&self, k: Exponent) -> Result<usize, Error> {
+        let e = self.e.saturating_add(k);
+        if e > 0 {
+            if (e as usize) <= WORD_BIT_SIZE {
+                let shift = WORD_BIT_SIZE - e as usize;
                 let ret = self.m.most_significant_word() as usize;
                 Ok(ret >> shift)
             } else {
@@ -1855,21 +1862,124 @@ impl ExactNumNumber {
         if Self::prec_assertion(p).is_err() || Self::p_assertion(p).is_err() {
             return self.with_sign(self.s);
         }
+        self.rounded_body(p, rm, (self.inexact, self.op_inexact))
+            .map(|(r, _)| r)
+    }
+
+    /// What `let mut x = self.clone()?; x.set_precision(p, rm)?; x` returns, written straight from `self`:
+    /// the same value on success and the same error where `set_precision` fails (a refused `p`, or an exponent
+    /// overflow out of `EXPONENT_MAX`), so a working copy that is rounded or widened once needs no copy first.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    ///  - InvalidArgument: the precision is incorrect.
+    ///  - ExponentOverflow: rounding carried out of `EXPONENT_MAX`.
+    pub(crate) fn try_rounded_to(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.try_rounded_flags(p, rm, (self.inexact, self.op_inexact))
+    }
+
+    /// What `let mut x = self.clone()?; x.try_set_precision(p, rm, s)` leaves: `Some(x)` when it returns
+    /// true (the rounding is decided by `s` correct digits, or `self` is exact), `None` when it returns false
+    /// (the caller retries at a higher precision). `self` is only read: the roundability check reads its
+    /// mantissa and the rounded value is written straight from it.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    ///  - InvalidArgument: the precision is incorrect.
+    ///  - ExponentOverflow: rounding carried out of `EXPONENT_MAX`.
+    pub(crate) fn try_rounded_checked(
+        &self,
+        p: usize,
+        rm: RoundingMode,
+        s: usize,
+    ) -> Result<Option<Self>, Error> {
+        Self::p_assertion(p)?;
+        let len = self.mantissa_max_bit_len();
+        let checked = self.inexact && len > p;
+        if checked && !self.m.is_roundable(len - p, rm, s) {
+            return Ok(None);
+        }
+        let mut r = self.try_rounded_to(p, rm)?;
+        // With the roundability check on, a directed rounding at a word boundary reads the word just below the
+        // kept ones (`round_mantissa`, word `z`) without clearing it. A value that then rounds to zero keeps its
+        // exponent there (that word is still set when the zero test runs, and set_length drops it after); the
+        // unchecked rounding clears it and gives exponent 0.
+        let drop = len.saturating_sub(p);
+        let directed = matches!(
+            rm,
+            RoundingMode::ToZero | RoundingMode::FromZero | RoundingMode::Up | RoundingMode::Down
+        );
+        if checked
+            && directed
+            && r.is_zero()
+            && !self.is_zero()
+            && drop.is_multiple_of(WORD_BIT_SIZE)
+        {
+            let s_w = s - s % WORD_BIT_SIZE;
+            let known = drop.saturating_sub(len.saturating_sub(s_w)) / WORD_BIT_SIZE;
+            let i = drop / WORD_BIT_SIZE;
+            if known > 0 && i > 0 && self.m.digits().get(i - 1).is_some_and(|w| *w != 0) {
+                r.e = self.e;
+            }
+        }
+        Ok(Some(r))
+    }
+
+    /// What `let mut x = self.clone()?; x.set_inexact(false); x.set_precision(p, rm)?; x` returns: as
+    /// [`Self::try_rounded_to`], with both inexact flags cleared before the rounding, so the result's flag
+    /// records only this rounding.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    ///  - InvalidArgument: the precision is incorrect.
+    ///  - ExponentOverflow: rounding carried out of `EXPONENT_MAX`.
+    pub(crate) fn try_rounded_exact(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.try_rounded_flags(p, rm, (false, None))
+    }
+
+    fn try_rounded_flags(
+        &self,
+        p: usize,
+        rm: RoundingMode,
+        flags: (bool, Option<bool>),
+    ) -> Result<Self, Error> {
+        Self::p_assertion(p)?;
+        match self.rounded_body(p, rm, flags)? {
+            (_, true) => Err(Error::ExponentOverflow(self.s)),
+            (r, false) => Ok(r),
+        }
+    }
+
+    /// The body of `rounded_to` for a `p` that `set_precision` accepts, from a number whose flags are
+    /// `flags` (inexact, op_inexact); the bool is true when the rounding carried out of `EXPONENT_MAX`
+    /// (where `set_precision` returns `ExponentOverflow`).
+    fn rounded_body(
+        &self,
+        p: usize,
+        rm: RoundingMode,
+        flags: (bool, Option<bool>),
+    ) -> Result<(Self, bool), Error> {
         let len = self.mantissa_max_bit_len();
         if len <= p {
             let mut unused = false;
             let (m, _) = self
                 .m
                 .rounded_from(0, p, RoundingMode::None, true, &mut unused)?;
-            return Ok(ExactNumNumber {
-                e: self.e,
-                s: self.s,
-                m,
-                inexact: self.inexact,
-                op_inexact: self.op_inexact,
-            });
+            return Ok((
+                ExactNumNumber {
+                    e: self.e,
+                    s: self.s,
+                    m,
+                    inexact: flags.0,
+                    op_inexact: flags.1,
+                },
+                false,
+            ));
         }
-        let mut inexact = self.inexact;
+        let mut inexact = flags.0;
         let (m, ovf, full_zero) = self
             .m
             .precision_from(p, rm, self.is_positive(), &mut inexact)?;
@@ -1877,14 +1987,14 @@ impl ExactNumNumber {
             e: self.e,
             s: self.s,
             m,
-            inexact: self.inexact | inexact,
+            inexact: flags.0 | inexact,
             op_inexact: None,
         };
         if ovf {
             if r.e == EXPONENT_MAX {
                 r.m.set_length(len)?;
                 r.m.set_bit_len(self.m.bit_len());
-                return Ok(r);
+                return Ok((r, true));
             }
             r.e += 1;
         } else if full_zero {
@@ -1893,7 +2003,7 @@ impl ExactNumNumber {
         } else if self.is_subnormal() {
             r.m.update_bit_len();
         }
-        Ok(r)
+        Ok((r, false))
     }
 
     /// Try to round and then set the precision to `p`, given `self` has `s` correct digits in mantissa.
@@ -2173,7 +2283,14 @@ impl ExactNumNumber {
 
     // Add correction to x for flooring and ceiling rounding modes.
     pub(crate) fn add_correction(&self, inv_corr_sign: bool) -> Result<Self, Error> {
-        let p = self.mantissa_max_bit_len() + 1;
+        self.add_correction_at(self.mantissa_max_bit_len(), inv_corr_sign)
+    }
+
+    /// `add_correction` of `self` widened to at least `p` bits (what `set_precision(p)` on an owned copy of a
+    /// shorter `self` leaves, then `add_correction`): the correction sits one bit below a mantissa of
+    /// `max(p, precision of self)` bits rounded up to whole words. `self` is only read, so no widened copy is made.
+    pub(crate) fn add_correction_at(&self, p: usize, inv_corr_sign: bool) -> Result<Self, Error> {
+        let p = round_p(p.max(self.mantissa_max_bit_len())) + 1;
         let mut corr = ExactNumNumber::min_positive(p)?;
         corr.set_exponent(self.exponent());
         corr.set_sign(if inv_corr_sign { self.sign().invert() } else { self.sign() });

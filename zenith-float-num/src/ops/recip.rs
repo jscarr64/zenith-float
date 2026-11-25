@@ -64,8 +64,7 @@ impl ExactNumNumber {
         let two = Self::from_word(2, p)?;
 
         let mut p_cur = WORD_BIT_SIZE;
-        let mut a_k = a.clone()?;
-        a_k.set_precision(p_cur, rm)?;
+        let a_k = a.try_rounded_to(p_cur, rm)?;
         let mut x = ONE.div(&a_k, p_cur, rm)?;
         x.set_inexact(false);
 
@@ -101,8 +100,7 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let rm = RoundingMode::None;
         x.set_precision(p_next, rm)?;
-        let mut a_k = a.clone()?;
-        a_k.set_precision(p_next, rm)?;
+        let mut a_k = a.try_rounded_to(p_next, rm)?;
         a_k.set_inexact(false);
 
         let ax = a_k.mul(&x, p_next, rm)?;

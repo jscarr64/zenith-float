@@ -39,12 +39,10 @@ impl ExactNumNumber {
 
         let mut add_p = (1 - ACOS_EXP_THRES) as usize;
 
-        let mut x = self.clone()?;
-        x.set_inexact(false);
-
         loop {
             let p_x = p_wrk + add_p;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            x.set_inexact(false);
 
             let mut ret = x.asin(p_x, RoundingMode::None, cc)?;
 

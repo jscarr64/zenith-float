@@ -12,6 +12,7 @@ use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
 use alloc::vec::Vec;
+use core::borrow::Borrow;
 use core::ops::Neg;
 
 /// \(x\in\{0,-1,-2,\dots\}\). `is_positive` is true for `+0`, so zero is tested first.
@@ -19,8 +20,8 @@ fn gamma_pole(x: &ExactNum) -> bool {
     x.is_int() && (x.is_zero() || !x.is_positive())
 }
 
-fn all_finite(xs: &[ExactNum]) -> bool {
-    xs.iter().all(finite)
+fn all_finite<T: Borrow<ExactNum>>(xs: &[T]) -> bool {
+    xs.iter().all(|x| finite(x.borrow()))
 }
 
 fn pairs_finite(xs: &[(ExactNum, ExactNum)]) -> bool {
@@ -111,7 +112,7 @@ enum GEval {
 
 fn meijer_g_series(
     z: &ExactNum,
-    [an, ap, bm, bq]: [&[ExactNum]; 4],
+    [an, ap, bm, bq]: [&[&ExactNum]; 4],
     r: &ExactNum,
     p: usize,
     cc: &mut Consts,
@@ -171,7 +172,7 @@ fn meijer_g_series(
             z_to_inv_r
         };
         for h in 0..m {
-            let bh = &b[h];
+            let bh: &ExactNum = b[h];
             let mut gn = Vec::new();
             for (j, bj) in b.iter().enumerate().take(m) {
                 if j != h {
@@ -266,7 +267,7 @@ fn meijer_g_series(
         };
         let hz = if sign_odd { inv_z.neg() } else { inv_z };
         for k in 0..n {
-            let ak = &a[k];
+            let ak: &ExactNum = a[k];
             let mut gn = Vec::new();
             for (j, aj) in a.iter().enumerate().take(n) {
                 if j != k {
@@ -342,13 +343,18 @@ fn meijer_g_series(
     GEval::Val(sum)
 }
 
-fn meijer_g_inner(
+/// The parameter slices hold values or borrows (`T: Borrow<ExactNum>`); the work below reads
+/// them through borrowed views, so no parameter is copied.
+fn meijer_g_inner<T: Borrow<ExactNum>>(
     z: &ExactNum,
-    [an, ap, bm, bq]: [&[ExactNum]; 4],
+    params: [&[T]; 4],
     r: &ExactNum,
     p: usize,
     cc: &mut Consts,
 ) -> ExactNum {
+    let [an, ap, bm, bq] =
+        params.map(|xs| xs.iter().map(Borrow::borrow).collect::<Vec<&ExactNum>>());
+    let [an, ap, bm, bq] = [an.as_slice(), ap.as_slice(), bm.as_slice(), bq.as_slice()];
     match meijer_g_series(z, [an, ap, bm, bq], r, p, cc) {
         GEval::Val(v) => v,
         GEval::Bad => cat_nan(),
@@ -778,7 +784,7 @@ fn meijer_jet_limit(
     z: &ExactNum,
     r: &ExactNum,
     invert: bool,
-    [an, ap, bm, bq]: [&[ExactNum]; 4],
+    [an, ap, bm, bq]: [&[&ExactNum]; 4],
     p: usize,
     cc: &mut Consts,
 ) -> ExactNum {
@@ -787,8 +793,8 @@ fn meijer_jet_limit(
     }
     let n = an.len();
     let m = bm.len();
-    let a: Vec<&ExactNum> = an.iter().chain(ap.iter()).collect();
-    let b: Vec<&ExactNum> = bm.iter().chain(bq.iter()).collect();
+    let a: Vec<&ExactNum> = an.iter().chain(ap.iter()).copied().collect();
+    let b: Vec<&ExactNum> = bm.iter().chain(bq.iter()).copied().collect();
     let ca: Vec<i32> = (0..a.len()).map(|i| i as i32 + 1).collect();
     let cb: Vec<i32> = (0..b.len()).map(|i| (a.len() + i) as i32 + 1).collect();
     let all: Vec<&ExactNum> = a.iter().chain(b.iter()).copied().collect();
@@ -954,10 +960,10 @@ fn meijer_jet_limit(
 /// coefficients. \(s^*>0\): signed zero; \(s^*<0\) or \(d\ge1\): signed infinity;
 /// \(s^*=0,d=0\): \(-C\). No pole at all: \(+0\).
 fn meijer_zero_limit(
-    an: &[ExactNum],
-    ap: &[ExactNum],
-    bm: &[ExactNum],
-    bq: &[ExactNum],
+    an: &[&ExactNum],
+    ap: &[&ExactNum],
+    bm: &[&ExactNum],
+    bq: &[&ExactNum],
     p: usize,
     cc: &mut Consts,
 ) -> ExactNum {
@@ -966,6 +972,7 @@ fn meijer_zero_limit(
         .chain(ap.iter())
         .chain(bm.iter())
         .chain(bq.iter())
+        .copied()
         .collect();
     let Some(span) = exact_span(&all) else {
         return cat_nan();
@@ -993,6 +1000,7 @@ fn meijer_zero_limit(
             .chain(ap.iter())
             .chain(bq.iter())
             .filter(|x| int_diff(x, b0))
+            .copied()
             .collect();
         cands.sort_by(|x, y| {
             x.compare(y)
@@ -1101,7 +1109,7 @@ fn meijer_zero_limit(
 
 /// DLMF 16.17: the Mellin–Barnes contour exists only when no \(a_k-b_h\)
 /// (\(k\le n\), \(h\le m\)) is a positive integer.
-fn nonremovable(an: &[ExactNum], bm: &[ExactNum], wp: usize) -> bool {
+fn nonremovable(an: &[&ExactNum], bm: &[&ExactNum], wp: usize) -> bool {
     an.iter().any(|a| {
         bm.iter().any(|b| {
             let d = ExactNum::sub_ref(a, b, wp, RoundingMode::None);
@@ -1116,7 +1124,7 @@ fn nonremovable(an: &[ExactNum], bm: &[ExactNum], wp: usize) -> bool {
 /// \(G^{m,n}_{p,q}(w\mid a;b)=G^{n,m}_{q,p}(1/w\mid1-b;1-a)\) (DLMF 16.19.1).
 fn meijer_removable_limit(
     z: &ExactNum,
-    [an, ap, bm, bq]: [&[ExactNum]; 4],
+    [an, ap, bm, bq]: [&[&ExactNum]; 4],
     r: &ExactNum,
     p: usize,
     cc: &mut Consts,
@@ -1126,6 +1134,7 @@ fn meijer_removable_limit(
         .chain(ap.iter())
         .chain(bm.iter())
         .chain(bq.iter())
+        .copied()
         .collect();
     let Some(span) = exact_span(&all) else {
         return cat_nan();
@@ -1159,19 +1168,15 @@ fn meijer_removable_limit(
     if choose_series(an.len(), ap.len(), bm.len(), bq.len(), w, p) == 1 {
         return meijer_jet_limit(z, r, false, [an, ap, bm, bq], p, cc);
     }
-    let refl = |xs: &[ExactNum]| -> Vec<ExactNum> {
+    let refl = |xs: &[&ExactNum]| -> Vec<ExactNum> {
         xs.iter()
             .map(|x| ExactNum::sub_ref(&ExactNum::from_u8(1, wp), x, wp, RoundingMode::None))
             .collect()
     };
-    meijer_jet_limit(
-        z,
-        r,
-        true,
-        [&refl(bm), &refl(bq), &refl(an), &refl(ap)],
-        p,
-        cc,
-    )
+    let [bm_r, bq_r, an_r, ap_r] = [refl(bm), refl(bq), refl(an), refl(ap)];
+    let views = [&bm_r, &bq_r, &an_r, &ap_r].map(|xs| xs.iter().collect::<Vec<&ExactNum>>());
+    let [v0, v1, v2, v3] = &views;
+    meijer_jet_limit(z, r, true, [v0, v1, v2, v3], p, cc)
 }
 
 fn gcd_u(mut a: u64, mut b: u64) -> u64 {
@@ -1553,10 +1558,10 @@ impl ExactNum {
             && all_unit_scales(bm, wrk)
             && all_unit_scales(bq, wrk)
         {
-            let an_a: Vec<ExactNum> = an.iter().map(|(a, _)| a.clone()).collect();
-            let ap_a: Vec<ExactNum> = ap.iter().map(|(a, _)| a.clone()).collect();
-            let bm_a: Vec<ExactNum> = bm.iter().map(|(a, _)| a.clone()).collect();
-            let bq_a: Vec<ExactNum> = bq.iter().map(|(a, _)| a.clone()).collect();
+            fn firsts(xs: &[(ExactNum, ExactNum)]) -> Vec<&ExactNum> {
+                xs.iter().map(|(a, _)| a).collect()
+            }
+            let (an_a, ap_a, bm_a, bq_a) = (firsts(an), firsts(ap), firsts(bm), firsts(bq));
             return finish(
                 meijer_g_inner(
                     self,
@@ -4502,7 +4507,8 @@ mod tests {
         let z = ExactNum::from_u8(1, 256).div(&ExactNum::from_u8(2, 256), 256, RoundingMode::None);
         let r = ExactNum::from_u8(1, 256);
         let bm: Vec<ExactNum> = (0..16).map(|_| ExactNum::new(256)).collect();
-        let g = meijer_jet_limit(&z, &r, false, [&[], &[], &bm, &[]], 256, &mut cc);
+        let bm_v: Vec<&ExactNum> = bm.iter().collect();
+        let g = meijer_jet_limit(&z, &r, false, [&[], &[], &bm_v, &[]], 256, &mut cc);
         for &p in &[64usize, 256] {
             for &rm in &modes {
                 let got = crate::catalog::finish_ref(&g, p, rm);

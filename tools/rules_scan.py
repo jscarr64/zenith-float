@@ -36,6 +36,12 @@ baseline is only ever lowered, with --update-baseline.
 UNLISTED CLONES (Paul steer 2026-11-24 9:53 PM CT): a `.clone(` line counted above with no rules_allowlist.txt entry of its
 own (one entry covers one line; lines sharing a listed key's text beyond the one its reason names are unlisted). Their site
 count is ratcheted against tools/unlisted_clone_baseline.txt toward 0; at 0 every unlisted clone fails the count checks.
+A `[clone]` entry left over when its line goes (more entries for a key than lines it matches) is STALE and fails too
+(Paul 2026-11-24 11:05 PM CT: delete a stale entry, never keep a clone to keep an entry valid).
+
+IGNORED TESTS (Paul 2026-11-24 11:05 PM CT): `#[ignore]` in any form (`#[ignore = ".."]`, `#[cfg_attr(.., ignore)]`) in
+compiled Rust anywhere under the root fails the count checks; there is no baseline. Comments are blanked first, so the
+commented-out held files of HOLD.md (not compiled, never run, never counted) are not listed.
 
 HELPER-COPY COUNT: total uses of the hidden copy helpers (no_clone.HELPERS: exact_copy_ext, exact_copy, exact_operand,
 copy_p, svd_copy_prec, lift_num) in non-definition positions, plus Rc::clone / Arc::clone in zenith-float-compare/src
@@ -1278,17 +1284,81 @@ def unlisted_clone_sites():
     return sorted(out)
 
 
+def stale_clone_entries():
+    """`[clone]` entries of tools/rules_allowlist.txt beyond the `.clone(` lines their key still matches -> [entry line]. A
+    clone that goes away takes its entry with it (Paul 2026-11-24 11:05 PM CT: delete a stale entry, never keep a clone to
+    keep an entry valid)."""
+    p = os.path.join(ROOT, "tools", "rules_allowlist.txt")
+    if not os.path.exists(p):
+        return []
+    entries = collections.defaultdict(list)
+    for l in open(p):
+        l = l.rstrip("\n")
+        if l.strip() and not l.lstrip().startswith("#"):
+            k, _, reason = l.partition("\t")
+            if re.match(r"\s*\S+:\d+\s+\[clone\]", reason):
+                entries[k.strip()].append(l)
+    excepted = collections.Counter((h[0], h[1]) for h in no_clone.scan()["allowed"])
+    lines = collections.Counter()
+    for rel, path in no_clone.rs_files():
+        for i, l in enumerate(open(path, errors="replace").read().split("\n"), 1):
+            if len(re.findall(r"\.clone\(", strip(l))) - excepted[(rel, i)] > 0:
+                lines["%s:%s" % (rel, hashlib.sha1(" ".join(l.split()).encode()).hexdigest()[:12])] += 1
+    out = []
+    for k, es in sorted(entries.items()):
+        out += es[lines[k]:]
+    return out
+
+
 def unlisted_clone_check(update=False):
     """`.clone(` sites without an allowlist entry of their own: ratcheted to 0 (tools/unlisted_clone_baseline.txt); at 0,
-    any unlisted clone fails. --list-unlisted-clones prints them."""
+    any unlisted clone fails. --list-unlisted-clones prints them. A stale `[clone]` entry (more entries for a key than
+    lines it matches) fails too."""
+    stale = stale_clone_entries()
+    for e in stale:
+        print("rules_scan: STALE rules_allowlist [clone] entry (no .clone( line left for it; remove it): %s" % e[:200])
     sites = unlisted_clone_sites()
+    if stale:
+        ratchet("unlisted clone", "unlisted_clone_baseline.txt", sum(r[2] for r in sites), update, what="site count")
+        return 1
     return ratchet("unlisted clone", "unlisted_clone_baseline.txt", sum(r[2] for r in sites), update, what="site count",
                    extra=" (%d lines; tools/rules_scan.sh --list-unlisted-clones)" % len(sites) if sites else "")
 
 
+# `#[ignore]` (any form, `#[cfg_attr(.., ignore)]` too) in compiled Rust anywhere in the workspace: a test runs every
+# time or is deleted (Paul 2026-11-24 11:05 PM CT). Comments are blanked first, so the commented-out held files of HOLD.md
+# (not compiled; their tests do not run and are never counted) are not listed.
+IGNORE_RX = re.compile(r"#\s*!?\s*\[\s*ignore\b|\bcfg_attr\s*\(.*\bignore\b")
+
+
+def ignored_tests():
+    """every `#[ignore]` / `cfg_attr(.., ignore)` line of every .rs file under ROOT (target dirs and .git skipped)"""
+    out = []
+    for dp, dn, fn in os.walk(ROOT):
+        dn[:] = sorted(x for x in dn if not x.startswith("target") and x not in (".git", ".cache"))
+        for f in sorted(fn):
+            if not f.endswith(".rs"):
+                continue
+            p = os.path.join(dp, f)
+            src = strip_rust(open(p, errors="replace").read())
+            for i, l in enumerate(src.split("\n"), 1):
+                if IGNORE_RX.search(l):
+                    out.append("%s:%d" % (os.path.relpath(p, ROOT), i))
+    return out
+
+
+def ignore_check(update=False):
+    """no ignored test anywhere: the count must be 0 (no baseline, nothing to ratchet)"""
+    hits = ignored_tests()
+    for h in hits:
+        print("rules_scan: ignored test at %s: a test runs every time or is deleted" % h)
+    print("rules_scan: ignored tests %d (must be 0)" % len(hits))
+    return 1 if hits else 0
+
+
 COUNT_CHECKS = (("clone", count_check), ("helper-copy", helper_count_check), ("exceptions", exception_check),
                 ("test-panic", test_panic_check), ("neg_via_mul", neg_via_mul_check), ("combined", ruling_check),
-                ("borrow", borrow_check), ("unlisted-clone", unlisted_clone_check))
+                ("borrow", borrow_check), ("unlisted-clone", unlisted_clone_check), ("ignore", ignore_check))
 
 
 def both_count_checks(update=False):

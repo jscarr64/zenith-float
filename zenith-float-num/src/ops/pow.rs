@@ -346,8 +346,7 @@ impl ExactNumNumber {
         }
 
         if self.is_zero() || i == 1 {
-            let mut ret = self.clone()?;
-            ret.set_precision(p, rm)?;
+            let mut ret = self.try_rounded_to(p, rm)?;
             if self.is_zero() && n & 1 == 0 {
                 // (+-0)^n for even n > 0 is +0.
                 ret.set_sign(crate::Sign::Pos);
@@ -377,26 +376,23 @@ impl ExactNumNumber {
             let p_x = p_wrk + bit_pos * 2;
 
             let mut ret = || -> Result<Self, Error> {
-                let mut x = self.clone()?;
-                x.set_inexact(false);
-
-                let mut c;
+                // An inexact or exponent-shifted base is a new value: `self` widened to p_x (above its precision,
+                // so exact) with its flags cleared and, for zero_exp, its exponent set to 0. An exact base is read
+                // as it is: the products round at p_x whatever its width.
+                let c;
                 let arg = if self.inexact() || zero_exp {
-                    c = self.clone()?;
-                    c.set_inexact(false);
+                    let mut w = self.try_rounded_exact(p_x, RoundingMode::FromZero)?;
                     if zero_exp {
                         // Caller scales by 2^(n * exponent) itself (normal `self` only).
-                        c.set_exponent(0);
-                        x.set_exponent(0);
+                        w.set_exponent(0);
                     }
+                    c = w;
                     &c
                 } else {
                     self
                 };
 
-                x.set_precision(p_x, RoundingMode::FromZero)?;
-                x = Self::powi_sqr_mul(arg, x, bit_pos, i, p_x)?;
-                Ok(x)
+                Self::powi_sqr_mul(arg, bit_pos, i, p_x)
             }()
             .map_err(|e| -> Error {
                 if let Error::ExponentOverflow(_) = e {
@@ -624,32 +620,38 @@ impl ExactNumNumber {
         Ok(ret)
     }
 
-    fn powi_sqr_mul(
-        arg: &Self,
-        mut x: Self,
-        mut bp: usize,
-        mut j: u64,
-        p_x: usize,
-    ) -> Result<Self, Error> {
+    fn powi_sqr_mul(arg: &Self, mut bp: usize, mut j: u64, p_x: usize) -> Result<Self, Error> {
         const W: usize = 4;
         let rm = RoundingMode::FromZero;
+        // The accumulator starts as `arg` itself: its first use is always a squaring, formed straight from
+        // `arg` (`None` = still `arg`), so no widened copy of `arg` is made.
+        let sqr = |x: Option<Self>| -> Result<Self, Error> {
+            match x {
+                Some(v) => v.mul(&v, p_x, rm),
+                None => arg.mul(arg, p_x, rm),
+            }
+        };
+        let mut x: Option<Self> = None;
         if bp < 8 {
             while bp > 0 {
                 bp -= 1;
-                x = x.mul(&x, p_x, rm)?;
+                let mut v = sqr(x)?;
                 if j & POWI_EXP_TOP != 0 {
-                    x = x.mul(arg, p_x, rm)?;
+                    v = v.mul(arg, p_x, rm)?;
                 }
+                x = Some(v);
                 j <<= 1;
             }
-            return Ok(x);
+            return match x {
+                Some(v) => Ok(v),
+                None => arg.try_rounded_to(p_x, rm),
+            };
         }
 
         let a2 = arg.mul(arg, p_x, rm)?;
-        let mut odd: Vec<Self> = Vec::with_capacity(8);
-        odd.push(arg.clone()?);
-        // arg^3, arg^5, ..., arg^15: each power is formed from the previous one first and then moved into the table
-        // (capacity 8 was reserved above, so the pushes cannot fail).
+        // arg^3, arg^5, ..., arg^15 (arg^1 is `arg`): each power is formed from the previous one first and then
+        // moved into the table (capacity 7 was reserved above, so the pushes cannot fail).
+        let mut odd: Vec<Self> = Vec::with_capacity(7);
         let mut cur = arg.mul(&a2, p_x, rm)?;
         for _ in 2..8 {
             let next = cur.mul(&a2, p_x, rm)?;
@@ -660,7 +662,7 @@ impl ExactNumNumber {
 
         while bp > 0 {
             if j & POWI_EXP_TOP == 0 {
-                x = x.mul(&x, p_x, rm)?;
+                x = Some(sqr(x)?);
                 bp -= 1;
                 j <<= 1;
                 continue;
@@ -680,14 +682,24 @@ impl ExactNumNumber {
                 w >>= 1;
                 used -= 1;
             }
-            for _ in 0..used {
-                x = x.mul(&x, p_x, rm)?;
+            // used >= 1: the first squaring takes the accumulator, the rest square the value in hand
+            let mut v = sqr(x.take())?;
+            bp -= 1;
+            j <<= 1;
+            for _ in 1..used {
+                v = v.mul(&v, p_x, rm)?;
                 bp -= 1;
                 j <<= 1;
             }
-            x = x.mul(&odd[(w - 1) / 2], p_x, rm)?;
+            x = Some(match w {
+                1 => v.mul(arg, p_x, rm)?,
+                _ => v.mul(&odd[(w - 3) / 2], p_x, rm)?,
+            });
         }
-        Ok(x)
+        match x {
+            Some(v) => Ok(v),
+            None => arg.try_rounded_to(p_x, rm),
+        }
     }
 
     // e^self for |self| < 1.
@@ -759,9 +771,9 @@ impl ExactNumNumber {
 
     // restore value for the argument reduced n times.
     // cost: n * (4*O(mul) + O(add))
-    fn sinh_arg_restore(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
+    fn sinh_arg_restore(self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
         // sinh(3*x) = 3*sinh(x) + 4*sinh(x)^3
-        let mut sinh = self.clone()?;
+        let mut sinh = self;
         let p = sinh.mantissa_max_bit_len();
 
         for _ in 0..n {
@@ -832,8 +844,7 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         } else if n.exponent() == 1 && n.abs_cmp(&ONE) == 0 {
             if n.is_positive() {
-                let mut ret = self.clone()?;
-                ret.set_precision(p, rm)?;
+                let mut ret = self.try_rounded_to(p, rm)?;
                 ret.set_inexact(ret.inexact() || n.inexact());
                 return Ok(ret);
             } else {
@@ -874,13 +885,12 @@ impl ExactNumNumber {
             && !n.is_int()
             && n.exponent() < 64
         {
-            let mut twice = n.clone()?;
+            // n * 2^j, read from n with the exponent offset (no scaled copy)
             let mut j: Exponent = 0;
-            while j < POW_ROOT_STEPS && !twice.is_int() {
+            while j < POW_ROOT_STEPS && !n.is_int_scaled(j) {
                 j += 1;
-                twice.set_exponent(n.exponent() + j);
             }
-            if twice.is_int() {
+            if n.is_int_scaled(j) {
                 let w = self.mantissa_max_bit_len() + WORD_BIT_SIZE;
                 let mut root = self.sqrt(w, RoundingMode::ToZero)?;
                 let mut step = 1;
@@ -890,7 +900,7 @@ impl ExactNumNumber {
                     step += 1;
                 }
                 if !root.inexact() {
-                    if let Ok(mag) = twice.int_as_usize() {
+                    if let Ok(mag) = n.int_as_usize_scaled(j) {
                         if mag == 1 {
                             return if n.is_negative() {
                                 ONE.div(&root, p, rm)
@@ -947,10 +957,6 @@ impl ExactNumNumber {
 
         let p = round_p(p);
 
-        let mut x = self.clone()?;
-        let mut y = n.clone()?;
-
-        x.set_sign(Sign::Pos);
         let ret_sign = if nint && n.is_odd_int() { self.sign() } else { Sign::Pos };
         let effective_rm = if ret_sign.is_negative() {
             match rm {
@@ -962,20 +968,26 @@ impl ExactNumNumber {
             rm
         };
 
-        x.set_inexact(false);
-        y.set_inexact(false);
-
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len().max(y.mantissa_max_bit_len())) + p_inc;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len().max(n.mantissa_max_bit_len())) + p_inc;
 
         match || -> Result<Self, Error> {
             loop {
+                // |self| widened to p_ext (above its precision) with its flags cleared, for ln's working width
                 let p_ext = p_wrk + 2;
-                x.set_precision(p_ext, RoundingMode::None)?;
+                let mut x = self.try_rounded_exact(p_ext, RoundingMode::None)?;
+                x.set_sign(Sign::Pos);
 
                 let ln = x.ln(p_ext, RoundingMode::None, cc)?;
 
-                let mut m = match y.mul(&ln, p_ext, RoundingMode::None) {
+                // n is read as it is, flags and all: the product's flag is set to its own rounding and ln's,
+                // which is what a flag-cleared copy of n gave.
+                let product = n.mul_per_op(&ln, p_ext, RoundingMode::None).map(|mut v| {
+                    let rounded = v.op_inexact();
+                    v.set_inexact(rounded || ln.inexact());
+                    v
+                });
+                let mut m = match product {
                     Ok(v) => Ok(v),
                     Err(e) => match e {
                         Error::ExponentOverflow(Sign::Neg) => {

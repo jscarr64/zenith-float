@@ -5,6 +5,7 @@ use crate::common::util::prec_retry_exhausted;
 use crate::common::util::reduction_width;
 use crate::common::util::round_p;
 use crate::defs::Error;
+use crate::defs::Exponent;
 use crate::defs::RoundingMode;
 use crate::defs::EXPONENT_MIN;
 use crate::num::ExactNumNumber;
@@ -66,14 +67,14 @@ impl ExactNumNumber {
         let mut first_lost: Option<usize> = None;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE;
-            let (mut ret, scale) = self.airy_at(which, p_x, cc)?;
+            let (mut ret, scale_exp) = self.airy_at(which, p_x, cc)?;
             // The value is a combination of terms of size `scale` (each good to the working
             // precision): near a zero of Ai, Bi or their derivatives the cancellation costs
             // exponent(scale) - exponent(value) bits, which the roundability claim must not include.
             let lost = if ret.is_zero() {
                 p_wrk
             } else {
-                usize::try_from((scale.exponent() - ret.exponent()).max(0))
+                usize::try_from((scale_exp - ret.exponent()).max(0))
                     .map_err(|_| Error::InvalidArgument)?
                     .saturating_add(2)
             };
@@ -100,10 +101,17 @@ impl ExactNumNumber {
         }
     }
 
-    /// The picked value at `p` bits and the size of the terms it was combined from.
-    fn airy_at(&self, which: AiryWhich, p: usize, cc: &mut Consts) -> Result<(Self, Self), Error> {
-        let mut x = self.clone()?;
-        x.set_inexact(false);
+    /// The picked value at `p` bits and the exponent of the terms it was combined from.
+    ///
+    /// `self` is read as it is: its inexact flag only ORs into the flags of the terms, and every Airy value is
+    /// irrational (inexact already), so the result and its flag are those of a flag-cleared copy.
+    fn airy_at(
+        &self,
+        which: AiryWhich,
+        p: usize,
+        cc: &mut Consts,
+    ) -> Result<(Self, Exponent), Error> {
+        let x = self;
         // Large-positive asymptotic: compute only the requested function
         // (DLMF 9.7.5–9.7.8). The four-way path also evaluates exp(+ζ) for Bi,
         // which overflows while Ai is an underflow or a tiny exp(-ζ) term.
@@ -115,10 +123,10 @@ impl ExactNumNumber {
             scales: [sai, sbi, saip, sbip],
         } = x.airy_all(p, cc)?;
         Ok(match which {
-            AiryWhich::Ai => (ai, sai),
-            AiryWhich::Bi => (bi, sbi),
-            AiryWhich::AiPrime => (aip, saip),
-            AiryWhich::BiPrime => (bip, sbip),
+            AiryWhich::Ai => (ai, sai.exponent()),
+            AiryWhich::Bi => (bi, sbi.exponent()),
+            AiryWhich::AiPrime => (aip, saip.exponent()),
+            AiryWhich::BiPrime => (bip, sbip.exponent()),
         })
     }
 
@@ -305,7 +313,7 @@ impl ExactNumNumber {
         which: AiryWhich,
         p: usize,
         cc: &mut Consts,
-    ) -> Result<(Self, Self), Error> {
+    ) -> Result<(Self, Exponent), Error> {
         let (xi, x14, x_m14, pi_m12) = self.airy_xi_scales(p, cc)?;
         let half = one_half_airy(p)?;
         match which {
@@ -325,8 +333,9 @@ impl ExactNumNumber {
                         .neg()?
                         .mul(&sv, p, RoundingMode::None)?
                 };
-                let scale = val.clone()?;
-                Ok((val, scale))
+                // a single term: its own exponent is the scale
+                let scale_exp = val.exponent();
+                Ok((val, scale_exp))
             }
             AiryWhich::Bi | AiryWhich::BiPrime => {
                 let exp_p = xi.exp(p, RoundingMode::None, cc)?;
@@ -342,8 +351,9 @@ impl ExactNumNumber {
                         .mul(&exp_p, p, RoundingMode::None)?
                         .mul(&tv, p, RoundingMode::None)?
                 };
-                let scale = val.clone()?;
-                Ok((val, scale))
+                // a single term: its own exponent is the scale
+                let scale_exp = val.exponent();
+                Ok((val, scale_exp))
             }
         }
     }

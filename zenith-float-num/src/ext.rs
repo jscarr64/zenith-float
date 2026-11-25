@@ -393,10 +393,10 @@ impl ExactNum {
             // loses bits (Jeff's 11:54 ruling). `hi + lo` is then the exact sum whenever `lo` fits in `p` bits.
             return self.two_sum_rounded(b, p, rm);
         }
-        let mut hi = exact.clone();
-        if let Err(err) = hi.set_precision(p, rm) {
-            return (Self::nan(Some(err)), Self::nan(Some(err)));
-        }
+        let hi = match exact.try_rounded_to(p, rm) {
+            Ok(hi) => hi,
+            Err(err) => return (Self::nan(Some(err)), Self::nan(Some(err))),
+        };
         let lo = exact.sub_full_prec(&hi);
         (hi, Self::normalize_eft_lo(lo, p))
     }
@@ -458,10 +458,10 @@ impl ExactNum {
                 Self::new(p),
             );
         }
-        let mut hi = exact.clone();
-        if let Err(err) = hi.set_precision(p, rm) {
-            return (Self::nan(Some(err)), Self::nan(Some(err)));
-        }
+        let hi = match exact.try_rounded_to(p, rm) {
+            Ok(hi) => hi,
+            Err(err) => return (Self::nan(Some(err)), Self::nan(Some(err))),
+        };
         let lo = exact.sub_full_prec(&hi);
         (hi, Self::normalize_eft_lo(lo, p))
     }
@@ -571,10 +571,10 @@ impl ExactNum {
             Some(v) => v,
             None => return Self::nan(Some(Error::InvalidArgument)),
         };
-        let mut acc = coeffs[coeffs.len() - 1].clone();
-        if let Err(err) = acc.set_precision(p_wrk, RoundingMode::None) {
-            return Self::nan(Some(err));
-        }
+        let mut acc = match coeffs[coeffs.len() - 1].try_rounded_to(p_wrk, RoundingMode::None) {
+            Ok(acc) => acc,
+            Err(err) => return Self::nan(Some(err)),
+        };
         for a in coeffs.iter().rev().skip(1) {
             acc = acc.fma(x, a, p_wrk, RoundingMode::None);
         }
@@ -2217,11 +2217,33 @@ impl ExactNum {
     /// from `self`: only the kept words are written (see `ExactNumNumber::rounded_to`).
     ///
     /// Accuracy: correctly-rounded
-    pub(crate) fn rounded_to(&self, p: usize, rm: RoundingMode) -> Self {
+    pub fn rounded_to(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.rounded_to(p, rm), false, true),
             Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
             Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// What `let mut x = self.clone(); x.set_precision(p, rm)?; x` returns, written straight from `self`: the
+    /// value `set_precision` leaves on success, and its error where it fails (a `p` out of range for a finite
+    /// value, an exponent overflow). Inf and NaN come back as they are, as `set_precision` leaves them. A failed
+    /// allocation is returned as the error (the copy would have become a NaN first).
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    ///  - InvalidArgument: the precision is incorrect.
+    ///  - ExponentOverflow: rounding carried out of `EXPONENT_MAX`.
+    ///
+    /// Accuracy: correctly-rounded
+    pub(crate) fn try_rounded_to(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        match &self.inner {
+            Flavor::Value(v) => with_prec(p, || v.try_rounded_to(p, rm)).map(|v| ExactNum {
+                inner: Flavor::Value(v),
+            }),
+            Flavor::Inf(s) => Ok(Self::inf_with_sign(s.is_positive())),
+            Flavor::NaN(err) => Ok(Self::nan(*err)),
         }
     }
 
@@ -5169,6 +5191,18 @@ macro_rules! impl_from {
                 ExactNum::$fn(v, DEFAULT_P)
             }
         }
+
+        impl FromExt<&$tt> for ExactNum {
+            fn from_ext(v: &$tt, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+                <ExactNum as FromExt<$tt>>::from_ext(*v, p, rm, cc)
+            }
+        }
+
+        impl FromExt<&&$tt> for ExactNum {
+            fn from_ext(v: &&$tt, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+                <ExactNum as FromExt<$tt>>::from_ext(**v, p, rm, cc)
+            }
+        }
     };
 }
 
@@ -5369,6 +5403,29 @@ where
 impl FromExt<&str> for ExactNum {
     fn from_ext(v: &str, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         ExactNum::parse(v, crate::Radix::Dec, p, rm, cc)
+    }
+}
+
+/// A borrowed value rounded straight to `p` (the same result as the by-value conversion of a
+/// copy, without the copy).
+impl FromExt<&ExactNum> for ExactNum {
+    fn from_ext(v: &ExactNum, p: usize, rm: RoundingMode, _cc: &mut Consts) -> Self {
+        v.try_rounded_to(p, rm)
+            .unwrap_or_else(|err| ExactNum::nan(Some(err)))
+    }
+}
+
+/// A doubly borrowed value converts as the value it points to.
+impl FromExt<&&ExactNum> for ExactNum {
+    fn from_ext(v: &&ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        <ExactNum as FromExt<&ExactNum>>::from_ext(*v, p, rm, cc)
+    }
+}
+
+/// A borrowed string slice parses as the slice.
+impl FromExt<&&str> for ExactNum {
+    fn from_ext(v: &&str, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        <ExactNum as FromExt<&str>>::from_ext(*v, p, rm, cc)
     }
 }
 
@@ -10065,6 +10122,166 @@ mod unary_kernel_tests {
         }
         Err(format!(
             "runs={runs} fails={}: {:?}",
+            fails.len(),
+            fails.iter().take(4).collect::<Vec<_>>()
+        ))
+    }
+
+    /// `try_rounded_to` returns what `set_precision` does to an owned copy: the same value on success and the
+    /// same error (refused precision, exponent overflow out of `EXPONENT_MAX`) on failure, in every mode.
+    #[test]
+    fn number_layer_try_rounded_to_matches_set_precision() -> Result<(), String> {
+        let (mut runs, mut errs, mut fails) = (0usize, 0usize, Vec::new());
+        for flags in [(false, false), (true, false), (true, true)] {
+            let mut vs = operands(flags)?;
+            vs.extend(rounding_edges()?);
+            for v in vs {
+                let ps = [
+                    0,
+                    1,
+                    3,
+                    63,
+                    64,
+                    65,
+                    127,
+                    128,
+                    129,
+                    192,
+                    200,
+                    1000,
+                    crate::MAX_PRECISION + 1,
+                    usize::MAX,
+                ];
+                for p in ps {
+                    for rm in MODES {
+                        let got = v.try_rounded_to(p, rm);
+                        let mut w = fresh(&v)?;
+                        let want = w.set_precision(p, rm).map(|()| w);
+                        // try_rounded_exact: the flags are cleared before the rounding
+                        let got_x = v.try_rounded_exact(p, rm);
+                        let mut wx = fresh(&v)?;
+                        wx.set_inexact(false);
+                        let want_x = wx.set_precision(p, rm).map(|()| wx);
+                        runs += 1;
+                        errs += usize::from(want.is_err());
+                        for (what, g, w) in [("to", &got, &want), ("exact", &got_x, &want_x)] {
+                            if full(g) != full(w) {
+                                fails.push(format!(
+                                    "{what} {:?} p={p} {rm:?}: got {} want {}",
+                                    v.as_raw_parts(),
+                                    full(g),
+                                    full(w)
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // every refused p and the EXPONENT_MAX carries must have been reached, not only successes
+        if fails.is_empty() && runs > 10_000 && errs > 2 * MODES.len() {
+            return Ok(());
+        }
+        Err(format!(
+            "runs={runs} errs={errs} fails={}: {:?}",
+            fails.len(),
+            fails.iter().take(4).collect::<Vec<_>>()
+        ))
+    }
+
+    /// `try_rounded_checked` returns what `try_set_precision(p, rm, s)` does to an owned copy: `Some` of the
+    /// same value when it returns true, `None` when it returns false, the same error otherwise, in every mode,
+    /// for exact and inexact operands and claimed correct digits `s` from `p` up past the operand's width.
+    #[test]
+    fn number_layer_try_rounded_checked_matches_try_set_precision() -> Result<(), String> {
+        let (mut runs, mut nones, mut fails) = (0usize, 0usize, Vec::new());
+        for flags in [(false, false), (true, false), (true, true)] {
+            let mut vs = operands(flags)?;
+            vs.extend(rounding_edges()?);
+            for v in vs {
+                for p in [1, 3, 63, 64, 65, 127, 128, 129, 192, 200, 1000] {
+                    for s in [p, p + 1, p + 63, p + 64, p + 65, p + 128, p + 200, p + 1000] {
+                        for rm in MODES {
+                            let got = v.try_rounded_checked(p, rm, s);
+                            let mut w = fresh(&v)?;
+                            let want = match w.try_set_precision(p, rm, s) {
+                                Ok(true) => Ok(Some(w)),
+                                Ok(false) => Ok(None),
+                                Err(e) => Err(e),
+                            };
+                            runs += 1;
+                            let show = |r: &Result<Option<ExactNumNumber>, Error>| match r {
+                                Ok(Some(x)) => format!(
+                                    "{:?} op={:?} prec={}",
+                                    x.as_raw_parts(),
+                                    x.op_inexact_raw(),
+                                    x.precision()
+                                ),
+                                Ok(None) => "none".to_string(),
+                                Err(e) => format!("err {e:?}"),
+                            };
+                            nones += usize::from(matches!(want, Ok(None)));
+                            if show(&got) != show(&want) {
+                                fails.push(format!(
+                                    "{:?} p={p} s={s} {rm:?}: got {} want {}",
+                                    v.as_raw_parts(),
+                                    show(&got),
+                                    show(&want)
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if fails.is_empty() && runs > 10_000 && nones > 100 {
+            return Ok(());
+        }
+        Err(format!(
+            "runs={runs} nones={nones} fails={}: {:?}",
+            fails.len(),
+            fails.iter().take(4).collect::<Vec<_>>()
+        ))
+    }
+
+    /// The `ExactNum` layer: Inf and NaN come back unchanged, a precision `set_precision` refuses is its error,
+    /// and finite values match the number layer (and so `set_precision` on an owned copy).
+    #[test]
+    fn try_rounded_to_matches_set_precision_on_an_owned_copy() -> Result<(), String> {
+        let ones = Word::MAX;
+        // each value is built twice: once borrowed by try_rounded_to, once owned for set_precision
+        let mk = |i: usize| match i {
+            0 => ExactNum::from_words(&[ones, ones], crate::Sign::Pos, crate::EXPONENT_MAX),
+            1 => ExactNum::from_words(&[1 << (WORD_BIT_SIZE - 1), 1], crate::Sign::Neg, -5),
+            2 => ExactNum::from_word(12345, 64),
+            3 => super::INF_POS,
+            4 => super::INF_NEG,
+            _ => super::NAN,
+        };
+        let mut fails = Vec::new();
+        for i in 0..6 {
+            for p in [0, 1, 53, 64, 65, 200, crate::MAX_PRECISION + 1] {
+                for rm in MODES {
+                    let got = mk(i).try_rounded_to(p, rm);
+                    let mut w = mk(i);
+                    let want = w.set_precision(p, rm).map(|()| w);
+                    let show =
+                        |r: &Result<ExactNum, Error>| format!("{:?}", r.as_ref().map(|v| &v.inner));
+                    if show(&got) != show(&want) {
+                        fails.push(format!(
+                            "row {i} p={p} {rm:?}: got {} want {}",
+                            show(&got),
+                            show(&want)
+                        ));
+                    }
+                }
+            }
+        }
+        if fails.is_empty() {
+            return Ok(());
+        }
+        Err(format!(
+            "{} fails: {:?}",
             fails.len(),
             fails.iter().take(4).collect::<Vec<_>>()
         ))

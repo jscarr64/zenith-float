@@ -203,6 +203,15 @@ impl ExactComplex {
         self.im.set_precision(p, rm)
     }
 
+    /// What `let mut z = self.clone(); z.set_precision(p, rm)?; z` returns, written straight from
+    /// `self` (see [`ExactNum::try_rounded_to`]).
+    pub(crate) fn try_rounded_to(&self, p: usize, rm: RoundingMode) -> Result<Self, crate::Error> {
+        Ok(Self::new(
+            self.re.try_rounded_to(p, rm)?,
+            self.im.try_rounded_to(p, rm)?,
+        ))
+    }
+
     /// Real `x` as `x + 0i`. Imaginary zero uses precision `p`.
     pub fn from_real(re: ExactNum, p: usize) -> Self {
         Self::new(re, ExactNum::new(p))
@@ -1249,11 +1258,10 @@ impl ExactComplex {
             );
         }
         if n == 1 {
-            let mut z = self.clone();
-            if let Err(e) = z.set_precision(p, rm) {
-                return Self::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e)));
-            }
-            return z;
+            return match self.try_rounded_to(p, rm) {
+                Ok(z) => z,
+                Err(e) => Self::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e))),
+            };
         }
         if n == 2 {
             return self.sqrt(p, rm, cc);
@@ -2685,9 +2693,23 @@ impl crate::FromExt<ExactComplex> for ExactComplex {
     }
 }
 
+/// A borrowed value rounded straight to `p`: the by-value conversion's result without a copy.
 impl crate::FromExt<&ExactComplex> for ExactComplex {
-    fn from_ext(v: &ExactComplex, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        <Self as crate::FromExt<ExactComplex>>::from_ext(v.clone(), p, rm, cc)
+    fn from_ext(v: &ExactComplex, p: usize, rm: RoundingMode, _cc: &mut Consts) -> Self {
+        match v.try_rounded_to(p, rm) {
+            Ok(mut v) => {
+                v.set_inexact(false);
+                v
+            }
+            Err(e) => Self::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e))),
+        }
+    }
+}
+
+/// A doubly borrowed complex value converts as the value it points to.
+impl crate::FromExt<&&ExactComplex> for ExactComplex {
+    fn from_ext(v: &&ExactComplex, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        <Self as crate::FromExt<&ExactComplex>>::from_ext(*v, p, rm, cc)
     }
 }
 

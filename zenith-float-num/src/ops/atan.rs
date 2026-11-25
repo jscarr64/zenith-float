@@ -51,6 +51,19 @@ impl PolycoeffGen for AtanPolycoeffGen {
         Ok(&self.f)
     }
 
+    fn next_owned(
+        &mut self,
+        prev: Option<&ExactNumNumber>,
+        rm: RoundingMode,
+    ) -> Result<ExactNumNumber, Error> {
+        // the same step as `next`, on the previous coefficient the caller holds
+        let f = prev.unwrap_or(&self.f);
+        let p = f.mantissa_max_bit_len();
+        let mut f = if f.is_positive() { f.add(&TWO, p, rm)? } else { f.sub(&TWO, p, rm)? };
+        f.inv_sign();
+        Ok(f)
+    }
+
     #[inline]
     fn iter_cost(&self) -> usize {
         self.iter_cost
@@ -107,10 +120,8 @@ impl ExactNumNumber {
         p_wrk += p_inc;
 
         loop {
-            let mut x = self.clone()?;
-
             let p_x = p_wrk + 5;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
 
             // if x > 1 then arctan(x) = pi/2 - arctan(1/x)
             let mut ret = if x.exponent() > 0 {

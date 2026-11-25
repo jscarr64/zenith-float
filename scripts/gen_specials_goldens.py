@@ -332,9 +332,10 @@ def call_complex(op: str, a: list):
     if name == "gamma":
         return mp.gamma(z(0))
     if name == "ln_gamma":
-        # The crate returns ln(Γ(z)). mpmath loggamma differs by 2πi on some
-        # branches; the folded fixtures follow ln(Γ).
-        return mp.log(mp.gamma(z(0)))
+        # Complex ln Γ is Arb's continuous log-gamma (FLINT acb_lgamma; Jeff
+        # 2026-11-18 12:14 CT), which is mpmath loggamma, not the principal
+        # ln(Γ(z)): they differ by 2πik off the positive real axis.
+        return mp.loggamma(z(0))
     if name == "ei":
         return mp.ei(z(0))
     if name == "si":

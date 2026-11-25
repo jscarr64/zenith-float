@@ -10,7 +10,7 @@
 //! precision (4 ulps for Wynn). The unit is `2^{e-p}`, the same unit
 //! `set_precision(p)` rounds to.
 //!
-//! Fast tier is the default. `ORACLE_TIER=deep` also runs the deep rows.
+//! Every row runs, fast and deep tier alike (no row is skipped).
 
 use std::ops::Neg;
 use zenith_float_num::{
@@ -35,14 +35,6 @@ fn neg_of(x: &ExactNum) -> ExactNum {
         .mantissa_max_bit_len()
         .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
     ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
-}
-
-fn tier_selected(tier: &str) -> bool {
-    match std::env::var("ORACLE_TIER") {
-        Ok(value) if value == "deep" => true,
-        Ok(value) if value == "fast" => tier == "fast",
-        _ => tier == "fast",
-    }
 }
 
 fn mode_of(name: &str) -> RoundingMode {
@@ -349,11 +341,11 @@ fn ode_rhs(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> ExactNum {
-    let _ = (p, rm, cc);
+    let _ = cc;
     if problem == "exp" {
-        y.clone()
+        y.rounded_to(p, rm)
     } else {
-        t.clone()
+        t.rounded_to(p, rm)
     }
 }
 
@@ -508,10 +500,7 @@ fn run_file(name: &str, eval: fn(&serde_json::Value) -> Result<(), String>) -> R
         }
         let row: serde_json::Value =
             serde_json::from_str(line).map_err(|err| format!("json {name}: {err}"))?;
-        let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
-        if !tier_selected(tier) {
-            continue;
-        }
+        // Every row runs every time; the row's "tier" (fast/deep) is a label only.
         ran += 1;
         let id = row.get("id").and_then(|v| v.as_str()).unwrap_or("?");
         if let Err(err) = eval(&row) {

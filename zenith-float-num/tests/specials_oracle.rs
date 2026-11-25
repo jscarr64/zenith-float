@@ -1,7 +1,7 @@
 //! mpmath goldens for `tests/oracle/goldens/specials`.
 //!
-//! `cargo test --test specials_oracle` runs the fast tier (2 s per row).
-//! `ORACLE_TIER=deep` also runs the deep tier (10 s per row). A panic or a
+//! `cargo test --test specials_oracle` runs every row, fast tier (2 s per row)
+//! and deep tier (10 s per row) alike; no row is skipped. A panic or a
 //! timeout is a failure. `CorrectlyRounded` rows and rows marked `exact` are
 //! limb-identical. `lost_max` is the bit slack a folded fixture already
 //! allowed. `WorkingPrecision` uses the class budget. `Unspecified` checks
@@ -48,14 +48,6 @@ enum Tok {
     N(ExactNum),
     I(usize),
     Z(ExactComplex),
-}
-
-fn tier_selected(tier: &str) -> bool {
-    match std::env::var("ORACLE_TIER") {
-        Ok(value) if value == "deep" => true,
-        Ok(value) if value == "fast" => tier == "fast",
-        _ => tier == "fast",
-    }
 }
 
 fn mode_of(name: &str) -> RoundingMode {
@@ -738,10 +730,7 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             held_found += 1;
             continue;
         }
-        let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
-        if !tier_selected(tier) {
-            continue;
-        }
+        // Every row runs every time; the row's "tier" (fast/deep) is a label only.
         ran += 1;
         let line_no = idx + 1;
         let budget = row

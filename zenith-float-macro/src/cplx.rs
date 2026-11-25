@@ -765,7 +765,7 @@ fn traverse_path(expr: &ExprPath) -> Result<TokenStream, Error> {
     } else {
         quote!({
             let mut arg = zenith_float::ExactComplex::from_ext(
-                (#expr).clone(),
+                &(#expr),
                 p_wrk,
                 zenith_float::RoundingMode::ToEven,
                 cc,

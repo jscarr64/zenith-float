@@ -21,9 +21,7 @@ impl ExactNumNumber {
         Self::p_assertion(p)?;
 
         if self.is_zero() || b.is_zero() {
-            let mut ret = c.clone()?;
-            ret.set_precision(p, rm)?;
-            return Ok(ret);
+            return c.try_rounded_to(p, rm);
         }
 
         if c.is_zero() {

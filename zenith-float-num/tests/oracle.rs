@@ -1,8 +1,8 @@
 //! Oracle harness for the checked-in JSONL goldens.
 //!
 //! Rows were produced by `scripts/gen_oracle_goldens.py` and cross-checked
-//! with `scripts/mpfr_oracle.c`. `cargo test --test oracle` runs the fast
-//! tier. `ORACLE_TIER=deep` also runs the deep tier. Each row has two seconds;
+//! with `scripts/mpfr_oracle.c`. `cargo test --test oracle` runs every
+//! row, fast and deep tier alike (no row is skipped). Each row has two seconds;
 //! a panic or a timeout is a failure. `ORACLE_FAILS` raises the number of
 //! mismatches printed (the default is 12).
 
@@ -101,14 +101,6 @@ enum Canon {
         re: Box<Canon>,
         im: Box<Canon>,
     },
-}
-
-fn tier_selected(tier: &str) -> bool {
-    match std::env::var("ORACLE_TIER") {
-        Ok(value) if value == "deep" => true,
-        Ok(value) if value == "fast" => tier == "fast",
-        _ => tier == "fast",
-    }
 }
 
 fn mode_of(name: &str) -> RoundingMode {
@@ -388,10 +380,7 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             held_found += 1;
             continue;
         }
-        let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
-        if !tier_selected(tier) {
-            continue;
-        }
+        // Every row runs every time; the row's "tier" (fast/deep) is a label only.
         ran += 1;
         let expect = expect_of(row.get("expect").unwrap_or(&serde_json::Value::Null));
         let (tx, rx) = mpsc::channel();

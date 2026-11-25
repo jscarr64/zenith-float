@@ -25,9 +25,7 @@ impl ExactNumNumber {
         }
 
         if n == 1 {
-            let mut ret = self.clone()?;
-            ret.set_precision(p, rm)?;
-            return Ok(ret);
+            return self.try_rounded_to(p, rm);
         }
 
         if n == 2 {
@@ -44,21 +42,24 @@ impl ExactNumNumber {
         }
 
         let mut sign = Sign::Pos;
-        let mut x = self.clone()?;
-        if self.is_negative() {
+        let abs_self;
+        let radicand = if self.is_negative() {
             if n.is_multiple_of(2) {
                 return Err(Error::InvalidArgument);
             }
             sign = Sign::Neg;
-            x = self.abs()?;
-        }
+            abs_self = self.abs()?;
+            &abs_self
+        } else {
+            self
+        };
 
         // One correctly rounded root. Chaining sqrt and cbrt rounded twice (x^(1/4) was
         // sqrt(sqrt(x)), each rounded at p bits) and could be one unit off.
         // The root of the magnitude is rounded in the direction `rm` has for the result's sign: `Up` on a negative
         // radicand rounds the magnitude down.
         let rm_abs = if sign == Sign::Neg { invert_rm_for_sign(rm) } else { rm };
-        x = Self::nth_root_newton(&x, n, p, rm_abs)?;
+        let mut x = Self::nth_root_newton(radicand, n, p, rm_abs)?;
 
         x.set_sign(sign);
         Ok(x)
@@ -71,8 +72,7 @@ impl ExactNumNumber {
         n: usize,
         p: usize,
     ) -> Result<Option<Self>, Error> {
-        let mut r = cand.clone()?;
-        r.set_precision(p, RoundingMode::ToEven)?;
+        let mut r = cand.try_rounded_to(p, RoundingMode::ToEven)?;
         // r = odd * 2^k with `t` significant bits: odd^n exceeds 2^((t - 1) * n), so r^n needs more than
         // (t - 1) * n significant bits and cannot equal `abs_self` once that reaches its significant bits.
         // This also bounds the power's precision below (a huge `n` used to ask for r^n at p * n bits).

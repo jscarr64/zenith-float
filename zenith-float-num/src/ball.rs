@@ -439,7 +439,8 @@ where
 
 /// Same Ziv loop as [`ziv_round`], with every input lifted to `p_wrk` before `compute`.
 ///
-/// `MAX_PREC_RETRY` still bounds the number of bumps via [`bump_prec_retry`].
+/// `MAX_PREC_RETRY` still bounds the number of bumps via [`bump_prec_retry`]. An input that
+/// cannot be lifted to `p_wrk` (allocation failure) makes the result NaN with that error.
 pub fn ziv_round_vec<F>(p: usize, rm: RoundingMode, inputs: &[ExactNum], mut compute: F) -> ExactNum
 where
     F: FnMut(usize, &[ExactNum]) -> ExactNum,
@@ -455,11 +456,10 @@ where
     loop {
         let mut xs = alloc::vec::Vec::with_capacity(inputs.len());
         for x in inputs {
-            let mut y = x.clone();
-            if y.set_precision(p_wrk, RoundingMode::None).is_err() {
-                y = x.clone();
+            match x.try_rounded_to(p_wrk, RoundingMode::None) {
+                Ok(y) => xs.push(y),
+                Err(e) => return ExactNum::nan(Some(e)),
             }
-            xs.push(y);
         }
         let mut v = compute(p_wrk, &xs);
         if v.try_set_precision(p, rm, p_wrk) {

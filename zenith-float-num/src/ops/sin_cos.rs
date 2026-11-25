@@ -39,11 +39,7 @@ impl ExactNumNumber {
         let mut p_wrk = p_base;
 
         if (p_wrk as i128) + 1 < -(i128::from(self.exponent()) * 2 - 2) {
-            let mut x = self.clone()?;
-            if p > x.mantissa_max_bit_len() {
-                x.set_precision(p, RoundingMode::None)?;
-            }
-            let mut sn = x.add_correction(true)?;
+            let mut sn = self.add_correction_at(p, true)?;
             sn.set_precision(p, rm)?;
             let mut cs = Self::from_word(1, p)?;
             cs.set_inexact(self.inexact());
@@ -54,10 +50,8 @@ impl ExactNumNumber {
 
         let mut add_p = (3 - TRIG_EXP_THRES) as usize;
         loop {
-            let mut x = self.clone()?;
-
             let p_x = p_wrk + add_p;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
 
             x = x.reduce_trig_arg(cc, RoundingMode::None)?;
 
@@ -65,8 +59,8 @@ impl ExactNumNumber {
             if add_p < t {
                 add_p = t;
             } else {
-                let mut sn = x.clone()?.sin_series(RoundingMode::None)?;
                 let mut cs = x.cos_series(RoundingMode::None)?;
+                let mut sn = x.sin_series(RoundingMode::None)?;
 
                 let sn_ok = sn.try_set_precision(p, rm, p_wrk)?;
                 let cs_ok = cs.try_set_precision(p, rm, p_wrk)?;

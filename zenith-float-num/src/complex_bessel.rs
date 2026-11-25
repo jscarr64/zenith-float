@@ -201,8 +201,7 @@ fn re_pair_cancel_bits(z: &ExactComplex) -> usize {
 /// Extra bits when \(\sin(\nu\pi)\) is small (near an integer order).
 fn sin_nu_pi_loss(nu: &ExactComplex, cc: &mut Consts) -> Option<usize> {
     let p = 192;
-    let mut n = nu.clone();
-    n.set_precision(p, RoundingMode::None).ok()?;
+    let n = nu.try_rounded_to(p, RoundingMode::None).ok()?;
     let s = n
         .mul(&pi_c(p, cc), p, RoundingMode::None)
         .sin(p, RoundingMode::None, cc);

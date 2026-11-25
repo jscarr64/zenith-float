@@ -62,12 +62,10 @@ impl ExactNumNumber {
 
         p_wrk += p_inc;
 
-        let mut x = self.clone()?;
-        x.set_inexact(false);
-
         loop {
             let p_x = p_wrk + additional_prec;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            x.set_inexact(false);
 
             // arcsin(x) = arctan(x / sqrt(1 - x^2))
             let xx = x.mul(&x, p_x, RoundingMode::None)?;

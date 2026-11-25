@@ -141,6 +141,9 @@ scan --count-only >/dev/null && fail "one entry covered two lines"
 printf '%s\tzenith-float-num/src/x.rs:2 [clone] selftest, second line\n' "$ka" >> tools/rules_allowlist.txt
 scan --count-only >/dev/null || fail "two entries for one text did not cover its two lines: $(scan --list-unlisted-clones)"
 printf '%s\n' "$A" > zenith-float-num/src/x.rs
+out="$(scan --count-only)" && fail "a stale entry (two entries, one line left) passed: $out"
+echo "$out" | grep -q "STALE rules_allowlist \[clone\] entry" || fail "stale entry not named: $out"
+grep -v 'selftest, second line' tools/rules_allowlist.txt > "$t/allow.one"; cp "$t/allow.one" tools/rules_allowlist.txt
 scan --count-only >/dev/null || fail "the one listed clone line failed: $(scan --count-only)"
 echo 1 > tools/unlisted_clone_baseline.txt; scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/unlisted_clone_baseline.txt)" = 0 ] || fail "unlisted baseline not lowered to 0"
 cp "$t/allow.keep" tools/rules_allowlist.txt; unset UNLISTED_LIVE; echo 99 > tools/unlisted_clone_baseline.txt; echo 0 > tools/clone_count_baseline.txt
@@ -678,8 +681,8 @@ echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/helper_copy_count_ba
 git add -A; git commit -qm clean-end --allow-empty
 out="$(scan --count-only)" || fail "clean tree at baseline 0 failed: $out"
 echo "$out" | head -1 | grep -q '^rules_scan: zenith-float LIBRARY scanner (tools/rules_scan.py' || fail "no library banner first: $(echo "$out" | head -1)"
-CHECKS="clone helper-copy exceptions test-panic neg_via_mul combined borrow unlisted-clone"
-echo "$out" | grep -q "^rules_scan: checks: clone=ok helper-copy=ok exceptions=ok test-panic=ok neg_via_mul=ok combined=ok borrow=ok unlisted-clone=ok$" \
+CHECKS="clone helper-copy exceptions test-panic neg_via_mul combined borrow unlisted-clone ignore"
+echo "$out" | grep -q "^rules_scan: checks: clone=ok helper-copy=ok exceptions=ok test-panic=ok neg_via_mul=ok combined=ok borrow=ok unlisted-clone=ok ignore=ok$" \
   || fail "no per-check summary line: $out"
 for chk in $CHECKS; do
   out="$(RULES_SCAN_FAULT=$chk scan --count-only 2>&1)" && fail "a crash in check $chk exited 0: $out"
@@ -714,5 +717,16 @@ out="$(scan --count-only --no-rise HEAD)" || fail "1 clone (down from 2) failed 
 scan --count-only --no-rise no-such-rev >/dev/null && fail "--no-rise with an unknown rev passed"
 out="$(RULES_SCAN_FAULT=clone scan --count-only --no-rise HEAD 2>&1)" && fail "a crash under --no-rise passed: $out"
 git checkout -q -- . ; printf 'fn a() {}\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm clean-again
+
+# ---- ignored tests: an #[ignore] (or cfg_attr(.., ignore)) in compiled code fails; a commented-out one does not ----
+mkdir -p zenith-float-num/tests
+printf '#[test]\n// #[ignore]\nfn t() { let s = "#[ignore]"; }\n' > zenith-float-num/tests/ig.rs
+out="$(scan --count-only 2>&1)"; echo "$out" | grep -q "ignored tests 0 (must be 0)" || fail "a commented-out #[ignore] was counted: $out"
+for ig in '#[ignore]' '#[ignore = "slow"]' '#[cfg_attr(miri, ignore)]'; do
+  printf '#[test]\n%s\nfn t() {}\n' "$ig" > zenith-float-num/tests/ig.rs
+  out="$(scan --count-only 2>&1)" && fail "an ignored test ($ig) passed: $out"
+  echo "$out" | grep -q "ignored test at zenith-float-num/tests/ig.rs:2" || fail "ignored test ($ig) not named: $out"
+done
+rm -rf zenith-float-num/tests
 
 echo "rules_scan selftest: ok"

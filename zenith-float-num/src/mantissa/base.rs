@@ -846,6 +846,94 @@ impl Mantissa {
         self.len() * WORD_BIT_SIZE
     }
 
+    /// The roundability verdict of [`Self::round_mantissa`] called with `check_roundable = true`, read
+    /// without changing `self`: true when rounding off `n` positions is decided by `s` correct digits (then
+    /// `round_mantissa` with or without the check leaves the same kept bits), false when it is not.
+    pub(crate) fn is_roundable(&self, n: usize, rm: RoundingMode, s: usize) -> bool {
+        let s = s - s % WORD_BIT_SIZE;
+        if rm == RoundingMode::None {
+            return true;
+        }
+        if !(n > 0 && n < self.max_bit_len()) {
+            return false;
+        }
+        let mut check = true;
+        let mut cc = (n - (self.max_bit_len() - s)) / WORD_BIT_SIZE;
+        if rm == RoundingMode::ToEven || rm == RoundingMode::ToOdd {
+            let known_from = self.max_bit_len() - s;
+            let round_bit_known = n > known_from;
+            let n = n - 1;
+            let i = n / WORD_BIT_SIZE;
+            let t = n % WORD_BIT_SIZE;
+            let num = (self.m[i] >> t) & 1;
+            let mut uniform: Option<Word> = None;
+            if t > 0 && round_bit_known {
+                let rb = self.m[i] << (WORD_BIT_SIZE - t);
+                if rb == 0 {
+                    uniform = Some(0);
+                } else if rb == WORD_MAX << (WORD_BIT_SIZE - t) {
+                    uniform = Some(WORD_MAX);
+                } else {
+                    check = false;
+                }
+            }
+            if check && round_bit_known {
+                let known_word = known_from / WORD_BIT_SIZE;
+                for &v in self.m[known_word.min(i)..i].iter().rev() {
+                    match uniform {
+                        None if v == 0 => uniform = Some(0),
+                        None if v == WORD_MAX => uniform = Some(WORD_MAX),
+                        Some(u) if v == u => {}
+                        _ => {
+                            check = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if check
+                && round_bit_known
+                && ((uniform == Some(0) && num == 0) || (uniform == Some(WORD_MAX) && num == 1))
+            {
+                check = false;
+            }
+        } else {
+            let mut td = 0;
+            let i = n / WORD_BIT_SIZE;
+            let mut z = i;
+            let t = n % WORD_BIT_SIZE;
+            if t > 0 {
+                let rb = self.m[i] << (WORD_BIT_SIZE - t);
+                if rb != 0 {
+                    let msk = rb & (WORD_MAX << (WORD_BIT_SIZE - t));
+                    if msk == rb {
+                        td = WORD_MAX;
+                    } else if msk != 0 {
+                        check = false;
+                    }
+                }
+            } else if cc > 0 && z > 0 {
+                z -= 1;
+                if self.m[z] == WORD_MAX {
+                    td = WORD_MAX;
+                } else if self.m[z] != 0 {
+                    check = false;
+                }
+                cc -= 1;
+            }
+            for &v in self.m[..z].iter().rev() {
+                if check && cc > 0 {
+                    if v != td {
+                        check = false;
+                    } else {
+                        cc -= 1;
+                    }
+                }
+            }
+        }
+        !check
+    }
+
     /// Round `n` positions, return true if exponent is to be incremented.
     /// If `check_roundable` is true on input, the function verifies whether the mantissa is roundable, given it contains `s` correct digits.
     /// If `check_roundable` is set to false on return, in any case it means rounding was successful.

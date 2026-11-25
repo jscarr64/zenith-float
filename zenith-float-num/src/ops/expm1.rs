@@ -77,9 +77,7 @@ impl ExactNumNumber {
             }
 
             let mut ret = if e.cmp(&one) == 0 {
-                let mut x = self.clone()?;
-                x.set_precision(p_x, RoundingMode::None)?;
-                x
+                self.try_rounded_to(p_x, RoundingMode::None)?
             } else {
                 let em1 = e.sub(&one, p_x, RoundingMode::None)?;
                 let ln_e = e.ln(p_x, RoundingMode::None, cc)?;

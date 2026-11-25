@@ -60,6 +60,17 @@ impl PolycoeffGen for AtanhPolycoeffGen {
         Ok(&self.val)
     }
 
+    fn next_owned(
+        &mut self,
+        _prev: Option<&ExactNumNumber>,
+        rm: RoundingMode,
+    ) -> Result<ExactNumNumber, Error> {
+        // the coefficient is not the next one's input: it is returned instead of stored in `val`
+        self.acc = self.acc.add(&TWO, self.acc.mantissa_max_bit_len(), rm)?;
+        self.one_full_p
+            .div(&self.acc, self.one_full_p.mantissa_max_bit_len(), rm)
+    }
+
     #[inline]
     fn iter_cost(&self) -> usize {
         self.iter_cost
@@ -462,15 +473,11 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len().max(n.mantissa_max_bit_len())) + p_inc;
 
-        let mut x = self.clone()?;
-        let mut y = n.clone()?;
-        x.set_inexact(false);
-        y.set_inexact(false);
-
         loop {
+            // p_x is above both precisions, so these widen: the values are exact, with flags cleared
             let p_x = p_wrk + 5;
-            x.set_precision(p_x, RoundingMode::None)?;
-            y.set_precision(p_x, RoundingMode::None)?;
+            let x = self.try_rounded_exact(p_x, RoundingMode::None)?;
+            let y = n.try_rounded_exact(p_x, RoundingMode::None)?;
 
             let p1 = x.ln(p_x, RoundingMode::None, cc)?;
 

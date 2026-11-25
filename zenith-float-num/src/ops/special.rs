@@ -3707,12 +3707,12 @@ impl ExactNumNumber {
     /// Round `v` once to `p` in `rm`. Identity shortcuts (`m = 0`, a zero
     /// amplitude) use this so reduction cannot round a second time.
     fn round_once(
-        mut v: Self,
+        v: &Self,
         p: usize,
         rm: RoundingMode,
         extra_inexact: bool,
     ) -> Result<Self, Error> {
-        v.set_precision(p, rm)?;
+        let mut v = v.try_rounded_to(p, rm)?;
         v.set_inexact(v.inexact() | extra_inexact);
         Ok(v)
     }
@@ -3856,7 +3856,7 @@ impl ExactNumNumber {
         // arcsin is a second rounding, and directed modes then fail the
         // roundability test.
         if m.is_zero() {
-            return Self::round_once(self.clone()?, p, rm, m.inexact());
+            return Self::round_once(self, p, rm, m.inexact());
         }
         let mag = Self::phi_mag_bits(self);
         let mut p_inc = WORD_BIT_SIZE;
@@ -3924,7 +3924,7 @@ impl ExactNumNumber {
         }
         // E(φ|0) = φ. Same single rounding as `elliptic_f_phi`.
         if m.is_zero() {
-            return Self::round_once(self.clone()?, p, rm, m.inexact());
+            return Self::round_once(self, p, rm, m.inexact());
         }
         let mag = Self::phi_mag_bits(self);
         let mut p_inc = WORD_BIT_SIZE;
@@ -4191,21 +4191,21 @@ impl ExactNumNumber {
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc + extra;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE + extra;
-            let mut ret = self.legendre_p_at(n, p_x)?;
-            if ret.try_set_precision(p, rm, p_wrk)? {
-                ret.set_inexact(ret.inexact() | self.inexact());
+            let v = self.legendre_p_at(n, p_x)?;
+            if let Some(ret) = self.ziv_accept_or_self(v, p, rm, p_wrk)? {
                 return Ok(ret);
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
     }
 
-    fn legendre_p_at(&self, n: u32, p: usize) -> Result<Self, Error> {
+    /// `None` stands for \(P_1(x) = x\): the caller rounds `self` itself.
+    fn legendre_p_at(&self, n: u32, p: usize) -> Result<Option<Self>, Error> {
         if n == 0 {
-            return Self::from_word(1, p);
+            return Self::from_word(1, p).map(Some);
         }
         if n == 1 {
-            return self.clone();
+            return Ok(None);
         }
         // P_{k-1}, P_k: None stands for P_1 = x itself (no copy).
         let mut pm2: Option<Self> = Some(Self::from_word(1, p)?);
@@ -4228,7 +4228,32 @@ impl ExactNumNumber {
             pm1 = Some(pnext);
             k += 1;
         }
-        pm1.ok_or(Error::InvalidArgument) // n >= 2 ran the loop at least once
+        pm1.ok_or(Error::InvalidArgument).map(Some) // n >= 2 ran the loop at least once
+    }
+
+    /// One Ziv pass over a kernel value. `None` stands for `self` itself, which is
+    /// rounded from a borrow; the returned value carries `self`'s inexact flag.
+    fn ziv_accept_or_self(
+        &self,
+        v: Option<Self>,
+        p: usize,
+        rm: RoundingMode,
+        p_wrk: usize,
+    ) -> Result<Option<Self>, Error> {
+        let ret = match v {
+            Some(mut r) => {
+                if r.try_set_precision(p, rm, p_wrk)? {
+                    Some(r)
+                } else {
+                    None
+                }
+            }
+            None => self.try_rounded_checked(p, rm, p_wrk)?,
+        };
+        Ok(ret.map(|mut r| {
+            r.set_inexact(r.inexact() | self.inexact());
+            r
+        }))
     }
 
     /// Associated \(P_n^m(\mathrm{self})\) with Condon–Shortley phase \((-1)^m\).
@@ -4254,30 +4279,30 @@ impl ExactNumNumber {
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc + extra;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE + extra;
-            let mut ret = self.assoc_legendre_p_at(n, m, p_x)?;
-            if ret.try_set_precision(p, rm, p_wrk)? {
-                ret.set_inexact(ret.inexact() | self.inexact());
+            let v = self.assoc_legendre_p_at(n, m, p_x)?;
+            if let Some(ret) = self.ziv_accept_or_self(v, p, rm, p_wrk)? {
                 return Ok(ret);
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
     }
 
-    fn assoc_legendre_p_at(&self, n: u32, m: i32, p: usize) -> Result<Self, Error> {
+    /// `None` stands for `self` itself (\(m = 0\), \(n = 1\)).
+    fn assoc_legendre_p_at(&self, n: u32, m: i32, p: usize) -> Result<Option<Self>, Error> {
         let am = m.unsigned_abs();
         if m == 0 {
             return self.legendre_p_at(n, p);
         }
         let ppos = self.assoc_pos(n, am, p)?;
         if m > 0 {
-            return Ok(ppos);
+            return Ok(Some(ppos));
         }
         let ratio = fact_ratio_down(n - am, n + am, p)?;
         let mut out = ratio.mul(&ppos, p, RoundingMode::None)?;
         if am % 2 == 1 {
             out.set_sign(if out.is_positive() { Sign::Neg } else { Sign::Pos });
         }
-        Ok(out)
+        Ok(Some(out))
     }
 
     fn assoc_pos(&self, n: u32, m: u32, p: usize) -> Result<Self, Error> {
@@ -8081,7 +8106,7 @@ fn lambert_w_guess(
     if !minus1 && x.cmp(&N::from_word(3, p)?) <= 0 {
         let l = x.log1p(p, nr, cc)?;
         if l.is_zero() {
-            return x.clone();
+            return x.try_rounded_to(p, nr);
         }
         let num = l.log1p(p, nr, cc)?;
         let den = N::from_word(2, p)?.add(&l, p, nr)?;

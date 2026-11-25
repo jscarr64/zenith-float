@@ -40,12 +40,10 @@ impl ExactNumNumber {
 
         p_wrk += p_inc;
 
-        let mut x = self.clone()?;
-        x.set_inexact(false);
-
         loop {
             let p_x = p_wrk + 4;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            x.set_inexact(false);
 
             x.set_sign(Sign::Pos);
 

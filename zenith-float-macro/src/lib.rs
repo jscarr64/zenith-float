@@ -1186,7 +1186,7 @@ fn traverse_path(expr: &ExprPath) -> Result<TokenStream, Error> {
         quote!({ cc.euler_gamma(p_wrk, zenith_float::RoundingMode::None) })
     } else {
         quote!({
-            let mut arg = zenith_float::ExactNum::from_ext((#expr).clone(), p_wrk, zenith_float::RoundingMode::ToEven, cc);
+            let mut arg = zenith_float::ExactNum::from_ext(&(#expr), p_wrk, zenith_float::RoundingMode::ToEven, cc);
             arg.set_inexact(false);
             arg = zenith_float::macro_util::check_exponent_range(arg, emin, emax);
             arg

@@ -127,7 +127,7 @@ fn ode_rtol_and_equal_exponent_span() -> Result<(), Box<dyn std::error::Error>> 
     let tol = ExactNum::parse("1e-12", Radix::Dec, P, RM, &mut cc);
     // Non-zero rtol (1.0.4: None).
     let (_, y) = rk45_adaptive(
-        |_, y, _, _, _| y.clone(),
+        |_, y, p, rm, _| y.rounded_to(p, rm),
         OdeSpan {
             t0: &ExactNum::new(P),
             y0: &n(1),
@@ -145,7 +145,7 @@ fn ode_rtol_and_equal_exponent_span() -> Result<(), Box<dyn std::error::Error>> 
     assert!(close(y.get(y.len() - 1).ok_or("none value")?, &e, 33));
     // Span [2, 3] (1.0.4: rejected as not t0 < t1): y' = y, y(2) = 1 → y(3) = e.
     let (_, y) = rk4(
-        |_, y, _, _, _| y.clone(),
+        |_, y, p, rm, _| y.rounded_to(p, rm),
         OdeSpan {
             t0: &n(2),
             y0: &n(1),

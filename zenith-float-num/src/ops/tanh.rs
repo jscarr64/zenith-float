@@ -55,14 +55,12 @@ impl ExactNumNumber {
 
         p_wrk += p_inc;
 
-        let mut x = self.clone()?;
-        x.set_inexact(false);
-        x.set_sign(Sign::Pos);
-        x.set_exponent(x.exponent() + 1);
-
         loop {
+            // 2|self| widened to p_x (above its precision) with flags cleared
             let p_x = p_wrk + additional_prec;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_exact(p_x, RoundingMode::None)?;
+            x.set_sign(Sign::Pos);
+            x.set_exponent(x.exponent() + 1);
 
             let xexp = match x.exp(p_x, RoundingMode::FromZero, cc) {
                 Ok(v) => Ok(v),

@@ -69,28 +69,28 @@ fn arg_abs_le(z: &ExactComplex, bound: &ExactNum, p: usize, cc: &mut Consts) -> 
     matches!(a.compare(bound), Some(c) if c <= 0)
 }
 
-fn omega_pair(p: usize) -> (ExactComplex, ExactComplex) {
+/// \(\omega = e^{2\pi i/3}\), or its conjugate \(\omega^2\) when `conj`. Each value is built from
+/// scratch, so the pair shares no part.
+fn omega(p: usize, conj: bool) -> ExactComplex {
     let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
     let s3h = ExactNum::from_u8(3, p)
         .sqrt(p, RoundingMode::None)
         .mul(&half, p, RoundingMode::None);
-    let re = half.neg();
-    // `-s3h` is formed from the borrow before `s3h` moves into the first value.
-    let s3h_neg = s3h.neg_ref();
-    (
-        ExactComplex::new(re.clone(), s3h),
-        ExactComplex::new(re, s3h_neg),
-    )
+    ExactComplex::new(half.neg(), if conj { s3h.neg() } else { s3h })
 }
 
-fn exp_i_pi_6(p: usize, cc: &mut Consts) -> (ExactComplex, ExactComplex) {
+/// \((\omega, \omega^2)\).
+fn omega_pair(p: usize) -> (ExactComplex, ExactComplex) {
+    (omega(p, false), omega(p, true))
+}
+
+/// \(e^{\pi i/6}\), or \(e^{-\pi i/6}\) when `conj`, built from scratch.
+fn exp_i_pi_6(p: usize, cc: &mut Consts, conj: bool) -> ExactComplex {
     let a = cc
         .pi(p, RoundingMode::None)
         .div(&ExactNum::from_u8(6, p), p, RoundingMode::None);
     let (s, c) = a.sin_cos(p, RoundingMode::None, cc);
-    // `-s` is formed from the borrow before `s` moves into the first value.
-    let s_neg = s.neg_ref();
-    (ExactComplex::new(c.clone(), s), ExactComplex::new(c, s_neg))
+    ExactComplex::new(c, if conj { s.neg() } else { s })
 }
 
 fn two_pi_over_three(p: usize, cc: &mut Consts) -> ExactNum {
@@ -225,7 +225,7 @@ impl ExactComplex {
             }
         }
         let (w, w2) = omega_pair(work_p);
-        let (ep, em) = exp_i_pi_6(work_p, cc);
+        let (ep, em) = (exp_i_pi_6(work_p, cc, false), exp_i_pi_6(work_p, cc, true));
         let a1 = self
             .mul(&w2, work_p, RoundingMode::None)
             .ai_at(work_p, dest_p, cc, true);

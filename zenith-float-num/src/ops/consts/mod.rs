@@ -103,17 +103,16 @@ impl ExtraCache {
         // A cached value with no bits below `p` cannot be re-rounded.
         if self.bits >= p_wrk {
             if let Some(v) = &self.val {
-                let mut ret = v.clone()?;
-                ret.set_precision(p, rm)?;
-                return Ok(ret);
+                return v.try_rounded_to(p, rm);
             }
         }
+        // The cache keeps the full value; the caller gets it rounded to p, written straight from it (an error of
+        // that rounding is returned after the value is cached, as before).
         let computed = compute(p_wrk)?;
+        let ret = computed.try_rounded_to(p, rm);
         self.bits = computed.mantissa_max_bit_len();
-        self.val = Some(computed.clone()?);
-        let mut ret = computed;
-        ret.set_precision(p, rm)?;
-        Ok(ret)
+        self.val = Some(computed);
+        ret
     }
 
     fn install(&mut self, v: ExactNumNumber) {

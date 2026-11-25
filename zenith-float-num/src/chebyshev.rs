@@ -328,7 +328,7 @@ mod tests {
 
         const IDENTITY_NODES: usize = 4;
         let id_c = chebyshev_coeffs(
-            |x, _p, _rm, _cc| x.clone(),
+            |x, p, rm, _cc| x.rounded_to(p, rm),
             IDENTITY_NODES,
             ExactNum::from_i64(-1, p),
             &b,
@@ -388,12 +388,12 @@ mod tests {
     #[test]
     fn zf_chebyshev_coeffs_dest_unallocatable() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
-        let a = ExactNum::from_i64(-1, 64);
         let b = ExactNum::from_u8(1, 64);
         let f = |x: &ExactNum, p: usize, rm: RoundingMode, c: &mut Consts| x.exp(p, rm, c);
         for &p in &[1usize << 59, (1usize << 60) - 65, (1usize << 60) - 128, (1usize << 60) - 129] {
             let t0 = std::time::Instant::now();
-            let r = chebyshev_coeffs(f, 30, a.clone(), &b, p, RoundingMode::ToEven, &mut cc);
+            let a = ExactNum::from_i64(-1, 64);
+            let r = chebyshev_coeffs(f, 30, a, &b, p, RoundingMode::ToEven, &mut cc);
             assert!(
                 crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(2)),
                 "chebyshev_coeffs dest {p} took {:?}",
@@ -406,7 +406,16 @@ mod tests {
             );
         }
         assert_eq!(
-            chebyshev_coeffs(f, 0, a, &b, 64, RoundingMode::ToEven, &mut cc).err(),
+            chebyshev_coeffs(
+                f,
+                0,
+                ExactNum::from_i64(-1, 64),
+                &b,
+                64,
+                RoundingMode::ToEven,
+                &mut cc
+            )
+            .err(),
             Some(crate::Error::InvalidArgument)
         );
         let bad = ExactNum::from_i64(-1, 64);

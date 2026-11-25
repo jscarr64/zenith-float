@@ -147,7 +147,7 @@ fn method(op: &str, p: usize, cc: &mut Consts) -> ExactNum {
         "m.rk45_exp_0_1" => {
             let tol = parse("1e-12", p, cc);
             match rk45_adaptive(
-                |_, y, _, _, _| y.clone(),
+                |_, y, p, rm, _| y.rounded_to(p, rm),
                 OdeSpan {
                     t0: &ExactNum::new(p),
                     y0: &n(1),

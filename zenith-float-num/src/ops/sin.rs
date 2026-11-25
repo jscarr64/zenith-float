@@ -67,10 +67,8 @@ impl ExactNumNumber {
 
         let mut add_p = (3 - TRIG_EXP_THRES) as usize;
         loop {
-            let mut x = self.clone()?;
-
             let p_x = p_wrk + add_p;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
 
             x = x.reduce_trig_arg(cc, RoundingMode::None)?;
 

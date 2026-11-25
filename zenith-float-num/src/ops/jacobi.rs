@@ -261,9 +261,7 @@ impl ExactNumNumber {
         if m.is_zero() {
             // am(u|0) = u, carried at the working precision like the other three results; a narrower value
             // makes the caller's roundability check (which assumes `p` working bits) overflow.
-            let am = self.clone()?;
-            let mut am = am;
-            am.set_precision(p, RoundingMode::None)?;
+            let am = self.try_rounded_to(p, RoundingMode::None)?;
             let sn = self.sin(p, RoundingMode::None, cc)?;
             let cn = self.cos(p, RoundingMode::None, cc)?;
             return Ok((am, sn, cn, one, direct));
@@ -474,15 +472,16 @@ fn agm_small(c: &ExactNumNumber, a: &ExactNumNumber, p: usize) -> Result<bool, E
     Ok(rel.exponent() < thresh)
 }
 
-fn clamp_unit(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Error> {
+/// `x` clamped to [-1, 1]: `None` when `|x| <= 1` (the caller keeps using `x`), else `Some(±1)`.
+fn clamp_unit(x: &ExactNumNumber, p: usize) -> Result<Option<ExactNumNumber>, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
     let ax = x.abs()?;
     if ax.cmp(&one) <= 0 {
-        return x.clone();
+        return Ok(None);
     }
     let mut y = one;
     y.set_sign(x.sign());
-    Ok(y)
+    Ok(Some(y))
 }
 
 /// Precision of the running error bounds (rounded up, so they stay upper bounds).
@@ -613,7 +612,8 @@ fn jacobi_agm(
         let sphi = phi.sin(p, RoundingMode::None, cc)?;
         let ca = cc_seq[idx].div(&aa[idx], p, RoundingMode::None)?;
         let t_raw = ca.mul(&sphi, p, RoundingMode::None)?;
-        let t = clamp_unit(&t_raw, p)?;
+        let clamped = clamp_unit(&t_raw, p)?;
+        let t = clamped.as_ref().unwrap_or(&t_raw);
         let asint = t.asin(p, RoundingMode::None, cc)?;
         if bounded {
             // |cos phi_true| ≤ |cos phi_n| + err.
@@ -627,7 +627,7 @@ fn jacobi_agm(
                 .add(
                     // c_n carries an absolute error ≤ (4N+8) ulp of a_n (c = (a - b)/2 cancels):
                     // relative to |sin phi_n|, not to |t|.
-                    &bound_abs(&t)?
+                    &bound_abs(t)?
                         .add(&bound_abs(&sphi)?, BOUND_P, up)?
                         .mul(&steps_eps, BOUND_P, up)?,
                     BOUND_P,

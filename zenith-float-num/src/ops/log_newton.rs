@@ -147,9 +147,10 @@ impl ExactNumNumber {
         let seed_p = (wp / n).saturating_add(extra);
 
         let t = if seed_p <= ARB_LOG_NEWTON_PREC / 2 {
-            let mut x = self.clone()?;
-            x.set_precision(seed_p, RoundingMode::None)?;
-            Self::ln_series(x, RoundingMode::None)?
+            Self::ln_series(
+                self.try_rounded_to(seed_p, RoundingMode::None)?,
+                RoundingMode::None,
+            )?
         } else {
             self.ln_newton(seed_p, cc)?
         };

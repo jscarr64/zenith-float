@@ -36,8 +36,10 @@ impl ExactNumNumber {
 
         let p_max = p.max(self.mantissa_max_bit_len());
 
-        let mut x = self.clone()?;
-        x.set_inexact(false);
+        // `self` is read as it is: its inexact flag only ORs into the flags of the results, and every result
+        // below is a logarithm of a value above 1, irrational, so already inexact; the flag check and the value
+        // are the same as from a flag-cleared copy.
+        let x = self;
 
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p_max + p_inc;
@@ -60,13 +62,16 @@ impl ExactNumNumber {
                     // ln at p_x is within one p_x ulp and ln(2x) - acosh(x) = 1/(4x^2) + ... is far below it;
                     // 3 guard bits keep the sum under the 2^-p_wrk the rounding test is told (it was 0).
                     p_x += 3;
-                    x.set_exponent(self.exponent() + 1);
+                    // 2x, written straight from `self` with the exponent raised by one
+                    let two_x = self.rescaled(
+                        0,
+                        self.exponent() + 1,
+                        self.mantissa_max_bit_len(),
+                        RoundingMode::None,
+                        (false, None),
+                    )?;
 
-                    let lnx = x.ln(p_x, RoundingMode::None, cc)?;
-
-                    x.set_exponent(self.exponent());
-
-                    lnx
+                    two_x.ln(p_x, RoundingMode::None, cc)?
                 }
             } else {
                 // ln(x + sqrt(x*x - 1))
@@ -77,13 +82,13 @@ impl ExactNumNumber {
 
                 p_x += 6 + additional_prec;
 
-                let xx = x.mul(&x, p_x, RoundingMode::None)?;
+                let xx = x.mul(x, p_x, RoundingMode::None)?;
 
                 let d1 = xx.sub(&ONE, p_x, RoundingMode::None)?;
 
                 let d2 = d1.sqrt(p_x, RoundingMode::None)?;
 
-                let d3 = d2.add(&x, p_x, RoundingMode::FromZero)?;
+                let d3 = d2.add(x, p_x, RoundingMode::FromZero)?;
 
                 d3.ln(p_x, RoundingMode::None, cc)?
             };

@@ -70,10 +70,8 @@ impl ExactNumNumber {
 
         let mut add_p = (1 - TRIG_EXP_THRES) as usize;
         loop {
-            let mut x = self.clone()?;
-
             let p_x = p_wrk + add_p;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
 
             x = x.reduce_trig_arg(cc, RoundingMode::None)?;
 
@@ -93,7 +91,9 @@ impl ExactNumNumber {
     }
 
     /// cosine series
-    pub(super) fn cos_series(mut self, rm: RoundingMode) -> Result<Self, Error> {
+    /// `self` is only read: the series uses the argument through products, and the reduced argument is written
+    /// straight from it.
+    pub(super) fn cos_series(&self, rm: RoundingMode) -> Result<Self, Error> {
         // cos:  1 - x^2/2! + x^4/4! - x^6/6! + ...
 
         let p = self.mantissa_max_bit_len();
@@ -112,13 +112,19 @@ impl ExactNumNumber {
         // The error of the remaining terms of the series is compensated.
         let add_prec = reduction_times as i64 * 6 + 6 - e_eff as i64;
         let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
-        self.set_precision(p_arg, rm)?;
-
-        let arg = if reduction_times > 0 { self.cos_arg_reduce(reduction_times)? } else { self };
+        // The products below round at p_arg whatever the argument's own width, so the argument is not widened
+        // to p_arg first; only the reduced argument, a new value, is written at the widened width.
+        let reduced;
+        let arg = if reduction_times > 0 {
+            reduced = self.cos_arg_reduce(round_p(p_arg), reduction_times)?;
+            &reduced
+        } else {
+            self
+        };
 
         let acc = ExactNumNumber::from_word(1, p_arg)?; // 1
-        let x_step = arg.mul(&arg, p_arg, rm)?; // x^2
-        let x_first = arg.mul(&arg, p_arg, rm)?; // x^2 (the same product as `x_step`, formed again: one owner each)
+        let x_step = arg.mul(arg, p_arg, rm)?; // x^2
+        let x_first = arg.mul(arg, p_arg, rm)?; // x^2 (the same product as `x_step`, formed again: one owner each)
 
         let ret = series_run(acc, x_first, x_step, niter, &mut polycoeff_gen)?;
 
@@ -131,19 +137,26 @@ impl ExactNumNumber {
 
     // reduce argument n times.
     // cost: n * O(add)
-    fn cos_arg_reduce(self, n: usize) -> Result<Self, Error> {
+    // `self` widened to `p` bits (a whole number of words, at least the width of `self`) and divided by 2^n,
+    // written straight from `self` (`rescaled` with the exponent the scaling gives).
+    fn cos_arg_reduce(&self, p: usize, n: usize) -> Result<Self, Error> {
         // cos(2*x) = 2*cos(x)^2 - 1
-        let mut ret = self;
-        let p = ret.mantissa_max_bit_len();
-        if ret.exponent() < EXPONENT_MIN + n as Exponent {
-            ret.set_exponent(EXPONENT_MIN);
+        let flags = (self.inexact(), self.op_inexact_raw());
+        if self.exponent() < EXPONENT_MIN + n as Exponent {
+            let mut ret = self.rescaled(0, EXPONENT_MIN, p, RoundingMode::None, flags)?;
             for _ in 0..n - (ret.exponent() - EXPONENT_MIN) as usize {
                 ret = ret.div(&TWO, p, RoundingMode::FromZero)?;
             }
+            Ok(ret)
         } else {
-            ret.set_exponent(ret.exponent() - n as Exponent);
+            self.rescaled(
+                0,
+                self.exponent() - n as Exponent,
+                p,
+                RoundingMode::None,
+                flags,
+            )
         }
-        Ok(ret)
     }
 
     // restore value for the argument reduced n times.

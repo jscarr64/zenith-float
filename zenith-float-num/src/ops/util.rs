@@ -35,8 +35,7 @@ impl ExactNumNumber {
         let add_p = (3 - TRIG_EXP_THRES) as usize;
         let mut p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);
         loop {
-            let mut x = self.clone()?;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let x = self.try_rounded_to(p_x, RoundingMode::None)?;
             let mut r = x.reduce_trig_arg(cc, RoundingMode::None)?;
             if r.is_zero() {
                 p_x = round_p(p_x.saturating_mul(2));
@@ -113,11 +112,7 @@ impl ExactNumNumber {
 macro_rules! compute_small_exp {
     ($arg:ident, $exp:expr, $sign_inverse:expr, $p_wrk:ident, $p:ident, $rm:ident) => {
         if i128::from($p_wrk as i64) + 1 < -i128::from($exp) {
-            let mut x = $arg.clone()?;
-            if $p > x.mantissa_max_bit_len() {
-                x.set_precision($p, RoundingMode::None)?;
-            }
-            let mut ret = x.add_correction($sign_inverse)?;
+            let mut ret = $arg.add_correction_at($p, $sign_inverse)?;
             ret.set_precision($p, $rm)?;
             return Ok(ret);
         }
