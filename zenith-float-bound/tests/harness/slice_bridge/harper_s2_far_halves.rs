@@ -330,3 +330,16 @@ fn s2_far_halves_seeded_exponents() -> Result<(), String> {
         .ok_or("want")?;
     check(&rows, want)
 }
+
+#[test]
+fn s2_far_halves_cmp_exact_diff_direct_n_row_is_equal() -> Result<(), String> {
+    // Row N, (a, -s) at e = 1000, p = 64, called directly rather than through the row tables: |a - (-s)| = 2^e = r
+    // exactly, so cmp_exact_diff must say Equal (the far-halves arm's exact-tie case).
+    let (a, s) = n_operands(1000, 64)?;
+    match r_halves(1000)?.cmp_exact_diff(&a, &neg(&s)) {
+        Some(Ordering::Equal) => Ok(()),
+        other => Err(format!(
+            "cmp_exact_diff N (a,-s) at e=1000 p=64: {other:?}, want Equal"
+        )),
+    }
+}

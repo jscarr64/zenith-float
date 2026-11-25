@@ -1,5 +1,6 @@
 //! Slice CB rows for `CBall::mul` (16.CB.4) and `CBall::div` (16.CB.7), and the rows that need them.
 //! Taken live from HOLD H11: the ops are implemented, so these tests run green (P12: no ignored reds).
+//! COVERS: CBall::mul, CBall::div
 
 use super::*;
 
