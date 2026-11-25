@@ -15,7 +15,19 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
         let p = round_p(p);
-        if self.is_zero() || self.exponent() <= 2 {
+        // The reduction is the identity, exact, below 2π: |self| < 4, or |self| in [4, 8) (exponent 3) below 2π
+        // (π rounded down, so 2π here <= the true 2π). Dividing by the inexact 2π would flag the unchanged value
+        // inexact, and a directed mode could then never round its all-zero tail (the Ziv loop below would widen π
+        // without end).
+        let identity = self.is_zero()
+            || self.exponent() <= 2
+            || (self.exponent() == 3 && {
+                let w = p.max(self.mantissa_max_bit_len()) + crate::defs::WORD_BIT_SIZE;
+                let mut two_pi = cc.pi_num(w, RoundingMode::Down)?;
+                two_pi.set_exponent(two_pi.exponent() + 1);
+                self.abs_cmp(&two_pi) < 0
+            });
+        if identity {
             let mut x = self.clone()?;
             x.set_precision(p, rm)?;
             return Ok(x);
@@ -118,6 +130,52 @@ pub(super) use compute_small_exp;
 mod tests {
     use crate::common::util::reduction_width;
     use crate::Error;
+
+    /// |x| < 2π (exponent 3: |x| in [4, 8)) reduces to x itself, exactly. The remainder by the
+    /// inexact 2π used to come back flagged inexact with an all-zero tail, so a directed mode could
+    /// never round it and the Ziv loop widened π without end (the full-tier MPFR `mpfr_compare_ops`
+    /// hang, r6: x = -4.937..., p = 3392, Up). Gold: x itself (the definition), not inexact.
+    #[cfg(feature = "std")]
+    #[test]
+    fn rem_pi_below_two_pi_is_the_identity_in_every_mode() -> Result<(), String> {
+        use crate::{Consts, ExactNum, Exponent, RoundingMode};
+        let p = 3392usize;
+        // -(79/16) * (1 + 2^-3000) = -4.9375...: below 2π, exponent 3, a long mantissa
+        let m = ExactNum::from_u8(1, p).add(
+            &ExactNum::from_u8(1, p).ldexp(-3000 as Exponent, p, RoundingMode::ToEven),
+            p,
+            RoundingMode::ToEven,
+        );
+        let mut x = -ExactNum::from_u8(79, p)
+            .ldexp(-4, p, RoundingMode::ToEven)
+            .mul(&m, p, RoundingMode::ToEven);
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+        ] {
+            // x moves into the worker (a hang must not hang the test) and comes back with the result
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let r = Consts::new().map(|mut cc| ExactNum::rem_pi(&x, p, rm, &mut cc));
+                let _sent = tx.send((r, x));
+            });
+            let (r, back) = rx
+                .recv_timeout(std::time::Duration::from_secs(60))
+                .map_err(|_| format!("rem_pi {rm:?}: no result in 60 s (Ziv loop does not end)"))?;
+            x = back;
+            let r = r.map_err(|e| format!("{e:?}"))?;
+            if r != x || r.inexact() {
+                return Err(format!(
+                    "rem_pi {rm:?}: got {r:?} (inexact {}), want x exactly",
+                    r.inexact()
+                ));
+            }
+        }
+        Ok(())
+    }
 
     /// The π width follows the argument exponent with no limit: 2^16 (main's old silent cap),
     /// 2^22 (Tier 1's old refusal) and one past each are all carried in full. Only a width the
