@@ -1022,7 +1022,7 @@ fn zf_52_roots_default_tolerance_converge() -> Result<(), String> {
                 newton(
                     f,
                     df,
-                    &x0,
+                    x0,
                     NewtonOptions {
                         tol: &tol,
                         max_iter: 200,
@@ -1033,8 +1033,8 @@ fn zf_52_roots_default_tolerance_converge() -> Result<(), String> {
                 ),
                 bisect(
                     f,
-                    &ExactNum::new(p),
-                    &ExactNum::from_u8(2, p),
+                    ExactNum::new(p),
+                    ExactNum::from_u8(2, p),
                     &tol,
                     p,
                     rm,

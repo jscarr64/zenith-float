@@ -73,8 +73,8 @@ fn roots_default_tol_and_equal_exponent_bracket() -> Result<(), Box<dyn std::err
     );
     let r = brent(
         |x, p, rm, cc| x.cos(p, rm, cc).sub(x, p, rm),
-        &n(0),
-        &n(1),
+        n(0),
+        n(1),
         &tol,
         P,
         RM,
@@ -86,8 +86,8 @@ fn roots_default_tol_and_equal_exponent_bracket() -> Result<(), Box<dyn std::err
     let six = n(6);
     let r = bisect(
         |x, p, rm, _| x.sqr(p, rm).sub(&ExactNum::from_u8(6, p), p, rm),
-        &n(2),
-        &n(3),
+        n(2),
+        n(3),
         &tol,
         P,
         RM,
@@ -97,8 +97,8 @@ fn roots_default_tol_and_equal_exponent_bracket() -> Result<(), Box<dyn std::err
     assert!(close(&r, &six.sqrt(4 * P, RM), 125));
     let r = illinois(
         |x, p, rm, _| x.sqr(p, rm).sub(&ExactNum::from_u8(6, p), p, rm),
-        &n(2),
-        &n(3),
+        n(2),
+        n(3),
         &tol,
         P,
         RM,
@@ -108,8 +108,8 @@ fn roots_default_tol_and_equal_exponent_bracket() -> Result<(), Box<dyn std::err
     assert!(close(&r, &six.sqrt(4 * P, RM), 125));
     let r = brent(
         |x, p, rm, _| x.sqr(p, rm).sub(&ExactNum::from_u8(6, p), p, rm),
-        &n(2),
-        &n(3),
+        n(2),
+        n(3),
         &tol,
         P,
         RM,

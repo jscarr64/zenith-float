@@ -76,16 +76,16 @@ where
         if !finite(&fm) {
             return None;
         }
-        if opposite_signs(&fa, &fm) {
-            b = mid.clone();
-            fb = fm.clone();
-        } else {
-            a = mid.clone();
-            fa = fm.clone();
-        }
+        // The new bracket is [a, mid] or [mid, b]; its width is checked before mid moves into it.
+        let left = opposite_signs(&fa, &fm);
         if fm.is_zero()
             || below_tol(
-                &ExactNum::sub_ref(&b, &a, wrk, RoundingMode::None).abs(),
+                &if left {
+                    ExactNum::sub_ref(&mid, &a, wrk, RoundingMode::None)
+                } else {
+                    ExactNum::sub_ref(&b, &mid, wrk, RoundingMode::None)
+                }
+                .abs(),
                 tol,
             )
         {
@@ -93,15 +93,23 @@ where
             let _ = out.set_precision(p, rm);
             return Some((out, k));
         }
+        if left {
+            b = mid;
+            fb = fm;
+        } else {
+            a = mid;
+            fa = fm;
+        }
         let _ = fb;
     }
 }
 
-/// Bisection on `[a, b]`. `None` if `f(a)` and `f(b)` do not have opposite signs.
+/// Bisection on `[a, b]`. `None` if `f(a)` and `f(b)` do not have opposite signs. The bracket ends
+/// are taken by value: they become the working bracket (no copy).
 pub fn bisect<F>(
     f: F,
-    a: &ExactNum,
-    b: &ExactNum,
+    a: ExactNum,
+    b: ExactNum,
     tol: &ExactNum,
     p: usize,
     rm: RoundingMode,
@@ -110,7 +118,7 @@ pub fn bisect<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    bisect_counted(f, a.clone(), b.clone(), tol, p, rm, cc).map(|(x, _)| x)
+    bisect_counted(f, a, b, tol, p, rm, cc).map(|(x, _)| x)
 }
 
 /// Stop tolerance and iteration cap of [`newton`] (zenith-float 2.0: grouped so no public function
@@ -167,11 +175,12 @@ where
     None
 }
 
-/// Newton–Raphson from `x0` with exact derivative `df`.
+/// Newton–Raphson from `x0` with exact derivative `df`. `x0` is taken by value: it becomes the
+/// first iterate (no copy).
 pub fn newton<F, D>(
     f: F,
     df: D,
-    x0: &ExactNum,
+    x0: ExactNum,
     NewtonOptions { tol, max_iter }: NewtonOptions<'_>,
     p: usize,
     rm: RoundingMode,
@@ -181,16 +190,7 @@ where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
     D: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    newton_counted(
-        f,
-        df,
-        x0.clone(),
-        NewtonOptions { tol, max_iter },
-        p,
-        rm,
-        cc,
-    )
-    .map(|(x, _)| x)
+    newton_counted(f, df, x0, NewtonOptions { tol, max_iter }, p, rm, cc).map(|(x, _)| x)
 }
 
 fn illinois_counted<F>(
@@ -261,11 +261,12 @@ where
     }
 }
 
-/// Illinois (modified regula falsi) on `[a, b]`.
+/// Illinois (modified regula falsi) on `[a, b]`. The bracket ends are taken by value: they become
+/// the working bracket (no copy).
 pub fn illinois<F>(
     f: F,
-    a: &ExactNum,
-    b: &ExactNum,
+    a: ExactNum,
+    b: ExactNum,
     tol: &ExactNum,
     p: usize,
     rm: RoundingMode,
@@ -274,7 +275,7 @@ pub fn illinois<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    illinois_counted(f, a.clone(), b.clone(), tol, p, rm, cc).map(|(x, _)| x)
+    illinois_counted(f, a, b, tol, p, rm, cc).map(|(x, _)| x)
 }
 
 fn strictly_inside(x: &ExactNum, lo: &ExactNum, hi: &ExactNum) -> bool {
@@ -329,26 +330,27 @@ where
     if !opposite_signs(&fa, &fb) {
         return None;
     }
-    let mut c = a.clone();
-    let mut fc = fa.clone();
+    // Brent's c equals a after every `c = a`, and e equals d after every `e = d`: `None` stands for
+    // that equal value, so it is read in place instead of copied. c and fc are always set together.
+    let mut c: Option<ExactNum> = None;
+    let mut fc: Option<ExactNum> = None;
     let mut d = ExactNum::sub_ref(&b, &a, wrk, none);
-    let mut e = d.clone();
+    let mut e: Option<ExactNum> = None;
     let mut k = 0usize;
     loop {
         k += 1;
-        if same_sign(&fb, &fc) {
-            c = a.clone();
-            fc = fa.clone();
+        if same_sign(&fb, fc.as_ref().unwrap_or(&fa)) {
+            c = None;
+            fc = None;
             d = ExactNum::sub_ref(&b, &a, wrk, none);
-            e = d.clone();
+            e = None;
         }
-        if abs_lt(&fc, &fb) {
-            a = b;
-            b = c;
-            c = a.clone();
-            fa = fb;
-            fb = fc;
-            fc = fa.clone();
+        if abs_lt(fc.as_ref().unwrap_or(&fa), &fb) {
+            // a = b; b = c; c = a
+            let old_a = core::mem::replace(&mut a, b);
+            b = c.take().unwrap_or(old_a);
+            let old_fa = core::mem::replace(&mut fa, fb);
+            fb = fc.take().unwrap_or(old_fa);
         }
         let tol1 = if b.is_negative() {
             b.neg_via_mul().mul(&eps2, wrk, none)
@@ -356,30 +358,37 @@ where
             ExactNum::mul_ref(&eps2, &b, wrk, none)
         }
         .add(&half_tol, wrk, none);
-        let m = ExactNum::sub_ref(&c, &b, wrk, none).div(&two, wrk, none);
+        let m = ExactNum::sub_ref(c.as_ref().unwrap_or(&a), &b, wrk, none).div(&two, wrk, none);
+        let m_positive = m.is_positive();
         if fb.is_zero() || !abs_lt(&tol1, &m) {
             let mut out = b;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
         }
-        if !abs_lt(&e, &tol1) && abs_lt(&fb, &fa) {
+        if !abs_lt(e.as_ref().unwrap_or(&d), &tol1) && abs_lt(&fb, &fa) {
             // Secant (a == c) or inverse quadratic interpolation, as the correction p/q.
             let s = ExactNum::div_ref(&fb, &fa, wrk, none);
             let two_m = ExactNum::from_u8(2, wrk).mul(&m, wrk, none);
-            let (mut pn, mut q) = if a.compare(&c) == Some(0) {
+            let (mut pn, mut q) = if c.as_ref().is_none_or(|cv| a.compare(cv) == Some(0)) {
                 (two_m.mul(&s, wrk, none), s.neg().add(&one, wrk, none))
             } else {
-                let qa = fa.div(&fc, wrk, none);
-                let r = ExactNum::div_ref(&fb, &fc, wrk, none);
+                // c is Some here (c == a takes the secant branch); a is set again below, so its
+                // value is moved into -a + b, and the stand-in is never read
+                let fcr = fc.as_ref().unwrap_or(&fa);
+                let qa = ExactNum::div_ref(&fa, fcr, wrk, none);
+                let r = ExactNum::div_ref(&fb, fcr, wrk, none);
                 let inner = two_m
                     .mul(&qa, wrk, none)
                     .mul(&ExactNum::sub_ref(&qa, &r, wrk, none), wrk, none)
                     .sub(
-                        &a.neg().add(&b, wrk, none).mul(
-                            &ExactNum::from_u8(1, wrk).neg().add(&r, wrk, none),
-                            wrk,
-                            none,
-                        ),
+                        &core::mem::replace(&mut a, ExactNum::nan(None))
+                            .neg()
+                            .add(&b, wrk, none)
+                            .mul(
+                                &ExactNum::from_u8(1, wrk).neg().add(&r, wrk, none),
+                                wrk,
+                                none,
+                            ),
                         wrk,
                         none,
                     );
@@ -402,28 +411,38 @@ where
                 .mul(&m, wrk, none)
                 .mul(&q, wrk, none)
                 .sub(&ExactNum::mul_ref(&tol1, &q, wrk, none).abs(), wrk, none);
-            let lim2 = e.mul(&q, wrk, none).abs();
+            let lim2 = match e.take() {
+                Some(ev) => ev.mul(&q, wrk, none),
+                None => ExactNum::mul_ref(&d, &q, wrk, none),
+            }
+            .abs();
             let lim = if lt(&lim1, &lim2) { lim1 } else { lim2 };
             if lt(&ExactNum::from_u8(2, wrk).mul(&pn, wrk, none), &lim) {
-                e = d;
-                d = pn.div(&q, wrk, none);
+                e = Some(core::mem::replace(&mut d, pn.div(&q, wrk, none)));
             } else {
-                d = m.clone();
-                e = m.clone();
+                d = m;
+                e = None;
             }
         } else {
-            d = m.clone();
-            e = m.clone();
+            d = m;
+            e = None;
         }
-        a = b.clone();
-        fa = fb;
-        b = if abs_lt(&tol1, &d) {
-            b.add(&d, wrk, none)
-        } else if m.is_positive() {
-            b.add(&tol1, wrk, none)
+        let next_b = if abs_lt(&tol1, &d) {
+            ExactNum::add_ref(&b, &d, wrk, none)
+        } else if m_positive {
+            ExactNum::add_ref(&b, &tol1, wrk, none)
         } else {
-            b.sub(&tol1, wrk, none)
+            ExactNum::sub_ref(&b, &tol1, wrk, none)
         };
+        // a = b: the old a keeps living as c where c stood for it
+        let old_a = core::mem::replace(&mut a, core::mem::replace(&mut b, next_b));
+        if c.is_none() {
+            c = Some(old_a);
+        }
+        let old_fa = core::mem::replace(&mut fa, fb);
+        if fc.is_none() {
+            fc = Some(old_fa);
+        }
         fb = f(&b, wrk, none, cc);
         if !finite(&fb) {
             return None;
@@ -431,11 +450,12 @@ where
     }
 }
 
-/// Brent's method (bisection + secant + inverse quadratic) on `[a, b]`.
+/// Brent's method (bisection + secant + inverse quadratic) on `[a, b]`. The bracket ends are taken
+/// by value: they become the working bracket (no copy).
 pub fn brent<F>(
     f: F,
-    a: &ExactNum,
-    b: &ExactNum,
+    a: ExactNum,
+    b: ExactNum,
     tol: &ExactNum,
     p: usize,
     rm: RoundingMode,
@@ -444,7 +464,7 @@ pub fn brent<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    brent_counted(f, a.clone(), b.clone(), tol, p, rm, cc).map(|(x, _)| x)
+    brent_counted(f, a, b, tol, p, rm, cc).map(|(x, _)| x)
 }
 
 #[cfg(test)]
@@ -483,7 +503,7 @@ mod tests {
         let nroot = newton(
             |x, p, rm, _cc| x.sqr(p, rm).sub(&two, p, rm),
             |x, p, rm, _cc| ExactNum::mul_ref(&two, x, p, rm),
-            &one,
+            one,
             NewtonOptions {
                 tol: &tol,
                 max_iter: ROOT_MAX_ITER,
@@ -511,8 +531,8 @@ mod tests {
 
         let iroot = illinois(
             |x, p, rm, cc| x.sin(p, rm, cc),
-            &three,
-            &four,
+            three,
+            four,
             &tol,
             p,
             rm,
@@ -523,8 +543,8 @@ mod tests {
 
         assert!(bisect(
             |x, p, rm, cc| x.sin(p, rm, cc),
-            &zero,
-            &one,
+            zero,
+            ExactNum::from_u8(1, p),
             &tol,
             p,
             rm,

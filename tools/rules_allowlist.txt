@@ -3,7 +3,7 @@
 # 134 clone/cloned entries: 133 approved by Jeff 2026-11-24 1:17 PM CT ("add the 133 clone reasons to the allowlist"),
 # reasons from the traced clone-justified.tsv; the 14 #[allow] rows of that draft were removed in code instead. The 134th,
 # zenith-float-num/src/roots.rs:10c09b84e6b2 (x0.clone() in newton, re-keyed by NewtonOptions), approved by
-# Jeff 2026-11-24 3:51 PM CT.
+# Jeff 2026-11-24 3:51 PM CT; removed 2026-11-24 (r6 item 3): newton takes x0 by value, so that clone is gone.
 # Clones (Jeff 2026-11-24 4:42 PM CT, standing authorization): every clone is tried every other way (borrow, move,
 # restructured ownership, Cow, mem::take/replace, references); one that has no other way stays and is documented here directly
 # with a one-line reason, tagged [Jeff 4:42 PM CT]. Clone counts and baselines still only go down.
@@ -140,7 +140,6 @@ zenith-float-num/src/quadrature.rs:66b3241e136f	zenith-float-num/src/quadrature.
 zenith-float-num/src/quadrature.rs:f37ad3f227fe	zenith-float-num/src/quadrature.rs:223 [clone] [traced] hi is borrowed; the last grid point x is owned because it becomes prev_x (moved) for the next bracket
 zenith-float-num/src/quadrature.rs:4edb81f15e4e	zenith-float-num/src/quadrature.rs:251 [clone] [traced] grid point x closes this bracket (moved into out with prev_x) and also becomes the next prev_x (prev_x = x)
 zenith-float-num/tests/radix_roundtrip.rs:4de2e5da0c8a	zenith-float-num/tests/radix_roundtrip.rs:337 [clone] TODO let mut neg = pos.clone();
-zenith-float-num/src/roots.rs:10c09b84e6b2	zenith-float-num/src/roots.rs:187 [clone] [traced] x0 is the caller's &ExactNum (public newton borrows it); newton_counted owns the iterate and consumes it from the first step (x = x.sub(&step, ..)), so the start value needs one owned copy. Pre-existing clone (before c74e834); only the argument grouping around it changed (NewtonOptions, Jeff 2026-11-24 2:35 PM CT)
 zenith-float-num/src/ieee_soft/array.rs:20818d4a7bbc	zenith-float-num/src/ieee_soft/array.rs:1413 [clone] [Jeff 4:42 PM CT] transpose(&self) of a borrowed matrix returns a new matrix, so each value is copied (P16 matrix copy); every owned array in the library uses into_transpose, which moves
 zenith-float-num/src/ieee_soft/array.rs:8b3861a13cd8	zenith-float-num/src/ieee_soft/array.rs:2006 [clone] [Jeff 4:42 PM CT] Householder column: svd_householder turns the copy into v, and the reflection then rewrites that same column of a while reading v, so v must be its own owned copy (moving the column out changes the reflected values; svd_householder no longer adds a second to_vec copy)
 zenith-float-num/src/ieee_soft/array.rs:2a5509ba0c00	zenith-float-num/src/ieee_soft/array.rs:2012 [clone] [Jeff 4:42 PM CT] Householder column: svd_householder turns the copy into v, and the reflection then rewrites that same column of a while reading v, so v must be its own owned copy (moving the column out changes the reflected values; svd_householder no longer adds a second to_vec copy)

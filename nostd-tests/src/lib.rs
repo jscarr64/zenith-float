@@ -136,8 +136,8 @@ fn method(op: &str, p: usize, cc: &mut Consts) -> ExactNum {
         }
         "m.brent_cos_x_eq_x" => brent(
             |x, p, rm, cc| x.cos(p, rm, cc).sub(x, p, rm),
-            &n(0),
-            &n(1),
+            n(0),
+            n(1),
             &root_default_tol(p, RM),
             p,
             RM,
