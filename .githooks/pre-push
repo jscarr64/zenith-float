@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# zenith-float pre-push hook (scaffold: no check yet; the scan of the pushed commit lands with its red test first).
+exit 0
