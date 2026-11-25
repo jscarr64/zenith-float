@@ -16,7 +16,8 @@ unpushed (the new one would exceed the cap); ages are not checked there. An unbo
 unpushed commit is refused too: push it, then amend is a new commit.
 --scan DIR: DIR itself and each direct child of DIR that has a .git (file or directory). One whose .git cannot be
 read as the top of a work tree (missing gitdir, corrupt HEAD, ...) is named and gives rc 2 (fail closed); a
-directory without .git (a plain dir, a bare repo) is skipped. Linked worktrees share branches: each branch of a
+directory without .git (a plain dir, a bare repo) is skipped; a child whose .git cannot even be looked up (no
+permission) is unreadable too, and an unreadable DIR gives rc 2. Linked worktrees share branches: each branch of a
 repository is reported once per run.
 Active mode (Jeff 2026-11-25 3:55 PM CT: "limit the check to active work trees"): a --scan tree is checked only when
   * its newest change is at most WINDOW old (--active-window-min, default 1440 = 24 h; exactly 24 h is active):
@@ -247,8 +248,18 @@ def main(argv=None):
         if not os.path.isdir(d):
             print("drift_check: %s is not a directory" % d, file=sys.stderr)
             return 2
-        for c in [d] + sorted(os.path.join(d, c) for c in os.listdir(d)):
-            if not os.path.lexists(os.path.join(c, ".git")):
+        try:
+            names = os.listdir(d)
+        except OSError as e:
+            print("drift_check: --scan %s cannot be read: %s" % (d, e), file=sys.stderr)
+            return 2
+        for c in [d] + sorted(os.path.join(d, c) for c in names):
+            try:
+                os.lstat(os.path.join(c, ".git"))
+            except (FileNotFoundError, NotADirectoryError):
+                continue  # no .git: a plain dir, a file or a bare repo
+            except OSError:
+                unreadable.append(c)  # EACCES and the like: cannot tell, fail closed
                 continue
             if is_work_tree(c):
                 repos.append((c, "scan"))
