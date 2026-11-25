@@ -299,5 +299,12 @@ for v in nan inf -inf; do
 done
 expect "--active-window-min 0 is valid (clean tree, Cassie Y10)" 0 run --repo "$c" --active-window-min 0
 expect "--active-window-min -0.0001 is a usage error"        2 run --repo "$c" --active-window-min -0.0001
+# ---- round 2 (Cassie R2-B2d): dirty work older than max-age is a violation, so it is never skipped as idle ----
+r=$(stale d31 172800); echo u > "$r/u.txt"; touch -d "@$((NOW-1801))" "$r/u.txt"
+expect "active: dirty 30 min + 1 s, 5 min window: checked, FAIL" 1 run --scan "$work/d31" --active-window-min 5
+r=$(stale dold 172800); echo u > "$r/u.txt"; touch -d "@$((NOW-172800))" "$r/u.txt"
+expect "active: dirty 2 days old in a tree idle 2 days: checked, FAIL" 1 run --scan "$work/dold"
+r="$work/d30/r"; out=$(run --scan "$work/d30" --active-window-min 5 2>&1)
+grep -q "skip $r" <<<"$out" && ok "active: dirty exactly 30 min, 5 min window: still skipped (named)" || { bad "active: dirty exactly 30 min should still be skipped"; show "$out"; }
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
