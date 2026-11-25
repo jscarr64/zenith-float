@@ -136,5 +136,6 @@ done
 scenario "list entry that is not an object fails closed (R2-B3a)" 2 '[]' flag:scalar-list
 scenario "mergedAt that is a number fails closed (TypeError, Cassie Y07)" 2 "[$(pr 30 MERGED f/w wwww 5)]" branch:f/w=wwww
 EXTRA="--since 2026-11-01" scenario "landed PR with no merge/close date under --since: branch still checked (Cassie Y08)" 1 "[$(pr 31 MERGED f/y yyyy)]" branch:f/y=yyyy re:'#31.*branch-not-deleted'
+scenario "JSON object instead of a list: says so (G03)" 2 '[]' flag:object-list re:'not a JSON list'
 echo "pr_done_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

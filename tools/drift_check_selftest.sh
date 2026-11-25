@@ -306,5 +306,12 @@ r=$(stale dold 172800); echo u > "$r/u.txt"; touch -d "@$((NOW-172800))" "$r/u.t
 expect "active: dirty 2 days old in a tree idle 2 days: checked, FAIL" 1 run --scan "$work/dold"
 r="$work/d30/r"; out=$(run --scan "$work/d30" --active-window-min 5 2>&1)
 grep -q "skip $r" <<<"$out" && ok "active: dirty exactly 30 min, 5 min window: still skipped (named)" || { bad "active: dirty exactly 30 min should still be skipped"; show "$out"; }
+# ---- round 2 sweep: decisions the round-2 fixes made reachable only through these cases (A06, X05) ----
+r=$(stale dx30 172800); git -C "$r" push -q origin w 2>/dev/null; touch -d "@$((NOW-172800))" "$r/.git/index" "$r/.git/logs/HEAD"
+echo u > "$r/u.txt"; touch -d "@$((NOW-1800))" "$r/u.txt"
+out=$(run --scan "$work/dx30" 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "ok   $r" <<<"$out" && ! grep -q "skip $r" <<<"$out" && ok "active: dirty exactly 30 min in a tree idle 2 days: inside the window, checked (A06)" || { bad "active: dirty exactly 30 min, default window (rc=$rc)"; show "$out"; }
+out=$(run --all --scan "$work/no-such-dir" 2>&1); rc=$?
+[ $rc = 2 ] && grep -q "no-such-dir is not a directory" <<<"$out" && ok "scan: a missing dir is named as not a directory (X05)" || { bad "scan: missing dir message (rc=$rc)"; show "$out"; }
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

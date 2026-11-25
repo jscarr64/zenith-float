@@ -76,5 +76,7 @@ out=$(REPO="$r" POPRUN="$work/no-such-poprun" bash "$sg" rules 2>&1); rc=$?
 out=$(REPO="$here/.." bash "$sg" --dry-run rules 2>&1); rc=$?
 [ $rc = 0 ] && grep -q '^rule-checks: .*tools/rule_checks_mutation.sh' <<<"$out" && grep -q '^rules-scan: .*tools/rules_scan.sh' <<<"$out" \
   && ok "--dry-run on this repo: rules-scan and rule-checks resolve from tools/full_gate.sh" || { bad "--dry-run on this repo (rc=$rc)"; show "$out"; }
+r=$(mkrepo r8); sed -i 's/^run rule-checks .*/run rule-checks ""/' "$r/tools/full_gate.sh"; go "$r" rules
+[ $rc = 2 ] && [ -z "$calls" ] && ok "a borrowed step with an empty command: rc 2, nothing run" || { bad "empty borrowed command (rc=$rc)"; show "$out"; }
 echo "scoped_gate_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

@@ -85,5 +85,6 @@ check "a drift_check error (unreadable child): rc 2" 2 re:"$work/e/broken" -- "$
 check "an unknown option: rc 2" 2 -- --bogus "$work/r1"
 DRIFT_CHECK="$work/no-such-drift_check.py" sweep "$work/r1/clean" >/dev/null 2>&1; rc=$?
 [ $rc = 2 ] && ok "drift_check missing: rc 2" || bad "drift_check missing (want rc=2, got rc=$rc)"
+check "every root excluded: says no roots (rc 2)" 2 re:'no roots to sweep' -- "$work/x/MathWorks"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
