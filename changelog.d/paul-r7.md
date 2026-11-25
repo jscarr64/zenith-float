@@ -77,3 +77,5 @@
 - Batch 17 (F-21/F-22, ZF-M27): Jacobi functions of a tiny `u` (|u| < 2^-(2 len + 4 words)) are their leading term
   (u, 1 or 1/u) rounded with the side of the first nonzero series term (DLMF 22.10), or exact where the series is the
   term itself: directed modes no longer give NaN(PrecisionRetryExhausted), and dn/nd are flagged inexact.
+- Batch 18 (F-30, ZF-M27): am(u|m) for |u| beyond the 4K period (am(-7|1/2), am(-7|3/8)) is asserted against mpmath
+  bit for bit; the hold was stale (no library change). The jacobi digest is re-pinned with the 8 cells in.

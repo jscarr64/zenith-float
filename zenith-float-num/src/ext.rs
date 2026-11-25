@@ -8793,12 +8793,10 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
-        let mut held = 0usize;
         let mut f21 = 0usize;
-        let mut held_tzud = 0usize;
         let mut f28 = 0usize;
         let mut f29 = 0usize;
-        let mut held_f30 = 0usize;
+        let mut f30 = 0usize;
         let ms = || {
             [
                 ExactNum::new(64),
@@ -8850,12 +8848,14 @@ mod grid_digest_tests {
                                 }
                                 f21 += 1;
                             }
-                            // M27-TZ/UD (finding id pending): ns, cs and ds of the tiny nonzero u overflow upward; Down
-                            // gives +Inf where the ruling is +MAX. u = 0 is a pole whose ruled value is +-Inf by the
-                            // sign of u; today's NaN there is held (F-28 below).
+                            // M27-TZ/UD: an overflow of a finite nonzero u in a mode toward zero for its sign is the
+                            // signed largest value, not +-Inf (ns, cs and ds of the tiny u21 in Down are +MAX).
                             let u = operand(i);
-                            let tzud =
-                                !u.is_zero() && !u.is_inf() && !u.is_nan() && tz_overflow(rm, &r);
+                            assert!(
+                                u.is_zero() || u.is_inf() || u.is_nan() || !tz_overflow(rm, &r),
+                                "M27-TZ/UD {}(u{i} | m{mi}) {rm:?} is +-Inf",
+                                JNAMES[fi]
+                            );
                             // F-28 (ZF-M27): u = +-0 is a simple real pole of ns, cs and ds for 0 <= m <= 1 (sn has a
                             // simple zero there): the value is +-Inf by the sign of u (P20, DOM-07, POLE-01), in every
                             // mode. m = 3 (mi = 4) is out of range: NaN.
@@ -8882,26 +8882,34 @@ mod grid_digest_tests {
                                 );
                                 f29 += usize::from(u.is_negative());
                             }
-                            // F-30 (ZF-M27): am(u+4K|m) = am(u|m) + 2π; ops/jacobi.rs:252/256-276 reduces u mod 4K
-                            // for |u| > 2K and drops the 2π·n, so am(-7|1/2) and am(-7|3/8) are off by +2π; held.
-                            // Operand 3 is u = -7; mi = 2, 3 are m = 1/2, 3/8, the only m in (0, 1) on this grid,
-                            // and |u| = 7 > 2K(m) there. m = 0, 1 take their own closed forms; m = 3 stays hashed.
-                            let f30 = JNAMES[fi] == "am" && i == 3 && (mi == 2 || mi == 3);
-                            held_tzud += usize::from(tzud);
-                            held_f30 += usize::from(f30);
-                            dd_held(
-                                &mut h,
-                                &mut held,
-                                tzud || f30,
-                                DigestCell {
-                                    op: JNAMES[fi],
-                                    args: &[&operand(i), &m[mi]],
-                                    ints: &[],
-                                    p,
-                                    rm,
-                                    r: &r,
-                                },
-                            )?;
+                            // F-30 (ZF-M27): am(u + 4nK|m) = am(u|m) + 2nπ. Operand 3 is u = -7; mi = 2, 3 are m = 1/2,
+                            // 3/8, the only m in (0, 1) on this grid, and |u| = 7 > 2K(m) there, so the period
+                            // reduction runs. Oracle: mpmath 1.3.0 at 400 bits, am = phi with F(phi|m) = -7
+                            // (r7-tools/jac/oracle-notes.txt), rounded to p bits: -M * 2^-(p - 3).
+                            if JNAMES[fi] == "am" && i == 3 && (mi == 2 || mi == 3) {
+                                let down = rm == RoundingMode::Down;
+                                let words: &[u64] = match (mi, p, down) {
+                                    (2, 64, false) => &[13_541_460_325_552_877_314],
+                                    (2, 64, true) => &[13_541_460_325_552_877_315],
+                                    (2, _, false) => {
+                                        &[967_601_163_750_418_139, 13_541_460_325_552_877_314]
+                                    }
+                                    (2, _, true) => {
+                                        &[967_601_163_750_418_140, 13_541_460_325_552_877_314]
+                                    }
+                                    (_, 64, _) => &[14_390_569_717_442_560_023],
+                                    _ => &[12_660_702_083_347_903_805, 14_390_569_717_442_560_022],
+                                };
+                                let want = ExactNum::from_words(words, crate::Sign::Neg, 3);
+                                assert!(
+                                    ExactNum::sub_ref(&r, &want, 4096, RoundingMode::ToEven)
+                                        .is_zero()
+                                        && r.inexact(),
+                                    "F-30 am(-7 | m{mi}) at p = {p} {rm:?} is not the mpmath value"
+                                );
+                                f30 += 1;
+                            }
+                            dd(&mut h, JNAMES[fi], &[&operand(i), &m[mi]], &[], p, rm, &r)?;
                             count += 1;
                         }
                     }
@@ -8912,19 +8920,15 @@ mod grid_digest_tests {
         // F-21/F-22 (ZF-M27): every cell at operand 21 with m in [0, 1] (13 functions x 4 m x 2 p x 2 modes) is asserted
         // above and hashed (the 62 Down NaN(PrecisionRetryExhausted) F-21 cells and the 16 dn/nd F-22 cells included).
         assert_eq!(f21, 13 * 4 * 2 * 2);
-        // M27-TZ/UD: the 24 Down +overflow cells now give +MAX (Tier 1 ZF-59 wrappers map overflow by mode) and are
-        // hashed again; none is held.
-        assert_eq!(held_tzud, 0);
         // F-28 (ZF-M27): ns, cs and ds at u = +-0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are the signed
         // pole +-Inf (asserted above) and hashed
         assert_eq!(f28, 96);
         // F-29 (ZF-M27): am, sn, sc and sd at u = -0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are -0
         // (asserted above, with +0 at u = +0) and hashed
         assert_eq!(f29, 64);
-        // F-30 (ZF-M27): am at u = -7, m in {1/2, 3/8}, p in {64, 128}, both modes, is am(u|m) + 2π (the 4K period
-        // reduction drops the 2π·n); they are not hashed
-        assert_eq!(held_f30, 8);
-        assert_eq!(held, held_tzud + held_f30);
+        // F-30 (ZF-M27): am at u = -7, m in {1/2, 3/8}, p in {64, 128}, both modes, is the mpmath value (asserted
+        // above) and hashed
+        assert_eq!(f30, 8);
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
@@ -8948,7 +8952,10 @@ mod grid_digest_tests {
         // cell moved.
         // Re-pinned (ZF-M27 F-21/F-22): was 16_757_744_097_035_462_767, without the 62 F-21 and 16 F-22 cells. Cell dump
         // diff (r7 b17): exactly those 78 cells are added (the tiny-u closed form); no other cell moved.
-        assert_eq!(h.finish(), 11_970_546_452_111_491_119);
+        // Re-pinned (ZF-M27 F-30): was 11_970_546_452_111_491_119, without the 8 F-30 am(-7|m) cells. They match the mpmath
+        // oracle bit for bit with the period reduction's 2nπ restoration already in ops/jacobi.rs (the hold was stale);
+        // cell dump diff (r7 b18): exactly those 8 cells are added.
+        assert_eq!(h.finish(), 11_614_687_290_649_001_294);
         Ok(())
     }
 
