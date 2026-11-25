@@ -185,17 +185,17 @@ fn bernoulli_power_prec(j: usize, s: usize, wp: usize) -> usize {
 fn nearest_unique_int(x: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
     let p = round_p(x.mantissa_max_bit_len().max(64));
     let mut quarter = ExactNumNumber::from_word(1, p)?;
-    quarter = quarter.ldexp(-2, p, RoundingMode::None)?;
+    quarter = quarter.ldexp(-2, p, RoundingMode::Work)?;
     let mut half = ExactNumNumber::from_word(1, p)?;
-    half = half.ldexp(-1, p, RoundingMode::None)?;
+    half = half.ldexp(-1, p, RoundingMode::Work)?;
     let mut n = if x.is_zero() {
         x.zero_like()?
     } else if x.is_positive() {
-        x.add(&half, p, RoundingMode::None)?.floor()?
+        x.add(&half, p, RoundingMode::Work)?.floor()?
     } else {
-        x.sub(&half, p, RoundingMode::None)?.ceil()?
+        x.sub(&half, p, RoundingMode::Work)?.ceil()?
     };
-    let err = x.sub(&n, p, RoundingMode::None)?.abs()?;
+    let err = x.sub(&n, p, RoundingMode::Work)?.abs()?;
     if err.cmp(&quarter) >= 0 {
         return Err(Error::PrecisionRetryExhausted);
     }
@@ -255,16 +255,16 @@ fn div_2expm1(z: &ExactNumNumber, n: usize, p: usize) -> Result<ExactNumNumber, 
     // Small n: divide by the word 2^n - 1 (FLINT `n < FLINT_BITS`).
     if n < WORD_BIT_SIZE {
         let den = from_usize_p((1usize << n) - 1, WORD_BIT_SIZE)?;
-        return z.div(&den, p, RoundingMode::None);
+        return z.div(&den, p, RoundingMode::Work);
     }
     // Mid n: a general division is cheaper than a long geometric sum
     // (FLINT: n < 1024 + prec/32).
     if n < 1024 + p / 32 {
         let mut two_n = ExactNumNumber::from_word(1, p)?;
-        two_n = two_n.ldexp(exp_as_exponent(n)?, p, RoundingMode::None)?;
+        two_n = two_n.ldexp(exp_as_exponent(n)?, p, RoundingMode::Work)?;
         let one = ExactNumNumber::from_word(1, p)?;
-        let den = two_n.sub(&one, p, RoundingMode::None)?;
-        return z.div(&den, p, RoundingMode::None);
+        let den = two_n.sub(&one, p, RoundingMode::Work)?;
+        return z.div(&den, p, RoundingMode::Work);
     }
     // Large n: z/(2^n-1) = sum_{k>=1} z 2^{-k n}.
     let nexp = exp_as_exponent(n)?;
@@ -276,7 +276,7 @@ fn div_2expm1(z: &ExactNumNumber, n: usize, p: usize) -> Result<ExactNumNumber, 
         if term.is_zero() {
             break;
         }
-        h = h.add(&term, p, RoundingMode::None)?;
+        h = h.add(&term, p, RoundingMode::Work)?;
     }
     Ok(h)
 }
@@ -294,21 +294,21 @@ fn exact_even_one(n: usize) -> Result<(ExactInt, ExactInt), Error> {
     for j in 2..=terms {
         let pp = bernoulli_power_prec(j, n, wp);
         let jn = pow_ui(&from_usize_p(j, pp)?, n, pp)?;
-        let inv = ExactNumNumber::from_word(1, pp)?.div(&jn, pp, RoundingMode::None)?;
-        z = z.add(&inv, wp, RoundingMode::None)?;
+        let inv = ExactNumNumber::from_word(1, pp)?.div(&jn, pp, RoundingMode::Work)?;
+        z = z.add(&inv, wp, RoundingMode::Work)?;
     }
     let fac = factorial(n, wp)?;
     let two = ExactNumNumber::from_word(2, wp)?;
-    let pi = cc.pi_num(wp, RoundingMode::None)?;
-    let two_pi = two.mul(&pi, wp, RoundingMode::None)?;
+    let pi = cc.pi_num(wp, RoundingMode::Work)?;
+    let two_pi = two.mul(&pi, wp, RoundingMode::Work)?;
     let pow = pow_ui(&two_pi, n, wp)?;
     let pre = two
-        .mul(&fac, wp, RoundingMode::None)?
-        .div(&pow, wp, RoundingMode::None)?;
-    z = z.mul(&pre, wp, RoundingMode::None)?;
+        .mul(&fac, wp, RoundingMode::Work)?
+        .div(&pow, wp, RoundingMode::Work)?;
+    z = z.mul(&pre, wp, RoundingMode::Work)?;
     let primes = primes_upto(n.saturating_add(1));
     let mut denom = bernoulli_denom_ui(n, &primes)?;
-    z = z.mul(&denom, wp, RoundingMode::None)?;
+    z = z.mul(&denom, wp, RoundingMode::Work)?;
     if n.is_multiple_of(4) {
         z = z.neg()?;
     }
@@ -376,19 +376,19 @@ pub(super) fn exact_even_bernoulli_rev_range(
     for j in (3..=max_power).step_by(2) {
         let pp = bernoulli_power_prec(j, nmax, wp);
         let jn = pow_ui(&from_usize_p(j, pp)?, nmax, pp)?;
-        let inv = ExactNumNumber::from_word(1, pp)?.div(&jn, pp, RoundingMode::None)?;
+        let inv = ExactNumNumber::from_word(1, pp)?.div(&jn, pp, RoundingMode::Work)?;
         let scaled = inv.ldexp(wp_exp, pp.max(wp), RoundingMode::ToEven)?;
         let tint = nearest_unique_int(&scaled).or_else(|_| {
             // Fall back to a rounded integer; the walk accounts for 1 ulp later.
             let mut half = ExactNumNumber::from_word(1, pp.max(wp))?;
-            half = half.ldexp(-1, pp.max(wp), RoundingMode::None)?;
+            half = half.ldexp(-1, pp.max(wp), RoundingMode::Work)?;
             if scaled.is_positive() || scaled.is_zero() {
-                scaled.add(&half, pp.max(wp), RoundingMode::None)?.floor()
+                scaled.add(&half, pp.max(wp), RoundingMode::Work)?.floor()
             } else {
-                scaled.sub(&half, pp.max(wp), RoundingMode::None)?.ceil()
+                scaled.sub(&half, pp.max(wp), RoundingMode::Work)?.ceil()
             }
         })?;
-        if !tint.sub(&scaled, wp, RoundingMode::None)?.abs()?.is_zero()
+        if !tint.sub(&scaled, wp, RoundingMode::Work)?.abs()?.is_zero()
             && pow_error.soft_cmp(&ExactInt::one()) == core::cmp::Ordering::Less
         {
             pow_error = ExactInt::one();
@@ -402,13 +402,13 @@ pub(super) fn exact_even_bernoulli_rev_range(
     let t_init1 = std::time::Instant::now();
     let fac = factorial(nmax, piwp)?;
     let two = ExactNumNumber::from_word(2, piwp)?;
-    let pi = cc.pi_num(piwp, RoundingMode::None)?;
-    let two_pi = two.mul(&pi, piwp, RoundingMode::None)?;
-    let mut two_pi_squared = two_pi.mul(&two_pi, piwp, RoundingMode::None)?;
+    let pi = cc.pi_num(piwp, RoundingMode::Work)?;
+    let two_pi = two.mul(&pi, piwp, RoundingMode::Work)?;
+    let mut two_pi_squared = two_pi.mul(&two_pi, piwp, RoundingMode::Work)?;
     let pow = pow_ui(&two_pi, nmax, piwp)?;
     let mut prefactor =
-        two.mul(&fac, piwp, RoundingMode::None)?
-            .div(&pow, piwp, RoundingMode::None)?;
+        two.mul(&fac, piwp, RoundingMode::Work)?
+            .div(&pow, piwp, RoundingMode::Work)?;
     let _ = prefactor.set_precision(wp, RoundingMode::ToEven);
     let _ = two_pi_squared.set_precision(wp, RoundingMode::ToEven);
     #[cfg(all(test, feature = "std"))]
@@ -460,7 +460,7 @@ pub(super) fn exact_even_bernoulli_rev_range(
         let mut z = int_to_num(&sum)?;
         let p_sum = conv.max(z.mantissa_max_bit_len());
         z = z.ldexp(-wp_exp, p_sum, RoundingMode::ToEven)?;
-        z = z.add(&one_wp, conv, RoundingMode::None)?;
+        z = z.add(&one_wp, conv, RoundingMode::Work)?;
         #[cfg(all(test, feature = "std"))]
         {
             t_intnum += t01.elapsed().as_nanos();
@@ -470,8 +470,8 @@ pub(super) fn exact_even_bernoulli_rev_range(
         let t1 = std::time::Instant::now();
         // Convert the odd-zeta sum to ζ(n): z * 2^n / (2^n - 1) (FLINT arb_div_2expm1_ui).
         let h = div_2expm1(&z, ncur, conv)?;
-        z = z.add(&h, conv, RoundingMode::None)?;
-        z = z.mul(&prefactor, conv, RoundingMode::None)?;
+        z = z.add(&h, conv, RoundingMode::Work)?;
+        z = z.mul(&prefactor, conv, RoundingMode::Work)?;
         #[cfg(all(test, feature = "std"))]
         {
             t_conv += t1.elapsed().as_nanos();
@@ -479,7 +479,7 @@ pub(super) fn exact_even_bernoulli_rev_range(
         #[cfg(all(test, feature = "std"))]
         let t2 = std::time::Instant::now();
         let denom = bernoulli_denom_ui(ncur, &primes)?;
-        z = z.mul(&denom, conv, RoundingMode::None)?;
+        z = z.mul(&denom, conv, RoundingMode::Work)?;
         #[cfg(all(test, feature = "std"))]
         {
             t_denom += t2.elapsed().as_nanos();
@@ -518,13 +518,13 @@ pub(super) fn exact_even_bernoulli_rev_range(
         // prefactor_{n-2} = prefactor_n * (2π)^2 / (n(n-1))
         #[cfg(all(test, feature = "std"))]
         let t3 = std::time::Instant::now();
-        prefactor = prefactor.mul(&two_pi_squared, wp, RoundingMode::None)?;
+        prefactor = prefactor.mul(&two_pi_squared, wp, RoundingMode::Work)?;
         // Divide by a one-word integer (FLINT arb_div_ui). Building n at wp
         // bits made this a 3400-limb / 3400-limb division every step.
         let nn = from_usize_p(ncur, WORD_BIT_SIZE)?;
         let nm1 = from_usize_p(ncur - 1, WORD_BIT_SIZE)?;
-        prefactor = prefactor.div(&nn, wp, RoundingMode::None)?;
-        prefactor = prefactor.div(&nm1, wp, RoundingMode::None)?;
+        prefactor = prefactor.div(&nn, wp, RoundingMode::Work)?;
+        prefactor = prefactor.div(&nm1, wp, RoundingMode::Work)?;
         #[cfg(all(test, feature = "std"))]
         {
             t_pref += t3.elapsed().as_nanos();

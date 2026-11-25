@@ -851,7 +851,7 @@ impl Mantissa {
     /// `round_mantissa` with or without the check leaves the same kept bits), false when it is not.
     pub(crate) fn is_roundable(&self, n: usize, rm: RoundingMode, s: usize) -> bool {
         let s = s - s % WORD_BIT_SIZE;
-        if rm == RoundingMode::None {
+        if rm.skips_rounding() {
             return true;
         }
         if !(n > 0 && n < self.max_bit_len()) {
@@ -955,7 +955,7 @@ impl Mantissa {
         // This function is so complex, because it combines rounding for all rounding modes
         // and checks for roundability at the same time.
 
-        if rm == RoundingMode::None {
+        if rm.skips_rounding() {
             *check_roundable = false;
 
             // inexact?
@@ -1077,6 +1077,7 @@ impl Mantissa {
                         }
                     }
                     RoundingMode::None
+                    | RoundingMode::Work
                     | RoundingMode::Up
                     | RoundingMode::Down
                     | RoundingMode::ToZero
@@ -1172,7 +1173,10 @@ impl Mantissa {
                             c = true;
                         }
                     }
-                    RoundingMode::None | RoundingMode::ToEven | RoundingMode::ToOdd => {}
+                    RoundingMode::None
+                    | RoundingMode::Work
+                    | RoundingMode::ToEven
+                    | RoundingMode::ToOdd => {}
                 };
             }
 
@@ -1331,7 +1335,7 @@ impl Mantissa {
         }
         let dropped = |to: usize| (0..to).any(|i| word(i) != 0);
         let up = match rm {
-            RoundingMode::None => {
+            RoundingMode::None | RoundingMode::Work => {
                 *inexact |= dropped(k);
                 false
             }
@@ -1408,7 +1412,7 @@ impl Mantissa {
             src[..w].iter().all(|v| v == &0) && (b == 0 || src[w] << (WORD_BIT_SIZE - b) == 0)
         };
         let up = match rm {
-            RoundingMode::None => {
+            RoundingMode::None | RoundingMode::Work => {
                 // `round_mantissa` only records inexactness: the low `t` bits of word `k` stay.
                 *inexact |= !zero_below(drop);
                 None

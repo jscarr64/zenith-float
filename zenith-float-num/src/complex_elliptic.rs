@@ -23,8 +23,9 @@ use alloc::vec::Vec;
 // (about 2^-(p/3+16)); there is no step cap (P9). R_J shift-integral jets and
 // panels stop when the path is covered or the remaining distance stops shrinking.
 
+/// The working mode of this module's intermediate steps (an overflow stays +-Inf).
 fn rm() -> RoundingMode {
-    RoundingMode::None
+    RoundingMode::Work
 }
 
 fn c_u32(n: u32, p: usize) -> ExactComplex {

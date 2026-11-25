@@ -42,7 +42,7 @@ impl ExactNumNumber {
 
         loop {
             let p_x = p_wrk + 4;
-            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::Work)?;
             x.set_inexact(false);
 
             x.set_sign(Sign::Pos);
@@ -50,18 +50,18 @@ impl ExactNumNumber {
             let mut ret = if (x.exponent() - 1) * 2 > x.mantissa_max_bit_len() as i64 + 2 {
                 // e^x / 2
 
-                x.exp(p_x, RoundingMode::None, cc)
+                x.exp(p_x, RoundingMode::Work, cc)
             } else {
                 // (e^x + e^(-x)) / 2
 
-                let ex = x.exp(p_x, RoundingMode::None, cc)?;
+                let ex = x.exp(p_x, RoundingMode::Work, cc)?;
 
-                let xe = ex.reciprocal(p_x, RoundingMode::None)?;
+                let xe = ex.reciprocal(p_x, RoundingMode::Work)?;
 
-                ex.add(&xe, p_x, RoundingMode::None)
+                ex.add(&xe, p_x, RoundingMode::Work)
             }?;
 
-            ret.div_by_2(RoundingMode::None);
+            ret.div_by_2(RoundingMode::Work);
 
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());

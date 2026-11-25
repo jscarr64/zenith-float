@@ -21,76 +21,6 @@ use zenith_float_num::{
 
 const CASE_BUDGET: Duration = Duration::from_secs(2);
 
-/// F-B (ZF-M27, held): `edges.jsonl` rows in `None` whose finite operands overflow (add 10, sub 10, mul 25, div 15,
-/// p in {64, 128, 256, 1024}, both tiers). The goldens give the ruled value (12:03 / 12:15 PM CT rulings M27-FB,
-/// M27-OVF: signed MAX at the storage precision, inexact; scripts/gen_oracle_goldens.py and mpfr_oracle.c, round 7).
-/// The library still returns +-Inf: the library's own kernels run in `None` and read +-Inf as their overflow signal
-/// (with `None` saturating, G(3*2^28) Up came back finite and two_product near MAX gave NaN), so the switch waits for
-/// those overflow checks to move off +-Inf. The rows are left out by id; `edges` asserts all 60 were found and that
-/// each still fails, so a fix shows up here. Division by zero (an exact pole) stays in.
-const FB_NONE_OVERFLOW_HELD: &[&str] = &[
-    "mul-64-None-403",
-    "mul-64-None-404",
-    "add-64-None-405",
-    "mul-128-None-1443",
-    "mul-128-None-1444",
-    "add-128-None-1445",
-    "mul-128-None-1863",
-    "mul-128-None-1864",
-    "add-128-None-1865",
-    "mul-256-None-2283",
-    "mul-256-None-2284",
-    "add-256-None-2285",
-    "mul-1024-None-2703",
-    "mul-1024-None-2704",
-    "add-1024-None-2705",
-    "add-64-None-2774",
-    "sub-64-None-2775",
-    "sub-64-None-2776",
-    "mul-64-None-2777",
-    "mul-64-None-2778",
-    "mul-64-None-2779",
-    "div-64-None-2780",
-    "div-64-None-2781",
-    "div-64-None-2782",
-    "add-128-None-2945",
-    "sub-128-None-2946",
-    "sub-128-None-2947",
-    "mul-128-None-2948",
-    "mul-128-None-2949",
-    "mul-128-None-2950",
-    "div-128-None-2951",
-    "div-128-None-2952",
-    "div-128-None-2953",
-    "add-128-None-3008",
-    "sub-128-None-3009",
-    "sub-128-None-3010",
-    "mul-128-None-3011",
-    "mul-128-None-3012",
-    "mul-128-None-3013",
-    "div-128-None-3014",
-    "div-128-None-3015",
-    "div-128-None-3016",
-    "add-256-None-3071",
-    "sub-256-None-3072",
-    "sub-256-None-3073",
-    "mul-256-None-3074",
-    "mul-256-None-3075",
-    "mul-256-None-3076",
-    "div-256-None-3077",
-    "div-256-None-3078",
-    "div-256-None-3079",
-    "add-1024-None-3134",
-    "sub-1024-None-3135",
-    "sub-1024-None-3136",
-    "mul-1024-None-3137",
-    "mul-1024-None-3138",
-    "mul-1024-None-3139",
-    "div-1024-None-3140",
-    "div-1024-None-3141",
-    "div-1024-None-3142",
-];
-
 #[derive(Debug, PartialEq)]
 enum Canon {
     Finite {
@@ -350,12 +280,6 @@ fn eval_row(row: &serde_json::Value) -> Result<Canon, String> {
 }
 
 fn run_file(name: &str) -> Result<(), String> {
-    run_file_holding(name, &[]).map(|_| ())
-}
-
-/// Runs every row of `name`; a row whose id is in `held` must still give its known-wrong +-Inf. Returns how many held
-/// rows did.
-fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
     let path = format!(
         "{}/tests/oracle/goldens/{name}.jsonl",
         env!("CARGO_MANIFEST_DIR")
@@ -368,7 +292,6 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(12usize);
-    let mut held_found = 0usize;
     for (idx, line) in text.lines().enumerate() {
         if line.is_empty() {
             continue;
@@ -380,8 +303,7 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             .and_then(|v| v.as_str())
             .unwrap_or("?")
             .to_string();
-        // Every row runs every time, a held one too; the row's "tier" (fast/deep) is a label only.
-        let is_held = held.contains(&id.as_str());
+        // Every row runs every time; the row's "tier" (fast/deep) is a label only.
         ran += 1;
         let expect = expect_of(row.get("expect").unwrap_or(&serde_json::Value::Null));
         let (tx, rx) = mpsc::channel();
@@ -408,19 +330,6 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             }
             Err(_) => Some(format!("{name}:{} {id}: timeout", idx + 1)),
         };
-        // A held row must still give its known-wrong +-Inf (and nothing else): when it matches the golden, or fails
-        // some other way, the test fails and names it.
-        let outcome = match outcome {
-            Some(msg) if is_held && msg.contains("got Inf(") => {
-                held_found += 1;
-                None
-            }
-            None if is_held => Some(format!(
-                "{name}:{} {id}: held row now matches its golden; take it off the held list",
-                idx + 1
-            )),
-            other => other,
-        };
         if let Some(msg) = outcome {
             failed += 1;
             if samples.len() < sample_cap {
@@ -434,8 +343,8 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             samples.join("\n")
         ));
     }
-    eprintln!("{name}.jsonl passed {ran}, held {held_found}");
-    Ok(held_found)
+    eprintln!("{name}.jsonl passed {ran}");
+    Ok(())
 }
 
 #[test]
@@ -450,10 +359,8 @@ fn arith() -> Result<(), String> {
 
 #[test]
 fn edges() -> Result<(), String> {
-    let held = run_file_holding("edges", FB_NONE_OVERFLOW_HELD)?;
-    // F-B (ZF-M27): the 60 None-overflow rows run and still give +-Inf (golden: the ruled +-MAX)
-    assert_eq!(held, 60);
-    Ok(())
+    // F-B (ZF-M27, rulings M27-FB / M27-OVF): the 60 None overflow rows expect signed MAX and are asserted.
+    run_file("edges")
 }
 
 #[test]

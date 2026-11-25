@@ -87,12 +87,12 @@ impl Ln10Cache {
     fn calc_ln10(p: &ExactNumNumber, q: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
         // 18 * (1 + p / q) / 11
         let prec = p.mantissa_max_bit_len().max(q.mantissa_max_bit_len());
-        let mut val = p.div(q, prec, crate::RoundingMode::None)?;
-        val = val.add(&ONE, prec, crate::RoundingMode::None)?;
+        let mut val = p.div(q, prec, crate::RoundingMode::Work)?;
+        val = val.add(&ONE, prec, crate::RoundingMode::Work)?;
         let f0 = ExactNumNumber::from_word(18, 1)?;
         let f1 = ExactNumNumber::from_word(11, 1)?;
-        val = val.mul(&f0, prec, crate::RoundingMode::None)?;
-        val.div(&f1, prec, crate::RoundingMode::None)
+        val = val.mul(&f0, prec, crate::RoundingMode::Work)?;
+        val.div(&f1, prec, crate::RoundingMode::Work)
     }
 
     /// Return value of ln(10) with precision k (calculate if needed).

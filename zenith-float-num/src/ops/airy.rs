@@ -170,11 +170,11 @@ impl ExactNumNumber {
         let p = WORD_BIT_SIZE;
         let two = Self::from_word(2, p)?;
         let three = Self::from_word(3, p)?;
-        let sx = self.sqrt(p, RoundingMode::None)?;
-        let x32 = self.mul(&sx, p, RoundingMode::None)?;
+        let sx = self.sqrt(p, RoundingMode::Work)?;
+        let x32 = self.mul(&sx, p, RoundingMode::Work)?;
         let xi = two
-            .div(&three, p, RoundingMode::None)?
-            .mul(&x32, p, RoundingMode::None)?;
+            .div(&three, p, RoundingMode::Work)?
+            .mul(&x32, p, RoundingMode::Work)?;
         Ok(xi.exponent() > 63)
     }
 
@@ -182,9 +182,9 @@ impl ExactNumNumber {
     fn airy_all(&self, p: usize, cc: &mut Consts) -> Result<AiryParts, Error> {
         let (c1, c2, sqrt3) = airy_cs(p, cc)?;
         if self.is_zero() {
-            let bi0 = sqrt3.mul(&c1, p, RoundingMode::None)?;
+            let bi0 = sqrt3.mul(&c1, p, RoundingMode::Work)?;
             let aip0 = c2.neg()?;
-            let bip0 = sqrt3.mul(&c2, p, RoundingMode::None)?;
+            let bip0 = sqrt3.mul(&c2, p, RoundingMode::Work)?;
             let scales = [c1.clone()?, bi0.clone()?, aip0.clone()?, bip0.clone()?];
             return Ok(AiryParts {
                 vals: [c1, bi0, aip0, bip0],
@@ -218,8 +218,8 @@ impl ExactNumNumber {
 
     fn airy_fg_series(&self, p: usize) -> Result<(Self, Self, Self, Self), Error> {
         let x3 = self
-            .mul(self, p, RoundingMode::None)?
-            .mul(self, p, RoundingMode::None)?;
+            .mul(self, p, RoundingMode::Work)?
+            .mul(self, p, RoundingMode::Work)?;
         let one = Self::from_word(1, p)?;
         let mut tf = Self::from_word(1, p)?;
         let mut f = Self::from_word(1, p)?;
@@ -233,33 +233,33 @@ impl ExactNumNumber {
             let k3 = Self::from_word((3 * k) as Word, p)?;
             let k3m1 = Self::from_word((3 * k - 1) as Word, p)?;
             let k3p1 = Self::from_word((3 * k + 1) as Word, p)?;
-            tf = tf.mul(&x3, p, RoundingMode::None)?.div(
-                &k3.mul(&k3m1, p, RoundingMode::None)?,
+            tf = tf.mul(&x3, p, RoundingMode::Work)?.div(
+                &k3.mul(&k3m1, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            f = f.add(&tf, p, RoundingMode::None)?;
+            f = f.add(&tf, p, RoundingMode::Work)?;
             let dtf = tf
-                .mul(&k3, p, RoundingMode::None)?
-                .div(self, p, RoundingMode::None)?;
-            fp = fp.add(&dtf, p, RoundingMode::None)?;
+                .mul(&k3, p, RoundingMode::Work)?
+                .div(self, p, RoundingMode::Work)?;
+            fp = fp.add(&dtf, p, RoundingMode::Work)?;
             let tg = tg_own
                 .as_ref()
                 .unwrap_or(self)
-                .mul(&x3, p, RoundingMode::None)?
+                .mul(&x3, p, RoundingMode::Work)?
                 .div(
-                    &k3p1.mul(&k3, p, RoundingMode::None)?,
+                    &k3p1.mul(&k3, p, RoundingMode::Work)?,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?;
             let g = g_own
                 .as_ref()
                 .unwrap_or(self)
-                .add(&tg, p, RoundingMode::None)?;
+                .add(&tg, p, RoundingMode::Work)?;
             let dtg = tg
-                .mul(&k3p1, p, RoundingMode::None)?
-                .div(self, p, RoundingMode::None)?;
-            gp = gp.add(&dtg, p, RoundingMode::None)?;
+                .mul(&k3p1, p, RoundingMode::Work)?
+                .div(self, p, RoundingMode::Work)?;
+            gp = gp.add(&dtg, p, RoundingMode::Work)?;
             let tf_done = tf.is_zero() || tf.exponent() + (p as i64) < 0;
             let tg_done = tg.is_zero() || tg.exponent() + (p as i64) < 0;
             if tf_done && tg_done {
@@ -274,33 +274,33 @@ impl ExactNumNumber {
     fn airy_asymp_pos(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {
         let (xi, x14, x_m14, pi_m12) = self.airy_xi_scales(p, cc)?;
         let nxi = xi.with_sign(Sign::Neg)?;
-        let exp_m = nxi.exp(p, RoundingMode::None, cc)?;
-        let exp_p = xi.exp(p, RoundingMode::None, cc)?;
+        let exp_m = nxi.exp(p, RoundingMode::Work, cc)?;
+        let exp_p = xi.exp(p, RoundingMode::Work, cc)?;
         let (su, sv) = airy_uv_sums(&xi, p, true)?;
         let (tu, tv) = airy_uv_sums(&xi, p, false)?;
         let half = one_half_airy(p)?;
         let pre_ai = half
-            .mul(&pi_m12, p, RoundingMode::None)?
-            .mul(&x_m14, p, RoundingMode::None)?
-            .mul(&exp_m, p, RoundingMode::None)?;
+            .mul(&pi_m12, p, RoundingMode::Work)?
+            .mul(&x_m14, p, RoundingMode::Work)?
+            .mul(&exp_m, p, RoundingMode::Work)?;
         let pre_bi =
             pi_m12
-                .mul(&x_m14, p, RoundingMode::None)?
-                .mul(&exp_p, p, RoundingMode::None)?;
+                .mul(&x_m14, p, RoundingMode::Work)?
+                .mul(&exp_p, p, RoundingMode::Work)?;
         let pre_aip = half
-            .mul(&pi_m12, p, RoundingMode::None)?
-            .mul(&x14, p, RoundingMode::None)?
-            .mul(&exp_m, p, RoundingMode::None)?
+            .mul(&pi_m12, p, RoundingMode::Work)?
+            .mul(&x14, p, RoundingMode::Work)?
+            .mul(&exp_m, p, RoundingMode::Work)?
             .neg()?;
         let pre_bip =
             pi_m12
-                .mul(&x14, p, RoundingMode::None)?
-                .mul(&exp_p, p, RoundingMode::None)?;
+                .mul(&x14, p, RoundingMode::Work)?
+                .mul(&exp_p, p, RoundingMode::Work)?;
         Ok((
-            pre_ai.mul(&su, p, RoundingMode::None)?,
-            pre_bi.mul(&tu, p, RoundingMode::None)?,
-            pre_aip.mul(&sv, p, RoundingMode::None)?,
-            pre_bip.mul(&tv, p, RoundingMode::None)?,
+            pre_ai.mul(&su, p, RoundingMode::Work)?,
+            pre_bi.mul(&tu, p, RoundingMode::Work)?,
+            pre_aip.mul(&sv, p, RoundingMode::Work)?,
+            pre_bip.mul(&tv, p, RoundingMode::Work)?,
         ))
     }
 
@@ -319,37 +319,37 @@ impl ExactNumNumber {
         match which {
             AiryWhich::Ai | AiryWhich::AiPrime => {
                 let nxi = xi.with_sign(Sign::Neg)?;
-                let exp_m = nxi.exp(p, RoundingMode::None, cc)?;
+                let exp_m = nxi.exp(p, RoundingMode::Work, cc)?;
                 let (su, sv) = airy_uv_sums(&xi, p, true)?;
                 let val = if matches!(which, AiryWhich::Ai) {
-                    half.mul(&pi_m12, p, RoundingMode::None)?
-                        .mul(&x_m14, p, RoundingMode::None)?
-                        .mul(&exp_m, p, RoundingMode::None)?
-                        .mul(&su, p, RoundingMode::None)?
+                    half.mul(&pi_m12, p, RoundingMode::Work)?
+                        .mul(&x_m14, p, RoundingMode::Work)?
+                        .mul(&exp_m, p, RoundingMode::Work)?
+                        .mul(&su, p, RoundingMode::Work)?
                 } else {
-                    half.mul(&pi_m12, p, RoundingMode::None)?
-                        .mul(&x14, p, RoundingMode::None)?
-                        .mul(&exp_m, p, RoundingMode::None)?
+                    half.mul(&pi_m12, p, RoundingMode::Work)?
+                        .mul(&x14, p, RoundingMode::Work)?
+                        .mul(&exp_m, p, RoundingMode::Work)?
                         .neg()?
-                        .mul(&sv, p, RoundingMode::None)?
+                        .mul(&sv, p, RoundingMode::Work)?
                 };
                 // a single term: its own exponent is the scale
                 let scale_exp = val.exponent();
                 Ok((val, scale_exp))
             }
             AiryWhich::Bi | AiryWhich::BiPrime => {
-                let exp_p = xi.exp(p, RoundingMode::None, cc)?;
+                let exp_p = xi.exp(p, RoundingMode::Work, cc)?;
                 let (tu, tv) = airy_uv_sums(&xi, p, false)?;
                 let val = if matches!(which, AiryWhich::Bi) {
                     pi_m12
-                        .mul(&x_m14, p, RoundingMode::None)?
-                        .mul(&exp_p, p, RoundingMode::None)?
-                        .mul(&tu, p, RoundingMode::None)?
+                        .mul(&x_m14, p, RoundingMode::Work)?
+                        .mul(&exp_p, p, RoundingMode::Work)?
+                        .mul(&tu, p, RoundingMode::Work)?
                 } else {
                     pi_m12
-                        .mul(&x14, p, RoundingMode::None)?
-                        .mul(&exp_p, p, RoundingMode::None)?
-                        .mul(&tv, p, RoundingMode::None)?
+                        .mul(&x14, p, RoundingMode::Work)?
+                        .mul(&exp_p, p, RoundingMode::Work)?
+                        .mul(&tv, p, RoundingMode::Work)?
                 };
                 // a single term: its own exponent is the scale
                 let scale_exp = val.exponent();
@@ -366,56 +366,56 @@ impl ExactNumNumber {
         // for z = 2^1000 is off by far more than 2π.
         let wz = round_p(reduction_width(p + WORD_BIT_SIZE, zeta_p.exponent())?);
         let zeta = if wz > p { z.airy_xi_scales(wz, cc)?.0 } else { zeta_p };
-        let pi = cc.pi_num(wz, RoundingMode::None)?;
+        let pi = cc.pi_num(wz, RoundingMode::Work)?;
         let four = Self::from_word(4, wz)?;
-        let pi4 = pi.div(&four, wz, RoundingMode::None)?;
-        let chi = zeta.add(&pi4, wz, RoundingMode::None)?;
-        let (s, c) = chi.sin_cos(p, RoundingMode::None, cc)?;
+        let pi4 = pi.div(&four, wz, RoundingMode::Work)?;
+        let chi = zeta.add(&pi4, wz, RoundingMode::Work)?;
+        let (s, c) = chi.sin_cos(p, RoundingMode::Work, cc)?;
         let (p_even, q_odd) = airy_pq_sums(&zeta, p, false)?;
         let (r_even, s_odd) = airy_pq_sums(&zeta, p, true)?;
-        let amp = pi_m12.mul(&z_m14, p, RoundingMode::None)?;
-        let amp_p = pi_m12.mul(&z14, p, RoundingMode::None)?;
+        let amp = pi_m12.mul(&z_m14, p, RoundingMode::Work)?;
+        let amp_p = pi_m12.mul(&z14, p, RoundingMode::Work)?;
         // Ai(-z) ~ π^{-1/2} z^{-1/4} (sin χ P − cos χ Q)
         let ai = amp.mul(
-            &s.mul(&p_even, p, RoundingMode::None)?.sub(
-                &c.mul(&q_odd, p, RoundingMode::None)?,
+            &s.mul(&p_even, p, RoundingMode::Work)?.sub(
+                &c.mul(&q_odd, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         // Bi(-z) ~ π^{-1/2} z^{-1/4} (cos χ P + sin χ Q)
         let bi = amp.mul(
-            &c.mul(&p_even, p, RoundingMode::None)?.add(
-                &s.mul(&q_odd, p, RoundingMode::None)?,
+            &c.mul(&p_even, p, RoundingMode::Work)?.add(
+                &s.mul(&q_odd, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         // Ai'(-z) ~ −π^{-1/2} z^{1/4} (cos χ R + sin χ S)
         let aip = amp_p
             .mul(
-                &c.mul(&r_even, p, RoundingMode::None)?.add(
-                    &s.mul(&s_odd, p, RoundingMode::None)?,
+                &c.mul(&r_even, p, RoundingMode::Work)?.add(
+                    &s.mul(&s_odd, p, RoundingMode::Work)?,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?
             .neg()?;
         // Bi'(-z) ~ π^{-1/2} z^{1/4} (sin χ R − cos χ S)
         let bip = amp_p.mul(
-            &s.mul(&r_even, p, RoundingMode::None)?.sub(
-                &c.mul(&s_odd, p, RoundingMode::None)?,
+            &s.mul(&r_even, p, RoundingMode::Work)?.sub(
+                &c.mul(&s_odd, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         // Each value is amp·(±sin χ P ± cos χ Q) with |P|, |Q| ≤ 1-ish: the term size is the
         // prefactor; near a zero of the combination the loss is measured against it.
@@ -430,16 +430,16 @@ impl ExactNumNumber {
     fn airy_xi_scales(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {
         let two = Self::from_word(2, p)?;
         let three = Self::from_word(3, p)?;
-        let sx = self.sqrt(p, RoundingMode::None)?;
-        let x32 = self.mul(&sx, p, RoundingMode::None)?;
+        let sx = self.sqrt(p, RoundingMode::Work)?;
+        let x32 = self.mul(&sx, p, RoundingMode::Work)?;
         let xi = two
-            .div(&three, p, RoundingMode::None)?
-            .mul(&x32, p, RoundingMode::None)?;
-        let x14 = sx.sqrt(p, RoundingMode::None)?;
+            .div(&three, p, RoundingMode::Work)?
+            .mul(&x32, p, RoundingMode::Work)?;
+        let x14 = sx.sqrt(p, RoundingMode::Work)?;
         let one = Self::from_word(1, p)?;
-        let x_m14 = one.div(&x14, p, RoundingMode::None)?;
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let pi_m12 = one.div(&pi.sqrt(p, RoundingMode::None)?, p, RoundingMode::None)?;
+        let x_m14 = one.div(&x14, p, RoundingMode::Work)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
+        let pi_m12 = one.div(&pi.sqrt(p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         Ok((xi, x14, x_m14, pi_m12))
     }
 }
@@ -454,7 +454,7 @@ enum AiryWhich {
 
 fn one_half_airy(p: usize) -> Result<ExactNumNumber, Error> {
     let mut h = ExactNumNumber::from_word(1, p)?;
-    h.div_by_2(RoundingMode::None);
+    h.div_by_2(RoundingMode::Work);
     Ok(h)
 }
 
@@ -475,22 +475,22 @@ fn airy_cs(
     let one = ExactNumNumber::from_word(1, p)?;
     let two = ExactNumNumber::from_word(2, p)?;
     let three = ExactNumNumber::from_word(3, p)?;
-    let third = one.div(&three, p, RoundingMode::None)?;
-    let two_third = two.div(&three, p, RoundingMode::None)?;
-    let g23 = two_third.gamma(p, RoundingMode::None, cc)?;
-    let g13 = third.gamma(p, RoundingMode::None, cc)?;
+    let third = one.div(&three, p, RoundingMode::Work)?;
+    let two_third = two.div(&three, p, RoundingMode::Work)?;
+    let g23 = two_third.gamma(p, RoundingMode::Work, cc)?;
+    let g13 = third.gamma(p, RoundingMode::Work, cc)?;
     // `two_third` and `third` are not used again: negate them in place.
     let mut n2t = two_third;
     n2t.set_sign(Sign::Neg);
     let mut nt = third;
     nt.set_sign(Sign::Neg);
     let c1 = three
-        .pow(&n2t, p, RoundingMode::None, cc)?
-        .div(&g23, p, RoundingMode::None)?;
+        .pow(&n2t, p, RoundingMode::Work, cc)?
+        .div(&g23, p, RoundingMode::Work)?;
     let c2 = three
-        .pow(&nt, p, RoundingMode::None, cc)?
-        .div(&g13, p, RoundingMode::None)?;
-    let sqrt3 = three.sqrt(p, RoundingMode::None)?;
+        .pow(&nt, p, RoundingMode::Work, cc)?
+        .div(&g13, p, RoundingMode::Work)?;
+    let sqrt3 = three.sqrt(p, RoundingMode::Work)?;
     Ok((c1, c2, sqrt3))
 }
 
@@ -515,21 +515,21 @@ fn combine_fg(
 ) -> Result<AiryParts, Error> {
     let (c1, c2, sqrt3) = cs;
     let (f, g, fp, gp) = fg;
-    let c1f = c1.mul(f, p, RoundingMode::None)?;
-    let c2g = c2.mul(g, p, RoundingMode::None)?;
-    let c1fp = c1.mul(fp, p, RoundingMode::None)?;
-    let c2gp = c2.mul(gp, p, RoundingMode::None)?;
-    let ai = c1f.sub(&c2g, p, RoundingMode::None)?;
+    let c1f = c1.mul(f, p, RoundingMode::Work)?;
+    let c2g = c2.mul(g, p, RoundingMode::Work)?;
+    let c1fp = c1.mul(fp, p, RoundingMode::Work)?;
+    let c2gp = c2.mul(gp, p, RoundingMode::Work)?;
+    let ai = c1f.sub(&c2g, p, RoundingMode::Work)?;
     let bi = sqrt3.mul(
-        &c1f.add(&c2g, p, RoundingMode::None)?,
+        &c1f.add(&c2g, p, RoundingMode::Work)?,
         p,
-        RoundingMode::None,
+        RoundingMode::Work,
     )?;
-    let aip = c1fp.sub(&c2gp, p, RoundingMode::None)?;
+    let aip = c1fp.sub(&c2gp, p, RoundingMode::Work)?;
     let bip = sqrt3.mul(
-        &c1fp.add(&c2gp, p, RoundingMode::None)?,
+        &c1fp.add(&c2gp, p, RoundingMode::Work)?,
         p,
-        RoundingMode::None,
+        RoundingMode::Work,
     )?;
     // Ai = c1 f - c2 g cancels near its zeros (and at negative x the terms grow like e^{ξ}):
     // the term size is the larger of the two products.
@@ -542,8 +542,8 @@ fn combine_fg(
     };
     let s_f = big(&c1f, &c2g)?;
     let s_fp = big(&c1fp, &c2gp)?;
-    let s_bi = sqrt3.mul(&s_f, p, RoundingMode::None)?;
-    let s_bip = sqrt3.mul(&s_fp, p, RoundingMode::None)?;
+    let s_bi = sqrt3.mul(&s_f, p, RoundingMode::Work)?;
+    let s_bip = sqrt3.mul(&s_fp, p, RoundingMode::Work)?;
     Ok(AiryParts {
         vals: [ai, bi, aip, bip],
         scales: [s_f, s_bi, s_fp, s_bip],
@@ -568,26 +568,26 @@ fn airy_uv_sums(
         let num = ExactNumNumber::from_word((6 * k - 5) as Word, p)?.mul(
             &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         let den = ExactNumNumber::from_word(72, p)?.mul(
             &ExactNumNumber::from_word(k as Word, p)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         u = u
-            .mul(&num, p, RoundingMode::None)?
-            .div(&den, p, RoundingMode::None)?;
-        let mut tu = u.div(xi_pow.as_ref().unwrap_or(xi), p, RoundingMode::None)?;
+            .mul(&num, p, RoundingMode::Work)?
+            .div(&den, p, RoundingMode::Work)?;
+        let mut tu = u.div(xi_pow.as_ref().unwrap_or(xi), p, RoundingMode::Work)?;
         // v_k = −(6k+1)/(6k−1) · u_k (DLMF 9.7.2).
         let vfac = ExactNumNumber::from_word((6 * k + 1) as Word, p)?
             .div(
                 &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?
             .neg()?;
-        let mut tv = tu.mul(&vfac, p, RoundingMode::None)?;
+        let mut tv = tu.mul(&vfac, p, RoundingMode::Work)?;
         if alt && k % 2 == 1 {
             tu = tu.neg()?;
             tv = tv.neg()?;
@@ -595,8 +595,8 @@ fn airy_uv_sums(
         if tu.abs_cmp(&prev_u) > 0 {
             break;
         }
-        sum_u = sum_u.add(&tu, p, RoundingMode::None)?;
-        sum_v = sum_v.add(&tv, p, RoundingMode::None)?;
+        sum_u = sum_u.add(&tu, p, RoundingMode::Work)?;
+        sum_v = sum_v.add(&tv, p, RoundingMode::Work)?;
         if tu.is_zero() || tu.exponent() + (p as i64) < 0 {
             break;
         }
@@ -605,7 +605,7 @@ fn airy_uv_sums(
             xi_pow
                 .as_ref()
                 .unwrap_or(xi)
-                .mul(xi, p, RoundingMode::None)?,
+                .mul(xi, p, RoundingMode::Work)?,
         );
     }
     Ok((sum_u, sum_v))
@@ -629,28 +629,28 @@ fn airy_pq_sums(
         let num = ExactNumNumber::from_word((6 * k - 5) as Word, p)?.mul(
             &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         let den = ExactNumNumber::from_word(72, p)?.mul(
             &ExactNumNumber::from_word(k as Word, p)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         u = u
-            .mul(&num, p, RoundingMode::None)?
-            .div(&den, p, RoundingMode::None)?;
-        zpow = zpow.mul(zeta, p, RoundingMode::None)?;
-        let mut t = u.div(&zpow, p, RoundingMode::None)?;
+            .mul(&num, p, RoundingMode::Work)?
+            .div(&den, p, RoundingMode::Work)?;
+        zpow = zpow.mul(zeta, p, RoundingMode::Work)?;
+        let mut t = u.div(&zpow, p, RoundingMode::Work)?;
         if use_v {
             // v_k = −(6k+1)/(6k−1) · u_k (DLMF 9.7.2).
             let vfac = ExactNumNumber::from_word((6 * k + 1) as Word, p)?
                 .div(
                     &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?
                 .neg()?;
-            t = t.mul(&vfac, p, RoundingMode::None)?;
+            t = t.mul(&vfac, p, RoundingMode::Work)?;
         }
         // (−1)^{⌊k/2⌋} on u_k ζ^{-k} for both P (even k) and Q (odd k).
         let sign_neg = (k / 2) % 2 == 1;
@@ -661,9 +661,9 @@ fn airy_pq_sums(
             break;
         }
         if k % 2 == 0 {
-            even = even.add(&t, p, RoundingMode::None)?;
+            even = even.add(&t, p, RoundingMode::Work)?;
         } else {
-            odd = odd.add(&t, p, RoundingMode::None)?;
+            odd = odd.add(&t, p, RoundingMode::Work)?;
         }
         if t.is_zero() || t.exponent() + (p as i64) < 0 {
             break;

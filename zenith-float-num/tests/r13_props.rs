@@ -19,18 +19,6 @@ const MODES: [RoundingMode; 7] = [
     RoundingMode::None,
 ];
 
-/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
-/// Up, Down, ToZero, FromZero). NONE-GAP F-B: a `None` overflow gives +-Inf; Jeff ruled +-MAX (toward zero at rp(p,
-/// 64)).
-const NONE_GAP_MODES: [RoundingMode; 6] = [
-    RoundingMode::ToEven,
-    RoundingMode::ToOdd,
-    RoundingMode::Up,
-    RoundingMode::Down,
-    RoundingMode::ToZero,
-    RoundingMode::FromZero,
-];
-
 fn cfg() -> ProptestConfig {
     ProptestConfig::with_cases(PROPTEST_CASES)
 }
@@ -252,11 +240,11 @@ fn hypot_specials() {
 fn hypot_overflow_is_directional() {
     for p in [64usize, 192, 1024] {
         let max = ExactNum::max_value(p);
-        // NONE-GAP F-B: hypot(max, max) overflows under None (ZF-M27)
-        for rm in NONE_GAP_MODES {
+        // F-B (ZF-M27, M27-OVF): hypot(max, max) overflows under None; None saturates to +-MAX, checked in every mode
+        for rm in MODES {
             let r = max.hypot(&max, p, rm);
             match rm {
-                RoundingMode::Down | RoundingMode::ToZero => {
+                RoundingMode::Down | RoundingMode::ToZero | RoundingMode::None => {
                     assert_eq!(
                         r.compare(&ExactNum::max_value(p)),
                         Some(0),

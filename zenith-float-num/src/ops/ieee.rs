@@ -109,7 +109,7 @@ impl ExactNumNumber {
                         shl,
                         s1,
                         self.mantissa_max_bit_len(),
-                        RoundingMode::None,
+                        RoundingMode::Work,
                         flags,
                     )?;
                     let mut b = Self::from_word(1, WORD_BIT_SIZE)?;

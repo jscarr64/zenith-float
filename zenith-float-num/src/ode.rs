@@ -73,7 +73,7 @@ fn const_c_step_count_exceeds(remain: &ExactNum, h: &ExactNum, wrk: usize) -> bo
     if !finite(remain) || !finite(h) || h.is_zero() || h.is_negative() || remain.is_zero() {
         return false;
     }
-    let n = remain.abs_ref().div(&h.abs_ref(), wrk, RoundingMode::None);
+    let n = remain.abs_ref().div(&h.abs_ref(), wrk, RoundingMode::Work);
     if !finite(&n) {
         return true;
     }
@@ -189,64 +189,64 @@ where
     }
     let wrk = work_p(p);
     let n_f = ExactNum::from_u64(n_steps as u64, wrk);
-    let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
+    let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::Work).div(&n_f, wrk, RoundingMode::Work);
     let two = ExactNum::from_u8(2, wrk);
     let six = ExactNum::from_u8(6, wrk);
-    let half_h = ExactNum::div_ref(&h, &two, wrk, RoundingMode::None);
+    let half_h = ExactNum::div_ref(&h, &two, wrk, RoundingMode::Work);
     let mut ts = Vec::with_capacity(n_steps + 1);
     let mut ys = Vec::with_capacity(n_steps + 1);
     // The rows own every state: each step reads the last one in place (`ts[k]`, `ys[k]`) and
     // pushes the next, so no state is copied into the rows.
-    ts.push(t0.rounded_to(wrk, RoundingMode::None));
-    ys.push(y0.rounded_to(wrk, RoundingMode::None));
+    ts.push(t0.rounded_to(wrk, RoundingMode::Work));
+    ys.push(y0.rounded_to(wrk, RoundingMode::Work));
     for k in 0..n_steps {
         let (t, y) = (&ts[k], &ys[k]);
-        let k1 = f(t, y, wrk, RoundingMode::None, cc);
-        let y2 = ExactNum::mul_ref(&half_h, &k1, wrk, RoundingMode::None).add(
+        let k1 = f(t, y, wrk, RoundingMode::Work, cc);
+        let y2 = ExactNum::mul_ref(&half_h, &k1, wrk, RoundingMode::Work).add(
             y,
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
-        let t2 = ExactNum::add_ref(t, &half_h, wrk, RoundingMode::None);
-        let k2 = f(&t2, &y2, wrk, RoundingMode::None, cc);
-        let y3 = ExactNum::mul_ref(&half_h, &k2, wrk, RoundingMode::None).add(
+        let t2 = ExactNum::add_ref(t, &half_h, wrk, RoundingMode::Work);
+        let k2 = f(&t2, &y2, wrk, RoundingMode::Work, cc);
+        let y3 = ExactNum::mul_ref(&half_h, &k2, wrk, RoundingMode::Work).add(
             y,
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
-        let k3 = f(&t2, &y3, wrk, RoundingMode::None, cc);
+        let k3 = f(&t2, &y3, wrk, RoundingMode::Work, cc);
         let y4 =
-            ExactNum::mul_ref(&h, &k3, wrk, RoundingMode::None).add(y, wrk, RoundingMode::None);
-        let t4 = ExactNum::add_ref(t, &h, wrk, RoundingMode::None);
-        let k4 = f(&t4, &y4, wrk, RoundingMode::None, cc);
+            ExactNum::mul_ref(&h, &k3, wrk, RoundingMode::Work).add(y, wrk, RoundingMode::Work);
+        let t4 = ExactNum::add_ref(t, &h, wrk, RoundingMode::Work);
+        let k4 = f(&t4, &y4, wrk, RoundingMode::Work, cc);
         if !finite(&k1) || !finite(&k2) || !finite(&k3) || !finite(&k4) {
             return None;
         }
         let sum = k1
             .add(
-                &ExactNum::from_u8(2, wrk).mul(&k2, wrk, RoundingMode::None),
+                &ExactNum::from_u8(2, wrk).mul(&k2, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
             .add(
-                &ExactNum::from_u8(2, wrk).mul(&k3, wrk, RoundingMode::None),
+                &ExactNum::from_u8(2, wrk).mul(&k3, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
-            .add(&k4, wrk, RoundingMode::None);
+            .add(&k4, wrk, RoundingMode::Work);
         let y = ExactNum::add_ref(
             y,
-            &ExactNum::div_ref(&h, &six, wrk, RoundingMode::None).mul(
+            &ExactNum::div_ref(&h, &six, wrk, RoundingMode::Work).mul(
                 &sum,
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             ),
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         let t = ExactNum::from_u64((k + 1) as u64, wrk)
-            .mul(&h, wrk, RoundingMode::None)
-            .add(t0, wrk, RoundingMode::None);
+            .mul(&h, wrk, RoundingMode::Work)
+            .add(t0, wrk, RoundingMode::Work);
         if !finite(&t) || !finite(&y) {
             return None;
         }
@@ -279,28 +279,28 @@ where
     }
     let wrk = work_p(p);
     let n_f = ExactNum::from_u64(n_steps as u64, wrk);
-    let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
+    let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::Work).div(&n_f, wrk, RoundingMode::Work);
     let mut ts = Vec::with_capacity(n_steps + 1);
     let mut ys = Vec::with_capacity(n_steps + 1);
     // The rows own every state: each step reads the last one in place (`ts[k]`, `ys[k]`) and
     // pushes the next, so no state is copied into the rows.
-    ts.push(t0.rounded_to(wrk, RoundingMode::None));
-    ys.push(y0.rounded_to(wrk, RoundingMode::None));
+    ts.push(t0.rounded_to(wrk, RoundingMode::Work));
+    ys.push(y0.rounded_to(wrk, RoundingMode::Work));
     for k in 0..n_steps {
         let (t, y) = (&ts[k], &ys[k]);
-        let yp = f(t, y, wrk, RoundingMode::None);
+        let yp = f(t, y, wrk, RoundingMode::Work);
         if !finite(&yp) {
             return None;
         }
         let y = ExactNum::add_ref(
             y,
-            &yp.mul(&h, wrk, RoundingMode::None),
+            &yp.mul(&h, wrk, RoundingMode::Work),
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         let t = ExactNum::from_u64((k + 1) as u64, wrk)
-            .mul(&h, wrk, RoundingMode::None)
-            .add(t0, wrk, RoundingMode::None);
+            .mul(&h, wrk, RoundingMode::Work)
+            .add(t0, wrk, RoundingMode::Work);
         if !finite(&t) || !finite(&y) {
             return None;
         }
@@ -541,7 +541,7 @@ fn step_scale(
     } else {
         big
     };
-    ExactNum::mul_ref(rtol, ymax, wrk, RoundingMode::None).add(atol, wrk, RoundingMode::None)
+    ExactNum::mul_ref(rtol, ymax, wrk, RoundingMode::Work).add(atol, wrk, RoundingMode::Work)
 }
 
 fn step_ok(err: &ExactNum, scale: &ExactNum) -> bool {
@@ -556,8 +556,8 @@ fn wrk_supports_tol(atol: &ExactNum, rtol: &ExactNum, y: &ExactNum, wrk: usize) 
     if scale.is_zero() || !finite(&scale) {
         return false;
     }
-    let floor = ode_min_step(wrk, RoundingMode::None);
-    let padded = floor.ldexp(8, wrk, RoundingMode::None);
+    let floor = ode_min_step(wrk, RoundingMode::Work);
+    let padded = floor.ldexp(8, wrk, RoundingMode::Work);
     matches!(padded.compare(&scale), Some(c) if c < 0)
 }
 
@@ -647,15 +647,15 @@ fn rk45_at_prec<F>(
 where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    let tab = Dp45::new(wrk, RoundingMode::None);
-    let hmin = ode_min_step(wrk, RoundingMode::None);
-    let fac = frac(ODE_FAC_NUM, ODE_FAC_DEN, wrk, RoundingMode::None);
+    let tab = Dp45::new(wrk, RoundingMode::Work);
+    let hmin = ode_min_step(wrk, RoundingMode::Work);
+    let fac = frac(ODE_FAC_NUM, ODE_FAC_DEN, wrk, RoundingMode::Work);
     let grow = ExactNum::from_i64(ODE_H_GROW, wrk);
-    let shrink = frac(1, ODE_H_SHRINK_DEN, wrk, RoundingMode::None);
-    let mut t = t0.rounded_to(wrk, RoundingMode::None);
-    let mut y = y0.rounded_to(wrk, RoundingMode::None);
-    let span = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None);
-    let mut h = span.ldexp_ref(-4, wrk, RoundingMode::None);
+    let shrink = frac(1, ODE_H_SHRINK_DEN, wrk, RoundingMode::Work);
+    let mut t = t0.rounded_to(wrk, RoundingMode::Work);
+    let mut y = y0.rounded_to(wrk, RoundingMode::Work);
+    let span = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::Work);
+    let mut h = span.ldexp_ref(-4, wrk, RoundingMode::Work);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
     let mut stable_n: u32 = 0;
@@ -667,7 +667,7 @@ where
             push_pair(&mut ts, &mut ys, t, y);
             break;
         }
-        let remain_v = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
+        let remain_v = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::Work);
         // A step longer than what remains is cut to it: h takes the remainder by move.
         let remain: &ExactNum = if h.compare(&remain_v) == Some(1) {
             h = remain_v;
@@ -675,18 +675,18 @@ where
         } else {
             &remain_v
         };
-        let t_try = ExactNum::add_ref(&t, &h, wrk, RoundingMode::None);
+        let t_try = ExactNum::add_ref(&t, &h, wrk, RoundingMode::Work);
         let no_progress = t_try.compare(&t) == Some(0)
             || h.is_zero()
             || h.is_negative()
             || !finite(&h)
             || h.compare(&hmin) == Some(-1);
         if no_progress {
-            let yp = f(&t, &y, wrk, RoundingMode::None, cc);
+            let yp = f(&t, &y, wrk, RoundingMode::Work, cc);
             if !finite(&yp) {
                 return Err(OdeError::InvalidArgument);
             }
-            let leftover = remain.abs_ref().mul(&yp.abs(), wrk, RoundingMode::None);
+            let leftover = remain.abs_ref().mul(&yp.abs(), wrk, RoundingMode::Work);
             let scale = step_scale(atol, rtol, &y, &y, wrk);
             if leftover.is_zero()
                 || leftover.compare(&scale) == Some(-1)
@@ -700,13 +700,13 @@ where
             }
             return Err(OdeError::ToleranceUnreachable);
         }
-        let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, (wrk, RoundingMode::None), cc)
+        let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, (wrk, RoundingMode::Work), cc)
             .ok_or(OdeError::InvalidArgument)?;
-        let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::None).abs();
+        let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::Work).abs();
         let scale = step_scale(atol, rtol, &y, &y5, wrk);
         let ok = step_ok(&err, &scale);
         if ok {
-            let mut t_new = ExactNum::add_ref(&t, &h, wrk, RoundingMode::None);
+            let mut t_new = ExactNum::add_ref(&t, &h, wrk, RoundingMode::Work);
             if t_new.compare(t1) == Some(1) {
                 t_new = t1.clone();
             }
@@ -721,10 +721,10 @@ where
             );
         } else {
             // Error stuck at the rounding floor cannot be driven down at this wrk.
-            let floor = ode_min_step(wrk, RoundingMode::None).mul(
-                &ExactNum::from_u8(1, wrk).add(&y.abs_ref(), wrk, RoundingMode::None),
+            let floor = ode_min_step(wrk, RoundingMode::Work).mul(
+                &ExactNum::from_u8(1, wrk).add(&y.abs_ref(), wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             if !err.is_zero()
                 && (err.compare(&floor) == Some(-1) || err.compare(&floor) == Some(0))
@@ -738,9 +738,9 @@ where
             &grow
         } else {
             let q = scale
-                .div(&err, wrk, RoundingMode::None)
-                .nth_root(5, wrk, RoundingMode::None);
-            raw = q.mul(&fac, wrk, RoundingMode::None);
+                .div(&err, wrk, RoundingMode::Work)
+                .nth_root(5, wrk, RoundingMode::Work);
+            raw = q.mul(&fac, wrk, RoundingMode::Work);
             if raw.compare(&grow) == Some(1) {
                 &grow
             } else if raw.compare(&shrink) == Some(-1) {
@@ -749,7 +749,7 @@ where
                 &raw
             }
         };
-        let h_next = ExactNum::mul_ref(&h, ratio, wrk, RoundingMode::None);
+        let h_next = ExactNum::mul_ref(&h, ratio, wrk, RoundingMode::Work);
         let h_used = core::mem::replace(&mut h, h_next);
         if !ok && !finite(&h) {
             return Err(OdeError::InvalidArgument);
@@ -768,13 +768,13 @@ where
                 let grew = match stable_h0.as_ref() {
                     Some(h0) => {
                         let mark =
-                            h0.ldexp_ref(ODE_DP_STABILITY_GROW_BITS, wrk, RoundingMode::None);
+                            h0.ldexp_ref(ODE_DP_STABILITY_GROW_BITS, wrk, RoundingMode::Work);
                         matches!(h_used.compare(&mark), Some(c) if c >= 0)
                     }
                     None => true,
                 };
                 if !grew {
-                    let rem = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
+                    let rem = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::Work);
                     if const_c_step_count_exceeds(&rem, &h, wrk) {
                         return Err(OdeError::ToleranceUnreachable);
                     }
@@ -806,7 +806,7 @@ where
     if n == 0 {
         return Err(OdeError::InvalidArgument);
     }
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let h = ExactNum::div_ref(span, &ExactNum::from_u64(n, wrk), wrk, rm);
     if !finite(&h) || h.is_zero() {
         return Err(OdeError::InvalidArgument);
@@ -872,7 +872,7 @@ fn bs_try_step<F>(
 where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let mut row: Vec<ExactNum> = Vec::with_capacity(ODE_BS_K_MAX);
     for k in 0..ODE_BS_K_MAX {
         let n = 2 * (k as u64 + 1);
@@ -942,7 +942,7 @@ fn bs_at_prec<F>(
 where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let hmin = ode_min_step(wrk, rm);
     let mut h = ExactNum::sub_ref(t1, t0, wrk, rm);
     let mut ts = Vec::new();

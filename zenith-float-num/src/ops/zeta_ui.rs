@@ -14,7 +14,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-const NR: RoundingMode = RoundingMode::None;
+const NR: RoundingMode = RoundingMode::Work;
 
 /// Reciprocal of FLINT `ERROR_B` = `log2(3+sqrt(8))`, as 10000/25431
 /// (1/2.543106606327224 ≈ 0.39322).
@@ -90,7 +90,7 @@ fn zeta_ui_euler_product(n: u64, p: usize) -> ExactNum {
         }
     }
     let mut out = z;
-    let _ = out.set_precision(p, RoundingMode::None);
+    let _ = out.set_precision(p, RoundingMode::Work);
     out
 }
 
@@ -239,6 +239,6 @@ fn zeta_ui_borwein_bsplit(s: u64, p: usize) -> ExactNum {
         return ExactNum::nan(Some(crate::Error::InvalidArgument));
     }
     let mut z = eta.mul(&two_sm1, wp, NR).div(&den_z, wp, NR);
-    let _ = z.set_precision(p, RoundingMode::None);
+    let _ = z.set_precision(p, RoundingMode::Work);
     z
 }

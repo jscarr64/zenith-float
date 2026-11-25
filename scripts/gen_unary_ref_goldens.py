@@ -9,7 +9,8 @@ Oracles, in this order:
   * mpmath: the same exact result independently (fabs, fneg, floor, ldexp at enough bits); it must
     equal FLINT's.
   * an exact integer model rounds that value at p bits (s9.round_rat, with ties-to-odd added and
-    RoundingMode::None as truncation at p rounded up to whole words, with an overflow to Inf). For in-range normal results in the
+    RoundingMode::None as toward zero at p rounded up to whole words; an overflow saturates to signed MAX
+    at that storage precision, inexact: ZF-M27 F-B, rulings M27-FB / M27-OVF). For in-range normal results in the
     five IEEE modes, mpmath's own rounding (libmp.normalize) must give the same bits.
 Rows: every mode, both signs, signed zeros, Inf, NaN, subnormal operands and results, exact and inexact
 ldexp, ties at p bits, overflow at EXPONENT_MAX and underflow below EXPONENT_MIN (Exponent extremes too).
@@ -52,10 +53,8 @@ s9.away = away7  # round_rat looks `away` up in its module
 
 def model_round(sign: str, n: int, ez: int, p: int, rm: str) -> dict:
     if rm == "None":
-        # No rounding: the stored words are truncated, and an overflow is Inf (RoundingMode::None does
-        # not round toward zero; see ExactNum::result_to_ext_rm).
-        if n.bit_length() + ez > EMAX:
-            return s9.inf(sign)
+        # Toward zero at the storage precision; an overflow saturates to signed MAX with every storage bit
+        # set (ZF-M27 F-B, rulings M27-FB / M27-OVF; ExactNum::result_to_ext_rm).
         return s9.round_rat(sign, n, 1, ez, s9.round_p(p), "ToZero")
     return s9.round_rat(sign, n, 1, ez, p, rm)
 

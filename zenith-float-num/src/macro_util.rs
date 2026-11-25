@@ -107,11 +107,11 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
                     } else {
                         let err = match fun {
                             TrigFun::Sin => {
-                                let pi = cc.pi(p, RoundingMode::None);
+                                let pi = cc.pi(p, RoundingMode::Work);
                                 let mut argrem = arg.rem(&pi);
                                 argrem.set_sign(Sign::Pos);
                                 if argrem.exponent().unwrap_or(0) > 1 {
-                                    argrem = argrem.sub(&pi, p, RoundingMode::None);
+                                    argrem = argrem.sub(&pi, p, RoundingMode::Work);
                                 }
                                 if argrem.is_zero() {
                                     if p > emin.unsigned_abs() as usize {
@@ -130,12 +130,12 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
                                 }
                             }
                             TrigFun::Cos => {
-                                let mut pi = cc.pi(p, RoundingMode::None);
+                                let mut pi = cc.pi(p, RoundingMode::Work);
                                 let mut argrem = arg.rem(&pi);
                                 if argrem.exponent().unwrap_or(0) == 1 {
                                     argrem.set_sign(Sign::Pos);
                                     pi.set_exponent(1);
-                                    argrem = argrem.sub(&pi, p, RoundingMode::None);
+                                    argrem = argrem.sub(&pi, p, RoundingMode::Work);
                                     if argrem.is_zero() {
                                         if p > emin.unsigned_abs() as usize {
                                             0
@@ -156,12 +156,12 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
                                 }
                             }
                             TrigFun::Tan => {
-                                let mut pi = cc.pi(p, RoundingMode::None);
+                                let mut pi = cc.pi(p, RoundingMode::Work);
                                 pi.set_exponent(1);
                                 let mut argrem = arg.rem(&pi);
                                 argrem.set_sign(Sign::Pos);
                                 if argrem.exponent().unwrap_or(0) > 0 {
-                                    argrem = argrem.sub(&pi, p, RoundingMode::None);
+                                    argrem = argrem.sub(&pi, p, RoundingMode::Work);
                                 }
                                 if argrem.is_zero() {
                                     if p > emin.unsigned_abs() as usize {

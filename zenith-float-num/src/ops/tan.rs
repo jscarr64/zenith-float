@@ -100,15 +100,15 @@ impl ExactNumNumber {
         let mut add_p = (3 - TRIG_EXP_THRES) as usize;
         loop {
             let p_x = p_wrk + add_p;
-            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::Work)?;
 
-            x = x.reduce_trig_arg(cc, RoundingMode::None)?;
+            x = x.reduce_trig_arg(cc, RoundingMode::Work)?;
 
-            let (t, _) = x.trig_arg_pi_proximity(cc, RoundingMode::None)?;
+            let (t, _) = x.trig_arg_pi_proximity(cc, RoundingMode::Work)?;
             if add_p < t {
                 add_p = t;
             } else {
-                let mut ret = x.tan_series(RoundingMode::None)?;
+                let mut ret = x.tan_series(RoundingMode::Work)?;
 
                 if ret.try_set_precision(p, rm, p_wrk)? {
                     ret.set_inexact(ret.inexact() | self.inexact());

@@ -22,7 +22,7 @@ use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 use core::ops::Neg;
 
-const N: RoundingMode = RoundingMode::None;
+const N: RoundingMode = RoundingMode::Work;
 
 /// Upper bound `m · 2^e` with `m < 2^32` (`m = 0` is zero). Every operation rounds up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

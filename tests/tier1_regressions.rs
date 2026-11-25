@@ -2085,10 +2085,11 @@ fn zf_11_riemann_zeta_reflection_large_s() -> Result<(), String> {
     ] {
         let s = parse_real(s).must("s")?;
         for p in [128usize, 256] {
-            for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+            for rm in MODES {
                 let z = s.riemann_zeta(p, rm, &mut cc);
+                // None rounds toward zero at rp(p, 64) = p here, so it saturates too (F-B, ZF-M27 M27-OVF)
                 let toward = match rm {
-                    RoundingMode::ToZero => true,
+                    RoundingMode::ToZero | RoundingMode::None => true,
                     RoundingMode::Up => neg,
                     RoundingMode::Down => !neg,
                     _ => false,
@@ -2365,10 +2366,11 @@ fn zf_11_wide_argument_ln_gamma_and_zeta_sign() -> Result<(), String> {
             s = s.ldexp(-1, 4096, RoundingMode::ToEven);
         }
         for p in [64usize, 128] {
-            for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+            for rm in MODES {
                 let z = s.riemann_zeta(p, rm, &mut cc);
+                // None rounds toward zero at rp(p, 64) = p here, so it saturates too (F-B, ZF-M27 M27-OVF)
                 let toward = match rm {
-                    RoundingMode::ToZero => true,
+                    RoundingMode::ToZero | RoundingMode::None => true,
                     RoundingMode::Up => neg,
                     RoundingMode::Down => !neg,
                     _ => false,
@@ -3020,7 +3022,11 @@ fn zf_72_no_abort_si_barnes_g_zeta() -> Result<(), String> {
     let x = parse_real("-80f7671c63e7f577p-33").must("w")?;
     for rm in MODES {
         let v = x.barnes_g(64, rm, &mut cc);
-        let max = matches!(rm, RoundingMode::Down | RoundingMode::ToZero);
+        // A positive overflow saturates to MAX toward zero; `None` is toward zero (ZF-M27, M27-OVF).
+        let max = matches!(
+            rm,
+            RoundingMode::Down | RoundingMode::ToZero | RoundingMode::None
+        );
         assert!(
             !v.is_negative()
                 && if max { v.compare(&ExactNum::max_value(64)) == Some(0) } else { v.is_inf() },

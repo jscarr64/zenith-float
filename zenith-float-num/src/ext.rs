@@ -166,6 +166,13 @@ impl ExactNum {
         self.add_op(d2, 0, RoundingMode::None, true)
     }
 
+    /// [`Self::add_full_prec`] in the working mode: an overflow stays +-Inf, the library's own overflow signal
+    /// (the public form saturates to +-MAX, ZF-M27 M27-OVF). Hidden: for the workspace crates (zenith-float-bound).
+    #[doc(hidden)]
+    pub fn add_full_work(&self, d2: &Self) -> Self {
+        self.add_op(d2, 0, RoundingMode::Work, true)
+    }
+
     fn add_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
@@ -177,7 +184,12 @@ impl ExactNum {
                     },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
-                    p,
+                    // A full-precision overflow saturates at the larger operand length (F-B, M27-OVF).
+                    if full_prec {
+                        v1.mantissa_max_bit_len().max(v2.mantissa_max_bit_len())
+                    } else {
+                        p
+                    },
                     rm,
                 ),
                 Flavor::Inf(s2) => ExactNum {
@@ -226,6 +238,13 @@ impl ExactNum {
         self.sub_op(d2, 0, RoundingMode::None, true)
     }
 
+    /// [`Self::sub_full_prec`] in the working mode: an overflow stays +-Inf, the library's own overflow signal
+    /// (the public form saturates to +-MAX, ZF-M27 M27-OVF). Hidden: for the workspace crates (zenith-float-bound).
+    #[doc(hidden)]
+    pub fn sub_full_work(&self, d2: &Self) -> Self {
+        self.sub_op(d2, 0, RoundingMode::Work, true)
+    }
+
     fn sub_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
@@ -237,7 +256,12 @@ impl ExactNum {
                     },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
-                    p,
+                    // A full-precision overflow saturates at the larger operand length (F-B, M27-OVF).
+                    if full_prec {
+                        v1.mantissa_max_bit_len().max(v2.mantissa_max_bit_len())
+                    } else {
+                        p
+                    },
                     rm,
                 ),
                 Flavor::Inf(s2) => {
@@ -318,6 +342,13 @@ impl ExactNum {
         self.mul_op(d2, 0, RoundingMode::None, true)
     }
 
+    /// [`Self::mul_full_prec`] in the working mode: an overflow stays +-Inf, the library's own overflow signal
+    /// (the public form saturates to +-MAX, ZF-M27 M27-OVF). Hidden: for the workspace crates (zenith-float-bound).
+    #[doc(hidden)]
+    pub fn mul_full_work(&self, d2: &Self) -> Self {
+        self.mul_op(d2, 0, RoundingMode::Work, true)
+    }
+
     /// Computes `self * b + c` with precision `p`, rounded once with `rm`.
     ///
     /// Unlike `mul` followed by `add`, the product is not rounded to `p` before the addition.
@@ -351,7 +382,7 @@ impl ExactNum {
                 Self::result_to_ext_rm(a.fma(bv, cv, p, rm), false, true, p, rm)
             }
             _ => {
-                let prod = ExactNum::mul_ref(self, b, p, RoundingMode::None);
+                let prod = ExactNum::mul_ref(self, b, p, RoundingMode::Work);
                 prod.add(c, p, rm)
             }
         }
@@ -376,7 +407,7 @@ impl ExactNum {
         if self.is_inf() || b.is_inf() {
             return (self.add(b, p, rm), Self::new(p));
         }
-        let exact = self.add_full_prec(b);
+        let exact = self.add_full_work(b);
         if exact.is_inf() {
             // finite operands whose exact result is past the range: `hi` follows the mode
             // (MAX toward zero, Inf otherwise), as a rounded add/mul does; `lo` is zero.
@@ -397,7 +428,7 @@ impl ExactNum {
             Ok(hi) => hi,
             Err(err) => return (Self::nan(Some(err)), Self::nan(Some(err))),
         };
-        let lo = exact.sub_full_prec(&hi);
+        let lo = exact.sub_full_work(&hi);
         (hi, Self::normalize_eft_lo(lo, p))
     }
 
@@ -414,7 +445,7 @@ impl ExactNum {
         // of the larger operand and `big − hi` is narrow and exact. Then `lo = (big − hi) + small`
         // exactly, and one rounded add gives it correctly rounded.
         let (big, small) = if self.abs_cmp(b) == Some(-1) { (b, self) } else { (self, b) };
-        let d = big.sub_full_prec(&hi);
+        let d = big.sub_full_work(&hi);
         if d.is_nan() {
             return (Self::nan(d.err()), Self::nan(d.err()));
         }
@@ -448,7 +479,7 @@ impl ExactNum {
         if self.is_inf() || b.is_inf() {
             return (ExactNum::mul_ref(self, b, p, rm), Self::new(p));
         }
-        let exact = self.mul_full_prec(b);
+        let exact = self.mul_full_work(b);
         if exact.is_inf() {
             // finite operands whose exact result is past the range: `hi` follows the mode
             // (MAX toward zero, Inf otherwise), as a rounded add/mul does; `lo` is zero.
@@ -462,7 +493,7 @@ impl ExactNum {
             Ok(hi) => hi,
             Err(err) => return (Self::nan(Some(err)), Self::nan(Some(err))),
         };
-        let lo = exact.sub_full_prec(&hi);
+        let lo = exact.sub_full_work(&hi);
         (hi, Self::normalize_eft_lo(lo, p))
     }
 
@@ -491,7 +522,7 @@ impl ExactNum {
         };
         let mut acc = Self::new(p_wrk);
         for x in xs {
-            acc = acc.add(x, p_wrk, RoundingMode::None);
+            acc = acc.add(x, p_wrk, RoundingMode::Work);
         }
         if let Err(err) = acc.set_precision(p, rm) {
             return Self::nan(Some(err));
@@ -533,8 +564,8 @@ impl ExactNum {
         };
         let mut acc = Self::new(p_wrk);
         for (x, y) in xs.iter().zip(ys.iter()) {
-            let prod = ExactNum::mul_ref(x, y, p_wrk, RoundingMode::None);
-            acc = acc.add(&prod, p_wrk, RoundingMode::None);
+            let prod = ExactNum::mul_ref(x, y, p_wrk, RoundingMode::Work);
+            acc = acc.add(&prod, p_wrk, RoundingMode::Work);
         }
         if let Err(err) = acc.set_precision(p, rm) {
             return Self::nan(Some(err));
@@ -571,12 +602,12 @@ impl ExactNum {
             Some(v) => v,
             None => return Self::nan(Some(Error::InvalidArgument)),
         };
-        let mut acc = match coeffs[coeffs.len() - 1].try_rounded_to(p_wrk, RoundingMode::None) {
+        let mut acc = match coeffs[coeffs.len() - 1].try_rounded_to(p_wrk, RoundingMode::Work) {
             Ok(acc) => acc,
             Err(err) => return Self::nan(Some(err)),
         };
         for a in coeffs.iter().rev().skip(1) {
-            acc = acc.fma(x, a, p_wrk, RoundingMode::None);
+            acc = acc.fma(x, a, p_wrk, RoundingMode::Work);
         }
         if let Err(err) = acc.set_precision(p, rm) {
             return Self::nan(Some(err));
@@ -630,7 +661,12 @@ impl ExactNum {
                         },
                         v1.is_zero(),
                         v1.sign() == v2.sign(),
-                        p,
+                        // A full-precision overflow saturates at the exact product's length (F-B, M27-OVF).
+                        if full_prec {
+                            v1.mantissa_max_bit_len() + v2.mantissa_max_bit_len()
+                        } else {
+                            p
+                        },
                         rm,
                     ),
                     Flavor::Inf(s2) => {
@@ -1258,7 +1294,7 @@ impl ExactNum {
                         ExactNumNumber::convert_from_radix(s, m, 0, rdx, usize::MAX, rm, cc)
                             .and_then(|mut v| {
                                 let w = v.mantissa_max_bit_len().max(round_p(p) + WORD_BIT_SIZE);
-                                v.set_precision(w, RoundingMode::None)?;
+                                v.set_precision(w, RoundingMode::Work)?;
                                 let at = i128::from(e) + i128::from(v.exponent());
                                 v.place_scaled(at, false, p, rm)
                             });
@@ -1624,7 +1660,7 @@ impl ExactNum {
         if let Err(e) = crate::common::util::reserve_probe(round_p(p)) {
             return Self::nan(Some(e));
         }
-        let direct = rm == RoundingMode::None;
+        let direct = rm.skips_rounding();
         let mut r = if direct {
             f(p, rm)
         } else if p.is_multiple_of(WORD_BIT_SIZE) {
@@ -1785,18 +1821,22 @@ impl ExactNum {
     ) -> ExactNum {
         match res {
             Err(Error::ExponentOverflow(s)) => {
-                let toward_zero = matches!(
-                    (s.is_positive(), rm),
-                    (_, RoundingMode::ToZero)
-                        | (true, RoundingMode::Down)
-                        | (false, RoundingMode::Up)
-                );
-                if toward_zero {
+                // Public `None` rounds toward zero at the storage precision, so an overflow of finite operands
+                // saturates to the signed largest value (ZF-M27 rulings M27-FB / M27-OVF). The working mode `Work`
+                // keeps +-Inf: it is the library's own overflow signal.
+                if rm.saturates_overflow(s.is_positive()) {
                     match ExactNumNumber::max_value(p) {
                         Ok(mut m) => {
-                            // The largest value representable with exactly `p` bits.
-                            if let Err(e) = m.set_precision(p, RoundingMode::ToZero) {
-                                return Self::result_to_ext(Err(e), is_dividend_zero, is_same_sign);
+                            // The largest value representable with exactly `p` bits; `None` keeps the storage
+                            // precision (every bit of the word-rounded `p`).
+                            if rm != RoundingMode::None {
+                                if let Err(e) = m.set_precision(p, RoundingMode::ToZero) {
+                                    return Self::result_to_ext(
+                                        Err(e),
+                                        is_dividend_zero,
+                                        is_same_sign,
+                                    );
+                                }
                             }
                             m.set_sign(s);
                             m.set_inexact(true);
@@ -2023,7 +2063,7 @@ impl ExactNum {
     /// the per-operation flag to false (nothing was rounded); nothing is cloned.
     pub(crate) fn neg_via_mul(&self) -> Self {
         let p = self.mantissa_max_bit_len().unwrap_or(crate::WORD_BIT_SIZE);
-        Self::from_i8(-1, p).mul(self, p, RoundingMode::None)
+        Self::from_i8(-1, p).mul(self, p, RoundingMode::Work)
     }
 
     /// Mantissa words, significant bits, sign, exponent and inexact flag of a finite value.
@@ -2501,7 +2541,7 @@ impl ExactNum {
         F: FnOnce(usize, RoundingMode) -> Result<ExactNumNumber, Error>,
     {
         // `p` is a public precision here (`ldexp` checked it), so `wp` cannot overflow.
-        let direct = rm == RoundingMode::None;
+        let direct = rm.skips_rounding();
         let wide_p = round_p(p).checked_add(WORD_BIT_SIZE);
         let mut r = if direct || zero {
             Self::result_to_ext_rm(ldexp(p, rm), zero, true, p, rm)
@@ -3008,7 +3048,7 @@ Accuracy: correctly-rounded",
         };
         let trunc_odd = self.trunc_is_odd()?;
         let round_up = match rm {
-            RoundingMode::None => return Err(Error::InvalidArgument),
+            RoundingMode::None | RoundingMode::Work => return Err(Error::InvalidArgument),
             RoundingMode::ToZero => false,
             RoundingMode::FromZero => true,
             RoundingMode::Up => !negative,
@@ -7237,15 +7277,15 @@ mod grid_digest_tests {
         r: &'a ExactNum,
     }
 
-    /// NONE-GAP F-B: a `None` result of finite operands that is +-Inf is an overflow cell, and Jeff ruled
-    /// (2026-11-11 12:03 and 12:15 PM CT) that a `None` overflow saturates to +-MAX (toward zero at rp(p, 64)). Today it
-    /// gives +-Inf, a known-wrong bit, so the cell is counted and left out of the digest. It is fixed red-first in the
-    /// ZF-M27 PR, which re-pins this digest with the cells back in. A division by zero (or the reciprocal of zero) is a
-    /// pole, not an overflow, and stays hashed. The cells are listed by dump line in
-    /// `fold-pr1-162-grid-wrong-cells.tsv` (PR #39 body).
-    fn dd_none_gap(
+    /// F-B (ZF-M27, rulings M27-FB / M27-OVF, Jeff 2026-11-11 12:03 and 12:15 PM CT): a `None` overflow of finite
+    /// operands saturates to the signed largest value at rp(p, 64), flagged inexact. Asserted per cell: a `None`
+    /// result of finite operands is never +-Inf, except at a pole (a division by zero or the reciprocal of zero).
+    /// `sat` counts the saturated cells (+-MAX flagged inexact; a full-precision cell, `p = 0`, saturates at the
+    /// exact product's precision, the sum of the operands' mantissa lengths); every cell is hashed. None of these
+    /// operations gives NaN for finite non-pole operands, so NaN is rejected too.
+    fn dd_none_ovf(
         h: &mut DefaultHasher,
-        gap: &mut usize,
+        sat: &mut usize,
         cell: DigestCell<'_>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let DigestCell {
@@ -7259,9 +7299,21 @@ mod grid_digest_tests {
         let finite = args.iter().all(|a| !a.is_inf() && !a.is_nan());
         let pole = (op == "div" && args.get(1).is_some_and(|d| d.is_zero()))
             || (op == "reciprocal" && args.first().is_some_and(|d| d.is_zero()));
-        if rm == RoundingMode::None && r.is_inf() && finite && !pole {
-            *gap += 1;
-            return Ok(());
+        if rm == RoundingMode::None && finite && !pole {
+            if r.is_inf() || r.is_nan() {
+                return Err(format!(
+                    "F-B: {op}{args:?} {ints:?} p={p} None gives {r}, ruled signed MAX"
+                )
+                .into());
+            }
+            let cp = if p == 0 {
+                args.iter().filter_map(|a| a.mantissa_max_bit_len()).sum()
+            } else {
+                p
+            };
+            let cap =
+                if r.is_negative() { ExactNum::min_value(cp) } else { ExactNum::max_value(cp) };
+            *sat += usize::from(r.inexact() && r.compare(&cap) == Some(0));
         }
         dd(h, op, args, ints, p, rm, r)
     }
@@ -7271,7 +7323,7 @@ mod grid_digest_tests {
     fn tz_overflow(rm: RoundingMode, r: &ExactNum) -> bool {
         r.is_inf()
             && match rm {
-                RoundingMode::None | RoundingMode::ToZero => true,
+                RoundingMode::None | RoundingMode::Work | RoundingMode::ToZero => true,
                 RoundingMode::Down => r.is_positive(),
                 RoundingMode::Up => r.is_negative(),
                 _ => false,
@@ -7325,15 +7377,15 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        let mut gap = 0usize;
+        let mut sat = 0usize;
         for i in 0..OPERANDS {
             for n in shifts {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
                         let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
-                        dd_none_gap(
+                        dd_none_ovf(
                             &mut *hh,
-                            &mut gap,
+                            &mut sat,
                             DigestCell {
                                 op: "ldexp",
                                 args: &[&operand(i)],
@@ -7343,9 +7395,9 @@ mod grid_digest_tests {
                                 r: &operand(i).ldexp(n, p, rm),
                             },
                         )?;
-                        dd_none_gap(
+                        dd_none_ovf(
                             &mut *hh,
-                            &mut gap,
+                            &mut sat,
                             DigestCell {
                                 op: "ldexp",
                                 args: &[&operand(i)],
@@ -7362,8 +7414,8 @@ mod grid_digest_tests {
         }
         assert_eq!(count, OPERANDS * 16 * 7 * RMS.len() * 2);
         println!("ldexp grid digest = {}", h.finish());
-        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
-        assert_eq!(gap, 378);
+        // F-B (ZF-M27): the 378 None overflow cells saturate to +-MAX, flagged inexact, and are hashed
+        assert_eq!(sat, 378);
         // Re-pinned (F9a-4): was 1_196_293_272_222_150_608, with the None overflow cells in (NONE-GAP F-B).
         println!(
             "ldexp_and_scalb_grid_digest ToOdd digest = {}",
@@ -7371,7 +7423,9 @@ mod grid_digest_tests {
         );
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 3_256_206_381_344_692_312);
-        assert_eq!(h.finish(), 14_437_472_841_843_974_673);
+        // Re-pinned (ZF-M27 F-B): was 14_437_472_841_843_974_673,
+        // with the 378 None overflow cells in, now +-MAX inexact.
+        assert_eq!(h.finish(), 6_503_637_742_051_086_360);
         Ok(())
     }
 
@@ -7756,16 +7810,16 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        let mut gap = 0usize;
-        let mut held_fb_full = 0usize;
+        let mut sat = 0usize;
+        let mut sat_full = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
                         let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
-                        dd_none_gap(
+                        dd_none_ovf(
                             &mut *hh,
-                            &mut gap,
+                            &mut sat,
                             DigestCell {
                                 op: "mul",
                                 args: &[&operand(i), &operand(j)],
@@ -7775,9 +7829,9 @@ mod grid_digest_tests {
                                 r: &operand(i).mul(&operand(j), p, rm),
                             },
                         )?;
-                        dd_none_gap(
+                        dd_none_ovf(
                             &mut *hh,
-                            &mut gap,
+                            &mut sat,
                             DigestCell {
                                 op: "div",
                                 args: &[&operand(i), &operand(j)],
@@ -7790,11 +7844,10 @@ mod grid_digest_tests {
                         count += 2;
                     }
                 }
-                // NONE-GAP F-B (F9d-17): `mul_full_prec` always runs in None, so a true overflow gives +-Inf
-                // where the 12:03 / 12:15 PM CT rulings give +-MAX (ZF-M27). Counted in `held_fb_full`, not hashed.
-                dd_none_gap(
+                // F-B (F9d-17): `mul_full_prec` runs in None, so a true overflow saturates to +-MAX (ZF-M27).
+                dd_none_ovf(
                     &mut h,
-                    &mut held_fb_full,
+                    &mut sat_full,
                     DigestCell {
                         op: "mul_full",
                         args: &[&operand(i), &operand(j)],
@@ -7812,16 +7865,18 @@ mod grid_digest_tests {
             PAIR_OPERANDS * PAIR_OPERANDS * (7 * RMS.len() * 2 + 1)
         );
         println!("mul/div grid digest = {}", h.finish());
-        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
-        assert_eq!(gap, 448);
-        // NONE-GAP F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells (+-Inf, ruling +-MAX) are not hashed
-        assert_eq!(held_fb_full, 18);
+        // F-B (ZF-M27): the 448 None overflow cells saturate to +-MAX, flagged inexact, and are hashed
+        assert_eq!(sat, 448);
+        // F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells saturate to +-MAX and are hashed
+        assert_eq!(sat_full, 18);
         // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
         println!("mul_div_grid_digest ToOdd digest = {}", h_odd.finish());
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
         // Re-pinned (F9d-17): was 6_854_509_046_823_660_977, with the 18 `mul_full_prec` None-overflow cells in.
-        assert_eq!(h.finish(), 12_397_414_023_097_760_287);
+        // Re-pinned (ZF-M27 F-B): was 12_397_414_023_097_760_287,
+        // with the 448 None overflow cells and the 18 `mul_full_prec` cells in, now +-MAX inexact.
+        assert_eq!(h.finish(), 2_177_073_813_900_661_100);
         Ok(())
     }
 
@@ -7977,16 +8032,16 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        let mut gap = 0usize;
-        let mut held_fb_full = 0usize;
+        let mut sat = 0usize;
+        let mut sat_full = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
                         let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
-                        dd_none_gap(
+                        dd_none_ovf(
                             &mut *hh,
-                            &mut gap,
+                            &mut sat,
                             DigestCell {
                                 op: "mul",
                                 args: &[&operand(i), &operand(j)],
@@ -7996,9 +8051,9 @@ mod grid_digest_tests {
                                 r: &ExactNum::mul_ref(&operand(i), &operand(j), p, rm),
                             },
                         )?;
-                        dd_none_gap(
+                        dd_none_ovf(
                             &mut *hh,
-                            &mut gap,
+                            &mut sat,
                             DigestCell {
                                 op: "div",
                                 args: &[&operand(i), &operand(j)],
@@ -8011,11 +8066,10 @@ mod grid_digest_tests {
                         count += 2;
                     }
                 }
-                // NONE-GAP F-B (F9d-17): `mul_full_prec` always runs in None, so a true overflow gives +-Inf
-                // where the 12:03 / 12:15 PM CT rulings give +-MAX (ZF-M27). Counted in `held_fb_full`, not hashed.
-                dd_none_gap(
+                // F-B (F9d-17): `mul_full_prec` runs in None, so a true overflow saturates to +-MAX (ZF-M27).
+                dd_none_ovf(
                     &mut h,
-                    &mut held_fb_full,
+                    &mut sat_full,
                     DigestCell {
                         op: "mul_full",
                         args: &[&operand(i), &operand(j)],
@@ -8032,10 +8086,10 @@ mod grid_digest_tests {
             count,
             PAIR_OPERANDS * PAIR_OPERANDS * (7 * RMS.len() * 2 + 1)
         );
-        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
-        assert_eq!(gap, 448);
-        // NONE-GAP F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells (+-Inf, ruling +-MAX) are not hashed
-        assert_eq!(held_fb_full, 18);
+        // F-B (ZF-M27): the 448 None overflow cells saturate to +-MAX, flagged inexact, and are hashed
+        assert_eq!(sat, 448);
+        // F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells saturate to +-MAX and are hashed
+        assert_eq!(sat_full, 18);
         // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
         println!(
             "mul_ref_div_ref_grid_digest ToOdd digest = {}",
@@ -8044,7 +8098,9 @@ mod grid_digest_tests {
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
         // Re-pinned (F9d-17): was 6_854_509_046_823_660_977, with the 18 `mul_full_prec` None-overflow cells in.
-        assert_eq!(h.finish(), 12_397_414_023_097_760_287);
+        // Re-pinned (ZF-M27 F-B): was 12_397_414_023_097_760_287,
+        // with the 448 None overflow cells and the 18 `mul_full_prec` cells in, now +-MAX inexact.
+        assert_eq!(h.finish(), 2_177_073_813_900_661_100);
         Ok(())
     }
 
@@ -8056,15 +8112,15 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        let mut gap = 0usize;
+        let mut sat = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
                     let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     let x = operand(i);
-                    dd_none_gap(
+                    dd_none_ovf(
                         &mut *hh,
-                        &mut gap,
+                        &mut sat,
                         DigestCell {
                             op: "sqr",
                             args: &[&x],
@@ -8080,8 +8136,8 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * RMS.len());
         println!("square grid digest = {}", h.finish());
-        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
-        assert_eq!(gap, 36);
+        // F-B (ZF-M27): the 36 None overflow cells saturate to +-MAX, flagged inexact, and are hashed
+        assert_eq!(sat, 36);
         // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
         println!(
             "square_via_mul_ref_grid_digest ToOdd digest = {}",
@@ -8089,7 +8145,8 @@ mod grid_digest_tests {
         );
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 6_177_630_421_833_126_124);
-        assert_eq!(h.finish(), 6_265_526_590_754_367_528);
+        // Re-pinned (ZF-M27 F-B): was 6_265_526_590_754_367_528, with the 36 None overflow cells in, now +-MAX inexact.
+        assert_eq!(h.finish(), 5_427_081_749_038_324_214);
         Ok(())
     }
 
@@ -8100,14 +8157,14 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        let mut gap = 0usize;
+        let mut sat = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
                     let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
-                    dd_none_gap(
+                    dd_none_ovf(
                         &mut *hh,
-                        &mut gap,
+                        &mut sat,
                         DigestCell {
                             op: "sqr",
                             args: &[&operand(i)],
@@ -8122,13 +8179,14 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * RMS.len());
-        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
-        assert_eq!(gap, 36);
+        // F-B (ZF-M27): the 36 None overflow cells saturate to +-MAX, flagged inexact, and are hashed
+        assert_eq!(sat, 36);
         // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
         println!("sqr_grid_digest ToOdd digest = {}", h_odd.finish());
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 6_177_630_421_833_126_124);
-        assert_eq!(h.finish(), 6_265_526_590_754_367_528);
+        // Re-pinned (ZF-M27 F-B): was 6_265_526_590_754_367_528, with the 36 None overflow cells in, now +-MAX inexact.
+        assert_eq!(h.finish(), 5_427_081_749_038_324_214);
         Ok(())
     }
 
@@ -8217,7 +8275,7 @@ mod grid_digest_tests {
                     let one = ExactNum::from_u8(1, 64);
                     let unit = ExactNum::sub_ref(&t, &one, 64, RoundingMode::ToEven).is_zero()
                         || ExactNum::add_ref(&t, &one, 64, RoundingMode::ToEven).is_zero();
-                    let f16 = rm == RoundingMode::None && t.inexact() && unit;
+                    let f16 = rm.skips_rounding() && t.inexact() && unit;
                     dd_held(
                         &mut *hh,
                         &mut held_f16,
@@ -9221,22 +9279,22 @@ mod grid_digest_tests {
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut held_f17 = 0usize;
-        let mut gap = 0usize;
+        let mut sat = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 53, 64, 128, 200, 320] {
                 for rm in RMS {
                     let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     // F-17 (N-2): reciprocal(third(320)) at p = 200 under None is exactly 3; toward zero at
                     // rp(200, 64) is below 3.
-                    let f17 = rm == RoundingMode::None && i == 6 && p == 200;
+                    let f17 = rm.skips_rounding() && i == 6 && p == 200;
                     let r = operand(i).reciprocal(p, rm);
                     if f17 {
                         held_f17 += 1;
                     } else {
-                        // NONE-GAP F-B: a None overflow (+-Inf, the ruling is +-MAX) is counted, not hashed
-                        dd_none_gap(
+                        // F-B (ZF-M27): a None overflow saturates to +-MAX (asserted, counted in `sat`) and is hashed
+                        dd_none_ovf(
                             &mut *hh,
-                            &mut gap,
+                            &mut sat,
                             DigestCell {
                                 op: "reciprocal",
                                 args: &[&operand(i)],
@@ -9266,9 +9324,9 @@ mod grid_digest_tests {
         assert_eq!(count, PAIR_OPERANDS * 6 * 6 * RMS.len());
         // F-17 (N-2, ZF-M27): the None reciprocal(third(320)) cell at p = 200 (exactly 3) is not hashed
         assert_eq!(held_f17, 1);
-        // NONE-GAP F-B: the None overflow cells (reciprocal of the two subnormals, +-Inf where the ruling is +-MAX)
-        // are not hashed (ZF-M27)
-        assert_eq!(gap, 12);
+        // F-B (ZF-M27): the 12 None overflow cells (reciprocal of the two subnormals) saturate to +-MAX, flagged
+        // inexact, and are hashed
+        assert_eq!(sat, 12);
         println!("reciprocal nth_root grid digest = {}", h.finish());
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
@@ -9281,7 +9339,9 @@ mod grid_digest_tests {
         assert_eq!(h_odd.finish(), 18_016_007_569_384_113_393);
         // Re-pinned (F9d-3): was 2_411_520_695_892_384_189, with the None F-17 cell in.
         // Re-pinned (F9d-4): was 2_925_947_817_663_390_226, with the 12 None F-B overflow cells in.
-        assert_eq!(h.finish(), 1_241_375_420_610_093_665);
+        // Re-pinned (ZF-M27 F-B): was 1_241_375_420_610_093_665,
+        // with the 12 None reciprocal overflow cells in, now +-MAX inexact.
+        assert_eq!(h.finish(), 1_381_026_833_852_829_853);
         Ok(())
     }
 

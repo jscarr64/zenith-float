@@ -24,7 +24,7 @@ use core::ops::Neg;
 const EI_SERIES_THRESHOLD: u32 = 16;
 
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
-    let a = z.abs(p, RoundingMode::None);
+    let a = z.abs(p, RoundingMode::Work);
     let b = ExactNum::from_u32(bound, p);
     matches!(a.compare(&b), Some(c) if c < 0)
 }
@@ -44,10 +44,10 @@ fn use_ei_series(z: &ExactComplex, dest_p: usize) -> bool {
 /// about \(e^{\lvert z\rvert}\) and the result about \(e^{\mathrm{Re}\,z}/\lvert z\rvert\).
 fn ei_series_loss_bits(z: &ExactComplex) -> usize {
     let p = 64;
-    let az = z.abs(p, RoundingMode::None);
+    let az = z.abs(p, RoundingMode::Work);
     let d =
-        az.sub(z.re(), p, RoundingMode::None)
-            .add(&ExactNum::from_u32(1, p), p, RoundingMode::None);
+        az.sub(z.re(), p, RoundingMode::Work)
+            .add(&ExactNum::from_u32(1, p), p, RoundingMode::Work);
     match d.exponent() {
         Some(e) if e > 0 => {
             // d < 2^e and 1.4427 d < 1.5 * 2^e
@@ -313,18 +313,18 @@ impl ExactComplex {
             if s == 0 {
                 a
             } else {
-                let pi = cc.pi(work_p, RoundingMode::None);
+                let pi = cc.pi(work_p, RoundingMode::Work);
                 let pi = if s < 0 { pi.neg() } else { pi };
                 let (re, im) = a.into_parts();
-                ExactComplex::new(re, im.add(&pi, work_p, RoundingMode::None))
+                ExactComplex::new(re, im.add(&pi, work_p, RoundingMode::Work))
             }
         }
     }
 
     /// \(\mathrm{Ei}(z)=\gamma+\mathrm{Ln}\,z+\sum z^n/(n\cdot n!)\). Principal \(\mathrm{Ln}\).
     fn ei_series(&self, p: usize, cc: &mut Consts) -> Self {
-        let g = ExactComplex::from_real(cc.euler_gamma(p, RoundingMode::None), p);
-        let lnz = self.ln(p, RoundingMode::None, cc);
+        let g = ExactComplex::from_real(cc.euler_gamma(p, RoundingMode::Work), p);
+        let lnz = self.ln(p, RoundingMode::Work, cc);
         // The first term and the sum both start at `z` itself: `None` reads the borrowed `self`.
         let mut term: Option<Self> = None;
         let mut sum: Option<Self> = None;
@@ -335,11 +335,11 @@ impl ExactComplex {
             let term_new = term
                 .as_ref()
                 .unwrap_or(self)
-                .mul(self, p, RoundingMode::None)
-                .div(&nw, p, RoundingMode::None);
-            let piece = term_new.div(&nw, p, RoundingMode::None);
+                .mul(self, p, RoundingMode::Work)
+                .div(&nw, p, RoundingMode::Work);
+            let piece = term_new.div(&nw, p, RoundingMode::Work);
             let sum_new =
-                ExactComplex::add_ref(sum.as_ref().unwrap_or(self), &piece, p, RoundingMode::None);
+                ExactComplex::add_ref(sum.as_ref().unwrap_or(self), &piece, p, RoundingMode::Work);
             if term_negligible(&piece, p) {
                 break sum_new;
             }
@@ -350,15 +350,15 @@ impl ExactComplex {
             sum = Some(sum_new);
             n = next;
         };
-        g.add(&lnz, p, RoundingMode::None)
-            .add(&sum, p, RoundingMode::None)
+        g.add(&lnz, p, RoundingMode::Work)
+            .add(&sum, p, RoundingMode::Work)
     }
 
     /// \(\mathrm{Ei}(z)\sim e^z/z\sum k!/z^k\), stopped at the smallest term.
     fn ei_asymptotic(&self, p: usize, cc: &mut Consts) -> Self {
         let pre = self
-            .exp(p, RoundingMode::None, cc)
-            .div(self, p, RoundingMode::None);
+            .exp(p, RoundingMode::Work, cc)
+            .div(self, p, RoundingMode::Work);
         let mut term = ExactComplex::one(p);
         let mut s = ExactComplex::one(p);
         let mut prev_e = Exponent::MIN;
@@ -366,17 +366,17 @@ impl ExactComplex {
         loop {
             let kk = ExactComplex::from_real(ExactNum::from_u32(k, p), p);
             term = term
-                .mul(&kk, p, RoundingMode::None)
-                .div(self, p, RoundingMode::None);
+                .mul(&kk, p, RoundingMode::Work)
+                .div(self, p, RoundingMode::Work);
             let e = term
-                .abs(p, RoundingMode::None)
+                .abs(p, RoundingMode::Work)
                 .exponent()
                 .unwrap_or(Exponent::MIN);
             if k > 1 && e > prev_e {
                 break;
             }
             prev_e = e;
-            s = s.add(&term, p, RoundingMode::None);
+            s = s.add(&term, p, RoundingMode::Work);
             if term_negligible(&term, p) {
                 break;
             }
@@ -385,7 +385,7 @@ impl ExactComplex {
             };
             k = next;
         }
-        pre.mul(&s, p, RoundingMode::None)
+        pre.mul(&s, p, RoundingMode::Work)
     }
 
     fn si_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -401,41 +401,41 @@ impl ExactComplex {
         if re_neg || (self.re().is_zero() && self.im().is_negative()) {
             return neg_c(self.neg_via_mul().si_at(work_p, dest_p, cc));
         }
-        let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
+        let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::Work);
         let e_plus = iz.ei_at(work_p, dest_p, cc);
         let e_minus = neg_c(iz).ei_at(work_p, dest_p, cc);
-        let two_i = two_c(work_p).mul(&ExactComplex::i(work_p), work_p, RoundingMode::None);
-        let half_pi = pi_c(work_p, cc).mul(&half_c(work_p), work_p, RoundingMode::None);
+        let two_i = two_c(work_p).mul(&ExactComplex::i(work_p), work_p, RoundingMode::Work);
+        let half_pi = pi_c(work_p, cc).mul(&half_c(work_p), work_p, RoundingMode::Work);
         e_plus
-            .sub(&e_minus, work_p, RoundingMode::None)
-            .div(&two_i, work_p, RoundingMode::None)
-            .sub(&half_pi, work_p, RoundingMode::None)
+            .sub(&e_minus, work_p, RoundingMode::Work)
+            .div(&two_i, work_p, RoundingMode::Work)
+            .sub(&half_pi, work_p, RoundingMode::Work)
     }
 
     fn ci_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
-        let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
+        let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::Work);
         let e_plus = iz.ei_at(work_p, dest_p, cc);
         let e_minus = iz.neg_via_mul().ei_at(work_p, dest_p, cc);
         // (Ei(iz) + Ei(-iz)) / 2 = γ + (ln(iz) + ln(-iz)) / 2 + (entire part). The principal
         // Ci(z) = γ + ln z + (entire part) (DLMF 6.2.11), so add i·(arg z − (arg(iz) + arg(−iz)) / 2),
         // which is 0 for Re z > 0 and ±π for Re z < 0.
-        let half_sum = e_plus.add(&e_minus, work_p, RoundingMode::None).div(
+        let half_sum = e_plus.add(&e_minus, work_p, RoundingMode::Work).div(
             &two_c(work_p),
             work_p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
-        let (_, arg_z) = self.ln(work_p, RoundingMode::None, cc).into_parts();
-        let (_, arg_p) = iz.ln(work_p, RoundingMode::None, cc).into_parts();
-        let (_, arg_m) = neg_c(iz).ln(work_p, RoundingMode::None, cc).into_parts();
+        let (_, arg_z) = self.ln(work_p, RoundingMode::Work, cc).into_parts();
+        let (_, arg_p) = iz.ln(work_p, RoundingMode::Work, cc).into_parts();
+        let (_, arg_m) = neg_c(iz).ln(work_p, RoundingMode::Work, cc).into_parts();
         let corr = arg_z.sub(
             &arg_p
-                .add(&arg_m, work_p, RoundingMode::None)
-                .ldexp(-1, work_p, RoundingMode::None),
+                .add(&arg_m, work_p, RoundingMode::Work)
+                .ldexp(-1, work_p, RoundingMode::Work),
             work_p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         let (re, im) = half_sum.into_parts();
-        ExactComplex::new(re, im.add(&corr, work_p, RoundingMode::None))
+        ExactComplex::new(re, im.add(&corr, work_p, RoundingMode::Work))
     }
 
     fn li_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -443,46 +443,46 @@ impl ExactComplex {
         if self.im().is_zero() && self.re().compare(one.re()) == Some(0) {
             return nan_pair(Error::InvalidArgument);
         }
-        self.ln(work_p, RoundingMode::None, cc)
+        self.ln(work_p, RoundingMode::Work, cc)
             .ei_at(work_p, dest_p, cc)
     }
 
     /// One-shot `(S, C)` from complex `erf` (non-finite operands keep its NaN results).
     fn fresnel_pair_plain(&self, p: usize, cc: &mut Consts) -> (Self, Self) {
         let sqrt_pi =
-            ExactComplex::from_real(cc.pi(p, RoundingMode::None).sqrt(p, RoundingMode::None), p);
+            ExactComplex::from_real(cc.pi(p, RoundingMode::Work).sqrt(p, RoundingMode::Work), p);
         let scale = sqrt_pi
-            .mul(self, p, RoundingMode::None)
-            .mul(&half_c(p), p, RoundingMode::None);
+            .mul(self, p, RoundingMode::Work)
+            .mul(&half_c(p), p, RoundingMode::Work);
         let one = ExactComplex::one(p);
         let i = ExactComplex::i(p);
-        let one_p_i = ExactComplex::one(p).add(&i, p, RoundingMode::None);
-        let one_m_i = one.sub(&i, p, RoundingMode::None);
+        let one_p_i = ExactComplex::one(p).add(&i, p, RoundingMode::Work);
+        let one_m_i = one.sub(&i, p, RoundingMode::Work);
         let erf_m = one_m_i
-            .mul(&scale, p, RoundingMode::None)
-            .erf(p, RoundingMode::None, cc);
+            .mul(&scale, p, RoundingMode::Work)
+            .erf(p, RoundingMode::Work, cc);
         let erf_p = one_p_i
-            .mul(&scale, p, RoundingMode::None)
-            .erf(p, RoundingMode::None, cc);
+            .mul(&scale, p, RoundingMode::Work)
+            .erf(p, RoundingMode::Work, cc);
         let c_plus_is =
             one_p_i
-                .mul(&half_c(p), p, RoundingMode::None)
-                .mul(&erf_m, p, RoundingMode::None);
+                .mul(&half_c(p), p, RoundingMode::Work)
+                .mul(&erf_m, p, RoundingMode::Work);
         let c_minus_is =
             one_m_i
-                .mul(&half_c(p), p, RoundingMode::None)
-                .mul(&erf_p, p, RoundingMode::None);
-        let two_i = two_c(p).mul(&i, p, RoundingMode::None);
+                .mul(&half_c(p), p, RoundingMode::Work)
+                .mul(&erf_p, p, RoundingMode::Work);
+        let two_i = two_c(p).mul(&i, p, RoundingMode::Work);
         // `c+ - c-` is `-c- + c+`: both stay borrowed until the sum below takes `c+`.
-        let s = ExactComplex::sub_ref(&c_plus_is, &c_minus_is, p, RoundingMode::None).div(
+        let s = ExactComplex::sub_ref(&c_plus_is, &c_minus_is, p, RoundingMode::Work).div(
             &two_i,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
-        let c = c_plus_is.add(&c_minus_is, p, RoundingMode::None).mul(
+        let c = c_plus_is.add(&c_minus_is, p, RoundingMode::Work).mul(
             &half_c(p),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         (s, c)
     }
@@ -559,7 +559,7 @@ impl ExactComplex {
     /// `(S, C)` as balls: `S ± iC`-type combinations of `erf((1 ∓ i)√π z/2)` (DLMF 7.5.7),
     /// with the erf arguments' rounding carried by [`ExactComplex::erf_of_ball`].
     fn fresnel_pair_ball(&self, q: usize, cc: &mut Consts) -> Option<(CB, CB)> {
-        let sqrt_pi = RB::rounded(cc.pi(q, RoundingMode::None), q)?.sqrt(q)?;
+        let sqrt_pi = RB::rounded(cc.pi(q, RoundingMode::Work), q)?.sqrt(q)?;
         let scale = CB::exact(self).mul_real(&sqrt_pi, q)?.scale2(-1)?;
         let one = || RB::exact(ExactNum::from_u8(1, WORD_BIT_SIZE));
         let one_p_i = CB::from_parts(one(), one());
@@ -581,14 +581,14 @@ fn finite_parts(z: &ExactComplex) -> bool {
 
 /// Signs (−1, 0, 1) of `sin(πx²/2)` and `cos(πx²/2)`, exactly, from `t = x²/2 mod 2`.
 fn pi_half_sq_signs(x: &ExactNum) -> Option<(i32, i32)> {
-    let t = x.mul_full_prec(x).ldexp(
+    let t = x.mul_full_work(x).ldexp(
         -1,
         x.mantissa_max_bit_len()?.saturating_mul(2) + WORD_BIT_SIZE,
-        RoundingMode::None,
+        RoundingMode::Work,
     );
     let r = t.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
     let at = |k: u8, d: i64| {
-        let v = ExactNum::from_u8(k, WORD_BIT_SIZE).ldexp(d, WORD_BIT_SIZE, RoundingMode::None);
+        let v = ExactNum::from_u8(k, WORD_BIT_SIZE).ldexp(d, WORD_BIT_SIZE, RoundingMode::Work);
         r.compare(&v)
     };
     let c0 = r.compare(&ExactNum::new(WORD_BIT_SIZE))?; // r ≥ 0

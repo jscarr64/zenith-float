@@ -121,21 +121,21 @@ impl ExactNumNumber {
 
         loop {
             let p_x = p_wrk + 5;
-            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::Work)?;
 
             // if x > 1 then arctan(x) = pi/2 - arctan(1/x)
             let mut ret = if x.exponent() > 0 {
-                x = x.reciprocal(p_x, RoundingMode::None)?;
+                x = x.reciprocal(p_x, RoundingMode::Work)?;
 
-                let ret = x.atan_series(RoundingMode::None)?;
+                let ret = x.atan_series(RoundingMode::Work)?;
 
-                let mut pi = cc.pi_num(p_x, RoundingMode::None)?;
+                let mut pi = cc.pi_num(p_x, RoundingMode::Work)?;
                 pi.set_exponent(1);
                 pi.set_sign(self.sign());
 
-                pi.sub(&ret, p_x, RoundingMode::None)
+                pi.sub(&ret, p_x, RoundingMode::Work)
             } else {
-                x.atan_series(RoundingMode::None)
+                x.atan_series(RoundingMode::Work)
             }?;
 
             if ret.try_set_precision(p, rm, p_wrk)? {
@@ -194,10 +194,10 @@ impl ExactNumNumber {
         let p = ret.mantissa_max_bit_len();
 
         for _ in 0..n {
-            let xx = ret.mul(&ret, p, RoundingMode::None)?;
-            let n0 = xx.add(&ONE, p, RoundingMode::None)?;
-            let n1 = n0.sqrt(p, RoundingMode::None)?;
-            let n2 = n1.add(&ONE, p, RoundingMode::None)?;
+            let xx = ret.mul(&ret, p, RoundingMode::Work)?;
+            let n0 = xx.add(&ONE, p, RoundingMode::Work)?;
+            let n1 = n0.sqrt(p, RoundingMode::Work)?;
+            let n2 = n1.add(&ONE, p, RoundingMode::Work)?;
             ret = ret.div(&n2, p, RoundingMode::FromZero)?;
         }
 

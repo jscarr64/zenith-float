@@ -2547,8 +2547,8 @@ pub(crate) fn fft_complex(
         return None;
     }
     let wp = fft_work_p(p, re.len())?;
-    round_all(&mut re, wp, RoundingMode::None);
-    round_all(&mut im, wp, RoundingMode::None);
+    round_all(&mut re, wp, RoundingMode::Work);
+    round_all(&mut im, wp, RoundingMode::Work);
     let (mut re, mut im) = fft_core(re, im, inverse, wp, rm, cc)?;
     round_all(&mut re, p, rm);
     round_all(&mut im, p, rm);
@@ -2571,7 +2571,7 @@ fn fft_dit(
     // Inputs widen to `wp` (or keep a wider width) with `RoundingMode::None`, never
     // narrowing, so the only rounding with `rm` is the final one to `p`: no double
     // rounding at n = 1, where no butterfly runs.
-    let (re, im) = fft_split(a, n, wp, RoundingMode::None)?;
+    let (re, im) = fft_split(a, n, wp, RoundingMode::Work)?;
     let (mut re, mut im) = fft_core(re, im, inverse, wp, rm, cc)?;
     round_all(&mut re, p, rm);
     round_all(&mut im, p, rm);

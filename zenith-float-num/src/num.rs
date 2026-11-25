@@ -339,7 +339,7 @@ impl ExactNumNumber {
         let (m, _) = self.m.rounded_from(
             0,
             self.m.max_bit_len(),
-            RoundingMode::None,
+            RoundingMode::Work,
             true,
             &mut unused,
         )?;
@@ -439,7 +439,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     #[inline]
     pub fn add_full_prec(&self, d2: &Self) -> Result<Self, Error> {
-        self.add_sub(d2, 0, 1, RoundingMode::None, true, false)
+        self.add_sub(d2, 0, 1, RoundingMode::Work, true, false)
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation.
@@ -452,7 +452,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     #[inline]
     pub fn sub_full_prec(&self, d2: &Self) -> Result<Self, Error> {
-        self.add_sub(d2, 0, -1, RoundingMode::None, true, false)
+        self.add_sub(d2, 0, -1, RoundingMode::Work, true, false)
     }
 
     /// Multiplies `d2` by `self` and returns the result of the operation with precision `p` rounded according to `rm`.
@@ -478,7 +478,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     #[inline]
     pub fn mul_full_prec(&self, d2: &Self) -> Result<Self, Error> {
-        self.mul_general_case(d2, 0, RoundingMode::None, true, false)
+        self.mul_general_case(d2, 0, RoundingMode::Work, true, false)
     }
 
     /// Exact product of two nonzero values whose exponent may lie outside the range: the significand
@@ -492,7 +492,7 @@ impl ExactNumNumber {
         let (e_shift, m) = self.m.mul(
             &d2.m,
             0,
-            RoundingMode::None,
+            RoundingMode::Work,
             s == Sign::Pos,
             true,
             &mut inexact,
@@ -950,7 +950,7 @@ impl ExactNumNumber {
         if self.m.is_zero() || d2.m.is_zero() {
             return Err(Error::InvalidArgument);
         }
-        self.add_sub_at((e1, e2), d2, 0, 1, RoundingMode::None, (true, false))
+        self.add_sub_at((e1, e2), d2, 0, 1, RoundingMode::Work, (true, false))
     }
 
     // Combined add and sub operations.
@@ -1196,7 +1196,7 @@ impl ExactNumNumber {
         if let Ok(sh) = usize::try_from(sh) {
             let p2 = self.mantissa_max_bit_len().saturating_add(sh);
             if sh > 0 && p2 <= MAX_PRECISION {
-                self.set_precision(p2, RoundingMode::None)?;
+                self.set_precision(p2, RoundingMode::Work)?;
             }
         }
         Ok(())
@@ -1287,8 +1287,10 @@ impl ExactNumNumber {
             || (!is_positive && rm == RoundingMode::Down);
         match class {
             1 => {
-                !matches!(rm, RoundingMode::ToZero | RoundingMode::None)
-                    && (rm != RoundingMode::Down || !is_positive)
+                !matches!(
+                    rm,
+                    RoundingMode::ToZero | RoundingMode::None | RoundingMode::Work
+                ) && (rm != RoundingMode::Down || !is_positive)
                     && (rm != RoundingMode::Up || is_positive)
             }
             0 => match rm {
@@ -1983,7 +1985,7 @@ impl ExactNumNumber {
             let mut unused = false;
             let (m, _) = self
                 .m
-                .rounded_from(0, p, RoundingMode::None, true, &mut unused)?;
+                .rounded_from(0, p, RoundingMode::Work, true, &mut unused)?;
             return Ok((
                 ExactNumNumber {
                     e: self.e,
@@ -2047,7 +2049,7 @@ impl ExactNumNumber {
         F: FnMut(usize, RoundingMode) -> Result<Self, Error>,
     {
         Self::prec_assertion(p)?;
-        if rm == RoundingMode::None {
+        if rm.skips_rounding() {
             return op(p, rm);
         }
         if p.is_multiple_of(WORD_BIT_SIZE) {
@@ -2310,7 +2312,7 @@ impl ExactNumNumber {
         let mut corr = ExactNumNumber::min_positive(p)?;
         corr.set_exponent(self.exponent());
         corr.set_sign(if inv_corr_sign { self.sign().invert() } else { self.sign() });
-        self.add(&corr, p, RoundingMode::None)
+        self.add(&corr, p, RoundingMode::Work)
     }
 
     /// Divide `self` by 2.

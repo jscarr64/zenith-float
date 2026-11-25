@@ -71,15 +71,15 @@ impl ExactNumNumber {
         let mut add_p = (1 - TRIG_EXP_THRES) as usize;
         loop {
             let p_x = p_wrk + add_p;
-            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::Work)?;
 
-            x = x.reduce_trig_arg(cc, RoundingMode::None)?;
+            x = x.reduce_trig_arg(cc, RoundingMode::Work)?;
 
-            let (t, q) = x.trig_arg_pi_proximity(cc, RoundingMode::None)?;
+            let (t, q) = x.trig_arg_pi_proximity(cc, RoundingMode::Work)?;
             if q & 1 == 1 && add_p < t {
                 add_p = t;
             } else {
-                let mut ret = x.cos_series(RoundingMode::None)?;
+                let mut ret = x.cos_series(RoundingMode::Work)?;
                 if ret.try_set_precision(p, rm, p_wrk)? {
                     ret.set_inexact(ret.inexact() | self.inexact());
                     break Ok(ret);
@@ -143,7 +143,7 @@ impl ExactNumNumber {
         // cos(2*x) = 2*cos(x)^2 - 1
         let flags = (self.inexact(), self.op_inexact_raw());
         if self.exponent() < EXPONENT_MIN + n as Exponent {
-            let mut ret = self.rescaled(0, EXPONENT_MIN, p, RoundingMode::None, flags)?;
+            let mut ret = self.rescaled(0, EXPONENT_MIN, p, RoundingMode::Work, flags)?;
             for _ in 0..n - (ret.exponent() - EXPONENT_MIN) as usize {
                 ret = ret.div(&TWO, p, RoundingMode::FromZero)?;
             }
@@ -153,7 +153,7 @@ impl ExactNumNumber {
                 0,
                 self.exponent() - n as Exponent,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
                 flags,
             )
         }
@@ -167,9 +167,9 @@ impl ExactNumNumber {
         let p = cos.mantissa_max_bit_len();
 
         for _ in 0..n {
-            let mut cos2 = cos.mul(&cos, p, RoundingMode::None)?;
+            let mut cos2 = cos.mul(&cos, p, RoundingMode::Work)?;
             cos2.set_exponent(cos2.exponent() + 1);
-            cos = cos2.sub(&ONE, p, RoundingMode::None)?;
+            cos = cos2.sub(&ONE, p, RoundingMode::Work)?;
         }
 
         Ok(cos)

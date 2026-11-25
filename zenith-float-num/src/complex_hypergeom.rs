@@ -18,8 +18,9 @@ use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 use alloc::borrow::Cow;
 
+/// The working mode of this module's intermediate steps (an overflow stays +-Inf).
 fn rm() -> RoundingMode {
-    RoundingMode::None
+    RoundingMode::Work
 }
 
 /// On the branch cut `Re(z) > 1` with `Im(z) = 0`, both signs of zero take the

@@ -64,14 +64,14 @@ impl ExactNumNumber {
 
         loop {
             let p_x = p_wrk + additional_prec;
-            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::Work)?;
             x.set_inexact(false);
 
             // arcsin(x) = arctan(x / sqrt(1 - x^2))
-            let xx = x.mul(&x, p_x, RoundingMode::None)?;
-            let t = ONE.sub(&xx, p_x, RoundingMode::None)?;
-            let s = t.sqrt(p_x, RoundingMode::None)?;
-            let d = x.div(&s, p_x, RoundingMode::None)?;
+            let xx = x.mul(&x, p_x, RoundingMode::Work)?;
+            let t = ONE.sub(&xx, p_x, RoundingMode::Work)?;
+            let s = t.sqrt(p_x, RoundingMode::Work)?;
+            let d = x.div(&s, p_x, RoundingMode::Work)?;
 
             let mut ret = d.atan(p_x, rm, cc)?;
 

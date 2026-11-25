@@ -55,3 +55,9 @@
   Clones 182 -> 181.
 - Batch 10 (Paul 3:36 AM CT): the 8 public-API equal-to-input keeps (ExactInt add x2 / gcd x2, number and ExactNum
   rem, poly primitive_monic x2) state their no-other-way reason: the by-value signature was probed and adds copies.
+- Batch 11 (F-B, ZF-M27, Paul 3:36 AM CT): a `None` overflow of finite operands now saturates to the signed largest
+  value at rp(p, 64), flagged inexact (rulings M27-FB / M27-OVF); `add/sub/mul_full_prec` saturate at the exact
+  length. Internal steps run in the new doc-hidden `RoundingMode::Work`, which keeps +-Inf as the overflow signal
+  (`*_full_work` for the full-precision forms). One predicate, `RoundingMode::saturates_overflow`, serves every
+  directional overflow site. The 60 held oracle rows and every NONE-GAP F-B skip are asserted directly; six grid
+  digests re-pinned with the saturated cells in; seven MPFR golden streams regenerated.

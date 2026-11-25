@@ -134,7 +134,7 @@ impl ExactRational {
             return Self::new(NAN, rat_one());
         }
         let p = work_p(&[&self.num, &self.den, &rhs.num, &rhs.den]);
-        let rm = RoundingMode::None;
+        let rm = RoundingMode::Work;
         let ad = ExactNum::mul_ref(&self.num, &rhs.den, p, rm);
         let bc = ExactNum::mul_ref(&rhs.num, &self.den, p, rm);
         let num = if subtract { ad.sub(&bc, p, rm) } else { ad.add(&bc, p, rm) };
@@ -148,7 +148,7 @@ impl ExactRational {
             return Self::new(NAN, rat_one());
         }
         let p = work_p(&[&self.num, &self.den, &rhs.num, &rhs.den]);
-        let rm = RoundingMode::None;
+        let rm = RoundingMode::Work;
         Self::new(
             ExactNum::mul_ref(&self.num, &rhs.num, p, rm),
             ExactNum::mul_ref(&self.den, &rhs.den, p, rm),
@@ -161,7 +161,7 @@ impl ExactRational {
             return Self::new(NAN, rat_one());
         }
         let p = work_p(&[&self.num, &self.den, &rhs.num, &rhs.den]);
-        let rm = RoundingMode::None;
+        let rm = RoundingMode::Work;
         Self::new(
             ExactNum::mul_ref(&self.num, &rhs.den, p, rm),
             ExactNum::mul_ref(&self.den, &rhs.num, p, rm),
@@ -178,7 +178,7 @@ impl ExactRational {
 
     fn quot(&self) -> ExactNum {
         let p = work_p(&[&self.num, &self.den]);
-        ExactNum::div_ref(&self.num, &self.den, p, RoundingMode::None)
+        ExactNum::div_ref(&self.num, &self.den, p, RoundingMode::Work)
     }
 
     /// Greatest integer `≤ self` as a rational with denominator `1`.
@@ -205,17 +205,17 @@ impl ExactRational {
         // Exact integer division |num| = q·den + r; round up when 2r ≥ den (ties away from zero).
         let p = work_p(&[&self.num, &self.den]);
         // |num| at p bits (exact): copysign with +1, a borrowing op.
-        let a = self.num.copysign(&rat_one(), p, RoundingMode::None);
+        let a = self.num.copysign(&rat_one(), p, RoundingMode::Work);
         let r = a.rem(&self.den);
         let mut q = ExactNum::div_ref(
-            &ExactNum::sub_ref(&a, &r, p, RoundingMode::None),
+            &ExactNum::sub_ref(&a, &r, p, RoundingMode::Work),
             &self.den,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
-        let two_r = ExactNum::add_ref(&r, &r, p, RoundingMode::None);
+        let two_r = ExactNum::add_ref(&r, &r, p, RoundingMode::Work);
         if matches!(two_r.compare(&self.den), Some(c) if c >= 0) {
-            q = ExactNum::add_ref(&q, &rat_one(), p, RoundingMode::None);
+            q = ExactNum::add_ref(&q, &rat_one(), p, RoundingMode::Work);
         }
         if self.num.is_negative() {
             q = q.neg();
@@ -234,8 +234,8 @@ impl ExactRational {
             .max(DEFAULT_P)
             .saturating_add(WORD_BIT_SIZE);
         Self::new(
-            num.to_exact_num(p, RoundingMode::None),
-            den.to_exact_num(p, RoundingMode::None),
+            num.to_exact_num(p, RoundingMode::Work),
+            den.to_exact_num(p, RoundingMode::Work),
         )
     }
 
@@ -303,7 +303,7 @@ impl ExactRational {
             return None;
         }
         let p = work_p(&[&self.num, &self.den, &other.num, &other.den]);
-        let rm = RoundingMode::None;
+        let rm = RoundingMode::Work;
         let left = ExactNum::mul_ref(&self.num, &other.den, p, rm);
         let right = ExactNum::mul_ref(&other.num, &self.den, p, rm);
         match left.compare(&right) {
@@ -470,7 +470,7 @@ impl ExactNum {
             return None;
         }
         let p = den.bit_length().max(WORD_BIT_SIZE);
-        Some(r.to_exact_num(p, RoundingMode::None))
+        Some(r.to_exact_num(p, RoundingMode::Work))
     }
 
     /// Minimum digits in `rdx` that recover `self` exactly when the value is a

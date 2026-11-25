@@ -225,7 +225,7 @@ fn zfn01_public_mul_signs_to_even() -> Result<(), Error> {
 fn zfn01_mul_none_underflow_is_canonical_zero() -> Result<(), Error> {
     let p = WORD_BIT_SIZE;
     let a = ExactNumNumber::min_positive(p)?;
-    let got = a.mul(&a, p, RoundingMode::None)?;
+    let got = a.mul(&a, p, RoundingMode::Work)?;
     assert!(
         is_signed_zero(&got, false),
         "None underflow: zero={} exp={} inexact={}",

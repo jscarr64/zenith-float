@@ -244,10 +244,10 @@ impl ExactNumNumber {
                     let mut num = ExactNumNumber::from_raw_unchecked(m, sign, EXPONENT_MIN, false);
 
                     if p + WORD_BIT_SIZE > num.mantissa_max_bit_len() {
-                        num.set_precision(p + WORD_BIT_SIZE, RoundingMode::None)?;
+                        num.set_precision(p + WORD_BIT_SIZE, RoundingMode::Work)?;
                     }
 
-                    num.subnormalize(e, RoundingMode::None);
+                    num.subnormalize(e, RoundingMode::Work);
 
                     if num.inexact() {
                         num.mantissa_mut().digits_mut()[0] |= 1; // sticky for correct rounding when calling set_precision()
@@ -318,10 +318,10 @@ impl ExactNumNumber {
 
         let mut acc = Self::new(p_wrk)?;
         for &d in digits {
-            acc = acc.mul(&b, p_wrk, RoundingMode::None)?;
+            acc = acc.mul(&b, p_wrk, RoundingMode::Work)?;
             if d > 0 {
                 let dv = Self::from_usize(d as usize)?;
-                acc = acc.add(&dv, p_wrk, RoundingMode::None)?;
+                acc = acc.add(&dv, p_wrk, RoundingMode::Work)?;
             }
         }
 
@@ -438,13 +438,13 @@ impl ExactNumNumber {
             f.set_exponent(park);
 
             if npowmax != 0 {
-                let fpnmax = TEN.powi(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::None)?;
+                let fpnmax = TEN.powi(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::Work)?;
 
                 for _ in 0..npowmax {
                     if n < 0 {
-                        f = f.div(&fpnmax, p_f, RoundingMode::None)?
+                        f = f.div(&fpnmax, p_f, RoundingMode::Work)?
                     } else {
-                        f = f.mul(&fpnmax, p_f, RoundingMode::None)?
+                        f = f.mul(&fpnmax, p_f, RoundingMode::Work)?
                     }
                     shift += i128::from(f.exponent()) - i128::from(park);
                     f.set_exponent(park);
@@ -452,11 +452,11 @@ impl ExactNumNumber {
             };
 
             if tenpowrem != 0 {
-                let fpn = TEN.powi(tenpowrem, p_f, RoundingMode::None)?;
+                let fpn = TEN.powi(tenpowrem, p_f, RoundingMode::Work)?;
                 if n < 0 {
-                    f = f.div(&fpn, p_f, RoundingMode::None)?
+                    f = f.div(&fpn, p_f, RoundingMode::Work)?
                 } else {
-                    f = f.mul(&fpn, p_f, RoundingMode::None)?
+                    f = f.mul(&fpn, p_f, RoundingMode::Work)?
                 }
             }
 
@@ -587,7 +587,7 @@ impl ExactNumNumber {
         is_positive: bool,
         check_roundable: &mut bool,
     ) -> bool {
-        if rm == RoundingMode::None {
+        if rm.skips_rounding() {
             *check_roundable = false;
             return false;
         }
@@ -644,6 +644,7 @@ impl ExactNumNumber {
                         }
                     }
                     RoundingMode::None
+                    | RoundingMode::Work
                     | RoundingMode::Up
                     | RoundingMode::Down
                     | RoundingMode::ToZero
@@ -677,7 +678,10 @@ impl ExactNumNumber {
                             c = true;
                         }
                     }
-                    RoundingMode::None | RoundingMode::ToEven | RoundingMode::ToOdd => {}
+                    RoundingMode::None
+                    | RoundingMode::Work
+                    | RoundingMode::ToEven
+                    | RoundingMode::ToOdd => {}
                 };
             }
 
@@ -842,14 +846,14 @@ impl ExactNumNumber {
             let q = p.saturating_add(WORD_BIT_SIZE * 2);
             let b = Self::from_usize(base as usize)?;
             let r = if exp < 0 {
-                let pwr = b.powsi(exp, q, RoundingMode::None)?;
-                self.mul(&pwr, q, RoundingMode::None)
+                let pwr = b.powsi(exp, q, RoundingMode::Work)?;
+                self.mul(&pwr, q, RoundingMode::Work)
             } else {
                 let neg = exp
                     .checked_neg()
                     .ok_or(Error::ExponentOverflow(self.sign()))?;
-                let pwr = b.powsi(neg, q, RoundingMode::None)?;
-                self.div(&pwr, q, RoundingMode::None)
+                let pwr = b.powsi(neg, q, RoundingMode::Work)?;
+                self.div(&pwr, q, RoundingMode::Work)
             };
             match r {
                 Ok(mut r) => {
@@ -901,14 +905,14 @@ impl ExactNumNumber {
             // `y_hi` is `None` when y + ulp (or y + eps) overflows: that end is "overflow".
             let (y_lo, y_hi): (Self, Option<Self>) = if sy.exp_a + f <= ulp_exp - 2 {
                 let ulp = Self::pow2_i128(ulp_exp, q)?;
-                match y.add(&ulp, q, RoundingMode::None) {
+                match y.add(&ulp, q, RoundingMode::Work) {
                     Ok(hi) => (y, Some(hi)),
                     Err(Error::ExponentOverflow(_)) => (y, None),
                     Err(err) => return Err(err),
                 }
             } else {
                 let eps = Self::pow2_i128(sy.exp_a + f, q)?;
-                match y.add(&eps, q, RoundingMode::None) {
+                match y.add(&eps, q, RoundingMode::Work) {
                     Ok(hi) => (y, Some(hi)),
                     Err(Error::ExponentOverflow(_)) => (y, None),
                     Err(err) => return Err(err),
@@ -995,11 +999,11 @@ impl ExactNumNumber {
         // "ulp" to a minpos-scale value makes the can_round ends disagree at every
         // working precision (PrecisionRetryExhausted). Widen first so the bit survives.
         let mut one = Self::from_usize(1)?;
-        one.set_precision(p, RoundingMode::None)?;
+        one.set_precision(p, RoundingMode::Work)?;
         let e = exp
             .checked_add(1)
             .ok_or(Error::ExponentOverflow(Sign::Pos))?;
-        one.place_scaled(e, false, p, RoundingMode::None)
+        one.place_scaled(e, false, p, RoundingMode::Work)
     }
 
     /// Number of digits `mpfr_get_str` uses when the caller asks for 0 digits:
@@ -1087,8 +1091,8 @@ impl ExactNumNumber {
             .mantissa_max_bit_len()
             .saturating_add(WORD_BIT_SIZE * 4);
         let b = Self::from_usize(base as usize)?;
-        let lb = b.log2(q_log, RoundingMode::None, cc)?;
-        let lx = x.log2(q_log, RoundingMode::None, cc)?;
+        let lb = b.log2(q_log, RoundingMode::Work, cc)?;
+        let lx = x.log2(q_log, RoundingMode::Work, cc)?;
         let lxb = lx.div(&lb, q_log, RoundingMode::Down)?;
         let mut e = Self::floor_to_i64(&lxb)?
             .checked_add(1)
@@ -1135,11 +1139,11 @@ impl ExactNumNumber {
                 n_limbs,
             )?;
             let y = Self::from_scaled_limbs(&sy.a, sy.exp_a, sy.err_ulps.is_some())?;
-            let bn = b.powi(n, p_wrk, RoundingMode::None)?;
+            let bn = b.powi(n, p_wrk, RoundingMode::Work)?;
             let bn1 = if n == 0 {
                 Self::from_usize(1)?
             } else {
-                b.powi(n - 1, p_wrk, RoundingMode::None)?
+                b.powi(n - 1, p_wrk, RoundingMode::Work)?
             };
             // e is floor(log_b |x|)+1; it can be off by one. A wrong scale
             // exponent must not loop forever: after a few adjustments, grow
@@ -1252,8 +1256,8 @@ impl ExactNumNumber {
             return Ok(yint);
         }
         let one = Self::from_usize(1)?;
-        let mut up = yint.add(&one, yint.mantissa_max_bit_len(), RoundingMode::None)?;
-        let mut down = yint.sub(&one, yint.mantissa_max_bit_len(), RoundingMode::None)?;
+        let mut up = yint.add(&one, yint.mantissa_max_bit_len(), RoundingMode::Work)?;
+        let mut down = yint.sub(&one, yint.mantissa_max_bit_len(), RoundingMode::Work)?;
         let mut e_up = *e;
         let mut e_down = *e;
         if up.cmp(bn) >= 0 {
@@ -1263,7 +1267,7 @@ impl ExactNumNumber {
                 .ok_or(Error::ExponentOverflow(x.sign()))?;
         }
         if down.cmp(bn1) < 0 {
-            down = bn.sub(&one, bn.mantissa_max_bit_len(), RoundingMode::None)?;
+            down = bn.sub(&one, bn.mantissa_max_bit_len(), RoundingMode::Work)?;
             e_down = e_down
                 .checked_sub(1)
                 .ok_or(Error::ExponentOverflow(x.sign()))?;
@@ -1341,17 +1345,17 @@ impl ExactNumNumber {
         }
         let eps = Self::pow2_i128(exp_a + f, p)?;
         let q = p.saturating_add(WORD_BIT_SIZE);
-        let lo = y.sub(&eps, q, RoundingMode::None)?;
-        let hi = y.add(&eps, q, RoundingMode::None)?;
+        let lo = y.sub(&eps, q, RoundingMode::Work)?;
+        let hi = y.add(&eps, q, RoundingMode::Work)?;
 
         if y_is_int {
             // Unique integer strictly inside (y - ε, y + ε).
             let start = lo
                 .floor()?
-                .add(&Self::from_usize(1)?, q, RoundingMode::None)?;
+                .add(&Self::from_usize(1)?, q, RoundingMode::Work)?;
             let end = if hi.is_int() && !hi.inexact() {
                 let one = Self::from_usize(1)?;
-                hi.floor()?.sub(&one, q, RoundingMode::None)?
+                hi.floor()?.sub(&one, q, RoundingMode::Work)?
             } else {
                 hi.floor()?
             };
@@ -1365,14 +1369,14 @@ impl ExactNumNumber {
             // Y is a half-integer: isolate 2Y as the unique odd integer in
             // (2y-2ε, 2y+2ε), then apply `rm` to N + 1/2.
             let two = Self::from_usize(2)?;
-            let lo2 = lo.mul(&two, q, RoundingMode::None)?;
-            let hi2 = hi.mul(&two, q, RoundingMode::None)?;
+            let lo2 = lo.mul(&two, q, RoundingMode::Work)?;
+            let hi2 = hi.mul(&two, q, RoundingMode::Work)?;
             let start = lo2
                 .floor()?
-                .add(&Self::from_usize(1)?, q, RoundingMode::None)?;
+                .add(&Self::from_usize(1)?, q, RoundingMode::Work)?;
             let end = if hi2.is_int() && !hi2.inexact() {
                 hi2.floor()?
-                    .sub(&Self::from_usize(1)?, q, RoundingMode::None)?
+                    .sub(&Self::from_usize(1)?, q, RoundingMode::Work)?
             } else {
                 hi2.floor()?
             };
@@ -1380,10 +1384,10 @@ impl ExactNumNumber {
                 return Ok(None);
             }
             // start = 2Y is odd; Y = start/2 = I + 1/2 with I = (start-1)/2.
-            let i = start.sub(&Self::from_usize(1)?, q, RoundingMode::None)?;
-            let half_up = i.div(&two, q, RoundingMode::None)?;
-            let half = Self::from_usize(1)?.div(&two, q, RoundingMode::None)?;
-            let mut yhalf = half_up.add(&half, q, RoundingMode::None)?;
+            let i = start.sub(&Self::from_usize(1)?, q, RoundingMode::Work)?;
+            let half_up = i.div(&two, q, RoundingMode::Work)?;
+            let half = Self::from_usize(1)?.div(&two, q, RoundingMode::Work)?;
+            let mut yhalf = half_up.add(&half, q, RoundingMode::Work)?;
             yhalf.set_inexact(false);
             return Self::round_exact_significand_to_int(&yhalf, rm, sign);
         }
@@ -1425,9 +1429,9 @@ impl ExactNumNumber {
         }
         let frac = y.clone()?.fract()?;
         let p = y.mantissa_max_bit_len();
-        let half = Self::from_usize(1)?.div(&Self::from_usize(2)?, p, RoundingMode::None)?;
+        let half = Self::from_usize(1)?.div(&Self::from_usize(2)?, p, RoundingMode::Work)?;
         let inc = match rm {
-            RoundingMode::None | RoundingMode::ToZero => false,
+            RoundingMode::None | RoundingMode::Work | RoundingMode::ToZero => false,
             RoundingMode::FromZero => !frac.is_zero(),
             RoundingMode::Up => sign.is_positive() && !frac.is_zero(),
             RoundingMode::Down => sign.is_negative() && !frac.is_zero(),
@@ -1455,7 +1459,7 @@ impl ExactNumNumber {
             Ok(Some(fl.add(
                 &one,
                 fl.mantissa_max_bit_len(),
-                RoundingMode::None,
+                RoundingMode::Work,
             )?))
         } else {
             Ok(Some(fl))
@@ -2545,7 +2549,8 @@ mod tests {
                     | RoundingMode::ToOdd
                     | RoundingMode::FromZero
                     | RoundingMode::ToZero
-                    | RoundingMode::None => {
+                    | RoundingMode::None
+                    | RoundingMode::Work => {
                         // indifferent of sign
                         for is_positive in [true, false] {
                             let ovf = ExactNumNumber::round_dec(

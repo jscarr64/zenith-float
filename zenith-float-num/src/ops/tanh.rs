@@ -58,7 +58,7 @@ impl ExactNumNumber {
         loop {
             // 2|self| widened to p_x (above its precision) with flags cleared
             let p_x = p_wrk + additional_prec;
-            let mut x = self.try_rounded_exact(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_exact(p_x, RoundingMode::Work)?;
             x.set_sign(Sign::Pos);
             x.set_exponent(x.exponent() + 1);
 
@@ -79,10 +79,10 @@ impl ExactNumNumber {
                 return self.process_large_exp(p, rm);
             }
 
-            let d1 = xexp.sub(&ONE, p_x, RoundingMode::None)?;
-            let d2 = xexp.add(&ONE, p_x, RoundingMode::None)?;
+            let d1 = xexp.sub(&ONE, p_x, RoundingMode::Work)?;
+            let d2 = xexp.add(&ONE, p_x, RoundingMode::Work)?;
 
-            let mut ret = d1.div(&d2, p_x, RoundingMode::None)?;
+            let mut ret = d1.div(&d2, p_x, RoundingMode::Work)?;
 
             ret.set_sign(self.sign());
 

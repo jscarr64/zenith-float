@@ -280,15 +280,15 @@ fn series_compute_fast<T: PolycoeffGen>(
 
         let is_div = polycoeff_gen.is_div();
 
-        let coeff = polycoeff_gen.next(RoundingMode::None)?;
+        let coeff = polycoeff_gen.next(RoundingMode::Work)?;
 
         let part = if is_div {
-            x_first.div(coeff, p, RoundingMode::None)
+            x_first.div(coeff, p, RoundingMode::Work)
         } else {
-            x_first.mul(coeff, p, RoundingMode::None)
+            x_first.mul(coeff, p, RoundingMode::Work)
         }?;
 
-        acc.add(&part, p, RoundingMode::None)
+        acc.add(&part, p, RoundingMode::Work)
     }
 }
 
@@ -326,31 +326,31 @@ fn series_rectangular<T: PolycoeffGen>(
     }
     let mut cache = Vec::<ExactNumNumber>::new();
     cache.try_reserve_exact(cache_sz - 1)?;
-    let mut x_pow = x_step.mul(&x_step, p, RoundingMode::None)?;
+    let mut x_pow = x_step.mul(&x_step, p, RoundingMode::Work)?;
 
     for _ in 1..cache_sz {
         // the next power is formed from the current one first; the current one is then moved into the cache
         // (capacity was reserved above, so the push cannot fail).
-        let next = x_pow.mul(&x_step, p, RoundingMode::None)?;
+        let next = x_pow.mul(&x_step, p, RoundingMode::Work)?;
         cache.push(x_pow);
         x_pow = next;
     }
 
     // run computation
     let poly_val = compute_row(p, &x_step, &cache, polycoeff_gen)?;
-    acc = acc.add(&poly_val, p, RoundingMode::None)?;
+    acc = acc.add(&poly_val, p, RoundingMode::Work)?;
     // The running terminal power starts equal to `x_pow` (the next power after the cached ones). It is recomputed from
     // the last cached power with the same operands and rounding, which gives the identical value, so that `x_pow` and
     // `terminal_pow` each have one owner.
     let last_cached = cache.last().unwrap_or(&x_step);
-    let mut terminal_pow = last_cached.mul(&x_step, p, RoundingMode::None)?;
+    let mut terminal_pow = last_cached.mul(&x_step, p, RoundingMode::Work)?;
     niter -= cache_sz;
 
     loop {
         let poly_val = compute_row(p, &x_step, &cache, polycoeff_gen)?;
-        let part = poly_val.mul(&terminal_pow, p, RoundingMode::None)?;
-        acc = acc.add(&part, p, RoundingMode::None)?;
-        terminal_pow = terminal_pow.mul(&x_pow, p, RoundingMode::None)?;
+        let part = poly_val.mul(&terminal_pow, p, RoundingMode::Work)?;
+        acc = acc.add(&part, p, RoundingMode::Work)?;
+        terminal_pow = terminal_pow.mul(&x_pow, p, RoundingMode::Work)?;
         niter -= cache_sz;
 
         if niter < cache_sz {
@@ -359,9 +359,9 @@ fn series_rectangular<T: PolycoeffGen>(
     }
     drop(cache);
 
-    acc = acc.mul(&x_first, p, RoundingMode::None)?;
-    terminal_pow = terminal_pow.mul(&x_first, p, RoundingMode::None)?;
-    acc = acc.add(&add, p, RoundingMode::None)?;
+    acc = acc.mul(&x_first, p, RoundingMode::Work)?;
+    terminal_pow = terminal_pow.mul(&x_first, p, RoundingMode::Work)?;
+    acc = acc.add(&add, p, RoundingMode::Work)?;
 
     acc = if niter < MAX_CACHE * 10 && !polycoeff_gen.is_div() {
         // probably not too many iterations left
@@ -390,20 +390,20 @@ fn series_linear<T: PolycoeffGen>(
     let mut x_pow = x_first;
 
     loop {
-        let coeff = polycoeff_gen.next(RoundingMode::None)?;
+        let coeff = polycoeff_gen.next(RoundingMode::Work)?;
         let part = if is_div {
-            x_pow.div(coeff, p, RoundingMode::None)
+            x_pow.div(coeff, p, RoundingMode::Work)
         } else {
-            x_pow.mul(coeff, p, RoundingMode::None)
+            x_pow.mul(coeff, p, RoundingMode::Work)
         }?;
 
-        acc = acc.add(&part, p, RoundingMode::None)?;
+        acc = acc.add(&part, p, RoundingMode::Work)?;
 
         if part.exponent() <= acc.exponent() - acc.mantissa_max_bit_len() as i64 {
             break;
         }
 
-        x_pow = x_pow.mul(&x_step, p, RoundingMode::None)?;
+        x_pow = x_pow.mul(&x_step, p, RoundingMode::Work)?;
     }
 
     Ok(acc)
@@ -420,22 +420,22 @@ fn compute_row<T: PolycoeffGen>(
     let is_div = polycoeff_gen.is_div();
 
     let mut acc = ExactNumNumber::new(p)?;
-    let coeff = polycoeff_gen.next(RoundingMode::None)?;
+    let coeff = polycoeff_gen.next(RoundingMode::Work)?;
     if is_div {
-        let r = coeff.reciprocal(p, RoundingMode::None)?;
-        acc = acc.add(&r, p, RoundingMode::None)?;
+        let r = coeff.reciprocal(p, RoundingMode::Work)?;
+        acc = acc.add(&r, p, RoundingMode::Work)?;
     } else {
-        acc = acc.add(coeff, p, RoundingMode::None)?;
+        acc = acc.add(coeff, p, RoundingMode::Work)?;
     }
 
     for x_pow in core::iter::once(x1).chain(higher) {
-        let coeff = polycoeff_gen.next(RoundingMode::None)?;
+        let coeff = polycoeff_gen.next(RoundingMode::Work)?;
         let add = if is_div {
-            x_pow.div(coeff, p, RoundingMode::None)
+            x_pow.div(coeff, p, RoundingMode::Work)
         } else {
-            x_pow.mul(coeff, p, RoundingMode::None)
+            x_pow.mul(coeff, p, RoundingMode::Work)
         }?;
-        acc = acc.add(&add, p, RoundingMode::None)?;
+        acc = acc.add(&add, p, RoundingMode::Work)?;
     }
 
     Ok(acc)
@@ -471,13 +471,13 @@ fn series_horner<T: PolycoeffGen>(
 
     // The coefficients are taken owned (`next_owned`), each formed from the previous one held in the cache.
     while x_p + coef_p < p as i64 - add.exponent() {
-        let coeff = polycoeff_gen.next_owned(cache.last(), RoundingMode::None)?;
+        let coeff = polycoeff_gen.next_owned(cache.last(), RoundingMode::Work)?;
         coef_p = -coeff.exponent();
         x_p += -x_step.exponent();
         cache.push(coeff);
     }
 
-    let last_coeff = polycoeff_gen.next_owned(cache.last(), RoundingMode::None)?;
+    let last_coeff = polycoeff_gen.next_owned(cache.last(), RoundingMode::Work)?;
     // Horner starts at the generator's last coefficient, read through its borrow; every step
     // after it is owned (`mul` and `add` read their operands by reference).
     let mut acc: Option<ExactNumNumber> = None;
@@ -486,14 +486,14 @@ fn series_horner<T: PolycoeffGen>(
         let t = acc
             .as_ref()
             .unwrap_or(&last_coeff)
-            .mul(&x_step, p, RoundingMode::None)?;
-        acc = Some(t.add(coeff, p, RoundingMode::None)?);
+            .mul(&x_step, p, RoundingMode::Work)?;
+        acc = Some(t.add(coeff, p, RoundingMode::Work)?);
     }
 
     let acc = acc
         .as_ref()
         .unwrap_or(&last_coeff)
-        .mul(&x_first, p, RoundingMode::None)?;
+        .mul(&x_first, p, RoundingMode::Work)?;
 
-    add.add(&acc, p, RoundingMode::None)
+    add.add(&acc, p, RoundingMode::Work)
 }

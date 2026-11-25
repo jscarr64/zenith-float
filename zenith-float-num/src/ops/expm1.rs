@@ -38,7 +38,7 @@ impl ExactNumNumber {
 
         loop {
             let p_x = p_wrk + 3;
-            let e = match self.exp(p_x, RoundingMode::None, cc) {
+            let e = match self.exp(p_x, RoundingMode::Work, cc) {
                 Err(Error::ExponentOverflow(s)) => {
                     if s == Sign::Neg {
                         // e^x underflowed: the true value is just above -1, round once.
@@ -77,15 +77,15 @@ impl ExactNumNumber {
             }
 
             let mut ret = if e.cmp(&one) == 0 {
-                self.try_rounded_to(p_x, RoundingMode::None)?
+                self.try_rounded_to(p_x, RoundingMode::Work)?
             } else {
-                let em1 = e.sub(&one, p_x, RoundingMode::None)?;
-                let ln_e = e.ln(p_x, RoundingMode::None, cc)?;
+                let em1 = e.sub(&one, p_x, RoundingMode::Work)?;
+                let ln_e = e.ln(p_x, RoundingMode::Work, cc)?;
                 if ln_e.cmp(self) == 0 {
                     em1
                 } else {
-                    em1.mul(self, p_x, RoundingMode::None)?
-                        .div(&ln_e, p_x, RoundingMode::None)?
+                    em1.mul(self, p_x, RoundingMode::Work)?
+                        .div(&ln_e, p_x, RoundingMode::Work)?
                 }
             };
 

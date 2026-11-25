@@ -269,7 +269,7 @@ impl Consts {
     fn sqrt2_num(&mut self, p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
         self.sqrt2.for_prec(p, rm, |p_wrk| {
             let two = ExactNumNumber::from_word(2, p_wrk)?;
-            two.sqrt(p_wrk, RoundingMode::None)
+            two.sqrt(p_wrk, RoundingMode::Work)
         })
     }
 
@@ -278,9 +278,9 @@ impl Consts {
             let five = ExactNumNumber::from_word(5, p_wrk)?;
             let one = ExactNumNumber::from_word(1, p_wrk)?;
             let two = ExactNumNumber::from_word(2, p_wrk)?;
-            let s = five.sqrt(p_wrk, RoundingMode::None)?;
-            let n = one.add(&s, p_wrk, RoundingMode::None)?;
-            n.div(&two, p_wrk, RoundingMode::None)
+            let s = five.sqrt(p_wrk, RoundingMode::Work)?;
+            let n = one.add(&s, p_wrk, RoundingMode::Work)?;
+            n.div(&two, p_wrk, RoundingMode::Work)
         })
     }
 
@@ -318,7 +318,7 @@ impl Consts {
             .checked_add(WORD_BIT_SIZE)
             .ok_or(Error::InvalidArgument)?;
         if self.euler.cached_bit_len() < p_guard {
-            let ln2 = self.ln_2_num(p_wrk, RoundingMode::None)?;
+            let ln2 = self.ln_2_num(p_wrk, RoundingMode::Work)?;
             let v = crate::ops::special::euler_mascheroni(p_wrk, &ln2)?;
             self.euler.install(v);
         }

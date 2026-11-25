@@ -178,12 +178,12 @@ impl ExactNumNumber {
             let mut p_inc = WORD_BIT_SIZE;
             let mut p_wrk = p + p_inc;
             loop {
-                let ln2 = cc.ln_2_num(p_wrk, RoundingMode::None)?;
+                let ln2 = cc.ln_2_num(p_wrk, RoundingMode::Work)?;
                 let mut n = Self::exp_magnitude(e - 1)?;
                 if e < 1 {
                     n.set_sign(Sign::Neg);
                 }
-                let mut ret = ln2.mul(&n, p_wrk, RoundingMode::None)?;
+                let mut ret = ln2.mul(&n, p_wrk, RoundingMode::Work)?;
                 if ret.try_set_precision(p, rm, p_wrk)? {
                     ret.set_inexact(ret.inexact() | self.inexact());
                     return Ok(ret);
@@ -222,21 +222,21 @@ impl ExactNumNumber {
             let p1 = if p_x > crate::ops::log_newton::ARB_LOG_NEWTON_PREC / 2 {
                 x.ln_newton(p_x, cc)?
             } else {
-                Self::ln_series(x, RoundingMode::None)?
+                Self::ln_series(x, RoundingMode::Work)?
             };
 
             let mut ret = if e == 0 {
                 p1
             } else {
-                let p2 = cc.ln_2_num(p1.mantissa_max_bit_len(), RoundingMode::None)?;
+                let p2 = cc.ln_2_num(p1.mantissa_max_bit_len(), RoundingMode::Work)?;
 
                 let mut n = Self::exp_magnitude(e)?;
                 if e < 0 {
                     n.set_sign(Sign::Neg);
                 }
 
-                let p2n = p2.mul(&n, p1.mantissa_max_bit_len(), RoundingMode::None)?;
-                p1.add(&p2n, p1.mantissa_max_bit_len(), RoundingMode::None)?
+                let p2n = p2.mul(&n, p1.mantissa_max_bit_len(), RoundingMode::Work)?;
+                p1.add(&p2n, p1.mantissa_max_bit_len(), RoundingMode::Work)?
             };
 
             if ret.try_set_precision(p, rm, p_wrk)? {
@@ -368,18 +368,18 @@ impl ExactNumNumber {
             x.set_exponent(0);
             x.set_inexact(false);
 
-            let p1 = Self::ln_series(x, RoundingMode::None)?;
+            let p1 = Self::ln_series(x, RoundingMode::Work)?;
 
-            let p2 = cc.ln_2_num(p_x, RoundingMode::None)?;
+            let p2 = cc.ln_2_num(p_x, RoundingMode::Work)?;
 
-            let p3 = p1.div(&p2, p_x, RoundingMode::None)?;
+            let p3 = p1.div(&p2, p_x, RoundingMode::Work)?;
 
             let mut n = Self::exp_magnitude(e)?;
             if e < 0 {
                 n.set_sign(Sign::Neg);
             }
 
-            let mut ret = p3.add(&n, p_x, RoundingMode::None)?;
+            let mut ret = p3.add(&n, p_x, RoundingMode::Work)?;
 
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
@@ -410,11 +410,11 @@ impl ExactNumNumber {
             let p_x = p_wrk + 5; // avoid error being accounted by try_set_precision
 
             // `ln` reads `self` as it is: its working precision is max(p_x, own precision) + 64 whichever width the input has.
-            let p1 = self.ln(p_x, RoundingMode::None, cc)?;
+            let p1 = self.ln(p_x, RoundingMode::Work, cc)?;
 
-            let p2 = cc.ln_10_num(p_x, RoundingMode::None)?;
+            let p2 = cc.ln_10_num(p_x, RoundingMode::Work)?;
 
-            let mut ret = p1.div(&p2, p_x, RoundingMode::None)?;
+            let mut ret = p1.div(&p2, p_x, RoundingMode::Work)?;
 
             // check if x is exactly 10^n: the approximate quotient lies within an ulp of n, so n is
             // its integer part or the next integer (the quotient need not be an integer itself).
@@ -425,7 +425,7 @@ impl ExactNumNumber {
                         if n > p_x / 2 {
                             break;
                         }
-                        let tp = TEN.powi(n, p_x, RoundingMode::None)?;
+                        let tp = TEN.powi(n, p_x, RoundingMode::Work)?;
                         if !tp.inexact() && tp.cmp(self) == 0 {
                             // log10(10^n) = n exactly.
                             let mut exact = Self::from_word(n as Word, p)?;
@@ -476,14 +476,14 @@ impl ExactNumNumber {
         loop {
             // p_x is above both precisions, so these widen: the values are exact, with flags cleared
             let p_x = p_wrk + 5;
-            let x = self.try_rounded_exact(p_x, RoundingMode::None)?;
-            let y = n.try_rounded_exact(p_x, RoundingMode::None)?;
+            let x = self.try_rounded_exact(p_x, RoundingMode::Work)?;
+            let y = n.try_rounded_exact(p_x, RoundingMode::Work)?;
 
-            let p1 = x.ln(p_x, RoundingMode::None, cc)?;
+            let p1 = x.ln(p_x, RoundingMode::Work, cc)?;
 
-            let p2 = y.ln(p_x, RoundingMode::None, cc)?;
+            let p2 = y.ln(p_x, RoundingMode::Work, cc)?;
 
-            let mut ret = p1.div(&p2, p_x, RoundingMode::None)?;
+            let mut ret = p1.div(&p2, p_x, RoundingMode::Work)?;
 
             if ret.try_set_precision(p, rm, p_wrk)? {
                 // The per-operation flag is the quotient's own (an exact 0 for log(1) stays exact); the operands'
@@ -500,7 +500,7 @@ impl ExactNumNumber {
                 // is checked with exact integer powers.
                 // `try_set_precision` modified `ret`: the candidate is the same quotient formed again from the
                 // still-live logarithms.
-                let mut ret2 = p1.div(&p2, p_x, RoundingMode::None)?;
+                let mut ret2 = p1.div(&p2, p_x, RoundingMode::Work)?;
                 ret2.set_precision(p, RoundingMode::ToEven)?;
                 let exact = log_is_exact_dyadic(self, &y, &ret2)?;
 
@@ -558,14 +558,14 @@ fn log_is_exact_dyadic(
     if lhs_bits > crate::defs::MAX_PRECISION || rhs_bits > crate::defs::MAX_PRECISION {
         return Ok(false);
     }
-    let Ok(lhs) = base.powi(a, lhs_bits, RoundingMode::None) else {
+    let Ok(lhs) = base.powi(a, lhs_bits, RoundingMode::Work) else {
         return Ok(false);
     };
-    let Ok(rhs) = x.powi(den, rhs_bits, RoundingMode::None) else {
+    let Ok(rhs) = x.powi(den, rhs_bits, RoundingMode::Work) else {
         return Ok(false);
     };
     if r.is_negative() {
-        let prod = lhs.mul(&rhs, lhs_bits + rhs_bits, RoundingMode::None)?;
+        let prod = lhs.mul(&rhs, lhs_bits + rhs_bits, RoundingMode::Work)?;
         Ok(prod.cmp(&ExactNumNumber::from_word(1, WORD_BIT_SIZE)?) == 0)
     } else {
         Ok(lhs.cmp(&rhs) == 0)

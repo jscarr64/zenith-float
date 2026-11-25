@@ -192,10 +192,10 @@ fn acb_sqr(a: Ball, b: Ball, prec: Precision) -> BoundResult<Parts> {
             .add_up(&mag_double(&bm.mul_up(br))?.add_up(&br.mul_up(br)));
         let fr = mag_double(&bm.mul_up(ar).add_up(&am.mul_up(br)).add_up(&ar.mul_up(br)))?;
         let (aa, bb) = (
-            a.mid().mul_full_prec(a.mid()),
-            b.mid().mul_full_prec(b.mid()),
+            a.mid().mul_full_work(a.mid()),
+            b.mid().mul_full_work(b.mid()),
         );
-        let ab = a.mid().mul_full_prec(b.mid());
+        let ab = a.mid().mul_full_work(b.mid());
         let lost_re = aa.inexact() || bb.inexact();
         let lost_im = ab.inexact();
         let re = finish(aa.sub(&bb, prec, MID_RM), &er, prec, prec, lost_re)?;
@@ -463,7 +463,7 @@ fn fused_mid(
             p1.add(p2, prec, MID_RM)
         }
     };
-    let (p1, p2) = (x1.mul_full_prec(y1), x2.mul_full_prec(y2));
+    let (p1, p2) = (x1.mul_full_work(y1), x2.mul_full_work(y2));
     if !p1.is_inf() && !p2.is_inf() {
         let lost = p1.inexact() || p2.inexact();
         return Ok(Some((sum(p1, &p2), lost)));
@@ -483,8 +483,8 @@ fn fused_mid(
             Some(e) => Some(e.checked_sub(k)?),
             None => None,
         };
-        let pow = ExactNum::from(1i64).ldexp(k.checked_neg()?, MAG_SUM_BITS, RoundingMode::None);
-        let s = v.mul_full_prec(&pow);
+        let pow = ExactNum::from(1i64).ldexp(k.checked_neg()?, MAG_SUM_BITS, RoundingMode::Work);
+        let s = v.mul_full_work(&pow);
         (in_range(e) && !pow.is_inf() && !s.is_nan() && !s.is_inf()).then_some(s)
     };
     let (Some(a1), Some(b1), Some(a2), Some(b2)) =
@@ -503,7 +503,7 @@ fn fused_mid(
     if !prod_ok(&a1, &b1) || !prod_ok(&a2, &b2) {
         return Ok(None);
     }
-    let (q1, q2) = (a1.mul_full_prec(&b1), a2.mul_full_prec(&b2));
+    let (q1, q2) = (a1.mul_full_work(&b1), a2.mul_full_work(&b2));
     let raw = sum(q1, &q2);
     let rounded = raw.inexact();
     let back = kx.checked_add(ky).unwrap_or(i64::MAX);
@@ -527,7 +527,7 @@ fn arb_addmul(z: Ball, x: &Ball, y: &Ball, prec: Precision, sub: bool) -> BoundR
         .add_up(&mag_of(x.mid()).mul_up(y.rad()))
         .add_up(&mag_of(y.mid()).mul_up(x.rad()))
         .add_up(&x.rad().mul_up(y.rad()));
-    let p = x.mid().mul_full_prec(y.mid());
+    let p = x.mid().mul_full_work(y.mid());
     if p.is_inf() {
         // the product overflowed (CONTRACT 10.4); see mul_general
         return Ball::all_reals(prec);
@@ -694,7 +694,7 @@ fn set_interval(
         return Ball::all_reals(prec);
     };
     let l = if neg_lo {
-        ExactNum::from(0i64).sub_full_prec(&l)
+        ExactNum::from(0i64).sub_full_work(&l)
     } else {
         l
     };
@@ -786,7 +786,7 @@ fn acb_inv_scaled(c: &Ball, d: &Ball, prec: Precision) -> BoundResult<Parts> {
         .unwrap_or(prec)
         .max(Precision::try_from(ARB_MAG_BITS).unwrap_or(30));
     let (a, b) = (c.mid(), d.mid());
-    let (aa, bb) = (a.mul_full_prec(a), b.mul_full_prec(b));
+    let (aa, bb) = (a.mul_full_work(a), b.mul_full_work(b));
     let lost = aa.inexact() || bb.inexact();
     let raw = aa.add(&bb, hprec, RoundingMode::Down);
     let inexact = lost || raw.inexact();
@@ -862,7 +862,7 @@ fn div_rounded_den(
 fn exact_from_parts(x: &ExactNum) -> BoundResult<ExactNum> {
     // Midpoints are finite (from_mid_rad). x+0 is a new ExactNum with the same
     // value, so a Ball can be rebuilt without Clone (zero-clone rule).
-    Ok(x.add_full_prec(&ExactNum::from(0i64)))
+    Ok(x.add_full_work(&ExactNum::from(0i64)))
 }
 
 fn ball_again(b: &Ball) -> BoundResult<Ball> {

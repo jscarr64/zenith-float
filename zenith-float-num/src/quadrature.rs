@@ -266,7 +266,7 @@ fn gauss_legendre_nodes(
     }
     let wrk = work_p(p);
     let nu = n as u32;
-    let pi = cc.pi(wrk, RoundingMode::None);
+    let pi = cc.pi(wrk, RoundingMode::Work);
     let den = ExactNum::from_u32((4 * n + 2) as u32, wrk);
     let n_f = ExactNum::from_u32(nu, wrk);
     let one = ExactNum::from_u8(1, wrk);
@@ -274,9 +274,9 @@ fn gauss_legendre_nodes(
     for k in 1..=n {
         let num = ExactNum::from_u32((4 * k - 1) as u32, wrk);
         let theta = num
-            .mul(&pi, wrk, RoundingMode::None)
-            .div(&den, wrk, RoundingMode::None);
-        let x0 = theta.cos(wrk, RoundingMode::None, cc);
+            .mul(&pi, wrk, RoundingMode::Work)
+            .div(&den, wrk, RoundingMode::Work);
+        let x0 = theta.cos(wrk, RoundingMode::Work, cc);
         let x = newton(
             |x, p, rm, _cc| x.legendre_p(nu, p, rm),
             |x, p, rm, _cc| {
@@ -289,34 +289,34 @@ fn gauss_legendre_nodes(
             },
             x0,
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
             cc,
         )?;
-        let pn = x.legendre_p(nu, wrk, RoundingMode::None);
+        let pn = x.legendre_p(nu, wrk, RoundingMode::Work);
         let pnm = if nu == 0 {
             ExactNum::new(wrk)
         } else {
-            x.legendre_p(nu - 1, wrk, RoundingMode::None)
+            x.legendre_p(nu - 1, wrk, RoundingMode::Work)
         };
         let d = x
-            .sqr(wrk, RoundingMode::None)
+            .sqr(wrk, RoundingMode::Work)
             .neg()
-            .add(&one, wrk, RoundingMode::None);
+            .add(&one, wrk, RoundingMode::Work);
         let dp = ExactNum::from_u32(nu, wrk)
             .mul(
                 &pnm.sub(
-                    &pn.mul(&x, wrk, RoundingMode::None),
+                    &pn.mul(&x, wrk, RoundingMode::Work),
                     wrk,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 ),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
-            .div(&d, wrk, RoundingMode::None);
+            .div(&d, wrk, RoundingMode::Work);
         let w = ExactNum::from_u8(2, wrk).div(
-            &d.mul(&dp.sqr(wrk, RoundingMode::None), wrk, RoundingMode::None),
+            &d.mul(&dp.sqr(wrk, RoundingMode::Work), wrk, RoundingMode::Work),
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         if !finite(&x) || !finite(&w) {
             return None;
@@ -348,19 +348,19 @@ where
         return None;
     }
     let wrk = work_p(p);
-    let nodes = gauss_legendre_nodes(n, wrk, RoundingMode::None, cc)?;
+    let nodes = gauss_legendre_nodes(n, wrk, RoundingMode::Work, cc)?;
     let two = ExactNum::from_u8(2, wrk);
-    let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
+    let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::Work).div(&two, wrk, RoundingMode::Work);
     let mut acc = ExactNum::new(wrk);
     for (xi, wi) in &nodes {
-        let x = map_ab(xi, a, b, wrk, RoundingMode::None);
-        let y = f(&x, wrk, RoundingMode::None, cc);
+        let x = map_ab(xi, a, b, wrk, RoundingMode::Work);
+        let y = f(&x, wrk, RoundingMode::Work, cc);
         if !finite(&y) {
             return None;
         }
-        acc = acc.add(&y.mul(wi, wrk, RoundingMode::None), wrk, RoundingMode::None);
+        acc = acc.add(&y.mul(wi, wrk, RoundingMode::Work), wrk, RoundingMode::Work);
     }
-    let mut out = half.mul(&acc, wrk, RoundingMode::None);
+    let mut out = half.mul(&acc, wrk, RoundingMode::Work);
     let _ = out.set_precision(p, rm);
     Some(out)
 }
@@ -382,10 +382,10 @@ where
     // falls below the working grid or the abscissa reaches the endpoint.
     let wrk = work_p_de(p);
     let two = ExactNum::from_u8(2, wrk);
-    let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
-    let mid = ExactNum::add_ref(a, b, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
-    let pi = cc.pi(wrk, RoundingMode::None);
-    let half_pi = pi.div(&two, wrk, RoundingMode::None);
+    let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::Work).div(&two, wrk, RoundingMode::Work);
+    let mid = ExactNum::add_ref(a, b, wrk, RoundingMode::Work).div(&two, wrk, RoundingMode::Work);
+    let pi = cc.pi(wrk, RoundingMode::Work);
+    let half_pi = pi.div(&two, wrk, RoundingMode::Work);
     let wmin = tiny(wrk, 8);
     let mut acc = ExactNum::new(wrk);
     let mut k: u64 = u64::from(odd_only);
@@ -396,18 +396,18 @@ where
         let k = kk;
         // k·h stays below ~ln(wrk) before the weight underflows the grid, so k fits.
         let k32 = u32::try_from(k).ok()?;
-        let t = ExactNum::from_u32(k32, wrk).mul(h, wrk, RoundingMode::None);
-        let (sh, ch) = t.sinh_cosh(wrk, RoundingMode::None, cc);
-        let u = sh.mul(&half_pi, wrk, RoundingMode::None);
-        let (su, cu) = u.sinh_cosh(wrk, RoundingMode::None, cc);
+        let t = ExactNum::from_u32(k32, wrk).mul(h, wrk, RoundingMode::Work);
+        let (sh, ch) = t.sinh_cosh(wrk, RoundingMode::Work, cc);
+        let u = sh.mul(&half_pi, wrk, RoundingMode::Work);
+        let (su, cu) = u.sinh_cosh(wrk, RoundingMode::Work, cc);
         if !finite(&cu) || cu.is_zero() {
             break;
         }
-        let xi = su.div(&cu, wrk, RoundingMode::None);
-        let w = ch.mul(&half_pi, wrk, RoundingMode::None).div(
-            &cu.sqr(wrk, RoundingMode::None),
+        let xi = su.div(&cu, wrk, RoundingMode::Work);
+        let w = ch.mul(&half_pi, wrk, RoundingMode::Work).div(
+            &cu.sqr(wrk, RoundingMode::Work),
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         if !finite(&w) {
             break;
@@ -416,12 +416,12 @@ where
             break;
         }
         let mut eval = |s: &ExactNum| {
-            let x = ExactNum::mul_ref(&half, s, wrk, RoundingMode::None).add(
+            let x = ExactNum::mul_ref(&half, s, wrk, RoundingMode::Work).add(
                 &mid,
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
-            f(&x, wrk, RoundingMode::None, cc)
+            f(&x, wrk, RoundingMode::Work, cc)
         };
         let y0 = eval(&xi);
         if !finite(&y0) {
@@ -431,17 +431,17 @@ where
             break;
         }
         acc = acc.add(
-            &y0.mul(&w, wrk, RoundingMode::None),
+            &y0.mul(&w, wrk, RoundingMode::Work),
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         if k > 0 {
             let y1 = eval(&xi.neg());
             if finite(&y1) {
                 acc = acc.add(
-                    &w.mul(&y1, wrk, RoundingMode::None),
+                    &w.mul(&y1, wrk, RoundingMode::Work),
                     wrk,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 );
             }
         }
@@ -472,40 +472,40 @@ where
     }
     let wrk = work_p(p);
     let two = ExactNum::from_u8(2, wrk);
-    let pi = cc.pi(wrk, RoundingMode::None);
-    let ln2 = cc.ln_2(wrk, RoundingMode::None);
+    let pi = cc.pi(wrk, RoundingMode::Work);
+    let ln2 = cc.ln_2(wrk, RoundingMode::Work);
     let p_f = ExactNum::from_u32(p as u32, wrk);
-    let h0 = two.mul(&pi, wrk, RoundingMode::None).div(
-        &p_f.mul(&ln2, wrk, RoundingMode::None),
+    let h0 = two.mul(&pi, wrk, RoundingMode::Work).div(
+        &p_f.mul(&ln2, wrk, RoundingMode::Work),
         wrk,
-        RoundingMode::None,
+        RoundingMode::Work,
     );
     let guard = tiny(p, 8);
     let wde = work_p_de(p);
-    let half_len = ExactNum::sub_ref(b, a, wde, RoundingMode::None).div(
+    let half_len = ExactNum::sub_ref(b, a, wde, RoundingMode::Work).div(
         &ExactNum::from_u8(2, wde),
         wde,
-        RoundingMode::None,
+        RoundingMode::Work,
     );
     let two_wrk = ExactNum::from_u8(2, wrk);
     let mut h = h0;
     let mut acc = tanh_sinh_sum(&mut f, a, b, &h, false, p, cc)?;
     let estimate = |acc: &ExactNum, h: &ExactNum| {
-        ExactNum::mul_ref(&half_len, h, wde, RoundingMode::None).mul(acc, wde, RoundingMode::None)
+        ExactNum::mul_ref(&half_len, h, wde, RoundingMode::Work).mul(acc, wde, RoundingMode::Work)
     };
     let mut prev = estimate(&acc, &h);
     let mut prev_err: Option<ExactNum> = None;
     loop {
-        h = h.div(&two_wrk, wrk, RoundingMode::None);
+        h = h.div(&two_wrk, wrk, RoundingMode::Work);
         let odd = tanh_sinh_sum(&mut f, a, b, &h, true, p, cc)?;
-        acc = acc.add(&odd, wde, RoundingMode::None);
+        acc = acc.add(&odd, wde, RoundingMode::Work);
         let s = estimate(&acc, &h);
-        let err = ExactNum::sub_ref(&s, &prev, wde, RoundingMode::None).abs();
+        let err = ExactNum::sub_ref(&s, &prev, wde, RoundingMode::Work).abs();
         // Agreement to 2^-(p-8) relative to max(|s|, 1).
         let sa = s.abs_ref();
         let lim_scaled;
         let lim: &ExactNum = if sa.compare(&ExactNum::from_u8(1, wde)) == Some(1) {
-            lim_scaled = ExactNum::mul_ref(&guard, &sa, wde, RoundingMode::None);
+            lim_scaled = ExactNum::mul_ref(&guard, &sa, wde, RoundingMode::Work);
             &lim_scaled
         } else {
             &guard
@@ -544,12 +544,12 @@ fn gauss_laguerre_nodes(
         n,
         true,
         wrk,
-        RoundingMode::None,
+        RoundingMode::Work,
         cc,
     )?;
     let n_f = ExactNum::from_u32(nu, wrk);
     let np1 = ExactNum::from_u32((n + 1) as u32, wrk);
-    let np1sq = ExactNum::from_u32((n + 1) as u32, wrk).mul(&np1, wrk, RoundingMode::None);
+    let np1sq = ExactNum::from_u32((n + 1) as u32, wrk).mul(&np1, wrk, RoundingMode::Work);
     let mut nodes = Vec::with_capacity(n);
     for (a, b) in brackets {
         let x0 = bisect_zero(
@@ -557,7 +557,7 @@ fn gauss_laguerre_nodes(
             a,
             b,
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
             cc,
         )?;
         let x = newton(
@@ -572,16 +572,16 @@ fn gauss_laguerre_nodes(
             },
             x0,
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
             cc,
         )?;
-        let ln1 = x.laguerre(n + 1, wrk, RoundingMode::None);
+        let ln1 = x.laguerre(n + 1, wrk, RoundingMode::Work);
         let w = ExactNum::div_ref(
             &x,
-            &ln1.sqr(wrk, RoundingMode::None)
-                .mul(&np1sq, wrk, RoundingMode::None),
+            &ln1.sqr(wrk, RoundingMode::Work)
+                .mul(&np1sq, wrk, RoundingMode::Work),
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         if !finite(&x) || !finite(&w) {
             return None;
@@ -606,14 +606,14 @@ where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     let wrk = work_p(p);
-    let nodes = gauss_laguerre_nodes(n, wrk, RoundingMode::None, cc)?;
+    let nodes = gauss_laguerre_nodes(n, wrk, RoundingMode::Work, cc)?;
     let mut acc = ExactNum::new(wrk);
     for (xi, wi) in &nodes {
-        let y = f(xi, wrk, RoundingMode::None, cc);
+        let y = f(xi, wrk, RoundingMode::Work, cc);
         if !finite(&y) {
             return None;
         }
-        acc = acc.add(&y.mul(wi, wrk, RoundingMode::None), wrk, RoundingMode::None);
+        acc = acc.add(&y.mul(wi, wrk, RoundingMode::Work), wrk, RoundingMode::Work);
     }
     let _ = acc.set_precision(p, rm);
     Some(acc)
@@ -630,7 +630,7 @@ fn gauss_hermite_nodes(
     }
     let wrk = work_p(p);
     let nu = n as u32;
-    let hi = ExactNum::from_u32((4 * n + 2) as u32, wrk).sqrt(wrk, RoundingMode::None);
+    let hi = ExactNum::from_u32((4 * n + 2) as u32, wrk).sqrt(wrk, RoundingMode::Work);
     let zero = ExactNum::new(wrk);
     let want_pos = n / 2;
     let brackets = isolate_positive(
@@ -639,30 +639,30 @@ fn gauss_hermite_nodes(
         want_pos,
         false,
         wrk,
-        RoundingMode::None,
+        RoundingMode::Work,
         cc,
     )?;
     let n_f = ExactNum::from_u32(nu, wrk);
-    let nsq = ExactNum::from_u32(nu, wrk).mul(&n_f, wrk, RoundingMode::None);
-    let fact = factorial(n, wrk, RoundingMode::None);
-    let pi = cc.pi(wrk, RoundingMode::None);
-    let sqrt_pi = pi.sqrt(wrk, RoundingMode::None);
-    let two_pow = ExactNum::from_u8(1, wrk).ldexp((n as Exponent) - 1, wrk, RoundingMode::None);
+    let nsq = ExactNum::from_u32(nu, wrk).mul(&n_f, wrk, RoundingMode::Work);
+    let fact = factorial(n, wrk, RoundingMode::Work);
+    let pi = cc.pi(wrk, RoundingMode::Work);
+    let sqrt_pi = pi.sqrt(wrk, RoundingMode::Work);
+    let two_pow = ExactNum::from_u8(1, wrk).ldexp((n as Exponent) - 1, wrk, RoundingMode::Work);
     let scale = two_pow
-        .mul(&fact, wrk, RoundingMode::None)
-        .mul(&sqrt_pi, wrk, RoundingMode::None);
+        .mul(&fact, wrk, RoundingMode::Work)
+        .mul(&sqrt_pi, wrk, RoundingMode::Work);
     let weight = |x: &ExactNum| {
         let hm = if n == 0 {
             ExactNum::from_u8(1, wrk)
         } else {
-            x.hermite_h(n - 1, wrk, RoundingMode::None)
+            x.hermite_h(n - 1, wrk, RoundingMode::Work)
         };
         ExactNum::div_ref(
             &scale,
-            &hm.sqr(wrk, RoundingMode::None)
-                .mul(&nsq, wrk, RoundingMode::None),
+            &hm.sqr(wrk, RoundingMode::Work)
+                .mul(&nsq, wrk, RoundingMode::Work),
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
     };
     let mut nodes = Vec::with_capacity(n);
@@ -679,7 +679,7 @@ fn gauss_hermite_nodes(
             a,
             b,
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
             cc,
         )?;
         let x = newton(
@@ -694,7 +694,7 @@ fn gauss_hermite_nodes(
             },
             x0,
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
             cc,
         )?;
         let w = weight(&x);
@@ -727,14 +727,14 @@ where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     let wrk = work_p(p);
-    let nodes = gauss_hermite_nodes(n, wrk, RoundingMode::None, cc)?;
+    let nodes = gauss_hermite_nodes(n, wrk, RoundingMode::Work, cc)?;
     let mut acc = ExactNum::new(wrk);
     for (xi, wi) in &nodes {
-        let y = f(xi, wrk, RoundingMode::None, cc);
+        let y = f(xi, wrk, RoundingMode::Work, cc);
         if !finite(&y) {
             return None;
         }
-        acc = acc.add(&y.mul(wi, wrk, RoundingMode::None), wrk, RoundingMode::None);
+        acc = acc.add(&y.mul(wi, wrk, RoundingMode::Work), wrk, RoundingMode::Work);
     }
     let _ = acc.set_precision(p, rm);
     Some(acc)

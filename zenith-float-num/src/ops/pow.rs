@@ -127,14 +127,14 @@ impl ExactNumNumber {
         loop {
             // |x| < 2^63, so n < 2^64 and n * ln 2 needs 64 bits above the working precision.
             let p_l = p_wrk + 3 * WORD_BIT_SIZE;
-            let ln2 = cc.ln_2_num(p_l, RoundingMode::None)?;
-            let mut t = self.div(&ln2, p_l, RoundingMode::None)?;
+            let ln2 = cc.ln_2_num(p_l, RoundingMode::Work)?;
+            let mut t = self.div(&ln2, p_l, RoundingMode::Work)?;
             t.set_sign(Sign::Pos);
             let n = t.int_as_usize()?;
             let n1 = n.checked_add(1).ok_or(Error::ExponentOverflow(Sign::Neg))?;
-            let shift = Self::from_usize(n1)?.mul(&ln2, p_l, RoundingMode::None)?;
-            let r = self.add(&shift, p_l, RoundingMode::None)?;
-            let mut y = r.exp(p_wrk, RoundingMode::None, cc)?;
+            let shift = Self::from_usize(n1)?.mul(&ln2, p_l, RoundingMode::Work)?;
+            let r = self.add(&shift, p_l, RoundingMode::Work)?;
+            let mut y = r.exp(p_wrk, RoundingMode::Work, cc)?;
             if y.try_set_precision(q, RoundingMode::ToZero, p_wrk - WORD_BIT_SIZE)? {
                 let n1 = i128::try_from(n1).map_err(|_| Error::ExponentOverflow(Sign::Neg))?;
                 let at = i128::from(y.exponent()) - n1;
@@ -195,9 +195,9 @@ impl ExactNumNumber {
             }
         })?;
         let e_int = if int > 0 {
-            let e_const = cc.e_num(p_work, RoundingMode::None)?;
+            let e_const = cc.e_num(p_work, RoundingMode::Work)?;
 
-            e_const.powi(int, p_work, RoundingMode::None)
+            e_const.powi(int, p_work, RoundingMode::Work)
         } else {
             Ok(ExactNumNumber::small_const(1))
         }?;
@@ -211,7 +211,7 @@ impl ExactNumNumber {
         }?;
         let e_fract = if !fract.is_zero() {
             fract.set_inexact(false);
-            fract.set_precision(p_work, RoundingMode::None)?;
+            fract.set_precision(p_work, RoundingMode::Work)?;
             fract.set_sign(Sign::Pos);
             fract.expf()
         } else {
@@ -277,14 +277,14 @@ impl ExactNumNumber {
                 while left > 0 {
                     let part = left.min(POWSI_PART_MAX);
                     left -= part;
-                    let y = self.powi_internal(part, p_x, RoundingMode::None, false, true)?;
-                    let mut f = ONE.div(&y, p_x, RoundingMode::None)?;
+                    let y = self.powi_internal(part, p_x, RoundingMode::Work, false, true)?;
+                    let mut f = ONE.div(&y, p_x, RoundingMode::Work)?;
                     carry += i128::from(f.exponent());
                     f.set_exponent(0);
                     acc = Some(match acc {
                         None => f,
                         Some(a) => {
-                            let mut m = a.mul(&f, p_x, RoundingMode::None)?;
+                            let mut m = a.mul(&f, p_x, RoundingMode::Work)?;
                             carry += i128::from(m.exponent());
                             m.set_exponent(0);
                             m
@@ -508,13 +508,13 @@ impl ExactNumNumber {
             WORD_BIT_SIZE,
         )?;
         let shift = kn.mul(
-            &cc.ln_2_num(p_ext, RoundingMode::None)?,
+            &cc.ln_2_num(p_ext, RoundingMode::Work)?,
             p_ext,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         let u = match m
-            .sub(&shift, p_ext, RoundingMode::None)?
-            .exp(p_ext, RoundingMode::None, cc)
+            .sub(&shift, p_ext, RoundingMode::Work)?
+            .exp(p_ext, RoundingMode::Work, cc)
         {
             Ok(v) => v,
             // below `2^(EXPONENT_MIN - p - 128)`
@@ -539,7 +539,7 @@ impl ExactNumNumber {
         if !r.try_set_precision(pp, rm, p_wrk)? {
             return Ok(None);
         }
-        r.set_precision(p, RoundingMode::None)?; // exact: widening
+        r.set_precision(p, RoundingMode::Work)?; // exact: widening
         let e = i128::from(r.exponent()) - ki; // a carry may have bumped it
         if e > i128::from(EXPONENT_MAX) {
             return Err(Error::ExponentOverflow(Sign::Pos));
@@ -710,12 +710,12 @@ impl ExactNumNumber {
 
         let p = self.mantissa_max_bit_len();
 
-        let sh = self.sinh_series(p, RoundingMode::None)?; // faster convergence than direct series
+        let sh = self.sinh_series(p, RoundingMode::Work)?; // faster convergence than direct series
 
         // e = sh + sqrt(sh^2 + 1)
-        let sq = sh.mul(&sh, p, RoundingMode::None)?;
-        let sq2 = sq.add(&ONE, p, RoundingMode::None)?;
-        let sq3 = sq2.sqrt(p, RoundingMode::None)?;
+        let sq = sh.mul(&sh, p, RoundingMode::Work)?;
+        let sq2 = sq.add(&ONE, p, RoundingMode::Work)?;
+        let sq3 = sq2.sqrt(p, RoundingMode::Work)?;
         sq3.add(&sh, p, RoundingMode::FromZero)
     }
 
@@ -878,7 +878,7 @@ impl ExactNumNumber {
         // A power `N / 2^j` (j <= POW_ROOT_STEPS) of a value whose 2^j-th root is exact is exact or one
         // rounding of an exact product: 9^0.5 = 3, 4^(-1.5) = 1/8, 16^0.75 = 8, 81^(-0.25) = 1/3.
         const POW_ROOT_STEPS: Exponent = 6;
-        if rm != RoundingMode::None
+        if !rm.skips_rounding()
             && !n.inexact()
             && !self.inexact()
             && self.is_positive()
@@ -975,14 +975,14 @@ impl ExactNumNumber {
             loop {
                 // |self| widened to p_ext (above its precision) with its flags cleared, for ln's working width
                 let p_ext = p_wrk + 2;
-                let mut x = self.try_rounded_exact(p_ext, RoundingMode::None)?;
+                let mut x = self.try_rounded_exact(p_ext, RoundingMode::Work)?;
                 x.set_sign(Sign::Pos);
 
-                let ln = x.ln(p_ext, RoundingMode::None, cc)?;
+                let ln = x.ln(p_ext, RoundingMode::Work, cc)?;
 
                 // n is read as it is, flags and all: the product's flag is set to its own rounding and ln's,
                 // which is what a flag-cleared copy of n gave.
-                let product = n.mul_per_op(&ln, p_ext, RoundingMode::None).map(|mut v| {
+                let product = n.mul_per_op(&ln, p_ext, RoundingMode::Work).map(|mut v| {
                     let rounded = v.op_inexact();
                     v.set_inexact(rounded || ln.inexact());
                     v
@@ -1008,7 +1008,7 @@ impl ExactNumNumber {
                 let mut ret = if m.is_negative() {
                     m.set_sign(Sign::Pos);
 
-                    let u = match m.exp(p_ext, RoundingMode::None, cc) {
+                    let u = match m.exp(p_ext, RoundingMode::Work, cc) {
                         Ok(v) => Ok(v),
                         Err(e) => match e {
                             Error::ExponentOverflow(_) => {
@@ -1033,7 +1033,7 @@ impl ExactNumNumber {
 
                     ONE.div(&u, p_ext, RoundingMode::FromZero)
                 } else {
-                    m.exp(p_ext, RoundingMode::None, cc)
+                    m.exp(p_ext, RoundingMode::Work, cc)
                 }?;
 
                 if ret.try_set_precision(p, effective_rm, p_wrk)? {

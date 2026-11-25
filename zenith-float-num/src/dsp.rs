@@ -53,7 +53,7 @@ fn as_real_capped(signal: &ExactNumArray, max_points: usize, p: usize) -> Option
         if !finite(v) {
             return None;
         }
-        out.push(copy_p(v, p, RoundingMode::None));
+        out.push(copy_p(v, p, RoundingMode::Work));
     }
     Some(out)
 }
@@ -71,7 +71,7 @@ fn pad_fft(
     for _ in 0..extra {
         x.push(ExactNum::from_u8(0, p));
     }
-    fft_complex(x, try_zeros(n2, p)?, false, p, RoundingMode::None, cc)
+    fft_complex(x, try_zeros(n2, p)?, false, p, RoundingMode::Work, cc)
 }
 
 /// Discrete cosine transform, type II, via a `2N`-point FFT.
@@ -139,7 +139,7 @@ fn dct_dst(
     cc: &mut Consts,
 ) -> Option<ExactNumArray> {
     let wrk = work_p(p);
-    let none = RoundingMode::None;
+    let none = RoundingMode::Work;
     let x = as_real_capped(signal, max_points, wrk)?;
     let n = x.len();
     let n2 = n.checked_mul(2)?;
@@ -228,7 +228,7 @@ fn idct_idst(
     cc: &mut Consts,
 ) -> Option<ExactNumArray> {
     let wrk = work_p(p);
-    let none = RoundingMode::None;
+    let none = RoundingMode::Work;
     let x = as_real_capped(signal, max_points, wrk)?;
     let n = x.len();
     let n2 = n.checked_mul(2)?;
@@ -334,7 +334,7 @@ pub fn hann_window(n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Opt
         return None;
     }
     let wrk = work_p(p);
-    let none = RoundingMode::None;
+    let none = RoundingMode::Work;
     let half = frac(1, 2, wrk, none);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
@@ -363,7 +363,7 @@ pub fn hamming_window(
         return None;
     }
     let wrk = work_p(p);
-    let none = RoundingMode::None;
+    let none = RoundingMode::Work;
     let a1 = frac(23, 50, wrk, none);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
@@ -392,7 +392,7 @@ pub fn blackman_window(
         return None;
     }
     let wrk = work_p(p);
-    let none = RoundingMode::None;
+    let none = RoundingMode::Work;
     let a1 = frac(1, 2, wrk, none);
     let a2 = frac(2, 25, wrk, none);
     let two = ExactNum::from_u8(2, wrk);
@@ -430,7 +430,7 @@ pub fn kaiser_window(
         return ones_row(n, p, rm);
     }
     let wrk = work_p(p);
-    let none = RoundingMode::None;
+    let none = RoundingMode::Work;
     let b = copy_p(beta, wrk, none);
     let nu0 = ExactNum::from_u8(0, wrk);
     let i0b = b.bessel_i(&nu0, wrk, none, cc);

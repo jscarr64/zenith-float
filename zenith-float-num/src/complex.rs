@@ -60,8 +60,8 @@ fn exact_sum(a: &ExactNum, b: &ExactNum, sub: bool, p: usize) -> ExactNum {
         _ => false,
     };
     match (wide, sub) {
-        (false, false) => a.add_full_prec(b),
-        (false, true) => a.sub_full_prec(b),
+        (false, false) => a.add_full_work(b),
+        (false, true) => a.sub_full_work(b),
         // The far smaller term only decides which side of a grid point the sum lies on. It is replaced
         // by a proxy of the same sign, a power of two just below the `w`-bit grid of the larger term, and
         // the sum is then formed exactly: the one later rounding at `p` sees the same side (and never a
@@ -85,12 +85,12 @@ fn exact_sum(a: &ExactNum, b: &ExactNum, sub: bool, p: usize) -> ExactNum {
                 .and_then(|e| ExactNum::pow2(e, WORD_BIT_SIZE).ok())
                 .map(|t| if small.is_negative() { -t } else { t });
             match (proxy, a_big, sub) {
-                (Some(t), true, false) => a.add_full_prec(&t),
-                (Some(t), true, true) => a.sub_full_prec(&t),
-                (Some(t), false, false) => t.add_full_prec(b),
-                (Some(t), false, true) => t.sub_full_prec(b),
-                (None, _, true) => ExactNum::sub_ref(a, b, w, RoundingMode::None),
-                (None, _, false) => ExactNum::add_ref(a, b, w, RoundingMode::None),
+                (Some(t), true, false) => a.add_full_work(&t),
+                (Some(t), true, true) => a.sub_full_work(&t),
+                (Some(t), false, false) => t.add_full_work(b),
+                (Some(t), false, true) => t.sub_full_work(b),
+                (None, _, true) => ExactNum::sub_ref(a, b, w, RoundingMode::Work),
+                (None, _, false) => ExactNum::add_ref(a, b, w, RoundingMode::Work),
             }
         }
     }
@@ -336,13 +336,13 @@ impl ExactComplex {
 
     /// Implementation of [`Self::mul`] on operands without inexact history.
     fn mul_word(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        if rm != RoundingMode::None {
+        if !rm.skips_rounding() {
             // Rounding the products first and then their sum rounded twice (1 ulp off), so the
             // products are formed exactly and each part is rounded once.
-            let ac = self.re.mul_full_prec(&rhs.re);
-            let bd = self.im.mul_full_prec(&rhs.im);
-            let ad = self.re.mul_full_prec(&rhs.im);
-            let bc = self.im.mul_full_prec(&rhs.re);
+            let ac = self.re.mul_full_work(&rhs.re);
+            let bd = self.im.mul_full_work(&rhs.im);
+            let ad = self.re.mul_full_work(&rhs.im);
+            let bc = self.im.mul_full_work(&rhs.re);
             // An exact product below the exponent range comes back as zero or with bits lost, and a
             // directed sum would then miss the least subnormal. Only then, round each product at
             // (p, rm) first (the per-product path below), so the directed step survives.
@@ -392,12 +392,12 @@ impl ExactComplex {
     /// is the exact quotient rounded once by the final division. Rounding the numerator first
     /// rounded twice: `(-7i)/(-7i)` at `p = 1` gave `32/49` rounded, not `1`.
     fn div_word(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        let ac = self.re.mul_full_prec(&rhs.re);
-        let bd = self.im.mul_full_prec(&rhs.im);
-        let bc = self.im.mul_full_prec(&rhs.re);
-        let ad = self.re.mul_full_prec(&rhs.im);
-        let cc = rhs.re.mul_full_prec(&rhs.re);
-        let dd = rhs.im.mul_full_prec(&rhs.im);
+        let ac = self.re.mul_full_work(&rhs.re);
+        let bd = self.im.mul_full_work(&rhs.im);
+        let bc = self.im.mul_full_work(&rhs.re);
+        let ad = self.re.mul_full_work(&rhs.im);
+        let cc = rhs.re.mul_full_work(&rhs.re);
+        let dd = rhs.im.mul_full_work(&rhs.im);
         let den = exact_sum(&cc, &dd, false, p);
         Self::new(
             exact_sum(&ac, &bd, false, p).div(&den, p, rm),
@@ -418,17 +418,17 @@ impl ExactComplex {
     fn exp_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         // Each part is a product of two rounded factors, so rounding it once at `p` can land
         // one ulp off in a directed mode: run the parts through the Ziv loop instead.
-        let er = self.re.exp(p, RoundingMode::None, cc);
+        let er = self.re.exp(p, RoundingMode::Work, cc);
         if !finite_nonzero(&er) {
             return self.exp_parts(p, rm, cc);
         }
-        crate::complex_special::ziv_complex(p, rm, |pw| self.exp_parts(pw, RoundingMode::None, cc))
+        crate::complex_special::ziv_complex(p, rm, |pw| self.exp_parts(pw, RoundingMode::Work, cc))
     }
 
     /// `exp(re)·cos(im) + i exp(re)·sin(im)` with the factors at `p` and the products at `(p, rm)`.
     fn exp_parts(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let er = self.re.exp(p, RoundingMode::None, cc);
-        let (s, c) = self.im.sin_cos(p, RoundingMode::None, cc);
+        let er = self.re.exp(p, RoundingMode::Work, cc);
+        let (s, c) = self.im.sin_cos(p, RoundingMode::Work, cc);
         Self::new(ExactNum::mul_ref(&er, &c, p, rm), er.mul(&s, p, rm))
     }
 
@@ -474,13 +474,13 @@ impl ExactComplex {
                 );
             }
         };
-        let ln_big = big.ln(work, RoundingMode::None, cc);
-        let ratio = small.div(&big, work, RoundingMode::None);
+        let ln_big = big.ln(work, RoundingMode::Work, cc);
+        let ratio = small.div(&big, work, RoundingMode::Work);
         let corr = ratio
-            .sqr(work, RoundingMode::None)
-            .log1p(work, RoundingMode::None, cc)
-            .ldexp(-1, work, RoundingMode::None);
-        let mut real = ln_big.add(&corr, work, RoundingMode::None);
+            .sqr(work, RoundingMode::Work)
+            .log1p(work, RoundingMode::Work, cc)
+            .ldexp(-1, work, RoundingMode::Work);
+        let mut real = ln_big.add(&corr, work, RoundingMode::Work);
         if let Err(err) = real.set_precision(prec, rm) {
             return Self::new(ExactNum::nan(Some(err)), ExactNum::nan(Some(err)));
         }
@@ -488,7 +488,7 @@ impl ExactComplex {
     }
 
     fn ln_mod_arg(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let mag = self.abs(p, RoundingMode::None);
+        let mag = self.abs(p, RoundingMode::Work);
         Self::new(mag.ln(p, rm, cc), self.arg(p, rm, cc))
     }
 
@@ -510,12 +510,12 @@ impl ExactComplex {
         if !self.trig_ziv_ok(p, cc) {
             return self.sin_parts(p, rm, cc);
         }
-        crate::complex_special::ziv_complex(p, rm, |pw| self.sin_parts(pw, RoundingMode::None, cc))
+        crate::complex_special::ziv_complex(p, rm, |pw| self.sin_parts(pw, RoundingMode::Work, cc))
     }
 
     fn sin_parts(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let (sn, cs) = self.re.sin_cos(p, RoundingMode::None, cc);
-        let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
+        let (sn, cs) = self.re.sin_cos(p, RoundingMode::Work, cc);
+        let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::Work, cc);
         Self::new(sn.mul(&ch, p, rm), cs.mul(&sh, p, rm))
     }
 
@@ -526,7 +526,7 @@ impl ExactComplex {
         if !finite(&self.re) || !finite(&self.im) {
             return false;
         }
-        let (_, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
+        let (_, ch) = self.im.sinh_cosh(p, RoundingMode::Work, cc);
         finite_nonzero(&ch)
     }
 
@@ -545,12 +545,12 @@ impl ExactComplex {
         if !self.trig_ziv_ok(p, cc) {
             return self.cos_parts(p, rm, cc);
         }
-        crate::complex_special::ziv_complex(p, rm, |pw| self.cos_parts(pw, RoundingMode::None, cc))
+        crate::complex_special::ziv_complex(p, rm, |pw| self.cos_parts(pw, RoundingMode::Work, cc))
     }
 
     fn cos_parts(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let (sn, cs) = self.re.sin_cos(p, RoundingMode::None, cc);
-        let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
+        let (sn, cs) = self.re.sin_cos(p, RoundingMode::Work, cc);
+        let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::Work, cc);
         Self::new(cs.mul(&ch, p, rm), sn.mul(&sh, p, rm).neg())
     }
 
@@ -648,11 +648,11 @@ impl ExactComplex {
             });
         }
         let p_x = Self::work_p(p);
-        self.sin(p_x, RoundingMode::None, cc)
+        self.sin(p_x, RoundingMode::Work, cc)
             .div(
-                &self.cos(p_x, RoundingMode::None, cc),
+                &self.cos(p_x, RoundingMode::Work, cc),
                 p_x,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
             .finish(p, rm)
     }
@@ -672,14 +672,14 @@ impl ExactComplex {
         // `finish` rounded a p+64-bit value once and was wrong in directed modes near a
         // representable value (cosh(2^-60 i) = 1 - 2^-121 + ..., ZF-18).
         let parts = |pw: usize, cc: &mut Consts| {
-            let (sh, ch) = self.re.sinh_cosh(pw, RoundingMode::None, cc);
-            let (sn, cs) = self.im.sin_cos(pw, RoundingMode::None, cc);
+            let (sh, ch) = self.re.sinh_cosh(pw, RoundingMode::Work, cc);
+            let (sn, cs) = self.im.sin_cos(pw, RoundingMode::Work, cc);
             Self::new(
-                sh.mul(&cs, pw, RoundingMode::None),
-                ch.mul(&sn, pw, RoundingMode::None),
+                sh.mul(&cs, pw, RoundingMode::Work),
+                ch.mul(&sn, pw, RoundingMode::Work),
             )
         };
-        let (_, ch) = self.re.sinh_cosh(p, RoundingMode::None, cc);
+        let (_, ch) = self.re.sinh_cosh(p, RoundingMode::Work, cc);
         if !Self::finite_pair(self) || !finite_nonzero(&ch) {
             return parts(Self::work_p(p), cc).finish(p, rm);
         }
@@ -701,14 +701,14 @@ impl ExactComplex {
         // `finish` rounded a p+64-bit value once and was wrong in directed modes near a
         // representable value (cosh(2^-60 i) = 1 - 2^-121 + ..., ZF-18).
         let parts = |pw: usize, cc: &mut Consts| {
-            let (sh, ch) = self.re.sinh_cosh(pw, RoundingMode::None, cc);
-            let (sn, cs) = self.im.sin_cos(pw, RoundingMode::None, cc);
+            let (sh, ch) = self.re.sinh_cosh(pw, RoundingMode::Work, cc);
+            let (sn, cs) = self.im.sin_cos(pw, RoundingMode::Work, cc);
             Self::new(
-                ch.mul(&cs, pw, RoundingMode::None),
-                sh.mul(&sn, pw, RoundingMode::None),
+                ch.mul(&cs, pw, RoundingMode::Work),
+                sh.mul(&sn, pw, RoundingMode::Work),
             )
         };
-        let (_, ch) = self.re.sinh_cosh(p, RoundingMode::None, cc);
+        let (_, ch) = self.re.sinh_cosh(p, RoundingMode::Work, cc);
         if !Self::finite_pair(self) || !finite_nonzero(&ch) {
             return parts(Self::work_p(p), cc).finish(p, rm);
         }
@@ -740,7 +740,7 @@ impl ExactComplex {
     /// `Re = sgn(x)(1 - 2e(cos 2y + e)/d)`, `Im = 2e sin 2y/d`. That avoids
     /// overflowing cosh 2x, while retaining the sign of the distance from ±1.
     fn tanh_parts(x: &ExactNum, y: &ExactNum, pw: usize, cc: &mut Consts) -> (ExactNum, ExactNum) {
-        let n = RoundingMode::None;
+        let n = RoundingMode::Work;
         let x2 = x.ldexp_ref(1, pw, n);
         let y2 = y.ldexp_ref(1, pw, n);
         let (s2y, c2y) = y2.sin_cos(pw, n, cc);
@@ -800,11 +800,11 @@ impl ExactComplex {
             });
         }
         let p_x = Self::work_p(p);
-        self.sinh(p_x, RoundingMode::None, cc)
+        self.sinh(p_x, RoundingMode::Work, cc)
             .div(
-                &self.cosh(p_x, RoundingMode::None, cc),
+                &self.cosh(p_x, RoundingMode::Work, cc),
                 p_x,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
             .finish(p, rm)
     }
@@ -842,14 +842,14 @@ impl ExactComplex {
         // only like-signed terms: h = (|z| + |x|)/2, t = √h, the other part |y|/(2t); each part
         // is a few-ulp relative approximation, rounded under Ziv.
         if !finite_val(&self.re) || !finite_val(&self.im) {
-            let r = self.abs(p_x, RoundingMode::None);
-            let th = self.arg(p_x, RoundingMode::None, cc);
-            let sr = r.sqrt(p_x, RoundingMode::None);
-            let half_th = th.ldexp(-1, p_x, RoundingMode::None);
-            let (s, c) = half_th.sin_cos(p_x, RoundingMode::None, cc);
+            let r = self.abs(p_x, RoundingMode::Work);
+            let th = self.arg(p_x, RoundingMode::Work, cc);
+            let sr = r.sqrt(p_x, RoundingMode::Work);
+            let half_th = th.ldexp(-1, p_x, RoundingMode::Work);
+            let (s, c) = half_th.sin_cos(p_x, RoundingMode::Work, cc);
             return Self::new(
-                ExactNum::mul_ref(&sr, &c, p_x, RoundingMode::None),
-                sr.mul(&s, p_x, RoundingMode::None),
+                ExactNum::mul_ref(&sr, &c, p_x, RoundingMode::Work),
+                sr.mul(&s, p_x, RoundingMode::Work),
             )
             .finish(p, rm);
         }
@@ -863,7 +863,7 @@ impl ExactComplex {
 
     /// `√z` by the Kahan form at working width `pw` for finite `z` off the axes.
     fn sqrt_kahan(&self, pw: usize) -> Self {
-        let n = RoundingMode::None;
+        let n = RoundingMode::Work;
         let a = self.re.hypot(&self.im, pw, n);
         let ax = self.re.abs_ref();
         let h = a.add(&ax, pw, n).ldexp(-1, pw, n);
@@ -902,14 +902,14 @@ impl ExactComplex {
             rm,
             cc,
             |pw, cc| {
-                let ln = self.ln(pw, RoundingMode::None, cc);
-                let base = Self::from_real(cc.ln_2(pw, RoundingMode::None), pw);
-                ln.div(&base, pw, RoundingMode::None)
+                let ln = self.ln(pw, RoundingMode::Work, cc);
+                let base = Self::from_real(cc.ln_2(pw, RoundingMode::Work), pw);
+                ln.div(&base, pw, RoundingMode::Work)
             },
             |q, cc| {
                 CB::exact(self)
                     .ln(q, cc)?
-                    .div_real(&RB::rounded(cc.ln_2(q, RoundingMode::None), q)?, q)
+                    .div_real(&RB::rounded(cc.ln_2(q, RoundingMode::Work), q)?, q)
             },
         )
     }
@@ -937,14 +937,14 @@ impl ExactComplex {
             rm,
             cc,
             |pw, cc| {
-                let ln = self.ln(pw, RoundingMode::None, cc);
-                let base = Self::from_real(cc.ln_10(pw, RoundingMode::None), pw);
-                ln.div(&base, pw, RoundingMode::None)
+                let ln = self.ln(pw, RoundingMode::Work, cc);
+                let base = Self::from_real(cc.ln_10(pw, RoundingMode::Work), pw);
+                ln.div(&base, pw, RoundingMode::Work)
             },
             |q, cc| {
                 CB::exact(self)
                     .ln(q, cc)?
-                    .div_real(&RB::rounded(cc.ln_10(q, RoundingMode::None), q)?, q)
+                    .div_real(&RB::rounded(cc.ln_10(q, RoundingMode::Work), q)?, q)
             },
         )
     }
@@ -980,9 +980,9 @@ impl ExactComplex {
             rm,
             cc,
             |pw, cc| {
-                let ln = self.ln(pw, RoundingMode::None, cc);
-                let lnb = base.ln(pw, RoundingMode::None, cc);
-                ln.div(&lnb, pw, RoundingMode::None)
+                let ln = self.ln(pw, RoundingMode::Work, cc);
+                let lnb = base.ln(pw, RoundingMode::Work, cc);
+                ln.div(&lnb, pw, RoundingMode::Work)
             },
             |q, cc| {
                 CB::exact(self)
@@ -1026,10 +1026,10 @@ impl ExactComplex {
             // Both logarithms have an exact ±0 imaginary part, so the quotient's is an exact
             // signed zero; take it from the plain formula.
             let pw = Self::work_p(p);
-            let plain = self.ln(pw, RoundingMode::None, cc).div(
-                &base.ln(pw, RoundingMode::None, cc),
+            let plain = self.ln(pw, RoundingMode::Work, cc).div(
+                &base.ln(pw, RoundingMode::Work, cc),
                 pw,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             let im = if plain.im.is_zero() && plain.im.is_negative() {
                 ExactNum::new(round_p(p)).neg()
@@ -1060,8 +1060,8 @@ impl ExactComplex {
         if !Self::finite_pair(self) || minus_one {
             let p_x = Self::work_p(p);
             return Self::one(p_x)
-                .add(self, p_x, RoundingMode::None)
-                .ln(p_x, RoundingMode::None, cc)
+                .add(self, p_x, RoundingMode::Work)
+                .ln(p_x, RoundingMode::Work, cc)
                 .finish(p, rm);
         }
         // Re = ½ log1p(x(2 + x) + y²), Im = atan2(y, 1 + x): `1 + z` rounded at the working
@@ -1073,17 +1073,17 @@ impl ExactComplex {
             rm,
             cc,
             |pw, cc| {
-                let two_x = ExactNum::from_u8(2, WORD_BIT_SIZE).add(x, pw, RoundingMode::None);
-                let t = ExactNum::mul_ref(x, &two_x, pw, RoundingMode::None).add(
-                    &y.sqr(pw, RoundingMode::None),
+                let two_x = ExactNum::from_u8(2, WORD_BIT_SIZE).add(x, pw, RoundingMode::Work);
+                let t = ExactNum::mul_ref(x, &two_x, pw, RoundingMode::Work).add(
+                    &y.sqr(pw, RoundingMode::Work),
                     pw,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 );
                 let re = t
-                    .log1p(pw, RoundingMode::None, cc)
-                    .ldexp(-1, pw, RoundingMode::None);
-                let one_x = ExactNum::from_u8(1, WORD_BIT_SIZE).add(x, pw, RoundingMode::None);
-                let im = y.atan2(&one_x, pw, RoundingMode::None, cc);
+                    .log1p(pw, RoundingMode::Work, cc)
+                    .ldexp(-1, pw, RoundingMode::Work);
+                let one_x = ExactNum::from_u8(1, WORD_BIT_SIZE).add(x, pw, RoundingMode::Work);
+                let im = y.atan2(&one_x, pw, RoundingMode::Work, cc);
                 Self::new(re, im)
             },
             |q, cc| {
@@ -1119,13 +1119,13 @@ impl ExactComplex {
             rm,
             cc,
             |pw, cc| {
-                let ln2 = Self::from_real(cc.ln_2(pw, RoundingMode::None), pw);
-                self.mul(&ln2, pw, RoundingMode::None)
-                    .exp(pw, RoundingMode::None, cc)
+                let ln2 = Self::from_real(cc.ln_2(pw, RoundingMode::Work), pw);
+                self.mul(&ln2, pw, RoundingMode::Work)
+                    .exp(pw, RoundingMode::Work, cc)
             },
             |q, cc| {
                 CB::exact(self)
-                    .mul_real(&RB::rounded(cc.ln_2(q, RoundingMode::None), q)?, q)?
+                    .mul_real(&RB::rounded(cc.ln_2(q, RoundingMode::Work), q)?, q)?
                     .exp(q, cc)
             },
         )
@@ -1151,13 +1151,13 @@ impl ExactComplex {
             rm,
             cc,
             |pw, cc| {
-                let ln10 = Self::from_real(cc.ln_10(pw, RoundingMode::None), pw);
-                self.mul(&ln10, pw, RoundingMode::None)
-                    .exp(pw, RoundingMode::None, cc)
+                let ln10 = Self::from_real(cc.ln_10(pw, RoundingMode::Work), pw);
+                self.mul(&ln10, pw, RoundingMode::Work)
+                    .exp(pw, RoundingMode::Work, cc)
             },
             |q, cc| {
                 CB::exact(self)
-                    .mul_real(&RB::rounded(cc.ln_10(q, RoundingMode::None), q)?, q)?
+                    .mul_real(&RB::rounded(cc.ln_10(q, RoundingMode::Work), q)?, q)?
                     .exp(q, cc)
             },
         )
@@ -1182,7 +1182,7 @@ impl ExactComplex {
             // exp(z) - 1 at one fixed width lost the real part for small |z| (ZF-20).
             let (x, y) = (&self.re, &self.im);
             return crate::complex_special::ziv_complex(p, rm, |pw| {
-                let n = RoundingMode::None;
+                let n = RoundingMode::Work;
                 let em1 = x.expm1(pw, n, cc);
                 let half_y = y.ldexp_ref(-1, pw, n);
                 let s2 = half_y.sin(pw, n, cc);
@@ -1194,8 +1194,8 @@ impl ExactComplex {
             });
         }
         let p_x = Self::work_p(p);
-        self.exp(p_x, RoundingMode::None, cc)
-            .sub(&Self::one(p_x), p_x, RoundingMode::None)
+        self.exp(p_x, RoundingMode::Work, cc)
+            .sub(&Self::one(p_x), p_x, RoundingMode::Work)
             .finish(p, rm)
     }
 
@@ -1275,10 +1275,10 @@ impl ExactComplex {
             rm,
             cc,
             |pw, cc| {
-                let ln = self.ln(pw, RoundingMode::None, cc);
+                let ln = self.ln(pw, RoundingMode::Work, cc);
                 let nn = Self::from_real(ExactNum::from_u32(n as u32, pw), pw);
-                ln.div(&nn, pw, RoundingMode::None)
-                    .exp(pw, RoundingMode::None, cc)
+                ln.div(&nn, pw, RoundingMode::Work)
+                    .exp(pw, RoundingMode::Work, cc)
             },
             |q, cc| {
                 CB::exact(self)
@@ -1316,13 +1316,13 @@ impl ExactComplex {
             rm,
             cc,
             |pw, cc| {
-                self.mul(self, pw, RoundingMode::None)
+                self.mul(self, pw, RoundingMode::Work)
                     .add(
-                        &other.mul(other, pw, RoundingMode::None),
+                        &other.mul(other, pw, RoundingMode::Work),
                         pw,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     )
-                    .sqrt(pw, RoundingMode::None, cc)
+                    .sqrt(pw, RoundingMode::Work, cc)
             },
             |q, _cc| {
                 let a = CB::exact(self);
@@ -1350,8 +1350,8 @@ impl ExactComplex {
         if !finite {
             let pw = Self::work_p(p);
             return self
-                .mul(b, pw, RoundingMode::None)
-                .add(c, pw, RoundingMode::None)
+                .mul(b, pw, RoundingMode::Work)
+                .add(c, pw, RoundingMode::Work)
                 .finish(p, rm);
         }
         crate::complex_ball::ziv_complex_ball(p, rm, |q| {
@@ -1402,9 +1402,9 @@ impl ExactComplex {
         // special values (Inf/0) there; finite results go through the ball loop.
         let finite = finite && {
             let t = rhs.mul(
-                &self.ln(WORD_BIT_SIZE, RoundingMode::None, cc),
+                &self.ln(WORD_BIT_SIZE, RoundingMode::Work, cc),
                 WORD_BIT_SIZE,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             !exp_arg_huge(&t.re)
         };
@@ -1427,9 +1427,9 @@ impl ExactComplex {
             rm,
             cc,
             |pw, cc| {
-                let ln = self.ln(pw, RoundingMode::None, cc);
-                rhs.mul(&ln, pw, RoundingMode::None)
-                    .exp(pw, RoundingMode::None, cc)
+                let ln = self.ln(pw, RoundingMode::Work, cc);
+                rhs.mul(&ln, pw, RoundingMode::Work)
+                    .exp(pw, RoundingMode::Work, cc)
             },
             |q, cc| {
                 CB::exact(rhs)
@@ -1527,7 +1527,7 @@ impl ExactComplex {
             return Some(Self::new(re, im));
         }
         Some(crate::complex_special::ziv_complex(p, rm, |pw| {
-            let n = RoundingMode::None;
+            let n = RoundingMode::Work;
             let lb = if ten { cc.ln_10(pw, n) } else { cc.ln_2(pw, n) };
             let m = if ten { x.exp10(pw, n, cc) } else { x.exp2(pw, n, cc) };
             let (sn, cs) = ExactNum::mul_ref(y, &lb, pw, n).sin_cos(pw, n, cc);
@@ -1550,7 +1550,7 @@ impl ExactComplex {
         if !finite_val(x) || !finite_val(y) || (x.is_zero() && y.is_zero()) {
             return None;
         }
-        let n = RoundingMode::None;
+        let n = RoundingMode::Work;
         let wx = x.precision().unwrap_or(0).max(y.precision().unwrap_or(0));
         let w = 2 * wx + 2 * WORD_BIT_SIZE;
         let nn = ExactNum::add_ref(
@@ -1612,7 +1612,7 @@ impl ExactComplex {
             let cos_x2 = trig_exact_x2(num, den);
             let sin_x2 = trig_exact_x2(den - 2 * num, 2 * den);
             let mut z = crate::complex_special::ziv_complex(p, rm, |pw| {
-                let nr = RoundingMode::None;
+                let nr = RoundingMode::Work;
                 let m = mag.nth_root(n, pw, nr);
                 let pi_q = cc.pi(pw, nr).mul(&ExactNum::from_i64(num, pw), pw, nr).div(
                     &ExactNum::from_i64(den, pw),
@@ -1640,7 +1640,7 @@ impl ExactComplex {
                         return part;
                     };
                     let wp = p.max(64).saturating_add(64);
-                    let nr = RoundingMode::None;
+                    let nr = RoundingMode::Work;
                     let mut want =
                         ExactNum::mul_ref(&m, &ExactNum::from_i64(c, wp), wp, nr).ldexp(-1, wp, nr);
                     if want.set_precision(p, rm).is_err() {
@@ -1657,7 +1657,7 @@ impl ExactComplex {
             }
             return Some(z);
         }
-        let nr = RoundingMode::None;
+        let nr = RoundingMode::Work;
         let n_u32 = u32::try_from(n).ok()?;
         let root = |pw: usize, cc: &mut Consts| {
             let ninv = ExactNum::from_u32(1, pw).div(&ExactNum::from_u32(n_u32, pw), pw, nr);
@@ -1706,7 +1706,7 @@ impl ExactComplex {
     /// Exact `z^k` for integer `k` within the `4p` width limit (finished at `dest` by the
     /// caller for `k ≥ 0`); for `k < 0` the value already rounded once at `dest = (p, rm)`.
     fn pow_int_exact(&self, rhs: &Self, p: usize, dest: (usize, RoundingMode)) -> Option<Self> {
-        let n = RoundingMode::None;
+        let n = RoundingMode::Work;
         if !rhs.im.is_zero() || !rhs.re.is_int() || !finite_val(&self.re) || !finite_val(&self.im) {
             return None;
         }
@@ -1794,7 +1794,7 @@ impl ExactComplex {
 
     /// `(sin(π yu), cos(π yu))`, with exact `0, ±1` when `2 yu` is an integer.
     fn cos_sin_pi_times(yu: &ExactNum, p: usize, cc: &mut Consts) -> Option<(ExactNum, ExactNum)> {
-        let n = RoundingMode::None;
+        let n = RoundingMode::Work;
         let t = yu.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
         let two_t = t.ldexp_ref(1, p.max(t.precision().unwrap_or(p)) + 2, n);
         if two_t.is_int() {
@@ -1818,7 +1818,7 @@ impl ExactComplex {
     /// The general `exp((a+ib) Log z)` path leaves a residue that shrinks with
     /// the working precision and never certifies.
     fn pow_axis_complex_exp(&self, rhs: &Self, p: usize, cc: &mut Consts) -> Option<Self> {
-        let n = RoundingMode::None;
+        let n = RoundingMode::Work;
         let a = &rhs.re;
         let b = &rhs.im;
         let m = self.axis_half_turns()?;
@@ -1893,7 +1893,7 @@ impl ExactComplex {
 
     /// Ball form of [`Self::pow_axis_complex_exp`] (exact zero parts stay exact).
     fn pow_axis_complex_exp_ball(&self, rhs: &Self, p: usize, cc: &mut Consts) -> Option<CB> {
-        let n = RoundingMode::None;
+        let n = RoundingMode::Work;
         let a = &rhs.re;
         let b = &rhs.im;
         let m = self.axis_half_turns()?;
@@ -1974,7 +1974,7 @@ impl ExactComplex {
     }
 
     fn pow_real_axis(&self, rhs: &Self, p: usize, cc: &mut Consts) -> Option<Self> {
-        let n = RoundingMode::None;
+        let n = RoundingMode::Work;
         if !finite_val(&rhs.re)
             || !finite_val(&rhs.im)
             || !finite_val(&self.re)
@@ -2050,7 +2050,7 @@ impl ExactComplex {
 
     /// Ball form of [`Self::pow_real_axis`] (same cases; exact zero parts stay exact).
     fn pow_real_axis_ball(&self, rhs: &Self, p: usize, cc: &mut Consts) -> Option<CB> {
-        let n = RoundingMode::None;
+        let n = RoundingMode::Work;
         if !finite_val(&rhs.re)
             || !finite_val(&rhs.im)
             || !finite_val(&self.re)
@@ -2157,7 +2157,7 @@ impl ExactComplex {
                 }
             };
             let re = signed(self.re.is_negative(), &mut |m| {
-                cc.pi(p, m).ldexp(-1, p, RoundingMode::None)
+                cc.pi(p, m).ldexp(-1, p, RoundingMode::Work)
             });
             let im = if self.im.is_negative() { crate::ext::INF_NEG } else { crate::ext::INF_POS };
             return Self::new(re, im);
@@ -2169,16 +2169,16 @@ impl ExactComplex {
             rm,
             cc,
             |p_x, cc| {
-                let z2 = self.mul(self, p_x, RoundingMode::None);
+                let z2 = self.mul(self, p_x, RoundingMode::Work);
                 let one = Self::one(p_x);
                 let rad = one
-                    .sub(&z2, p_x, RoundingMode::None)
-                    .sqrt(p_x, RoundingMode::None, cc);
-                let iz = Self::i(p_x).mul(self, p_x, RoundingMode::None);
+                    .sub(&z2, p_x, RoundingMode::Work)
+                    .sqrt(p_x, RoundingMode::Work, cc);
+                let iz = Self::i(p_x).mul(self, p_x, RoundingMode::Work);
                 let ln =
-                    iz.add(&rad, p_x, RoundingMode::None)
-                        .ln_mod_arg(p_x, RoundingMode::None, cc);
-                let v = Self::i(p_x).mul(&ln, p_x, RoundingMode::None).neg();
+                    iz.add(&rad, p_x, RoundingMode::Work)
+                        .ln_mod_arg(p_x, RoundingMode::Work, cc);
+                let v = Self::i(p_x).mul(&ln, p_x, RoundingMode::Work).neg();
                 if below {
                     v.conj()
                 } else {
@@ -2229,14 +2229,14 @@ impl ExactComplex {
             cc,
             |p_x, cc| {
                 let half_pi = cc
-                    .pi(p_x, RoundingMode::None)
-                    .ldexp(-1, p_x, RoundingMode::None);
-                let asinv = self.asin(p_x, RoundingMode::None, cc);
-                Self::new(half_pi, ExactNum::new(p_x)).sub(&asinv, p_x, RoundingMode::None)
+                    .pi(p_x, RoundingMode::Work)
+                    .ldexp(-1, p_x, RoundingMode::Work);
+                let asinv = self.asin(p_x, RoundingMode::Work, cc);
+                Self::new(half_pi, ExactNum::new(p_x)).sub(&asinv, p_x, RoundingMode::Work)
             },
             |q, cc| {
                 let a = self.asin_ball(q, cc)?;
-                let hp = RB::rounded(cc.pi(q, RoundingMode::None), q)?.scale2(-1)?;
+                let hp = RB::rounded(cc.pi(q, RoundingMode::Work), q)?.scale2(-1)?;
                 Some(CB::from_parts(hp.sub(&a.re, q)?, a.im.neg()))
             },
         )
@@ -2289,7 +2289,7 @@ impl ExactComplex {
                 // On the cut |x| > 1 (C99 Annex G, DLMF 4.23.19–4.23.24): casin(x ± i0) =
                 // sgn(x)·π/2 ± i·acosh|x|, cacos(x ± i0) = (0 or π) ∓ i·acosh|x|.
                 InvFn::Asin => {
-                    let re = signed(xneg, &mut |m| cc.pi(p, m).ldexp(-1, p, RoundingMode::None));
+                    let re = signed(xneg, &mut |m| cc.pi(p, m).ldexp(-1, p, RoundingMode::Work));
                     let im = signed(neg, &mut |m| ax.acosh(p, m, cc));
                     Some(Self::new(re, im))
                 }
@@ -2313,7 +2313,7 @@ impl ExactComplex {
             // casinh(±0 + iy), |y| > 1: ±acosh|y| + i·sgn(y)·π/2.
             InvFn::Asinh => {
                 let re = signed(neg, &mut |m| ay.acosh(p, m, cc));
-                let im = signed(yneg, &mut |m| cc.pi(p, m).ldexp(-1, p, RoundingMode::None));
+                let im = signed(yneg, &mut |m| cc.pi(p, m).ldexp(-1, p, RoundingMode::Work));
                 Some(Self::new(re, im))
             }
             InvFn::Atanh => Some(Self::new(zero(neg), y.atan(p, rm, cc))),
@@ -2341,13 +2341,13 @@ impl ExactComplex {
             rm,
             cc,
             |p_x, cc| {
-                let num = Self::i(p_x).add(self, p_x, RoundingMode::None);
-                let den = Self::i(p_x).sub(self, p_x, RoundingMode::None);
+                let num = Self::i(p_x).add(self, p_x, RoundingMode::Work);
+                let den = Self::i(p_x).sub(self, p_x, RoundingMode::Work);
                 let ln = num
-                    .div(&den, p_x, RoundingMode::None)
-                    .ln(p_x, RoundingMode::None, cc);
-                let half_i = Self::i(p_x).ldexp_parts(-1, p_x, RoundingMode::None);
-                half_i.mul(&ln, p_x, RoundingMode::None)
+                    .div(&den, p_x, RoundingMode::Work)
+                    .ln(p_x, RoundingMode::Work, cc);
+                let half_i = Self::i(p_x).ldexp_parts(-1, p_x, RoundingMode::Work);
+                half_i.mul(&ln, p_x, RoundingMode::Work)
             },
             |q, cc| {
                 let z = CB::exact(self);
@@ -2388,13 +2388,13 @@ impl ExactComplex {
                 let neg = self.re.is_negative();
                 Some(crate::complex_special::ziv_complex(p, rm, |pw| {
                     let mut h = cc
-                        .pi(pw, RoundingMode::None)
-                        .ldexp(-1, pw, RoundingMode::None);
+                        .pi(pw, RoundingMode::Work)
+                        .ldexp(-1, pw, RoundingMode::Work);
                     if neg {
                         h = h.neg();
                     }
-                    let inv = ExactNum::div_ref(&one, &self.im, pw, RoundingMode::None);
-                    Self::new(h, inv.atanh(pw, RoundingMode::None, cc))
+                    let inv = ExactNum::div_ref(&one, &self.im, pw, RoundingMode::Work);
+                    Self::new(h, inv.atanh(pw, RoundingMode::Work, cc))
                 }))
             }
             _ => None,
@@ -2421,14 +2421,14 @@ impl ExactComplex {
             rm,
             cc,
             |p_x, cc| {
-                let z2 = self.mul(self, p_x, RoundingMode::None);
-                let rad = z2.add(&Self::one(p_x), p_x, RoundingMode::None).sqrt(
+                let z2 = self.mul(self, p_x, RoundingMode::Work);
+                let rad = z2.add(&Self::one(p_x), p_x, RoundingMode::Work).sqrt(
                     p_x,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                     cc,
                 );
-                rad.add(self, p_x, RoundingMode::None)
-                    .ln(p_x, RoundingMode::None, cc)
+                rad.add(self, p_x, RoundingMode::Work)
+                    .ln(p_x, RoundingMode::Work, cc)
             },
             |q, cc| {
                 let z = CB::exact(self);
@@ -2492,16 +2492,16 @@ impl ExactComplex {
                 // `z - 1` is `-1 + z` and `z + 1` is `1 + z`: the constants own the sums, `z` stays borrowed.
                 let zm = Self::one(p_x)
                     .neg()
-                    .add(&self, p_x, RoundingMode::None)
-                    .sqrt(p_x, RoundingMode::None, cc);
-                let zp = Self::one(p_x).add(&self, p_x, RoundingMode::None).sqrt(
+                    .add(&self, p_x, RoundingMode::Work)
+                    .sqrt(p_x, RoundingMode::Work, cc);
+                let zp = Self::one(p_x).add(&self, p_x, RoundingMode::Work).sqrt(
                     p_x,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                     cc,
                 );
-                zm.mul(&zp, p_x, RoundingMode::None)
-                    .add(&self, p_x, RoundingMode::None)
-                    .ln(p_x, RoundingMode::None, cc)
+                zm.mul(&zp, p_x, RoundingMode::Work)
+                    .add(&self, p_x, RoundingMode::Work)
+                    .ln(p_x, RoundingMode::Work, cc)
             },
             |q, cc| {
                 let z = CB::exact(&self);
@@ -2557,7 +2557,7 @@ impl ExactComplex {
                 let lp = a.add(&one, q)?.ln(q, cc)?;
                 let lm = a.sub(&one, q)?.ln(q, cc)?;
                 let re = lp.sub(&lm, q)?.scale2(-1)?;
-                let im = RB::rounded(cc.pi(q, RoundingMode::None), q)?.scale2(-1)?;
+                let im = RB::rounded(cc.pi(q, RoundingMode::Work), q)?.scale2(-1)?;
                 Some(CB::from_parts(
                     if xneg { re.neg() } else { re },
                     if ineg { im.neg() } else { im },
@@ -2570,11 +2570,11 @@ impl ExactComplex {
             rm,
             cc,
             |p_x, cc| {
-                let num = Self::one(p_x).add(self, p_x, RoundingMode::None);
-                let den = Self::one(p_x).sub(self, p_x, RoundingMode::None);
-                num.div(&den, p_x, RoundingMode::None)
-                    .ln(p_x, RoundingMode::None, cc)
-                    .ldexp_parts(-1, p_x, RoundingMode::None)
+                let num = Self::one(p_x).add(self, p_x, RoundingMode::Work);
+                let den = Self::one(p_x).sub(self, p_x, RoundingMode::Work);
+                num.div(&den, p_x, RoundingMode::Work)
+                    .ln(p_x, RoundingMode::Work, cc)
+                    .ldexp_parts(-1, p_x, RoundingMode::Work)
             },
             |q, cc| {
                 let z = CB::exact(self);
@@ -2758,7 +2758,7 @@ fn span_c(z: &ExactComplex) -> Option<(usize, Exponent)> {
 /// bits: write `c = 2^e (1+i)^j g` with `j ∈ {0,1}` and `g` a Gaussian integer prime to
 /// `1+i`; then `g^k` has one odd part and `log2|g|^k − ½ ≤ span(g^k) ≤ log2|g|^k + 1`.
 fn exact_pow_within(c: &ExactComplex, n: usize, max_span: usize) -> Option<ExactComplex> {
-    let nr = RoundingMode::None;
+    let nr = RoundingMode::Work;
     let w_of = |a: &ExactComplex| span_c(a).map(|(s, _)| s).unwrap_or(0) + 1;
     let mul = |a: &ExactComplex, b: &ExactComplex| -> Option<ExactComplex> {
         let w = round_p(w_of(a) + w_of(b) + 2 * WORD_BIT_SIZE);
@@ -2810,7 +2810,7 @@ fn exact_abs_nth_root(mag: &ExactNum, n: usize) -> Option<ExactNum> {
         return None;
     }
     let w = p.saturating_mul(n.saturating_add(1)).saturating_add(64);
-    let recon = cand.powsi(i64::try_from(n).ok()?, w, RoundingMode::None);
+    let recon = cand.powsi(i64::try_from(n).ok()?, w, RoundingMode::Work);
     if recon.compare(mag) != Some(0) {
         return None;
     }

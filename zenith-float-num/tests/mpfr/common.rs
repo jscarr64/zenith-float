@@ -604,7 +604,7 @@ where
         RoundingMode::ToZero => Some(Rnd::Zero),
         RoundingMode::FromZero => Some(Rnd::AwayZero),
         RoundingMode::ToOdd => None,
-        RoundingMode::None => {
+        RoundingMode::None | RoundingMode::Work => {
             // handled at the top (toward zero at the storage precision)
             {
                 mpfr::set_emin(old_min);

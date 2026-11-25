@@ -374,7 +374,7 @@ fn jacobi_all_seven_modes() -> Res {
         // FromZero, Up and Down return NaN(PrecisionRetryExhausted) for am (m != 0), sn, cn, cd, sc and sd, and Down is
         // in the digest pin (N-6). None returns exactly 1 for cn(u|1) and dn(u|m > 0), whose values are below 1, and
         // dn and nd at m = 1/2 and 3/8 come back flagged exact (N-7). Neither is F-A/F-B/F-C shaped. ns, cs and ds
-        // at that u overflow to +Inf under None: NONE-GAP F-B.
+        // at that u overflow; None saturates to +-MAX there (F-B, M27-OVF).
         for i in [0usize, 1, 2, 3, 5, 7] {
             let u = operand(i);
             for (mi, m) in ms.iter().enumerate() {

@@ -7,7 +7,7 @@ use crate::mpfr::common::draw_seed;
 use crate::mpfr::common::mpfr_reference_with;
 use crate::mpfr::common::rebuild_from_seed;
 use crate::mpfr::common::reset_test_rng;
-use crate::mpfr::exact_bit_functions::{check, input, MODES, NONE_GAP_MODES, PRECISIONS};
+use crate::mpfr::exact_bit_functions::{check, input, MODES, PRECISIONS};
 use crate::mpfr::mp::Float;
 use crate::mpfr::mp::{mpfr, Rnd};
 use zenith_float_num::Exponent;
@@ -119,8 +119,8 @@ fn overflow_by_mode_binary() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 let fx = conv_big(w, mk_x()?, &mut cc)?;
                 let fb = conv_big(w, b_owned, &mut cc)?;
-                // NONE-GAP F-B: every op here overflows (ZF-M27)
-                for rm in NONE_GAP_MODES {
+                // F-B (ZF-M27, M27-OVF): every op here overflows; None saturates to +-MAX, checked in every mode
+                for rm in MODES {
                     let got = zf(&x, b, p, rm, &mut cc);
                     let info = format!("{name} p={p} {rm:?} {x:?} {b:?}");
                     check_ovf(&got, p, rm, &info, &mut cc, |r, rnd| mp(r, &fx, &fb, rnd))?;
@@ -129,8 +129,8 @@ fn overflow_by_mode_binary() -> Result<(), Box<dyn std::error::Error>> {
             // fma(x, y, x), ldexp(x, 4), powi(x, 3)
             let fx = conv_big(w, mk_x()?, &mut cc)?;
             let fy = conv_big(w, mk_y()?, &mut cc)?;
-            // NONE-GAP F-B: fma, ldexp and powi overflow here (ZF-M27)
-            for rm in NONE_GAP_MODES {
+            // F-B (ZF-M27, M27-OVF): fma, ldexp and powi overflow here; None saturates to +-MAX, checked in every mode
+            for rm in MODES {
                 let got = x.fma(&y, &x, p, rm);
                 check_ovf(
                     &got,

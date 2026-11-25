@@ -64,17 +64,17 @@ impl ExactNumNumber {
 
         loop {
             let p_x = p_wrk + additional_prec;
-            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::Work)?;
             x.set_inexact(false);
 
-            let d1 = ONE.add(&x, p_x, RoundingMode::None)?;
-            let d2 = ONE.sub(&x, p_x, RoundingMode::None)?;
+            let d1 = ONE.add(&x, p_x, RoundingMode::Work)?;
+            let d2 = ONE.sub(&x, p_x, RoundingMode::Work)?;
 
-            let d3 = d1.div(&d2, p_x, RoundingMode::None)?;
+            let d3 = d1.div(&d2, p_x, RoundingMode::Work)?;
 
-            let mut ret = d3.ln(p_x, RoundingMode::None, cc)?;
+            let mut ret = d3.ln(p_x, RoundingMode::Work, cc)?;
 
-            ret.div_by_2(RoundingMode::None);
+            ret.div_by_2(RoundingMode::Work);
 
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());

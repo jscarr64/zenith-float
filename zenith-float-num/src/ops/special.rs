@@ -97,6 +97,7 @@ impl ExactNumNumber {
                 Self::min_positive(p)
             }
             RoundingMode::None
+            | RoundingMode::Work
             | RoundingMode::Down
             | RoundingMode::ToZero
             | RoundingMode::ToEven => Self::new2(p, Sign::Pos, true),
@@ -116,14 +117,14 @@ impl ExactNumNumber {
         let pw = round_p(p) + 3 * WORD_BIT_SIZE;
         let e0 = base.exponent();
         let mut b = Self::new(pw)?;
-        b = b.add(base, pw, RoundingMode::None)?;
+        b = b.add(base, pw, RoundingMode::Work)?;
         b.set_exponent(0);
         let mut t = Self::from_word(1, pw)?;
         let shift = Exponent::try_from(round_p(p) + 2 * WORD_BIT_SIZE)
             .map_err(|_| Error::InvalidArgument)?;
         t.set_exponent(1 - shift);
         t.set_sign(toward);
-        let mut r = b.add(&t, pw, RoundingMode::None)?;
+        let mut r = b.add(&t, pw, RoundingMode::Work)?;
         r.set_precision(p, rm)?;
         let e1 = r.exponent();
         r.set_exponent(e0 + e1);
@@ -150,7 +151,7 @@ impl ExactNumNumber {
             None => {
                 let erfc = x.erfc_asymptotic(p, cc)?;
                 let one = Self::from_word(1, p)?;
-                one.sub(&erfc, p, RoundingMode::None)?
+                one.sub(&erfc, p, RoundingMode::Work)?
             }
             // The alternating series peaks near e^{x²}: carry x²·log₂e extra bits.
             Some(guard) => x.erf_series(p + guard, cc)?,
@@ -173,22 +174,22 @@ impl ExactNumNumber {
                     // erfc(x) ≈ e^{-x²}/(x√π): 1 − erf(x) cancels about x²·log₂e bits.
                     let pw = p + guard;
                     let one = Self::from_word(1, pw)?;
-                    return one.sub(&x.erf_at(pw, cc)?, pw, RoundingMode::None);
+                    return one.sub(&x.erf_at(pw, cc)?, pw, RoundingMode::Work);
                 }
             }
         }
         let one = Self::from_word(1, p)?;
-        one.sub(&x.erf_at(p, cc)?, p, RoundingMode::None)
+        one.sub(&x.erf_at(p, cc)?, p, RoundingMode::Work)
     }
 
     fn erf_series(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // (2/√π) ∑ (-1)^n x^{2n+1} / (n! (2n+1))
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let sqrt_pi = pi.sqrt(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
+        let sqrt_pi = pi.sqrt(p, RoundingMode::Work)?;
         let two = Self::from_word(2, p)?;
-        let scale = two.div(&sqrt_pi, p, RoundingMode::None)?;
+        let scale = two.div(&sqrt_pi, p, RoundingMode::Work)?;
 
-        let x2 = self.mul(self, p, RoundingMode::None)?;
+        let x2 = self.mul(self, p, RoundingMode::Work)?;
         // x^{2n+1} and the partial sum both start at x itself: None stands for `self` (no copy of it).
         let mut xpow: Option<Self> = None;
         let mut nfact = Self::from_word(1, p)?;
@@ -198,24 +199,24 @@ impl ExactNumNumber {
         // The term count is that peak plus the tail bound, not a fixed cap (P9).
         let mut n: usize = 1;
         loop {
-            nfact = nfact.mul(&from_usize_p(n, p)?, p, RoundingMode::None)?;
+            nfact = nfact.mul(&from_usize_p(n, p)?, p, RoundingMode::Work)?;
             let xp = xpow
                 .as_ref()
                 .unwrap_or(self)
-                .mul(&x2, p, RoundingMode::None)?;
+                .mul(&x2, p, RoundingMode::Work)?;
             let two_n_1 = from_usize_p(2 * n + 1, p)?;
-            let den = nfact.mul(&two_n_1, p, RoundingMode::None)?;
-            let mut t = xp.div(&den, p, RoundingMode::None)?;
+            let den = nfact.mul(&two_n_1, p, RoundingMode::Work)?;
+            let mut t = xp.div(&den, p, RoundingMode::Work)?;
             if n % 2 == 1 {
                 t.set_sign(Sign::Neg);
             }
             let sm = sum
                 .as_ref()
                 .unwrap_or(self)
-                .add(&t, p, RoundingMode::None)?;
+                .add(&t, p, RoundingMode::Work)?;
             let past_peak = from_usize_p(n, p)?.cmp(&x2) > 0;
             if t.is_zero() || (past_peak && t.exponent() + (p as i64) < sm.exponent()) {
-                return scale.mul(&sm, p, RoundingMode::None);
+                return scale.mul(&sm, p, RoundingMode::Work);
             }
             xpow = Some(xp);
             sum = Some(sm);
@@ -227,29 +228,29 @@ impl ExactNumNumber {
     /// smallest term (≈ e^{-x²}) is already below `2^-p`.
     fn erfc_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // e^{-x^2} / (x √π) * ∑ (-1)^k (2k-1)!! / (2x^2)^k
-        let x2 = self.mul(self, p, RoundingMode::None)?;
+        let x2 = self.mul(self, p, RoundingMode::Work)?;
         let nx2 = x2.with_sign(Sign::Neg)?;
-        let expm = nx2.exp(p, RoundingMode::None, cc)?;
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let sqrt_pi = pi.sqrt(p, RoundingMode::None)?;
-        let den = self.mul(&sqrt_pi, p, RoundingMode::None)?;
-        let pre = expm.div(&den, p, RoundingMode::None)?;
+        let expm = nx2.exp(p, RoundingMode::Work, cc)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
+        let sqrt_pi = pi.sqrt(p, RoundingMode::Work)?;
+        let den = self.mul(&sqrt_pi, p, RoundingMode::Work)?;
+        let pre = expm.div(&den, p, RoundingMode::Work)?;
 
-        let two_x2 = x2.mul(&Self::from_word(2, p)?, p, RoundingMode::None)?;
+        let two_x2 = x2.mul(&Self::from_word(2, p)?, p, RoundingMode::Work)?;
         let mut s = Self::from_word(1, p)?;
         let mut term = Self::from_word(1, p)?;
         // Cap or divergence without meeting the bound: never use the partial sum.
         let mut done = false;
         for k in 1..=(p + 8) {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
-            let ratio = odd.div(&two_x2, p, RoundingMode::None)?;
+            let ratio = odd.div(&two_x2, p, RoundingMode::Work)?;
             if ratio.cmp(&Self::from_word(1, p)?) >= 0 {
                 // Past the smallest term: the series starts to diverge.
                 break;
             }
-            term = term.mul(&ratio, p, RoundingMode::None)?;
+            term = term.mul(&ratio, p, RoundingMode::Work)?;
             term.set_sign(if k % 2 == 1 { Sign::Neg } else { Sign::Pos });
-            s = s.add(&term, p, RoundingMode::None)?;
+            s = s.add(&term, p, RoundingMode::Work)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
                 done = true;
                 break;
@@ -259,7 +260,7 @@ impl ExactNumNumber {
         if !done {
             return Err(Error::PrecisionRetryExhausted);
         }
-        pre.mul(&s, p, RoundingMode::None)
+        pre.mul(&s, p, RoundingMode::Work)
     }
 
     /// Gamma function `Γ(self)` at precision `p`.
@@ -401,15 +402,15 @@ impl ExactNumNumber {
 
         loop {
             let p_x = round_p(p_wrk + WORD_BIT_SIZE * 2 + guard);
-            let s = self.add(b, p_x, RoundingMode::None)?;
+            let s = self.add(b, p_x, RoundingMode::Work)?;
             let mut ret = if large {
                 let la = self.ln_gamma_positive_at(p_x, cc)?;
                 let lb = b.ln_gamma_positive_at(p_x, cc)?;
                 let ls = s.ln_gamma_positive_at(p_x, cc)?;
                 let l = la
-                    .add(&lb, p_x, RoundingMode::None)?
-                    .sub(&ls, p_x, RoundingMode::None)?;
-                let e = match l.exp(p_x, RoundingMode::None, cc) {
+                    .add(&lb, p_x, RoundingMode::Work)?
+                    .sub(&ls, p_x, RoundingMode::Work)?;
+                let e = match l.exp(p_x, RoundingMode::Work, cc) {
                     Err(Error::ExponentOverflow(Sign::Neg)) => Self::new(p_x)?,
                     other => other?,
                 };
@@ -428,8 +429,8 @@ impl ExactNumNumber {
                 let ga = self.gamma_at(p_x, cc)?;
                 let gb = b.gamma_at(p_x, cc)?;
                 let gs = s.gamma_at(p_x, cc)?;
-                ga.mul(&gb, p_x, RoundingMode::None)?
-                    .div(&gs, p_x, RoundingMode::None)?
+                ga.mul(&gb, p_x, RoundingMode::Work)?
+                    .div(&gs, p_x, RoundingMode::Work)?
             };
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | inexact);
@@ -472,7 +473,7 @@ impl ExactNumNumber {
         // |sin(πx)| = sin(πg) is formed without cancellation near the poles.
         let reflect = if self.is_negative() {
             let pw = self.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE;
-            let x = Self::new(pw)?.add(self, pw, RoundingMode::None)?;
+            let x = Self::new(pw)?.add(self, pw, RoundingMode::Work)?;
             let f = x.fract()?.abs()?;
             if f.is_zero() {
                 // Non-positive integer: a pole of Γ, so ln|Γ| is +Inf.
@@ -480,8 +481,8 @@ impl ExactNumNumber {
             }
             let one = Self::from_word(1, pw)?;
             let half = one_half(pw)?;
-            let g = if f.cmp(&half) > 0 { one.sub(&f, pw, RoundingMode::None)? } else { f };
-            let omx = one.sub(self, pw, RoundingMode::None)?;
+            let g = if f.cmp(&half) > 0 { one.sub(&f, pw, RoundingMode::Work)? } else { f };
+            let omx = one.sub(self, pw, RoundingMode::Work)?;
             Some((g, omx))
         } else {
             None
@@ -495,16 +496,16 @@ impl ExactNumNumber {
             let mut ret = match &reflect {
                 // ln|Γ(x)| = ln π - ln sin(πg) - ln Γ(1 - x)
                 Some((g, omx)) => {
-                    let pi = cc.pi_num(p_x, RoundingMode::None)?;
+                    let pi = cc.pi_num(p_x, RoundingMode::Work)?;
                     let s = pi
-                        .mul(g, p_x, RoundingMode::None)?
-                        .sin(p_x, RoundingMode::None, cc)?;
-                    let ln_pi = pi.ln(p_x, RoundingMode::None, cc)?;
-                    let ln_s = s.ln(p_x, RoundingMode::None, cc)?;
-                    ln_pi.sub(&ln_s, p_x, RoundingMode::None)?.sub(
+                        .mul(g, p_x, RoundingMode::Work)?
+                        .sin(p_x, RoundingMode::Work, cc)?;
+                    let ln_pi = pi.ln(p_x, RoundingMode::Work, cc)?;
+                    let ln_s = s.ln(p_x, RoundingMode::Work, cc)?;
+                    ln_pi.sub(&ln_s, p_x, RoundingMode::Work)?.sub(
                         &omx.ln_gamma_positive_at(p_x, cc)?,
                         p_x,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     )?
                 }
                 None => self.ln_gamma_positive_at(p_x, cc)?,
@@ -597,41 +598,41 @@ impl ExactNumNumber {
         let frac_bits = usize::try_from(frac).map_err(|_| Error::InvalidArgument)?;
         let pw = pg + self.mantissa_max_bit_len() + frac_bits + WORD_BIT_SIZE;
         let one = Self::from_word(1, pw)?;
-        let omz = one.sub(self, pw, RoundingMode::None)?;
+        let omz = one.sub(self, pw, RoundingMode::Work)?;
 
         // sin(πs/2) = sin(π t/2), t = s rem 4 exactly (|t| < 4).
         let t = self.rem(&Self::from_word(4, WORD_BIT_SIZE)?)?;
-        let pi = cc.pi_num(pg, RoundingMode::None)?;
-        let mut arg = pi.mul(&t, pg, RoundingMode::None)?;
-        arg.div_by_2(RoundingMode::None);
-        let sn = arg.sin(pg, RoundingMode::None, cc)?;
+        let pi = cc.pi_num(pg, RoundingMode::Work)?;
+        let mut arg = pi.mul(&t, pg, RoundingMode::Work)?;
+        arg.div_by_2(RoundingMode::Work);
+        let sn = arg.sin(pg, RoundingMode::Work, cc)?;
         if es >= 64 {
             // log2|ζ(s)| ≥ |s|(log2|s| − 5) > EXPONENT_MAX = 2^62 − 1.
             return Err(Error::ExponentOverflow(sn.sign()));
         }
-        let ln2 = Self::from_word(2, pg)?.ln(pg, RoundingMode::None, cc)?;
-        let ln_pi = pi.ln(pg, RoundingMode::None, cc)?;
+        let ln2 = Self::from_word(2, pg)?.ln(pg, RoundingMode::Work, cc)?;
+        let ln_pi = pi.ln(pg, RoundingMode::Work, cc)?;
         let sm1 = omz.neg()?;
         let z = omz.zeta_em(pg, cc)?;
         if es > 20 {
-            let mut l = self.mul(&ln2, pg, RoundingMode::None)?;
+            let mut l = self.mul(&ln2, pg, RoundingMode::Work)?;
             l = l.add(
-                &sm1.mul(&ln_pi, pg, RoundingMode::None)?,
+                &sm1.mul(&ln_pi, pg, RoundingMode::Work)?,
                 pg,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
             l = l.add(
-                &sn.abs()?.ln(pg, RoundingMode::None, cc)?,
+                &sn.abs()?.ln(pg, RoundingMode::Work, cc)?,
                 pg,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
             l = l.add(
-                &omz.ln_gamma(pg, RoundingMode::None, cc)?,
+                &omz.ln_gamma(pg, RoundingMode::Work, cc)?,
                 pg,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            l = l.add(&z.ln(pg, RoundingMode::None, cc)?, pg, RoundingMode::None)?;
-            let mut r = match l.exp(pg, RoundingMode::None, cc) {
+            l = l.add(&z.ln(pg, RoundingMode::Work, cc)?, pg, RoundingMode::Work)?;
+            let mut r = match l.exp(pg, RoundingMode::Work, cc) {
                 Err(Error::ExponentOverflow(_)) => return Err(Error::ExponentOverflow(sn.sign())),
                 other => other?,
             };
@@ -639,17 +640,17 @@ impl ExactNumNumber {
             return Ok(r);
         }
         let two_s = self
-            .mul(&ln2, pg, RoundingMode::None)?
-            .exp(pg, RoundingMode::None, cc)?;
+            .mul(&ln2, pg, RoundingMode::Work)?
+            .exp(pg, RoundingMode::Work, cc)?;
         let pi_s = sm1
-            .mul(&ln_pi, pg, RoundingMode::None)?
-            .exp(pg, RoundingMode::None, cc)?;
-        let gm = omz.gamma(pg, RoundingMode::None, cc)?;
+            .mul(&ln_pi, pg, RoundingMode::Work)?
+            .exp(pg, RoundingMode::Work, cc)?;
+        let gm = omz.gamma(pg, RoundingMode::Work, cc)?;
         two_s
-            .mul(&pi_s, pg, RoundingMode::None)?
-            .mul(&sn, pg, RoundingMode::None)?
-            .mul(&gm, pg, RoundingMode::None)?
-            .mul(&z, pg, RoundingMode::None)
+            .mul(&pi_s, pg, RoundingMode::Work)?
+            .mul(&sn, pg, RoundingMode::Work)?
+            .mul(&gm, pg, RoundingMode::Work)?
+            .mul(&z, pg, RoundingMode::Work)
     }
 
     /// Euler–Maclaurin `ζ(s)` for `s ≥ 1/2`, `s ≠ 1`, at working precision `p`:
@@ -661,11 +662,11 @@ impl ExactNumNumber {
         let big = Self::from_usize(p + 16)?;
         if self.cmp(&big) >= 0 {
             let two_ms = Self::from_word(2, p)?
-                .ln(p, RoundingMode::None, cc)?
-                .mul(self, p, RoundingMode::None)?
+                .ln(p, RoundingMode::Work, cc)?
+                .mul(self, p, RoundingMode::Work)?
                 .neg()?
-                .exp(p, RoundingMode::None, cc)?;
-            return Self::from_word(1, p)?.add(&two_ms, p, RoundingMode::None);
+                .exp(p, RoundingMode::Work, cc)?;
+            return Self::from_word(1, p)?.add(&two_ms, p, RoundingMode::Work);
         }
         // FLINT 3.6 path: choose_param / hurwitz_em_jet (value component), with a
         // sieved power sum at a = 1. Replaces the old n_cut = p/4 cut.
@@ -712,7 +713,7 @@ impl ExactNumNumber {
     /// - `|x − 1|` or `|x − 2| < 2^-(2p+64)`: `−γ(x−1)` resp. `(1−γ)(x−2)`;
     /// - otherwise `ln Γ(x)` from `Γ(x)` at `p + log2(1/|x−1|, 1/|x−2|) + 64` bits.
     fn ln_gamma_small_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        let nr = RoundingMode::None;
+        let nr = RoundingMode::Work;
         let e = self.exponent();
         let tiny = -Exponent::try_from(2 * p + 64).map_err(|_| Error::InvalidArgument)?;
         if e < tiny {
@@ -755,14 +756,14 @@ impl ExactNumNumber {
 
         if !z.is_positive() {
             // Reflection: Γ(z) = π / (sin(πz) Γ(1-z))
-            let pi = cc.pi_num(p, RoundingMode::None)?;
-            let piz = pi.mul(&z, p, RoundingMode::None)?;
-            let s = piz.sin(p, RoundingMode::None, cc)?;
+            let pi = cc.pi_num(p, RoundingMode::Work)?;
+            let piz = pi.mul(&z, p, RoundingMode::Work)?;
+            let s = piz.sin(p, RoundingMode::Work, cc)?;
             let one = Self::from_word(1, p)?;
-            let omz = one.sub(&z, p, RoundingMode::None)?;
+            let omz = one.sub(&z, p, RoundingMode::Work)?;
             let g = omz.gamma_positive(p, cc)?;
-            let den = s.mul(&g, p, RoundingMode::None)?;
-            return pi.div(&den, p, RoundingMode::None);
+            let den = s.mul(&g, p, RoundingMode::Work)?;
+            return pi.div(&den, p, RoundingMode::Work);
         }
 
         z.gamma_positive(p, cc)
@@ -806,15 +807,15 @@ impl ExactNumNumber {
             let mut prod = Self::from_word(1, WORD_BIT_SIZE)?;
             for k in 1..=n {
                 let pb = round_p(prod.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE);
-                prod = prod.mul(&from_usize_p(2 * k - 1, pb)?, pb, RoundingMode::None)?;
+                prod = prod.mul(&from_usize_p(2 * k - 1, pb)?, pb, RoundingMode::Work)?;
             }
             let e = prod.exponent() - Exponent::try_from(n).map_err(|_| Error::InvalidArgument)?;
             prod.set_exponent(e);
             let pw = p + WORD_BIT_SIZE;
             let rpi = cc
-                .pi_num(pw, RoundingMode::None)?
-                .sqrt(pw, RoundingMode::None)?;
-            return rpi.mul(&prod, p, RoundingMode::None);
+                .pi_num(pw, RoundingMode::Work)?
+                .sqrt(pw, RoundingMode::Work)?;
+            return rpi.mul(&prod, p, RoundingMode::Work);
         }
 
         // One extra word covers the shift product and exp() turning the absolute error of
@@ -830,8 +831,8 @@ impl ExactNumNumber {
         // PrecisionRetryExhausted at once (tests). The production path
         // passes stirling_shift_count(e_min), not a fixed 2^20 cap.
         let shifted = shift_up(self, e_min, shift_max, pw, |z| {
-            acc = acc.mul(z, pw, RoundingMode::None)?;
-            z.add(&one, pw, RoundingMode::None)
+            acc = acc.mul(z, pw, RoundingMode::Work)?;
+            z.add(&one, pw, RoundingMode::Work)
         })?;
         let z = shifted.as_ref().unwrap_or(self);
 
@@ -840,8 +841,8 @@ impl ExactNumNumber {
         } else {
             with_even_bernoulli(terms, pw, |bern| z.ln_gamma_stirling_with(pw, bern, cc))?
         };
-        let g = lg.exp(pw, RoundingMode::None, cc)?;
-        g.div(&acc, p, RoundingMode::None)
+        let g = lg.exp(pw, RoundingMode::Work, cc)?;
+        g.div(&acc, p, RoundingMode::Work)
     }
 
     /// `Some(n)` when `self = n + 1/2` and the closed-form product or sum is
@@ -877,18 +878,18 @@ impl ExactNumNumber {
         cc: &mut Consts,
     ) -> Result<Self, Error> {
         // (z-1/2) ln z - z + (1/2) ln(2π) + ∑ B_{2k} / (2k(2k-1) z^{2k-1})
-        let ln_z = self.ln(p, RoundingMode::None, cc)?;
+        let ln_z = self.ln(p, RoundingMode::Work, cc)?;
         let two = Self::from_word(2, p)?;
         let half = one_half(p)?;
-        let zmh = self.sub(&half, p, RoundingMode::None)?;
-        let mut s = zmh.mul(&ln_z, p, RoundingMode::None)?;
-        s = s.sub(self, p, RoundingMode::None)?;
+        let zmh = self.sub(&half, p, RoundingMode::Work)?;
+        let mut s = zmh.mul(&ln_z, p, RoundingMode::Work)?;
+        s = s.sub(self, p, RoundingMode::Work)?;
 
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let two_pi = two.mul(&pi, p, RoundingMode::None)?;
-        let mut ln_two_pi = two_pi.ln(p, RoundingMode::None, cc)?;
-        ln_two_pi.div_by_2(RoundingMode::None);
-        s = s.add(&ln_two_pi, p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
+        let two_pi = two.mul(&pi, p, RoundingMode::Work)?;
+        let mut ln_two_pi = two_pi.ln(p, RoundingMode::Work, cc)?;
+        ln_two_pi.div_by_2(RoundingMode::Work);
+        s = s.add(&ln_two_pi, p, RoundingMode::Work)?;
 
         // z^{2k-1}: None stands for z^1 = `self` itself at k = 1 (no copy).
         let mut zpow: Option<Self> = None;
@@ -898,13 +899,13 @@ impl ExactNumNumber {
             let k = i + 1;
             let two_k = Self::from_word((2 * k) as Word, p)?;
             let two_k_m1 = Self::from_word((2 * k - 1) as Word, p)?;
-            let den = two_k.mul(&two_k_m1, p, RoundingMode::None)?.mul(
+            let den = two_k.mul(&two_k_m1, p, RoundingMode::Work)?.mul(
                 zpow.as_ref().unwrap_or(self),
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            let term = b.div(&den, p, RoundingMode::None)?;
-            s = s.add(&term, p, RoundingMode::None)?;
+            let term = b.div(&den, p, RoundingMode::Work)?;
+            s = s.add(&term, p, RoundingMode::Work)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
                 done = true;
                 break;
@@ -912,8 +913,8 @@ impl ExactNumNumber {
             zpow = Some(
                 zpow.as_ref()
                     .unwrap_or(self)
-                    .mul(self, p, RoundingMode::None)?
-                    .mul(self, p, RoundingMode::None)?,
+                    .mul(self, p, RoundingMode::Work)?
+                    .mul(self, p, RoundingMode::Work)?,
             );
         }
         if !done {
@@ -980,9 +981,9 @@ impl ExactNumNumber {
         z.set_inexact(false);
         if !z.is_positive() {
             // ψ(z) = ψ(1−z) − π cot(πz)
-            let omz = one.sub(&z, p, RoundingMode::None)?;
+            let omz = one.sub(&z, p, RoundingMode::Work)?;
             let psi = omz.digamma_positive(p, cc)?;
-            let pi = cc.pi_num(p, RoundingMode::None)?;
+            let pi = cc.pi_num(p, RoundingMode::Work)?;
             // cot(πz) has period 1: reduce with the exact fractional part of z. π·z itself at
             // `p` bits keeps only `p - exponent(z)` fraction bits, a large absolute error in
             // the cot argument once z has many integer bits.
@@ -990,13 +991,13 @@ impl ExactNumNumber {
             if fz.is_zero() {
                 return Err(Error::InvalidArgument);
             }
-            let piz = pi.mul(&fz, p, RoundingMode::None)?;
-            let cot = piz.cos(p, RoundingMode::None, cc)?.div(
-                &piz.sin(p, RoundingMode::None, cc)?,
+            let piz = pi.mul(&fz, p, RoundingMode::Work)?;
+            let cot = piz.cos(p, RoundingMode::Work, cc)?.div(
+                &piz.sin(p, RoundingMode::Work, cc)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            return psi.sub(&pi.mul(&cot, p, RoundingMode::None)?, p, RoundingMode::None);
+            return psi.sub(&pi.mul(&cot, p, RoundingMode::Work)?, p, RoundingMode::Work);
         }
         z.digamma_positive(p, cc)
     }
@@ -1023,24 +1024,24 @@ impl ExactNumNumber {
         let one = Self::from_word(1, pw)?;
         // Half-integers: ψ(n+½) = −γ − 2 ln 2 + Σ_{k=1}^{n} 2/(2k−1).
         if let Some(n) = self.half_integer_index(p)? {
-            let g = cc.euler_gamma_num(pw, RoundingMode::None)?;
-            let mut ln4 = cc.ln_2_num(pw, RoundingMode::None)?;
+            let g = cc.euler_gamma_num(pw, RoundingMode::Work)?;
+            let mut ln4 = cc.ln_2_num(pw, RoundingMode::Work)?;
             ln4.set_exponent(ln4.exponent() + 1);
-            let mut acc = Self::new(pw)?.sub(&g, pw, RoundingMode::None)?;
-            acc = acc.sub(&ln4, pw, RoundingMode::None)?;
+            let mut acc = Self::new(pw)?.sub(&g, pw, RoundingMode::Work)?;
+            acc = acc.sub(&ln4, pw, RoundingMode::Work)?;
             let two = Self::from_word(2, pw)?;
             for k in 1..=n {
-                let t = two.div(&from_usize_p(2 * k - 1, pw)?, pw, RoundingMode::None)?;
-                acc = acc.add(&t, pw, RoundingMode::None)?;
+                let t = two.div(&from_usize_p(2 * k - 1, pw)?, pw, RoundingMode::Work)?;
+                acc = acc.add(&t, pw, RoundingMode::Work)?;
             }
-            return acc.add(&Self::new(p)?, p, RoundingMode::None);
+            return acc.add(&Self::new(p)?, p, RoundingMode::Work);
         }
         // Huge z: the series past -1/(2z) is below 2^-(2·pw) relative; z² would overflow.
         if self.exponent() > Exponent::try_from(pw).map_err(|_| Error::InvalidArgument)? {
-            let ln_z = self.ln(pw, RoundingMode::None, cc)?;
-            let mut half_inv = one.div(self, pw, RoundingMode::None)?;
+            let ln_z = self.ln(pw, RoundingMode::Work, cc)?;
+            let mut half_inv = one.div(self, pw, RoundingMode::Work)?;
             half_inv.set_exponent(half_inv.exponent() - 1);
-            return ln_z.sub(&half_inv, p, RoundingMode::None);
+            return ln_z.sub(&half_inv, p, RoundingMode::Work);
         }
         let mut z0 = self.clone()?;
         z0.set_inexact(false);
@@ -1051,22 +1052,22 @@ impl ExactNumNumber {
         // Bound at `pw`, the precision digamma_asymp checks its stop rule against.
         let e_min = asymp_min_exponent(pw, terms);
         let shifted = shift_up(&z0, e_min, shift_max, pw, |z| {
-            let rec = one.div(z, pw, RoundingMode::None)?;
-            acc = acc.sub(&rec, pw, RoundingMode::None)?;
-            z.add(&one, pw, RoundingMode::None)
+            let rec = one.div(z, pw, RoundingMode::Work)?;
+            acc = acc.sub(&rec, pw, RoundingMode::Work)?;
+            z.add(&one, pw, RoundingMode::Work)
         })?;
         let z = shifted.as_ref().unwrap_or(&z0);
-        acc.add(&z.digamma_asymp(pw, terms, cc)?, p, RoundingMode::None)
+        acc.add(&z.digamma_asymp(pw, terms, cc)?, p, RoundingMode::Work)
     }
 
     fn digamma_asymp(&self, p: usize, terms: usize, cc: &mut Consts) -> Result<Self, Error> {
         // ln z − 1/(2z) − Σ_{k≥1} B_{2k} / (2k z^{2k})
-        let ln_z = self.ln(p, RoundingMode::None, cc)?;
+        let ln_z = self.ln(p, RoundingMode::Work, cc)?;
         let two = Self::from_word(2, p)?;
-        let two_z = two.mul(self, p, RoundingMode::None)?;
-        let half_inv = Self::from_word(1, p)?.div(&two_z, p, RoundingMode::None)?;
-        let mut s = ln_z.sub(&half_inv, p, RoundingMode::None)?;
-        let z2 = self.mul(self, p, RoundingMode::None)?;
+        let two_z = two.mul(self, p, RoundingMode::Work)?;
+        let half_inv = Self::from_word(1, p)?.div(&two_z, p, RoundingMode::Work)?;
+        let mut s = ln_z.sub(&half_inv, p, RoundingMode::Work)?;
+        let z2 = self.mul(self, p, RoundingMode::Work)?;
         let mut zp = Self::from_word(1, p)?;
         let mut prev_e = Exponent::MIN;
         let p_exp = Exponent::try_from(p).map_err(|_| Error::InvalidArgument)?;
@@ -1076,11 +1077,11 @@ impl ExactNumNumber {
             let mut done = false;
             for (i, b) in bern.iter().enumerate() {
                 let k = i + 1;
-                zp = zp.mul(&z2, p, RoundingMode::None)?;
+                zp = zp.mul(&z2, p, RoundingMode::Work)?;
                 let two_k = from_usize_p(2 * k, p)?;
-                let den = two_k.mul(&zp, p, RoundingMode::None)?;
-                let term = b.div(&den, p, RoundingMode::None)?;
-                s = s.sub(&term, p, RoundingMode::None)?;
+                let den = two_k.mul(&zp, p, RoundingMode::Work)?;
+                let term = b.div(&den, p, RoundingMode::Work)?;
+                s = s.sub(&term, p, RoundingMode::Work)?;
                 let e = term.exponent();
                 if term.is_zero() || e + p_exp < 0 {
                     done = true;
@@ -1133,8 +1134,8 @@ impl ExactNumNumber {
         if x.is_negative() {
             let mut pp = round_p(p.max(x.mantissa_max_bit_len()) + 2 * WORD_BIT_SIZE);
             loop {
-                let e = cc.e_num(pp, RoundingMode::None)?;
-                let t = one.add(&e.mul(&x, pp, RoundingMode::None)?, pp, RoundingMode::None)?;
+                let e = cc.e_num(pp, RoundingMode::Work)?;
+                let t = one.add(&e.mul(&x, pp, RoundingMode::Work)?, pp, RoundingMode::Work)?;
                 // |error| <= 2^(2 - pp) (e and the product each within 2^-pp relative, |e x| < 2)
                 if !t.is_zero() && t.exponent() > 3 - pp as Exponent {
                     if t.is_negative() {
@@ -1205,7 +1206,7 @@ impl ExactNumNumber {
                         r.set_inexact(true);
                         return Ok(r);
                     }
-                    let mut ret = g.sub(&up, p_x, RoundingMode::None)?;
+                    let mut ret = g.sub(&up, p_x, RoundingMode::Work)?;
                     if ret.try_set_precision(p, rm, p_wrk)? {
                         ret.set_inexact(true);
                         return Ok(ret);
@@ -1293,13 +1294,13 @@ impl ExactNumNumber {
                         g.sub(
                             &t,
                             round_p(g.mantissa_max_bit_len() + limit),
-                            RoundingMode::None,
+                            RoundingMode::Work,
                         )?
                     } else {
                         g.sub(
                             &lo,
                             round_p(g.mantissa_max_bit_len() + gap + pe),
-                            RoundingMode::None,
+                            RoundingMode::Work,
                         )?
                     };
                     let top = g_exp.max(lo.exponent());
@@ -1345,7 +1346,7 @@ impl ExactNumNumber {
         p: usize,
         cc: &mut Consts,
     ) -> Result<Option<Self>, Error> {
-        let nr = RoundingMode::None;
+        let nr = RoundingMode::Work;
         if x.exponent() < 4 || x.cmp(self) <= 0 {
             return Ok(None);
         }
@@ -1398,16 +1399,16 @@ impl ExactNumNumber {
         let one = Self::from_word(1, p)?;
         if self.cmp(&one) == 0 {
             let nx = x.with_sign(Sign::Neg)?;
-            return one.sub(&nx.exp(p, RoundingMode::None, cc)?, p, RoundingMode::None);
+            return one.sub(&nx.exp(p, RoundingMode::Work, cc)?, p, RoundingMode::Work);
         }
         // γ(s,x) = x^s e^{-x} Σ_{k=0} x^k / (s)_{k+1}
-        let xs = x.pow(self, p, RoundingMode::None, cc)?;
+        let xs = x.pow(self, p, RoundingMode::Work, cc)?;
         let nx = x.with_sign(Sign::Neg)?;
-        let exm = nx.exp(p, RoundingMode::None, cc)?;
-        let pre = xs.mul(&exm, p, RoundingMode::None)?;
+        let exm = nx.exp(p, RoundingMode::Work, cc)?;
+        let pre = xs.mul(&exm, p, RoundingMode::Work)?;
         // s + k and the partial sum: None stands for s itself and for the first term (no copies).
         let mut poch: Option<Self> = None;
-        let mut term = Self::from_word(1, p)?.div(self, p, RoundingMode::None)?;
+        let mut term = Self::from_word(1, p)?.div(self, p, RoundingMode::Work)?;
         let mut sum: Option<Self> = None;
         // All terms are positive and the ratio x/(s+k) falls below 1 once k > x − s,
         // so the relative stop is met after about max(0, x − s) + O(√((x+s)p)) terms;
@@ -1420,14 +1421,14 @@ impl ExactNumNumber {
             let pk = poch
                 .as_ref()
                 .unwrap_or(self)
-                .add(&one, p, RoundingMode::None)?;
+                .add(&one, p, RoundingMode::Work)?;
             let next = term
-                .mul(x, p, RoundingMode::None)?
-                .div(&pk, p, RoundingMode::None)?;
+                .mul(x, p, RoundingMode::Work)?
+                .div(&pk, p, RoundingMode::Work)?;
             let sm = sum
                 .as_ref()
                 .unwrap_or(&term)
-                .add(&next, p, RoundingMode::None)?;
+                .add(&next, p, RoundingMode::Work)?;
             term = next;
             poch = Some(pk);
             sum = Some(sm);
@@ -1441,14 +1442,14 @@ impl ExactNumNumber {
             if k > 1 && te > prev_e {
                 // Past the Pochhammer peak the terms must shrink. A rise means the
                 // series is the wrong kernel for this (s, x); do not spin.
-                let past_peak = from_usize_p(k, p)?.cmp(&x.sub(self, p, RoundingMode::None)?) > 0;
+                let past_peak = from_usize_p(k, p)?.cmp(&x.sub(self, p, RoundingMode::Work)?) > 0;
                 if past_peak {
                     return Err(Error::PrecisionRetryExhausted);
                 }
             }
             prev_e = te;
         }
-        pre.mul(sum.as_ref().unwrap_or(&term), p, RoundingMode::None)
+        pre.mul(sum.as_ref().unwrap_or(&term), p, RoundingMode::Work)
     }
 
     /// Exponential integral `Ei(self)` (Cauchy PV for `self < 0`). `self = 0` is a pole.
@@ -1493,7 +1494,7 @@ impl ExactNumNumber {
             let lost = if v.is_zero() { usize::MAX } else { (top - v.exponent()).max(0) as usize };
             if lost.saturating_add(8) <= extra {
                 let mut v = v;
-                v.set_precision(p, RoundingMode::None)?;
+                v.set_precision(p, RoundingMode::Work)?;
                 return Ok(v);
             }
             let next = lost + 32;
@@ -1506,8 +1507,8 @@ impl ExactNumNumber {
 
     /// `γ + ln|x| + Σ_{n≥1} x^n / (n n!)` and the largest exponent among the parts.
     fn ei_series(&self, p: usize, cc: &mut Consts) -> Result<(Self, Exponent), Error> {
-        let g = cc.euler_gamma_num(p, RoundingMode::None)?;
-        let lnx = self.abs()?.ln(p, RoundingMode::None, cc)?;
+        let g = cc.euler_gamma_num(p, RoundingMode::Work)?;
+        let lnx = self.abs()?.ln(p, RoundingMode::Work, cc)?;
         // x^n/n! and the partial sum both start at x: None stands for `self` (no copy of it).
         let mut term: Option<Self> = None;
         let mut sum: Option<Self> = None;
@@ -1524,13 +1525,13 @@ impl ExactNumNumber {
             let tn = term
                 .as_ref()
                 .unwrap_or(self)
-                .mul(self, p, RoundingMode::None)?
-                .div(&nw, p, RoundingMode::None)?;
-            let piece = tn.div(&nw, p, RoundingMode::None)?;
+                .mul(self, p, RoundingMode::Work)?
+                .div(&nw, p, RoundingMode::Work)?;
+            let piece = tn.div(&nw, p, RoundingMode::Work)?;
             sum = Some(
                 sum.as_ref()
                     .unwrap_or(self)
-                    .add(&piece, p, RoundingMode::None)?,
+                    .add(&piece, p, RoundingMode::Work)?,
             );
             term = Some(tn);
             top = top.max(max_exp(&[&piece]));
@@ -1539,32 +1540,32 @@ impl ExactNumNumber {
                 break;
             }
         }
-        let v = g.add(&lnx, p, RoundingMode::None)?.add(
+        let v = g.add(&lnx, p, RoundingMode::Work)?.add(
             sum.as_ref().unwrap_or(self),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         Ok((v, top))
     }
 
     fn ei_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // e^x / x · Σ_{k=0} k! / x^k (stop when terms grow)
-        let ex = self.exp(p, RoundingMode::None, cc)?;
-        let pre = ex.div(self, p, RoundingMode::None)?;
+        let ex = self.exp(p, RoundingMode::Work, cc)?;
+        let pre = ex.div(self, p, RoundingMode::Work)?;
         let mut term = Self::from_word(1, p)?;
         let mut s = Self::from_word(1, p)?;
         let mut prev_e = Exponent::MAX;
         // Cap or divergence without meeting the bound: never use the partial sum.
         let mut done = false;
         for k in 1..=(p + 8) {
-            term = term.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
-            term = term.div(self, p, RoundingMode::None)?;
+            term = term.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::Work)?;
+            term = term.div(self, p, RoundingMode::Work)?;
             let e = term.exponent();
             if e > prev_e {
                 break;
             }
             prev_e = e;
-            s = s.add(&term, p, RoundingMode::None)?;
+            s = s.add(&term, p, RoundingMode::Work)?;
             if term.is_zero() || e + (p as i64) < 0 {
                 done = true;
                 break;
@@ -1573,7 +1574,7 @@ impl ExactNumNumber {
         if !done {
             return Err(Error::PrecisionRetryExhausted);
         }
-        pre.mul(&s, p, RoundingMode::None)
+        pre.mul(&s, p, RoundingMode::Work)
     }
 
     /// Sine integral `Si(self)` for all real `self`.
@@ -1625,7 +1626,7 @@ impl ExactNumNumber {
         } else {
             let pe = p + Self::si_ci_series_guard(x.exponent());
             let mut r = x.si_series(pe)?;
-            r.set_precision(p, RoundingMode::None)?;
+            r.set_precision(p, RoundingMode::Work)?;
             r
         };
         if neg {
@@ -1636,7 +1637,7 @@ impl ExactNumNumber {
     }
 
     fn si_series(&self, p: usize) -> Result<Self, Error> {
-        let x2 = self.mul(self, p, RoundingMode::None)?;
+        let x2 = self.mul(self, p, RoundingMode::Work)?;
         // x^{2n+1}/(2n+1)! and the partial sum both start at x: None stands for `self` (no copy of it).
         let mut t: Option<Self> = None;
         let mut sum: Option<Self> = None;
@@ -1659,10 +1660,10 @@ impl ExactNumNumber {
             let tn = t
                 .as_ref()
                 .unwrap_or(self)
-                .mul(&x2, p, RoundingMode::None)?
-                .div(&two_n, p, RoundingMode::None)?
-                .div(&two_n_1, p, RoundingMode::None)?;
-            let mut piece = tn.div(&two_n_1, p, RoundingMode::None)?;
+                .mul(&x2, p, RoundingMode::Work)?
+                .div(&two_n, p, RoundingMode::Work)?
+                .div(&two_n_1, p, RoundingMode::Work)?;
+            let mut piece = tn.div(&two_n_1, p, RoundingMode::Work)?;
             t = Some(tn);
             if n % 2 == 1 {
                 piece.set_sign(Sign::Neg);
@@ -1670,7 +1671,7 @@ impl ExactNumNumber {
             let sm = sum
                 .as_ref()
                 .unwrap_or(self)
-                .add(&piece, p, RoundingMode::None)?;
+                .add(&piece, p, RoundingMode::Work)?;
             if series_negligible(&piece, &sm, p) {
                 return Ok(sm);
             }
@@ -1681,8 +1682,8 @@ impl ExactNumNumber {
 
     fn si_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // π/2 − f(x) cos x − g(x) sin x
-        let mut half_pi = cc.pi_num(p, RoundingMode::None)?;
-        half_pi.div_by_2(RoundingMode::None);
+        let mut half_pi = cc.pi_num(p, RoundingMode::Work)?;
+        half_pi.div_by_2(RoundingMode::Work);
         // ZF-37: 0 < f < 1/x and 0 < g < 1/x² (DLMF 6.12(ii)), so for x ≥ 2^(p+4) the
         // correction is below 2^-(p+2) of π/2 and cos x, sin x (reduction of a huge x, e.g.
         // the largest finite value) are not needed.
@@ -1690,13 +1691,13 @@ impl ExactNumNumber {
             return Ok(half_pi);
         }
         let (f, g) = self.si_ci_aux_fg(p)?;
-        let c = self.cos(p, RoundingMode::None, cc)?;
-        let s = self.sin(p, RoundingMode::None, cc)?;
-        let fc = f.mul(&c, p, RoundingMode::None)?;
-        let gs = g.mul(&s, p, RoundingMode::None)?;
+        let c = self.cos(p, RoundingMode::Work, cc)?;
+        let s = self.sin(p, RoundingMode::Work, cc)?;
+        let fc = f.mul(&c, p, RoundingMode::Work)?;
+        let gs = g.mul(&s, p, RoundingMode::Work)?;
         half_pi
-            .sub(&fc, p, RoundingMode::None)?
-            .sub(&gs, p, RoundingMode::None)
+            .sub(&fc, p, RoundingMode::Work)?
+            .sub(&gs, p, RoundingMode::Work)
     }
 
     /// Cosine integral `Ci(self)` for `self > 0`.
@@ -1730,7 +1731,7 @@ impl ExactNumNumber {
         {
             let pe = p + Self::si_ci_series_guard(self.exponent());
             let mut r = self.ci_series(pe, cc)?;
-            r.set_precision(p, RoundingMode::None)?;
+            r.set_precision(p, RoundingMode::Work)?;
             Ok(r)
         }
     }
@@ -1745,13 +1746,13 @@ impl ExactNumNumber {
 
     fn ci_series(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // γ + ln x + Σ_{n=1}^∞ (−1)^n x^{2n} / (2n (2n)!)
-        let g = cc.euler_gamma_num(p, RoundingMode::None)?;
-        let lnx = self.ln(p, RoundingMode::None, cc)?;
-        let x2 = self.mul(self, p, RoundingMode::None)?;
+        let g = cc.euler_gamma_num(p, RoundingMode::Work)?;
+        let lnx = self.ln(p, RoundingMode::Work, cc)?;
+        let x2 = self.mul(self, p, RoundingMode::Work)?;
         let two = Self::from_word(2, p)?;
-        let mut u = x2.div(&two, p, RoundingMode::None)?;
+        let mut u = x2.div(&two, p, RoundingMode::Work)?;
         u.set_sign(Sign::Neg);
-        let mut sum = u.div(&two, p, RoundingMode::None)?;
+        let mut sum = u.div(&two, p, RoundingMode::Work)?;
         // Cap or divergence without meeting the bound: never use the partial sum.
         let mut n: usize = 2;
         loop {
@@ -1768,36 +1769,36 @@ impl ExactNumNumber {
                     .ok_or(Error::PrecisionRetryExhausted)?,
                 p,
             )?;
-            u = u.mul(&x2, p, RoundingMode::None)?;
-            u = u.div(&a, p, RoundingMode::None)?;
-            u = u.div(&b, p, RoundingMode::None)?;
+            u = u.mul(&x2, p, RoundingMode::Work)?;
+            u = u.div(&a, p, RoundingMode::Work)?;
+            u = u.div(&b, p, RoundingMode::Work)?;
             u = u.neg()?;
-            let piece = u.div(&b, p, RoundingMode::None)?;
-            sum = sum.add(&piece, p, RoundingMode::None)?;
+            let piece = u.div(&b, p, RoundingMode::Work)?;
+            sum = sum.add(&piece, p, RoundingMode::Work)?;
             if piece.is_zero() || piece.exponent() + (p as i64) < 0 {
                 break;
             }
             n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
-        g.add(&lnx, p, RoundingMode::None)?
-            .add(&sum, p, RoundingMode::None)
+        g.add(&lnx, p, RoundingMode::Work)?
+            .add(&sum, p, RoundingMode::Work)
     }
 
     fn ci_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // f(x) sin x − g(x) cos x
         let (f, g) = self.si_ci_aux_fg(p)?;
-        let s = self.sin(p, RoundingMode::None, cc)?;
-        let c = self.cos(p, RoundingMode::None, cc)?;
-        let fs = f.mul(&s, p, RoundingMode::None)?;
-        let gc = g.mul(&c, p, RoundingMode::None)?;
-        fs.sub(&gc, p, RoundingMode::None)
+        let s = self.sin(p, RoundingMode::Work, cc)?;
+        let c = self.cos(p, RoundingMode::Work, cc)?;
+        let fs = f.mul(&s, p, RoundingMode::Work)?;
+        let gc = g.mul(&c, p, RoundingMode::Work)?;
+        fs.sub(&gc, p, RoundingMode::Work)
     }
 
     /// Auxiliary `f,g` for `Si`/`Ci`: `f ∼ Σ (−1)^k (2k)! / x^{2k+1}`, `g ∼ Σ (−1)^k (2k+1)! / x^{2k+2}`.
     fn si_ci_aux_fg(&self, p: usize) -> Result<(Self, Self), Error> {
         let one = Self::from_word(1, p)?;
-        let invx = one.div(self, p, RoundingMode::None)?;
-        let invx2 = invx.mul(&invx, p, RoundingMode::None)?;
+        let invx = one.div(self, p, RoundingMode::Work)?;
+        let invx2 = invx.mul(&invx, p, RoundingMode::Work)?;
         // The k = 0 terms are 1/x and 1/x². g_term None stands for invx2 itself, and the sums f, g are None until the
         // first k > 0 term is added (they equal the k = 0 terms then): no copies.
         let mut f_term = invx;
@@ -1811,16 +1812,16 @@ impl ExactNumNumber {
             let b = Self::from_word((2 * k + 2) as Word, p)?;
             let c = Self::from_word((2 * k + 3) as Word, p)?;
             let ft = f_term
-                .mul(&a, p, RoundingMode::None)?
-                .mul(&b, p, RoundingMode::None)?
-                .mul(&invx2, p, RoundingMode::None)?
+                .mul(&a, p, RoundingMode::Work)?
+                .mul(&b, p, RoundingMode::Work)?
+                .mul(&invx2, p, RoundingMode::Work)?
                 .neg()?;
             let gt = g_term
                 .as_ref()
                 .unwrap_or(&invx2)
-                .mul(&b, p, RoundingMode::None)?
-                .mul(&c, p, RoundingMode::None)?
-                .mul(&invx2, p, RoundingMode::None)?
+                .mul(&b, p, RoundingMode::Work)?
+                .mul(&c, p, RoundingMode::Work)?
+                .mul(&invx2, p, RoundingMode::Work)?
                 .neg()?;
             let e = ft.exponent();
             if e > prev_e {
@@ -1830,11 +1831,11 @@ impl ExactNumNumber {
             let fs = f
                 .as_ref()
                 .unwrap_or(&f_term)
-                .add(&ft, p, RoundingMode::None)?;
+                .add(&ft, p, RoundingMode::Work)?;
             let gs = g
                 .as_ref()
                 .unwrap_or(&invx2)
-                .add(&gt, p, RoundingMode::None)?;
+                .add(&gt, p, RoundingMode::Work)?;
             if ft.is_zero() || e + (p as i64) < 0 {
                 return Ok((fs, gs));
             }
@@ -1871,8 +1872,8 @@ impl ExactNumNumber {
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE;
-            let lnx = self.ln(p_x, RoundingMode::None, cc)?;
-            let mut ret = lnx.ei(p_x, RoundingMode::None, cc)?;
+            let lnx = self.ln(p_x, RoundingMode::Work, cc)?;
+            let mut ret = lnx.ei(p_x, RoundingMode::Work, cc)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 return Ok(ret);
@@ -1941,7 +1942,7 @@ impl ExactNumNumber {
             let e2 = x2.exponent();
             let extra = if e2 > 0 { (5usize << (e2 as u32).min(40)) / 2 } else { 0 } + 32;
             let mut r = x.fresnel_sc_series(sine, p + extra, cc)?;
-            r.set_precision(p, RoundingMode::None)?;
+            r.set_precision(p, RoundingMode::Work)?;
             r
         };
         if neg {
@@ -1971,37 +1972,37 @@ impl ExactNumNumber {
         // sin/cos(πx²/2) has period 4 in x², and x² is an exact dyadic: reduce it exactly mod 4
         // first (ZF-32). Rounding x² or πx²/2 to p bits leaves an absolute error of
         // 2^(2·exponent(x) − p) in the angle, i.e. no correct bits once x² ≳ 2^p.
-        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
         let two = Self::from_word(2, p)?;
-        let pi2 = pi.div(&two, p, RoundingMode::None)?;
+        let pi2 = pi.div(&two, p, RoundingMode::Work)?;
         let w2 = round_p(2 * self.mantissa_max_bit_len() + WORD_BIT_SIZE);
-        let x2 = self.mul(self, w2, RoundingMode::None)?;
+        let x2 = self.mul(self, w2, RoundingMode::Work)?;
         let t = x2.rem(&Self::from_word(4, WORD_BIT_SIZE)?)?;
-        let arg = pi2.mul(&t, p, RoundingMode::None)?;
-        let s = arg.sin(p, RoundingMode::None, cc)?;
-        let c = arg.cos(p, RoundingMode::None, cc)?;
+        let arg = pi2.mul(&t, p, RoundingMode::Work)?;
+        let s = arg.sin(p, RoundingMode::Work, cc)?;
+        let c = arg.cos(p, RoundingMode::Work, cc)?;
         let half = one_half(p)?;
-        let fc = f.mul(&c, p, RoundingMode::None)?;
-        let gs = g.mul(&s, p, RoundingMode::None)?;
+        let fc = f.mul(&c, p, RoundingMode::Work)?;
+        let gs = g.mul(&s, p, RoundingMode::Work)?;
         if sine {
-            half.sub(&fc, p, RoundingMode::None)?
-                .sub(&gs, p, RoundingMode::None)
+            half.sub(&fc, p, RoundingMode::Work)?
+                .sub(&gs, p, RoundingMode::Work)
         } else {
-            let fs = f.mul(&s, p, RoundingMode::None)?;
-            let gc = g.mul(&c, p, RoundingMode::None)?;
-            half.add(&fs, p, RoundingMode::None)?
-                .sub(&gc, p, RoundingMode::None)
+            let fs = f.mul(&s, p, RoundingMode::Work)?;
+            let gc = g.mul(&c, p, RoundingMode::Work)?;
+            half.add(&fs, p, RoundingMode::Work)?
+                .sub(&gc, p, RoundingMode::Work)
         }
     }
 
     fn fresnel_aux_fg(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self), Error> {
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let pix = pi.mul(self, p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
+        let pix = pi.mul(self, p, RoundingMode::Work)?;
         let one = Self::from_word(1, p)?;
-        let inv_pix = one.div(&pix, p, RoundingMode::None)?;
-        let pix2 = pix.mul(self, p, RoundingMode::None)?;
-        let v = one.div(&pix2, p, RoundingMode::None)?;
-        let v2 = v.mul(&v, p, RoundingMode::None)?;
+        let inv_pix = one.div(&pix, p, RoundingMode::Work)?;
+        let pix2 = pix.mul(self, p, RoundingMode::Work)?;
+        let v = one.div(&pix2, p, RoundingMode::Work)?;
+        let v2 = v.mul(&v, p, RoundingMode::Work)?;
         let mut f_term = Self::from_word(1, p)?;
         let mut g_term = v;
         // The sums start at the n = 0 terms: f_sum is a fresh 1, g_sum is None (it equals g_term) until the first n > 0
@@ -2015,30 +2016,30 @@ impl ExactNumNumber {
             let b = Self::from_word((4 * n + 3) as Word, p)?;
             let c = Self::from_word((4 * n + 5) as Word, p)?;
             f_term = f_term
-                .mul(&a, p, RoundingMode::None)?
-                .mul(&b, p, RoundingMode::None)?
-                .mul(&v2, p, RoundingMode::None)?
+                .mul(&a, p, RoundingMode::Work)?
+                .mul(&b, p, RoundingMode::Work)?
+                .mul(&v2, p, RoundingMode::Work)?
                 .neg()?;
             let gt = g_term
-                .mul(&b, p, RoundingMode::None)?
-                .mul(&c, p, RoundingMode::None)?
-                .mul(&v2, p, RoundingMode::None)?
+                .mul(&b, p, RoundingMode::Work)?
+                .mul(&c, p, RoundingMode::Work)?
+                .mul(&v2, p, RoundingMode::Work)?
                 .neg()?;
             let e = f_term.exponent();
             if e > prev_e {
                 break;
             }
             prev_e = e;
-            f_sum = f_sum.add(&f_term, p, RoundingMode::None)?;
+            f_sum = f_sum.add(&f_term, p, RoundingMode::Work)?;
             let gs = g_sum
                 .as_ref()
                 .unwrap_or(&g_term)
-                .add(&gt, p, RoundingMode::None)?;
+                .add(&gt, p, RoundingMode::Work)?;
             g_term = gt;
             if f_term.is_zero() || e + (p as i64) < 0 {
                 return Ok((
-                    inv_pix.mul(&f_sum, p, RoundingMode::None)?,
-                    inv_pix.mul(&gs, p, RoundingMode::None)?,
+                    inv_pix.mul(&f_sum, p, RoundingMode::Work)?,
+                    inv_pix.mul(&gs, p, RoundingMode::Work)?,
                 ));
             }
             g_sum = Some(gs);
@@ -2047,14 +2048,14 @@ impl ExactNumNumber {
     }
 
     fn fresnel_sc_series(&self, sine: bool, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
         let two = Self::from_word(2, p)?;
-        let pi2 = pi.div(&two, p, RoundingMode::None)?;
-        let x2 = self.mul(self, p, RoundingMode::None)?;
-        let x4 = x2.mul(&x2, p, RoundingMode::None)?;
+        let pi2 = pi.div(&two, p, RoundingMode::Work)?;
+        let x2 = self.mul(self, p, RoundingMode::Work)?;
+        let x4 = x2.mul(&x2, p, RoundingMode::Work)?;
         // x^{4n+1} or x^{4n+3}, and (π/2)^{2n} or (π/2)^{2n+1}: None stands for x itself and for π/2 itself (no copies).
         let mut pow_x: Option<Self> =
-            if sine { Some(self.mul(&x2, p, RoundingMode::None)?) } else { None };
+            if sine { Some(self.mul(&x2, p, RoundingMode::Work)?) } else { None };
         let mut fact = Self::from_word(1, p)?;
         let mut pi2_pow: Option<Self> = if sine { None } else { Some(Self::from_word(1, p)?) };
         let mut sign_pos = true;
@@ -2074,10 +2075,10 @@ impl ExactNumNumber {
             let mut piece = pi2_pow.as_ref().unwrap_or(&pi2).mul(
                 pow_x.as_ref().unwrap_or(self),
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            piece = piece.div(&fact, p, RoundingMode::None)?;
-            piece = piece.div(&den, p, RoundingMode::None)?;
+            piece = piece.div(&fact, p, RoundingMode::Work)?;
+            piece = piece.div(&den, p, RoundingMode::Work)?;
             if !sign_pos {
                 piece.set_sign(Sign::Neg);
             }
@@ -2087,7 +2088,7 @@ impl ExactNumNumber {
                     (piece, small)
                 }
                 Some(s) => {
-                    let sm = s.add(&piece, p, RoundingMode::None)?;
+                    let sm = s.add(&piece, p, RoundingMode::Work)?;
                     let small = series_negligible(&piece, &sm, p);
                     (sm, small)
                 }
@@ -2102,38 +2103,38 @@ impl ExactNumNumber {
                     .mul(
                         &Self::from_word((2 * np1) as Word, p)?,
                         p,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     )?
                     .mul(
                         &Self::from_word((2 * np1 + 1) as Word, p)?,
                         p,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     )?;
             } else if np1 >= 1 {
                 fact = fact
                     .mul(
                         &Self::from_word((2 * np1 - 1) as Word, p)?,
                         p,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     )?
                     .mul(
                         &Self::from_word((2 * np1) as Word, p)?,
                         p,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     )?;
             }
             pi2_pow = Some(
                 pi2_pow
                     .as_ref()
                     .unwrap_or(&pi2)
-                    .mul(&pi2, p, RoundingMode::None)?
-                    .mul(&pi2, p, RoundingMode::None)?,
+                    .mul(&pi2, p, RoundingMode::Work)?
+                    .mul(&pi2, p, RoundingMode::Work)?,
             );
             pow_x = Some(
                 pow_x
                     .as_ref()
                     .unwrap_or(self)
-                    .mul(&x4, p, RoundingMode::None)?,
+                    .mul(&x4, p, RoundingMode::Work)?,
             );
             sign_pos = !sign_pos;
             n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
@@ -2178,7 +2179,7 @@ impl ExactNumNumber {
                 // x / 2, exact (x is normal here): the product by one half keeps every bit
                 let mut one_half = Self::from_word(1, WORD_BIT_SIZE)?;
                 one_half.set_exponent(0);
-                let half = self.mul(&one_half, self.mantissa_max_bit_len(), RoundingMode::None)?;
+                let half = self.mul(&one_half, self.mantissa_max_bit_len(), RoundingMode::Work)?;
                 Self::round_offset(&half, self.sign().invert(), p, rm)?
             };
             r.set_inexact(true);
@@ -2244,20 +2245,20 @@ impl ExactNumNumber {
         let h = xa.mul(&half, p, RoundingMode::ToZero)?;
         let two = Self::from_word(2, WORD_BIT_SIZE)?;
         let on_grid = h
-            .mul(&two, p.max(xa.mantissa_max_bit_len()), RoundingMode::None)?
+            .mul(&two, p.max(xa.mantissa_max_bit_len()), RoundingMode::Work)?
             .cmp(&xa)
             == 0;
         let away = match rm {
             RoundingMode::FromZero => Some(true),
             // `None` drops the excess bits (as `round_offset` does for `J_0`): toward zero.
-            RoundingMode::ToZero | RoundingMode::None => Some(false),
+            RoundingMode::ToZero | RoundingMode::None | RoundingMode::Work => Some(false),
             RoundingMode::Up => Some(!neg),
             RoundingMode::Down => Some(neg),
             _ => None,
         };
         let mut r = match (away, on_grid) {
             // Toward zero from an on-grid x/2: the next value below it.
-            (Some(false), true) => h.next_after(&Self::new(p)?, p, RoundingMode::None)?,
+            (Some(false), true) => h.next_after(&Self::new(p)?, p, RoundingMode::Work)?,
             // Away from zero from a midpoint: the grid point above.
             (Some(true), false) => xa.mul(&half, p, RoundingMode::FromZero)?,
             // On grid and away, or toward zero from a midpoint, or nearest (a midpoint minus δ
@@ -2272,29 +2273,29 @@ impl ExactNumNumber {
     fn bessel_j_series(&self, n: usize, p: usize) -> Result<Self, Error> {
         // J_n(x) = (x/2)^n ∑_{k=0} (-1)^k / (k! (k+n)!) (x/2)^{2k}
         let two = Self::from_word(2, p)?;
-        let xh = self.div(&two, p, RoundingMode::None)?;
+        let xh = self.div(&two, p, RoundingMode::Work)?;
         let mut pow = Self::from_word(1, p)?;
         for _ in 0..n {
-            pow = pow.mul(&xh, p, RoundingMode::None)?;
+            pow = pow.mul(&xh, p, RoundingMode::Work)?;
         }
 
         let mut kfact = Self::from_word(1, p)?;
         let mut knfact = factorial(n, p)?;
-        let mut sum = pow.div(&knfact, p, RoundingMode::None)?;
-        let xh2 = xh.mul(&xh, p, RoundingMode::None)?;
+        let mut sum = pow.div(&knfact, p, RoundingMode::Work)?;
+        let xh2 = xh.mul(&xh, p, RoundingMode::Work)?;
         let mut num = pow;
 
         // Cap or divergence without meeting the bound: never use the partial sum.
         for k in 1..=(p + n + 8) {
-            kfact = kfact.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
-            knfact = knfact.mul(&Self::from_word((k + n) as Word, p)?, p, RoundingMode::None)?;
-            num = num.mul(&xh2, p, RoundingMode::None)?;
-            let den = kfact.mul(&knfact, p, RoundingMode::None)?;
-            let mut t = num.div(&den, p, RoundingMode::None)?;
+            kfact = kfact.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::Work)?;
+            knfact = knfact.mul(&Self::from_word((k + n) as Word, p)?, p, RoundingMode::Work)?;
+            num = num.mul(&xh2, p, RoundingMode::Work)?;
+            let den = kfact.mul(&knfact, p, RoundingMode::Work)?;
+            let mut t = num.div(&den, p, RoundingMode::Work)?;
             if k % 2 == 1 {
                 t.set_sign(if t.is_positive() { Sign::Neg } else { Sign::Pos });
             }
-            sum = sum.add(&t, p, RoundingMode::None)?;
+            sum = sum.add(&t, p, RoundingMode::Work)?;
             if series_negligible(&t, &sum, p) {
                 break;
             }
@@ -2423,9 +2424,9 @@ impl ExactNumNumber {
                 for m in 1..an {
                     let two_m = Self::from_word((2 * m) as Word, p)?;
                     let ym = two_m
-                        .div(self, p, RoundingMode::None)?
-                        .mul(&ym1, p, RoundingMode::None)?
-                        .sub(&ym2, p, RoundingMode::None)?;
+                        .div(self, p, RoundingMode::Work)?
+                        .mul(&ym1, p, RoundingMode::Work)?
+                        .sub(&ym2, p, RoundingMode::Work)?;
                     ym2 = ym1;
                     ym1 = ym;
                 }
@@ -2449,19 +2450,19 @@ impl ExactNumNumber {
                 y.neg()
             }
         } else {
-            let pi = cc.pi_num(p, RoundingMode::None)?;
-            let nupi = nu.mul(&pi, p, RoundingMode::None)?;
-            let s = nupi.sin(p, RoundingMode::None, cc)?;
+            let pi = cc.pi_num(p, RoundingMode::Work)?;
+            let nupi = nu.mul(&pi, p, RoundingMode::Work)?;
+            let s = nupi.sin(p, RoundingMode::Work, cc)?;
             if s.is_zero() || s.exponent() + (p as i64) < 0 {
                 return Err(Error::InvalidArgument);
             }
             let jp = self.bessel_jn_series(nu, p, cc, true)?;
             let nneg = nu.with_sign(if nu.is_positive() { Sign::Neg } else { Sign::Pos })?;
             let jm = self.bessel_jn_series(&nneg, p, cc, true)?;
-            let c = nupi.cos(p, RoundingMode::None, cc)?;
-            jp.mul(&c, p, RoundingMode::None)?
-                .sub(&jm, p, RoundingMode::None)?
-                .div(&s, p, RoundingMode::None)
+            let c = nupi.cos(p, RoundingMode::Work, cc)?;
+            jp.mul(&c, p, RoundingMode::Work)?
+                .sub(&jm, p, RoundingMode::Work)?
+                .div(&s, p, RoundingMode::Work)
         }
     }
 
@@ -2580,7 +2581,7 @@ impl ExactNumNumber {
             self.k_real(&nu, pe, cc)?
         };
         let mut v = v;
-        v.set_precision(p, RoundingMode::None)?;
+        v.set_precision(p, RoundingMode::Work)?;
         Ok(v)
     }
 
@@ -2642,17 +2643,17 @@ impl ExactNumNumber {
         alternating: bool,
     ) -> Result<(Self, Exponent, usize), Error> {
         let two = Self::from_word(2, p)?;
-        let half = self.div(&two, p, RoundingMode::None)?;
+        let half = self.div(&two, p, RoundingMode::Work)?;
         let one = Self::from_word(1, p)?;
-        let g0 = nu.add(&one, p, RoundingMode::None)?.gamma_at(p, cc)?;
+        let g0 = nu.add(&one, p, RoundingMode::Work)?.gamma_at(p, cc)?;
         let mut term = half
-            .pow(nu, p, RoundingMode::None, cc)?
-            .div(&g0, p, RoundingMode::None)?;
+            .pow(nu, p, RoundingMode::Work, cc)?
+            .div(&g0, p, RoundingMode::Work)?;
         // None until the first k > 0 term is added: the sum is the k = 0 term itself (no copy).
         let mut sum: Option<Self> = None;
         let mut peak = if term.is_zero() { Exponent::MIN } else { term.exponent() };
         let mut terms = 1usize;
-        let hh = half.mul(&half, p, RoundingMode::None)?;
+        let hh = half.mul(&half, p, RoundingMode::Work)?;
         // Terms grow until k ≈ |x|/2 and then decay. Run until the tail is
         // below 2^{-p}; never use a partial sum (the old series_n_max, even
         // with a 2^20 bump, stopped I_ν short of the peak for large |x|).
@@ -2663,18 +2664,18 @@ impl ExactNumNumber {
                 p,
             )?;
             let den = kk
-                .add(nu, p, RoundingMode::None)?
-                .mul(&kk, p, RoundingMode::None)?;
+                .add(nu, p, RoundingMode::Work)?
+                .mul(&kk, p, RoundingMode::Work)?;
             let mut tn = term
-                .mul(&hh, p, RoundingMode::None)?
-                .div(&den, p, RoundingMode::None)?;
+                .mul(&hh, p, RoundingMode::Work)?
+                .div(&den, p, RoundingMode::Work)?;
             if alternating {
                 tn = tn.neg()?;
             }
             let sm = sum
                 .as_ref()
                 .unwrap_or(&term)
-                .add(&tn, p, RoundingMode::None)?;
+                .add(&tn, p, RoundingMode::Work)?;
             term = tn;
             terms += 1;
             if !term.is_zero() {
@@ -2745,34 +2746,34 @@ impl ExactNumNumber {
 
     /// χ = x − (2ν+1)π/4 (DLMF 10.17.1).
     fn bessel_hankel_chi(&self, nu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
         let two = Self::from_word(2, p)?;
         let four = Self::from_word(4, p)?;
         let one = Self::from_word(1, p)?;
         let two_nu_1 = two
-            .mul(nu, p, RoundingMode::None)?
-            .add(&one, p, RoundingMode::None)?;
+            .mul(nu, p, RoundingMode::Work)?
+            .add(&one, p, RoundingMode::Work)?;
         let phase = two_nu_1
-            .mul(&pi, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
-        self.sub(&phase, p, RoundingMode::None)
+            .mul(&pi, p, RoundingMode::Work)?
+            .div(&four, p, RoundingMode::Work)?;
+        self.sub(&phase, p, RoundingMode::Work)
     }
 
     /// ω = √(2/(πx)).
     fn bessel_hankel_omega(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
         let two = Self::from_word(2, p)?;
-        two.div(&pi.mul(self, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .sqrt(p, RoundingMode::None)
+        two.div(&pi.mul(self, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .sqrt(p, RoundingMode::Work)
     }
 
     /// Hankel amplitude series P, Q (DLMF 10.17.3–4), stopped at the smallest term.
     fn bessel_hankel_pq(&self, nu: &Self, p: usize) -> Result<(Self, Self), Error> {
         let two = Self::from_word(2, p)?;
         let eight = Self::from_word(8, p)?;
-        let two_nu = two.mul(nu, p, RoundingMode::None)?;
-        let mu = two_nu.mul(&two_nu, p, RoundingMode::None)?;
-        let eight_x = eight.mul(self, p, RoundingMode::None)?;
+        let two_nu = two.mul(nu, p, RoundingMode::Work)?;
+        let mu = two_nu.mul(&two_nu, p, RoundingMode::Work)?;
+        let eight_x = eight.mul(self, p, RoundingMode::Work)?;
         let mut prod = Self::from_word(1, p)?;
         let mut kf = Self::from_word(1, p)?;
         let mut pz = Self::from_word(1, p)?;
@@ -2784,15 +2785,15 @@ impl ExactNumNumber {
         let mut done = false;
         for k in 1..=k_max {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
-            let odd2 = odd.mul(&odd, p, RoundingMode::None)?;
+            let odd2 = odd.mul(&odd, p, RoundingMode::Work)?;
             prod = prod.mul(
-                &mu.sub(&odd2, p, RoundingMode::None)?,
+                &mu.sub(&odd2, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            kf = kf.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
-            pz = pz.mul(&eight_x, p, RoundingMode::None)?;
-            let term = prod.div(&kf.mul(&pz, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            kf = kf.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::Work)?;
+            pz = pz.mul(&eight_x, p, RoundingMode::Work)?;
+            let term = prod.div(&kf.mul(&pz, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
             if k % 2 == 0 {
                 let negated;
                 let signed = if (k / 2) % 2 == 1 {
@@ -2801,7 +2802,7 @@ impl ExactNumNumber {
                 } else {
                     &term
                 };
-                psum = psum.add(signed, p, RoundingMode::None)?;
+                psum = psum.add(signed, p, RoundingMode::Work)?;
             } else {
                 let negated;
                 let signed = if ((k - 1) / 2) % 2 == 1 {
@@ -2810,7 +2811,7 @@ impl ExactNumNumber {
                 } else {
                     &term
                 };
-                qsum = qsum.add(signed, p, RoundingMode::None)?;
+                qsum = qsum.add(signed, p, RoundingMode::Work)?;
             }
             let e = term.exponent();
             if term.is_zero() || e + (p as i64) < 0 {
@@ -2833,16 +2834,16 @@ impl ExactNumNumber {
         let chi = self.bessel_hankel_chi(nu, p, cc)?;
         let omega = self.bessel_hankel_omega(p, cc)?;
         let (pp, qq) = self.bessel_hankel_pq(nu, p)?;
-        let c = chi.cos(p, RoundingMode::None, cc)?;
-        let s = chi.sin(p, RoundingMode::None, cc)?;
+        let c = chi.cos(p, RoundingMode::Work, cc)?;
+        let s = chi.sin(p, RoundingMode::Work, cc)?;
         omega.mul(
-            &pp.mul(&c, p, RoundingMode::None)?.sub(
-                &qq.mul(&s, p, RoundingMode::None)?,
+            &pp.mul(&c, p, RoundingMode::Work)?.sub(
+                &qq.mul(&s, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
     }
 
@@ -2851,16 +2852,16 @@ impl ExactNumNumber {
         let chi = self.bessel_hankel_chi(nu, p, cc)?;
         let omega = self.bessel_hankel_omega(p, cc)?;
         let (pp, qq) = self.bessel_hankel_pq(nu, p)?;
-        let c = chi.cos(p, RoundingMode::None, cc)?;
-        let s = chi.sin(p, RoundingMode::None, cc)?;
+        let c = chi.cos(p, RoundingMode::Work, cc)?;
+        let s = chi.sin(p, RoundingMode::Work, cc)?;
         omega.mul(
-            &pp.mul(&s, p, RoundingMode::None)?.add(
-                &qq.mul(&c, p, RoundingMode::None)?,
+            &pp.mul(&s, p, RoundingMode::Work)?.add(
+                &qq.mul(&c, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
     }
 
@@ -2876,9 +2877,9 @@ impl ExactNumNumber {
         for m in 1..n {
             let two_m = Self::from_word((2 * m) as Word, p)?;
             let ym = two_m
-                .div(self, p, RoundingMode::None)?
-                .mul(&ym1, p, RoundingMode::None)?
-                .sub(&ym2, p, RoundingMode::None)?;
+                .div(self, p, RoundingMode::Work)?
+                .mul(&ym1, p, RoundingMode::Work)?
+                .sub(&ym2, p, RoundingMode::Work)?;
             ym2 = ym1;
             ym1 = ym;
         }
@@ -2886,14 +2887,14 @@ impl ExactNumNumber {
     }
 
     fn bessel_y0(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
         let two = Self::from_word(2, p)?;
-        let two_pi = two.div(&pi, p, RoundingMode::None)?;
-        let half = self.div(&two, p, RoundingMode::None)?;
-        let j0 = self.bessel_j(0, p, RoundingMode::None, cc)?;
-        let g = cc.euler_gamma_num(p, RoundingMode::None)?;
-        let prefix = g.add(&half.ln(p, RoundingMode::None, cc)?, p, RoundingMode::None)?;
-        let z = half.mul(&half, p, RoundingMode::None)?;
+        let two_pi = two.div(&pi, p, RoundingMode::Work)?;
+        let half = self.div(&two, p, RoundingMode::Work)?;
+        let j0 = self.bessel_j(0, p, RoundingMode::Work, cc)?;
+        let g = cc.euler_gamma_num(p, RoundingMode::Work)?;
+        let prefix = g.add(&half.ln(p, RoundingMode::Work, cc)?, p, RoundingMode::Work)?;
+        let z = half.mul(&half, p, RoundingMode::Work)?;
         let mut fact = Self::from_word(1, p)?;
         let mut zk = Self::from_word(1, p)?;
         let mut sum = Self::from_word(0, p)?;
@@ -2906,20 +2907,20 @@ impl ExactNumNumber {
                     p,
                 )?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            zk = zk.mul(&z, p, RoundingMode::None)?;
+            zk = zk.mul(&z, p, RoundingMode::Work)?;
             let h = harmonic_u(m, p)?;
             let mut term = h.div(
-                &fact.mul(&fact, p, RoundingMode::None)?,
+                &fact.mul(&fact, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            term = term.mul(&zk, p, RoundingMode::None)?;
+            term = term.mul(&zk, p, RoundingMode::Work)?;
             if m.is_multiple_of(2) {
                 term = term.neg()?;
             }
-            sum = sum.add(&term, p, RoundingMode::None)?;
+            sum = sum.add(&term, p, RoundingMode::Work)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
                 break;
             }
@@ -2927,22 +2928,22 @@ impl ExactNumNumber {
         }
         two_pi.mul(
             &prefix
-                .mul(&j0, p, RoundingMode::None)?
-                .add(&sum, p, RoundingMode::None)?,
+                .mul(&j0, p, RoundingMode::Work)?
+                .add(&sum, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
     }
 
     fn bessel_y1(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
         let two = Self::from_word(2, p)?;
-        let two_pi = two.div(&pi, p, RoundingMode::None)?;
-        let half = self.div(&two, p, RoundingMode::None)?;
-        let j1 = self.bessel_j(1, p, RoundingMode::None, cc)?;
-        let g = cc.euler_gamma_num(p, RoundingMode::None)?;
-        let prefix = g.add(&half.ln(p, RoundingMode::None, cc)?, p, RoundingMode::None)?;
-        let z = half.mul(&half, p, RoundingMode::None)?;
+        let two_pi = two.div(&pi, p, RoundingMode::Work)?;
+        let half = self.div(&two, p, RoundingMode::Work)?;
+        let j1 = self.bessel_j(1, p, RoundingMode::Work, cc)?;
+        let g = cc.euler_gamma_num(p, RoundingMode::Work)?;
+        let prefix = g.add(&half.ln(p, RoundingMode::Work, cc)?, p, RoundingMode::Work)?;
+        let z = half.mul(&half, p, RoundingMode::Work)?;
         let mut kfact = Self::from_word(1, p)?;
         let mut kp1fact = Self::from_word(1, p)?;
         let mut zk = Self::from_word(1, p)?;
@@ -2952,22 +2953,22 @@ impl ExactNumNumber {
         loop {
             let hk = harmonic_u(k, p)?;
             let hkp1 = hk.add(
-                &Self::from_word((k + 1) as Word, p)?.reciprocal(p, RoundingMode::None)?,
+                &Self::from_word((k + 1) as Word, p)?.reciprocal(p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
             let mut term = hk
-                .add(&hkp1, p, RoundingMode::None)?
+                .add(&hkp1, p, RoundingMode::Work)?
                 .div(
-                    &kfact.mul(&kp1fact, p, RoundingMode::None)?,
+                    &kfact.mul(&kp1fact, p, RoundingMode::Work)?,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?
-                .mul(&zk, p, RoundingMode::None)?;
+                .mul(&zk, p, RoundingMode::Work)?;
             if k % 2 == 1 {
                 term = term.neg()?;
             }
-            sum = sum.add(&term, p, RoundingMode::None)?;
+            sum = sum.add(&term, p, RoundingMode::Work)?;
             if (term.is_zero() || term.exponent() + (p as i64) < 0) && k > 0 {
                 break;
             }
@@ -2978,7 +2979,7 @@ impl ExactNumNumber {
                     p,
                 )?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
             kp1fact = kp1fact.mul(
                 &Self::from_word(
@@ -2987,27 +2988,27 @@ impl ExactNumNumber {
                     p,
                 )?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            zk = zk.mul(&z, p, RoundingMode::None)?;
+            zk = zk.mul(&z, p, RoundingMode::Work)?;
             k = kp;
         }
         let a = two_pi.mul(
-            &prefix.mul(&j1, p, RoundingMode::None)?,
+            &prefix.mul(&j1, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
-        let b = two.div(&pi.mul(self, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        let b = two.div(&pi.mul(self, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         let c = self
-            .div(&two.mul(&pi, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .mul(&sum, p, RoundingMode::None)?;
-        a.sub(&b, p, RoundingMode::None)?
-            .sub(&c, p, RoundingMode::None)
+            .div(&two.mul(&pi, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .mul(&sum, p, RoundingMode::Work)?;
+        a.sub(&b, p, RoundingMode::Work)?
+            .sub(&c, p, RoundingMode::Work)
     }
 
     fn k_half_integer(&self, n: u32, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let two = Self::from_word(2, p)?;
-        let two_x = two.mul(self, p, RoundingMode::None)?;
+        let two_x = two.mul(self, p, RoundingMode::Work)?;
         let mut term = Self::from_word(1, p)?;
         let mut sum = Self::from_word(1, p)?;
         for k in 0..n {
@@ -3015,22 +3016,22 @@ impl ExactNumNumber {
             let num = Self::from_word((n + k + 1) as Word, p)?.mul(
                 &Self::from_word((n - k) as Word, p)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            term = term.mul(&num, p, RoundingMode::None)?.div(
-                &kk.mul(&two_x, p, RoundingMode::None)?,
+            term = term.mul(&num, p, RoundingMode::Work)?.div(
+                &kk.mul(&two_x, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            sum = sum.add(&term, p, RoundingMode::None)?;
+            sum = sum.add(&term, p, RoundingMode::Work)?;
         }
-        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
         let nx = self.with_sign(Sign::Neg)?;
         let pref = pi
-            .div(&two_x, p, RoundingMode::None)?
-            .sqrt(p, RoundingMode::None)?
-            .mul(&nx.exp(p, RoundingMode::None, cc)?, p, RoundingMode::None)?;
-        pref.mul(&sum, p, RoundingMode::None)
+            .div(&two_x, p, RoundingMode::Work)?
+            .sqrt(p, RoundingMode::Work)?
+            .mul(&nx.exp(p, RoundingMode::Work, cc)?, p, RoundingMode::Work)?;
+        pref.mul(&sum, p, RoundingMode::Work)
     }
 
     fn k_integer(&self, n: u32, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -3047,9 +3048,9 @@ impl ExactNumNumber {
         for m in 1..n {
             let two_m = Self::from_word((2 * m) as Word, p)?;
             let km = two_m
-                .div(self, p, RoundingMode::None)?
-                .mul(&km1, p, RoundingMode::None)?
-                .add(&km2, p, RoundingMode::None)?;
+                .div(self, p, RoundingMode::Work)?
+                .mul(&km1, p, RoundingMode::Work)?
+                .add(&km2, p, RoundingMode::Work)?;
             km2 = km1;
             km1 = km;
         }
@@ -3059,10 +3060,10 @@ impl ExactNumNumber {
     fn k0_series(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let zero = Self::from_word(0, p)?;
         let one = Self::from_word(1, p)?;
-        let i0 = self.bessel_i(&zero, p, RoundingMode::None, cc)?;
+        let i0 = self.bessel_i(&zero, p, RoundingMode::Work, cc)?;
         let two = Self::from_word(2, p)?;
-        let half = self.div(&two, p, RoundingMode::None)?;
-        let z = half.mul(&half, p, RoundingMode::None)?;
+        let half = self.div(&two, p, RoundingMode::Work)?;
+        let z = half.mul(&half, p, RoundingMode::Work)?;
         let mut fact = Self::from_word(1, p)?;
         let mut zk = Self::from_word(1, p)?;
         let mut psi = one.digamma_at(p, cc)?;
@@ -3072,26 +3073,26 @@ impl ExactNumNumber {
         let mut k: usize = 1;
         loop {
             let kw = Word::try_from(k).map_err(|_| Error::PrecisionRetryExhausted)?;
-            fact = fact.mul(&Self::from_word(kw, p)?, p, RoundingMode::None)?;
-            zk = zk.mul(&z, p, RoundingMode::None)?;
+            fact = fact.mul(&Self::from_word(kw, p)?, p, RoundingMode::Work)?;
+            zk = zk.mul(&z, p, RoundingMode::Work)?;
             // ψ(k+1) = ψ(k) + 1/k (a fresh digamma per term made K_n very slow).
             let psi_k = psi.add(
-                &Self::from_word(kw, p)?.reciprocal(p, RoundingMode::None)?,
+                &Self::from_word(kw, p)?.reciprocal(p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
             let term = psi_k
                 .div(
-                    &fact.mul(&fact, p, RoundingMode::None)?,
+                    &fact.mul(&fact, p, RoundingMode::Work)?,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?
-                .mul(&zk, p, RoundingMode::None)?;
+                .mul(&zk, p, RoundingMode::Work)?;
             // while sum is None, psi is still ψ(1), the sum's first part
             sum = Some(
                 sum.as_ref()
                     .unwrap_or(&psi)
-                    .add(&term, p, RoundingMode::None)?,
+                    .add(&term, p, RoundingMode::Work)?,
             );
             psi = psi_k;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
@@ -3099,42 +3100,42 @@ impl ExactNumNumber {
             }
             k = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
-        half.ln(p, RoundingMode::None, cc)?
+        half.ln(p, RoundingMode::Work, cc)?
             .neg()?
-            .mul(&i0, p, RoundingMode::None)?
-            .add(sum.as_ref().unwrap_or(&psi), p, RoundingMode::None)
+            .mul(&i0, p, RoundingMode::Work)?
+            .add(sum.as_ref().unwrap_or(&psi), p, RoundingMode::Work)
     }
 
     fn k1_from_wronskian(&self, k0: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let zero = Self::from_word(0, p)?;
         let one = Self::from_word(1, p)?;
-        let i0 = self.bessel_i(&zero, p, RoundingMode::None, cc)?;
-        let i1 = self.bessel_i(&one, p, RoundingMode::None, cc)?;
+        let i0 = self.bessel_i(&zero, p, RoundingMode::Work, cc)?;
+        let i1 = self.bessel_i(&one, p, RoundingMode::Work, cc)?;
         if i0.is_zero() {
             return Err(Error::InvalidArgument);
         }
-        one.div(self, p, RoundingMode::None)?
-            .sub(&i1.mul(k0, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .div(&i0, p, RoundingMode::None)
+        one.div(self, p, RoundingMode::Work)?
+            .sub(&i1.mul(k0, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .div(&i0, p, RoundingMode::Work)
     }
 
     fn k_real(&self, nu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let n_floor = floor_nonneg_u32(nu, p)?;
-        let f = nu.sub(&Self::from_word(n_floor as Word, p)?, p, RoundingMode::None)?;
+        let f = nu.sub(&Self::from_word(n_floor as Word, p)?, p, RoundingMode::Work)?;
         if f.is_zero() {
             return self.k_integer(n_floor, p, cc);
         }
         let kf = self.k_connection(&f, p, cc)?;
         let one = Self::from_word(1, p)?;
-        let k1mf = self.k_connection(&one.sub(&f, p, RoundingMode::None)?, p, cc)?;
+        let k1mf = self.k_connection(&one.sub(&f, p, RoundingMode::Work)?, p, cc)?;
         let mut km1 = k1mf;
         let mut k0 = kf;
         for m in 0..n_floor {
-            let nu_m = f.add(&Self::from_word(m as Word, p)?, p, RoundingMode::None)?;
+            let nu_m = f.add(&Self::from_word(m as Word, p)?, p, RoundingMode::Work)?;
             let kp = two_times(&nu_m, p)?
-                .div(self, p, RoundingMode::None)?
-                .mul(&k0, p, RoundingMode::None)?
-                .add(&km1, p, RoundingMode::None)?;
+                .div(self, p, RoundingMode::Work)?
+                .mul(&k0, p, RoundingMode::Work)?
+                .add(&km1, p, RoundingMode::Work)?;
             km1 = k0;
             k0 = kp;
         }
@@ -3142,27 +3143,27 @@ impl ExactNumNumber {
     }
 
     fn k_connection(&self, mu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
         let s = mu
-            .mul(&pi, p, RoundingMode::None)?
-            .sin(p, RoundingMode::None, cc)?;
+            .mul(&pi, p, RoundingMode::Work)?
+            .sin(p, RoundingMode::Work, cc)?;
         if s.is_zero() || s.exponent() + (p as i64) < 0 {
             return Err(Error::InvalidArgument);
         }
-        let ip = self.bessel_i(mu, p, RoundingMode::None, cc)?;
+        let ip = self.bessel_i(mu, p, RoundingMode::Work, cc)?;
         let mneg = mu.with_sign(Sign::Neg)?;
-        let im = self.bessel_i(&mneg, p, RoundingMode::None, cc)?;
+        let im = self.bessel_i(&mneg, p, RoundingMode::Work, cc)?;
         let two = Self::from_word(2, p)?;
-        pi.div(&two, p, RoundingMode::None)?
-            .mul(&im.sub(&ip, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .div(&s, p, RoundingMode::None)
+        pi.div(&two, p, RoundingMode::Work)?
+            .mul(&im.sub(&ip, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .div(&s, p, RoundingMode::Work)
     }
 
     fn k_asymptotic(&self, nu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let four = Self::from_word(4, p)?;
         let eight = Self::from_word(8, p)?;
-        let four_nu2 = four.mul(&nu.mul(nu, p, RoundingMode::None)?, p, RoundingMode::None)?;
-        let eight_x = eight.mul(self, p, RoundingMode::None)?;
+        let four_nu2 = four.mul(&nu.mul(nu, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
+        let eight_x = eight.mul(self, p, RoundingMode::Work)?;
         let mut term = Self::from_word(1, p)?;
         let mut sum = Self::from_word(1, p)?;
         let mut prev_e = Exponent::MAX;
@@ -3173,21 +3174,21 @@ impl ExactNumNumber {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
             let factor = four_nu2
                 .sub(
-                    &odd.mul(&odd, p, RoundingMode::None)?,
+                    &odd.mul(&odd, p, RoundingMode::Work)?,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?
                 .div(
-                    &Self::from_word(k as Word, p)?.mul(&eight_x, p, RoundingMode::None)?,
+                    &Self::from_word(k as Word, p)?.mul(&eight_x, p, RoundingMode::Work)?,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?;
-            term = term.mul(&factor, p, RoundingMode::None)?;
+            term = term.mul(&factor, p, RoundingMode::Work)?;
             let e = term.exponent();
             if k > 3 && e > prev_e {
                 break;
             }
-            sum = sum.add(&term, p, RoundingMode::None)?;
+            sum = sum.add(&term, p, RoundingMode::Work)?;
             if term.is_zero() || e + (p as i64) < 0 {
                 done = true;
                 break;
@@ -3197,18 +3198,18 @@ impl ExactNumNumber {
         if !done {
             return Err(Error::PrecisionRetryExhausted);
         }
-        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
         let two = Self::from_word(2, p)?;
         let nx = self.with_sign(Sign::Neg)?;
         let pref = pi
             .div(
-                &two.mul(self, p, RoundingMode::None)?,
+                &two.mul(self, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?
-            .sqrt(p, RoundingMode::None)?
-            .mul(&nx.exp(p, RoundingMode::None, cc)?, p, RoundingMode::None)?;
-        pref.mul(&sum, p, RoundingMode::None)
+            .sqrt(p, RoundingMode::Work)?
+            .mul(&nx.exp(p, RoundingMode::Work, cc)?, p, RoundingMode::Work)?;
+        pref.mul(&sum, p, RoundingMode::Work)
     }
 
     /// Complete elliptic \(K(m)\). Parameter \(m=k^2\). \(m=1\) is \(+\infty\);
@@ -3228,12 +3229,12 @@ impl ExactNumNumber {
             let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
             loop {
                 let p_x = p_wrk + WORD_BIT_SIZE * 2;
-                let inv = one.div(self, p_x, RoundingMode::None)?;
+                let inv = one.div(self, p_x, RoundingMode::Work)?;
                 let k = inv.elliptic_k_at(p_x, cc)?;
                 let mut ret = k.div(
-                    &self.sqrt(p_x, RoundingMode::None)?,
+                    &self.sqrt(p_x, RoundingMode::Work)?,
                     p_x,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?;
                 if ret.try_set_precision(p, rm, p_wrk)? {
                     ret.set_inexact(ret.inexact() | self.inexact());
@@ -3263,7 +3264,7 @@ impl ExactNumNumber {
     pub(crate) fn elliptic_k_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let zero = Self::from_word(0, p)?;
         let one = Self::from_word(1, p)?;
-        let om = one.sub(self, p, RoundingMode::None)?;
+        let om = one.sub(self, p, RoundingMode::Work)?;
         carlson_rf(&zero, &om, &one, p, cc)
     }
 
@@ -3305,15 +3306,15 @@ impl ExactNumNumber {
         let zero = Self::from_word(0, p)?;
         let one = Self::from_word(1, p)?;
         let three = Self::from_word(3, p)?;
-        let om = one.sub(self, p, RoundingMode::None)?;
+        let om = one.sub(self, p, RoundingMode::Work)?;
         let rf = carlson_rf(&zero, &om, &one, p, cc)?;
         let rd = carlson_rd(&zero, &om, &one, p, cc)?;
         rf.sub(
             &self
-                .div(&three, p, RoundingMode::None)?
-                .mul(&rd, p, RoundingMode::None)?,
+                .div(&three, p, RoundingMode::Work)?
+                .mul(&rd, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
     }
 
@@ -3391,13 +3392,13 @@ impl ExactNumNumber {
         p: usize,
     ) -> Result<(Self, Self, Self), Error> {
         let one = Self::from_word(1, p)?;
-        let x2 = xa.mul(xa, p, RoundingMode::None)?;
+        let x2 = xa.mul(xa, p, RoundingMode::Work)?;
         let a = match c {
-            Some(c) => c.mul(c, p, RoundingMode::None)?,
-            None => one.sub(xa, p, RoundingMode::None)?.mul(
-                &one.add(xa, p, RoundingMode::None)?,
+            Some(c) => c.mul(c, p, RoundingMode::Work)?,
+            None => one.sub(xa, p, RoundingMode::Work)?.mul(
+                &one.add(xa, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?,
         };
         let b = Self::one_minus_scaled(m, &x2, &a, p)?;
@@ -3409,13 +3410,13 @@ impl ExactNumNumber {
     fn one_minus_scaled(l: &Self, x2: &Self, a: &Self, p: usize) -> Result<Self, Error> {
         let one = Self::from_word(1, p)?;
         if !l.is_negative() && l.cmp(&one) <= 0 {
-            one.sub(l, p, RoundingMode::None)?.add(
-                &l.mul(a, p, RoundingMode::None)?,
+            one.sub(l, p, RoundingMode::Work)?.add(
+                &l.mul(a, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
         } else {
-            one.sub(&l.mul(x2, p, RoundingMode::None)?, p, RoundingMode::None)
+            one.sub(&l.mul(x2, p, RoundingMode::Work)?, p, RoundingMode::Work)
         }
     }
 
@@ -3432,7 +3433,7 @@ impl ExactNumNumber {
         let xa = self.abs()?;
         let sign_neg = self.is_negative();
         if m.is_zero() {
-            let mut r = xa.asin(p, RoundingMode::None, cc)?;
+            let mut r = xa.asin(p, RoundingMode::Work, cc)?;
             if sign_neg {
                 r.set_sign(Sign::Neg);
             }
@@ -3445,9 +3446,9 @@ impl ExactNumNumber {
             // F(φ|1) = atanh(sin φ) = asinh(tan φ); the tangent keeps the cosine.
             let mut r = match c {
                 Some(c) => xa
-                    .div(c, p, RoundingMode::None)?
-                    .asinh(p, RoundingMode::None, cc)?,
-                None => xa.atanh(p, RoundingMode::None, cc)?,
+                    .div(c, p, RoundingMode::Work)?
+                    .asinh(p, RoundingMode::Work, cc)?,
+                None => xa.atanh(p, RoundingMode::Work, cc)?,
             };
             if sign_neg {
                 r.set_sign(Sign::Neg);
@@ -3459,7 +3460,7 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
         let rf = carlson_rf(&a, &b, &one, p, cc)?;
-        let mut r = xa.mul(&rf, p, RoundingMode::None)?;
+        let mut r = xa.mul(&rf, p, RoundingMode::Work)?;
         if sign_neg {
             r.set_sign(Sign::Neg);
         }
@@ -3521,7 +3522,7 @@ impl ExactNumNumber {
         let xa = self.abs()?;
         let sign_neg = self.is_negative();
         if m.is_zero() {
-            let mut r = xa.asin(p, RoundingMode::None, cc)?;
+            let mut r = xa.asin(p, RoundingMode::Work, cc)?;
             if sign_neg {
                 r.set_sign(Sign::Neg);
             }
@@ -3541,13 +3542,13 @@ impl ExactNumNumber {
         let three = Self::from_word(3, p)?;
         let rf = carlson_rf(&a, &b, &one, p, cc)?;
         let rd = carlson_rd(&a, &b, &one, p, cc)?;
-        let t1 = xa.mul(&rf, p, RoundingMode::None)?;
+        let t1 = xa.mul(&rf, p, RoundingMode::Work)?;
         let t2 = m
-            .mul(&xa, p, RoundingMode::None)?
-            .mul(&x2, p, RoundingMode::None)?
-            .div(&three, p, RoundingMode::None)?
-            .mul(&rd, p, RoundingMode::None)?;
-        let t = t1.sub(&t2, p, RoundingMode::None)?;
+            .mul(&xa, p, RoundingMode::Work)?
+            .mul(&x2, p, RoundingMode::Work)?
+            .div(&three, p, RoundingMode::Work)?
+            .mul(&rd, p, RoundingMode::Work)?;
+        let t = t1.sub(&t2, p, RoundingMode::Work)?;
         let loss = Self::cancel_bits(&t1, &t2, &t);
         let t = if sign_neg { t.neg()? } else { t };
         Ok((t, loss))
@@ -3590,16 +3591,16 @@ impl ExactNumNumber {
         let zero = Self::from_word(0, p)?;
         let one = Self::from_word(1, p)?;
         let three = Self::from_word(3, p)?;
-        let om = one.sub(m, p, RoundingMode::None)?;
-        let on = one.sub(self, p, RoundingMode::None)?;
+        let om = one.sub(m, p, RoundingMode::Work)?;
+        let on = one.sub(self, p, RoundingMode::Work)?;
         let rf = carlson_rf(&zero, &om, &one, p, cc)?;
         let rj = carlson_rj(&zero, &om, &one, &on, p, cc)?;
         rf.add(
             &self
-                .div(&three, p, RoundingMode::None)?
-                .mul(&rj, p, RoundingMode::None)?,
+                .div(&three, p, RoundingMode::Work)?
+                .mul(&rj, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
     }
 
@@ -3678,13 +3679,13 @@ impl ExactNumNumber {
         }
         if m.is_zero() && self.cmp(&one) < 0 {
             let root = one
-                .sub(self, p, RoundingMode::None)?
-                .sqrt(p, RoundingMode::None)?;
+                .sub(self, p, RoundingMode::Work)?
+                .sqrt(p, RoundingMode::Work)?;
             let inner = root
-                .mul(&xa, p, RoundingMode::None)?
-                .div(&a.sqrt(p, RoundingMode::None)?, p, RoundingMode::None)?
-                .atan(p, RoundingMode::None, cc)?;
-            let mut r = inner.div(&root, p, RoundingMode::None)?;
+                .mul(&xa, p, RoundingMode::Work)?
+                .div(&a.sqrt(p, RoundingMode::Work)?, p, RoundingMode::Work)?
+                .atan(p, RoundingMode::Work, cc)?;
+            let mut r = inner.div(&root, p, RoundingMode::Work)?;
             if sign_neg {
                 r.set_sign(Sign::Neg);
             }
@@ -3693,13 +3694,13 @@ impl ExactNumNumber {
         let three = Self::from_word(3, p)?;
         let rf = carlson_rf(&a, &b, &one, p, cc)?;
         let rj = carlson_rj(&a, &b, &one, &pv, p, cc)?;
-        let t1 = xa.mul(&rf, p, RoundingMode::None)?;
+        let t1 = xa.mul(&rf, p, RoundingMode::Work)?;
         let t2 = self
-            .mul(&xa, p, RoundingMode::None)?
-            .mul(&x2, p, RoundingMode::None)?
-            .div(&three, p, RoundingMode::None)?
-            .mul(&rj, p, RoundingMode::None)?;
-        let t = t1.add(&t2, p, RoundingMode::None)?;
+            .mul(&xa, p, RoundingMode::Work)?
+            .mul(&x2, p, RoundingMode::Work)?
+            .div(&three, p, RoundingMode::Work)?
+            .mul(&rj, p, RoundingMode::Work)?;
+        let t = t1.add(&t2, p, RoundingMode::Work)?;
         let loss = Self::cancel_bits(&t1, &t2, &t);
         let t = if sign_neg { t.neg()? } else { t };
         Ok((t, loss))
@@ -3735,23 +3736,23 @@ impl ExactNumNumber {
     /// `Ok(None)` means the working precision did not keep the remainder inside
     /// that interval. The caller raises the precision and tries again.
     fn reduced_sin(&self, p: usize, cc: &mut Consts) -> Result<Option<(Self, Self, Self)>, Error> {
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let half = pi.div(&Self::from_word(2, WORD_BIT_SIZE)?, p, RoundingMode::None)?; // exact
-        let q = self.div(&pi, p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::Work)?;
+        let half = pi.div(&Self::from_word(2, WORD_BIT_SIZE)?, p, RoundingMode::Work)?; // exact
+        let q = self.div(&pi, p, RoundingMode::Work)?;
         let k = q.round(0, RoundingMode::ToEven)?;
         if !k.is_int() {
             return Ok(None);
         }
-        let r = self.sub(&k.mul(&pi, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        let r = self.sub(&k.mul(&pi, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         if r.abs()?.cmp(&half) > 0 {
             return Ok(None);
         }
-        let s = r.sin(p, RoundingMode::None, cc)?;
+        let s = r.sin(p, RoundingMode::Work, cc)?;
         let one = Self::from_word(1, p)?;
         if s.abs()?.cmp(&one) > 0 {
             return Ok(None);
         }
-        let c = r.cos(p, RoundingMode::None, cc)?.abs()?;
+        let c = r.cos(p, RoundingMode::Work, cc)?.abs()?;
         Ok(Some((s, k, c)))
     }
 
@@ -3759,9 +3760,9 @@ impl ExactNumNumber {
     fn add_turns(part: Self, k: &Self, complete: &Self, p: usize) -> Result<(Self, usize), Error> {
         let two = Self::from_word(2, p)?;
         let shift = two
-            .mul(k, p, RoundingMode::None)?
-            .mul(complete, p, RoundingMode::None)?;
-        let t = part.add(&shift, p, RoundingMode::None)?;
+            .mul(k, p, RoundingMode::Work)?
+            .mul(complete, p, RoundingMode::Work)?;
+        let t = part.add(&shift, p, RoundingMode::Work)?;
         let loss = Self::cancel_bits(&part, &shift, &t);
         Ok((t, loss))
     }
@@ -3780,7 +3781,7 @@ impl ExactNumNumber {
             if l.is_zero() || l.cmp(&one) >= 0 {
                 return Ok(0);
             }
-            let g = one.sub(l, p, RoundingMode::None)?;
+            let g = one.sub(l, p, RoundingMode::Work)?;
             Ok(g.exponent().unsigned_abs() as usize + 1)
         };
         let mut bits = gap_bits(m)?.div_ceil(2) + 2;
@@ -3792,8 +3793,8 @@ impl ExactNumNumber {
 
     fn complete_k_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         if self.is_zero() {
-            let mut half = cc.pi_num(p, RoundingMode::None)?;
-            half.div_by_2(RoundingMode::None);
+            let mut half = cc.pi_num(p, RoundingMode::Work)?;
+            half.div_by_2(RoundingMode::Work);
             return Ok(half);
         }
         self.elliptic_k_at(p, cc)
@@ -3802,8 +3803,8 @@ impl ExactNumNumber {
     fn complete_e_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let one = Self::from_word(1, p)?;
         if self.is_zero() {
-            let mut half = cc.pi_num(p, RoundingMode::None)?;
-            half.div_by_2(RoundingMode::None);
+            let mut half = cc.pi_num(p, RoundingMode::Work)?;
+            half.div_by_2(RoundingMode::Work);
             return Ok(half);
         }
         if self.cmp(&one) == 0 {
@@ -3902,7 +3903,7 @@ impl ExactNumNumber {
         let (t, l1) = Self::add_turns(part, k, &complete, p)?;
         // dE/dφ = sqrt(1 - m sin²φ) <= sqrt(1 - m) (m < 0), and the sum is >= E(m) >= 1.
         let grow = if m.is_negative() {
-            let g = one.sub(m, p, RoundingMode::None)?;
+            let g = one.sub(m, p, RoundingMode::Work)?;
             (g.exponent().max(0) as usize).div_ceil(2)
         } else {
             0
@@ -4026,19 +4027,19 @@ impl ExactNumNumber {
             let w = p
                 .max(a.mantissa_max_bit_len())
                 .max(b.mantissa_max_bit_len());
-            return a.add(b, round_p(w), RoundingMode::None);
+            return a.add(b, round_p(w), RoundingMode::Work);
         }
         let (ea, eb) = (a.exponent(), b.exponent());
         let lo = (ea - a.mantissa_max_bit_len() as i64).min(eb - b.mantissa_max_bit_len() as i64);
         let width = ea.max(eb) + 2 - lo;
         let w = if width > 0 && width < (1 << 22) { (width as usize).max(p) } else { p };
-        a.add(b, round_p(w), RoundingMode::None)
+        a.add(b, round_p(w), RoundingMode::Work)
     }
 
     /// `a·b` with no rounding.
     fn mul_exact(a: &Self, b: &Self) -> Result<Self, Error> {
         let w = round_p(a.mantissa_max_bit_len() + b.mantissa_max_bit_len());
-        a.mul(b, w, RoundingMode::None)
+        a.mul(b, w, RoundingMode::Work)
     }
 
     /// Inverse Jacobi \(\mathrm{arccn}(x|m)=F(\arccos x|m)\), `self = x`.
@@ -4087,15 +4088,15 @@ impl ExactNumNumber {
             let one_x = Self::from_word(1, p_x)?;
             let rf = carlson_rf(&x2, &b, &one_x, p_x, cc)?;
             let f = s2
-                .sqrt(p_x, RoundingMode::None)?
-                .mul(&rf, p_x, RoundingMode::None)?;
+                .sqrt(p_x, RoundingMode::Work)?
+                .mul(&rf, p_x, RoundingMode::Work)?;
             let (mut ret, loss) = if neg {
                 let k2 = m.complete_k_at(p_x, cc)?.mul(
                     &Self::from_word(2, p_x)?,
                     p_x,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?;
-                let t = k2.sub(&f, p_x, RoundingMode::None)?;
+                let t = k2.sub(&f, p_x, RoundingMode::Work)?;
                 let l = Self::cancel_bits(&k2, &f, &t);
                 (t, l)
             } else {
@@ -4158,12 +4159,12 @@ impl ExactNumNumber {
         loop {
             let p_x = p_wrk.saturating_add(WORD_BIT_SIZE * 2);
             let one_x = Self::from_word(1, p_x)?;
-            let s2 = s2n.div(m, p_x, RoundingMode::None)?;
-            let c2 = c2n.div(m, p_x, RoundingMode::None)?;
+            let s2 = s2n.div(m, p_x, RoundingMode::Work)?;
+            let c2 = c2n.div(m, p_x, RoundingMode::Work)?;
             let rf = carlson_rf(&c2, &x2, &one_x, p_x, cc)?;
             let mut ret = s2
-                .sqrt(p_x, RoundingMode::None)?
-                .mul(&rf, p_x, RoundingMode::None)?;
+                .sqrt(p_x, RoundingMode::Work)?
+                .mul(&rf, p_x, RoundingMode::Work)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact() | m.inexact());
                 return Ok(ret);
@@ -4217,14 +4218,14 @@ impl ExactNumNumber {
             let kp1 = Self::from_word((k + 1) as Word, p)?;
             let two_k1 = Self::from_word((2 * k + 1) as Word, p)?;
             let pnext = two_k1
-                .mul(self, p, RoundingMode::None)?
-                .mul(pm1.as_ref().unwrap_or(self), p, RoundingMode::None)?
+                .mul(self, p, RoundingMode::Work)?
+                .mul(pm1.as_ref().unwrap_or(self), p, RoundingMode::Work)?
                 .sub(
-                    &kk.mul(pm2.as_ref().unwrap_or(self), p, RoundingMode::None)?,
+                    &kk.mul(pm2.as_ref().unwrap_or(self), p, RoundingMode::Work)?,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?
-                .div(&kp1, p, RoundingMode::None)?;
+                .div(&kp1, p, RoundingMode::Work)?;
             pm2 = pm1;
             pm1 = Some(pnext);
             k += 1;
@@ -4299,7 +4300,7 @@ impl ExactNumNumber {
             return Ok(Some(ppos));
         }
         let ratio = fact_ratio_down(n - am, n + am, p)?;
-        let mut out = ratio.mul(&ppos, p, RoundingMode::None)?;
+        let mut out = ratio.mul(&ppos, p, RoundingMode::Work)?;
         if am % 2 == 1 {
             out.set_sign(if out.is_positive() { Sign::Neg } else { Sign::Pos });
         }
@@ -4309,25 +4310,25 @@ impl ExactNumNumber {
     fn assoc_pos(&self, n: u32, m: u32, p: usize) -> Result<Self, Error> {
         let one = Self::from_word(1, p)?;
         let one_x2 = one.sub(
-            &self.mul(self, p, RoundingMode::None)?,
+            &self.mul(self, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         if one_x2.is_negative() {
             return Err(Error::InvalidArgument);
         }
         let mut pmm = Self::from_word(1, p)?;
         if m > 0 {
-            let root = one_x2.sqrt(p, RoundingMode::None)?;
+            let root = one_x2.sqrt(p, RoundingMode::Work)?;
             let mut odd = Self::from_word(1, p)?;
             let two = Self::from_word(2, p)?;
             for _j in 1..=m {
-                pmm = pmm.neg()?.mul(&odd, p, RoundingMode::None)?.mul(
+                pmm = pmm.neg()?.mul(&odd, p, RoundingMode::Work)?.mul(
                     &root,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?;
-                odd = odd.add(&two, p, RoundingMode::None)?;
+                odd = odd.add(&two, p, RoundingMode::Work)?;
             }
         }
         if n == m {
@@ -4337,9 +4338,9 @@ impl ExactNumNumber {
             .mul(
                 &Self::from_word((2 * m + 1) as Word, p)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?
-            .mul(&pmm, p, RoundingMode::None)?;
+            .mul(&pmm, p, RoundingMode::Work)?;
         if n == m + 1 {
             return Ok(pm1);
         }
@@ -4347,13 +4348,13 @@ impl ExactNumNumber {
         let mut k = m + 1;
         while k < n {
             let num1 = Self::from_word((2 * k + 1) as Word, p)?
-                .mul(self, p, RoundingMode::None)?
-                .mul(&pm1, p, RoundingMode::None)?;
-            let num2 = Self::from_word((k + m) as Word, p)?.mul(&pm2, p, RoundingMode::None)?;
+                .mul(self, p, RoundingMode::Work)?
+                .mul(&pm1, p, RoundingMode::Work)?;
+            let num2 = Self::from_word((k + m) as Word, p)?.mul(&pm2, p, RoundingMode::Work)?;
             let den = Self::from_word((k - m + 1) as Word, p)?;
             let pn = num1
-                .sub(&num2, p, RoundingMode::None)?
-                .div(&den, p, RoundingMode::None)?;
+                .sub(&num2, p, RoundingMode::Work)?
+                .div(&den, p, RoundingMode::Work)?;
             pm2 = pm1;
             pm1 = pn;
             k += 1;
@@ -4584,7 +4585,7 @@ impl ExactNumNumber {
         if Self::p_assertion(round_p(w_omz)).is_err() {
             return Ok(None);
         }
-        let omz = one.sub(&ez, round_p(w_omz), RoundingMode::None)?;
+        let omz = one.sub(&ez, round_p(w_omz), RoundingMode::Work)?;
         let deg = |v: &Self| -> usize {
             if nonpos_int(v) {
                 v.neg()
@@ -4730,7 +4731,7 @@ impl ExactNumNumber {
                 .saturating_add(xe)
                 .saturating_add(WORD_BIT_SIZE);
             let one = Self::from_word(1, WORD_BIT_SIZE)?;
-            let mut ox = one.sub(x, round_p(w), RoundingMode::None)?;
+            let mut ox = one.sub(x, round_p(w), RoundingMode::Work)?;
             ox.set_inexact(false);
             let q = round_p(p + 2 * WORD_BIT_SIZE);
             let t = b.betainc_direct(self, &ox, q, cc)?;
@@ -4788,7 +4789,7 @@ impl ExactNumNumber {
         if Self::p_assertion(round_p(w_omx)).is_err() {
             return Ok(None);
         }
-        let omx = one.sub(&ex, round_p(w_omx), RoundingMode::None)?;
+        let omx = one.sub(&ex, round_p(w_omx), RoundingMode::Work)?;
         for complement in [false, true] {
             // I_base-form: alpha = the non-integer side's parameter, n the integer one,
             // power base^alpha, series variable y.
@@ -4841,10 +4842,10 @@ impl ExactNumNumber {
             if complement {
                 let q = round_p(2 * WORD_BIT_SIZE);
                 let approx = base
-                    .pow(alpha, q, RoundingMode::None, cc)?
-                    .mul(&wk, q, RoundingMode::None)?
-                    .div(&pk, q, RoundingMode::None)?;
-                let v = one.sub(&approx, q, RoundingMode::None)?;
+                    .pow(alpha, q, RoundingMode::Work, cc)?
+                    .mul(&wk, q, RoundingMode::Work)?
+                    .div(&pk, q, RoundingMode::Work)?;
+                let v = one.sub(&approx, q, RoundingMode::Work)?;
                 gap = if v.is_positive() && v.exponent() > -(WORD_BIT_SIZE as Exponent) {
                     usize::try_from(-v.exponent()).unwrap_or(0)
                 } else {
@@ -4877,17 +4878,17 @@ impl ExactNumNumber {
     fn betainc_at(&self, b: &Self, x: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let one = Self::from_word(1, p)?;
         let two = Self::from_word(2, p)?;
-        let thresh = self.add(&one, p, RoundingMode::None)?.div(
+        let thresh = self.add(&one, p, RoundingMode::Work)?.div(
             &self
-                .add(b, p, RoundingMode::None)?
-                .add(&two, p, RoundingMode::None)?,
+                .add(b, p, RoundingMode::Work)?
+                .add(&two, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         if x.cmp(&thresh) > 0 {
-            let ox = one.sub(x, p, RoundingMode::None)?;
+            let ox = one.sub(x, p, RoundingMode::Work)?;
             let t = b.betainc_direct(self, &ox, p, cc)?;
-            return one.sub(&t, p, RoundingMode::None);
+            return one.sub(&t, p, RoundingMode::Work);
         }
         self.betainc_direct(b, x, p, cc)
     }
@@ -4896,35 +4897,35 @@ impl ExactNumNumber {
         let one = Self::from_word(1, p)?;
         let ga = self.gamma_at(p, cc)?;
         let gb = b.gamma_at(p, cc)?;
-        let gab = self.add(b, p, RoundingMode::None)?.gamma_at(p, cc)?;
+        let gab = self.add(b, p, RoundingMode::Work)?.gamma_at(p, cc)?;
         let beta = ga
-            .mul(&gb, p, RoundingMode::None)?
-            .div(&gab, p, RoundingMode::None)?;
-        let xa = x.pow(self, p, RoundingMode::None, cc)?;
-        let one_b = one.sub(b, p, RoundingMode::None)?;
+            .mul(&gb, p, RoundingMode::Work)?
+            .div(&gab, p, RoundingMode::Work)?;
+        let xa = x.pow(self, p, RoundingMode::Work, cc)?;
+        let one_b = one.sub(b, p, RoundingMode::Work)?;
         if terminating_neg_int(&one_b, p)? {
             // Integer b: I_x(a,b) = x^a / (a B(a,b)) · ₂F₁(a, 1−b; a+1; x), a polynomial in x
             // (exact inputs give an exact result). Its terms alternate, so large b cancels;
             // then the continued fraction below is used instead.
-            let ap1 = self.add(&one, p, RoundingMode::None)?;
+            let ap1 = self.add(&one, p, RoundingMode::Work)?;
             let (f, lost) = hypergeom_series(self, &one_b, &ap1, x, p)?;
             if lost <= WORD_BIT_SIZE {
                 return xa
-                    .div(self, p, RoundingMode::None)?
-                    .div(&beta, p, RoundingMode::None)?
-                    .mul(&f, p, RoundingMode::None);
+                    .div(self, p, RoundingMode::Work)?
+                    .div(&beta, p, RoundingMode::Work)?
+                    .mul(&f, p, RoundingMode::Work);
             }
         }
         // I_x(a,b) = x^a (1−x)^b / (a B(a,b)) · CF(a,b,x); the continued fraction converges
         // quickly for x < (a+1)/(a+b+2), which `betainc_at` guarantees.
         let omxb = one
-            .sub(x, p, RoundingMode::None)?
-            .pow(b, p, RoundingMode::None, cc)?;
+            .sub(x, p, RoundingMode::Work)?
+            .pow(b, p, RoundingMode::Work, cc)?;
         let cf = betainc_cf(self, b, x, p)?;
-        xa.mul(&omxb, p, RoundingMode::None)?
-            .div(self, p, RoundingMode::None)?
-            .div(&beta, p, RoundingMode::None)?
-            .mul(&cf, p, RoundingMode::None)
+        xa.mul(&omxb, p, RoundingMode::Work)?
+            .div(self, p, RoundingMode::Work)?
+            .div(&beta, p, RoundingMode::Work)?
+            .mul(&cf, p, RoundingMode::Work)
     }
 }
 
@@ -4939,7 +4940,7 @@ fn betainc_cf(
 ) -> Result<ExactNumNumber, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
     let make_tiny =
-        || ExactNumNumber::from_word(1, p)?.ldexp(-(2 * p as Exponent), p, RoundingMode::None);
+        || ExactNumNumber::from_word(1, p)?.ldexp(-(2 * p as Exponent), p, RoundingMode::Work);
     let tiny = make_tiny()?;
     // a fresh 2^(-2p) for each floor (exact, the same value as `tiny`): no copy of it
     let floor_tiny = |v: ExactNumNumber| -> Result<ExactNumNumber, Error> {
@@ -4949,68 +4950,68 @@ fn betainc_cf(
             Ok(v)
         }
     };
-    let apb = a.add(b, p, RoundingMode::None)?;
-    let ap1 = a.add(&one, p, RoundingMode::None)?;
+    let apb = a.add(b, p, RoundingMode::Work)?;
+    let ap1 = a.add(&one, p, RoundingMode::Work)?;
     let mut c = ExactNumNumber::from_word(1, p)?;
     let d0 = floor_tiny(
         one.sub(
-            &apb.mul(x, p, RoundingMode::None)?
-                .div(&ap1, p, RoundingMode::None)?,
+            &apb.mul(x, p, RoundingMode::Work)?
+                .div(&ap1, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?,
     )?;
     // h starts at d; d is None (it equals h) until the first coefficient updates it: no copy.
-    let mut h = one.div(&d0, p, RoundingMode::None)?;
+    let mut h = one.div(&d0, p, RoundingMode::Work)?;
     let mut d: Option<ExactNumNumber> = None;
     let mut m: usize = 1;
     loop {
         let mw = from_usize_p(m, p)?;
         let m2 = from_usize_p(2 * m, p)?;
-        let a_m2 = a.add(&m2, p, RoundingMode::None)?;
+        let a_m2 = a.add(&m2, p, RoundingMode::Work)?;
         let even = mw
-            .mul(&b.sub(&mw, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .mul(x, p, RoundingMode::None)?
+            .mul(&b.sub(&mw, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .mul(x, p, RoundingMode::Work)?
             .div(
                 &a_m2
-                    .sub(&one, p, RoundingMode::None)?
-                    .mul(&a_m2, p, RoundingMode::None)?,
+                    .sub(&one, p, RoundingMode::Work)?
+                    .mul(&a_m2, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
         let odd = a
-            .add(&mw, p, RoundingMode::None)?
-            .mul(&apb.add(&mw, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .mul(x, p, RoundingMode::None)?
+            .add(&mw, p, RoundingMode::Work)?
+            .mul(&apb.add(&mw, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .mul(x, p, RoundingMode::Work)?
             .div(
                 &a_m2.mul(
-                    &a_m2.add(&one, p, RoundingMode::None)?,
+                    &a_m2.add(&one, p, RoundingMode::Work)?,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?
             .neg()?;
         let mut delta = ExactNumNumber::from_word(1, p)?;
         for coef in [even, odd] {
             let dn = floor_tiny(one.add(
-                &coef.mul(d.as_ref().unwrap_or(&h), p, RoundingMode::None)?,
+                &coef.mul(d.as_ref().unwrap_or(&h), p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?)?;
             c = floor_tiny(one.add(
-                &coef.div(&c, p, RoundingMode::None)?,
+                &coef.div(&c, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?)?;
-            let dn = one.div(&dn, p, RoundingMode::None)?;
-            delta = dn.mul(&c, p, RoundingMode::None)?;
+            let dn = one.div(&dn, p, RoundingMode::Work)?;
+            delta = dn.mul(&c, p, RoundingMode::Work)?;
             d = Some(dn);
-            h = h.mul(&delta, p, RoundingMode::None)?;
+            h = h.mul(&delta, p, RoundingMode::Work)?;
         }
         // Stop one word short of p: rounding keeps |Δ−1| near 2^-p.
-        let step = delta.sub(&one, p, RoundingMode::None)?;
+        let step = delta.sub(&one, p, RoundingMode::Work)?;
         if step.is_zero() || step.exponent() + ((p - WORD_BIT_SIZE) as i64) < 0 {
             return Ok(h);
         }
@@ -5024,7 +5025,7 @@ fn erf_x2_bits(x: &ExactNumNumber, p: usize) -> Result<Option<usize>, Error> {
     if x.exponent() >= 16 {
         return Ok(None);
     }
-    let x2 = x.mul(x, p, RoundingMode::None)?.int_as_usize()?;
+    let x2 = x.mul(x, p, RoundingMode::Work)?.int_as_usize()?;
     if x2 >= p * 7 / 10 + 4 {
         return Ok(None);
     }
@@ -5185,7 +5186,7 @@ fn exact_product(lo: usize, hi: usize) -> Result<ExactNumNumber, Error> {
     let mut prod = ExactNumNumber::from_word(1, WORD_BIT_SIZE)?;
     for k in lo..=hi {
         let pb = round_p(prod.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE);
-        prod = prod.mul(&from_usize_p(k, pb)?, pb, RoundingMode::None)?;
+        prod = prod.mul(&from_usize_p(k, pb)?, pb, RoundingMode::Work)?;
     }
     Ok(prod)
 }
@@ -5233,7 +5234,7 @@ where
 {
     let mut target = ExactNumNumber::from_word(1, p)?;
     target.set_exponent(e_min.min(EXPONENT_MAX));
-    let need = target.sub(z0, p, RoundingMode::None)?;
+    let need = target.sub(z0, p, RoundingMode::Work)?;
     if need.cmp(&from_usize_p(shift_max, p)?) > 0 {
         return Err(Error::PrecisionRetryExhausted);
     }
@@ -5264,7 +5265,7 @@ fn fact_ratio_down(a: u32, b: u32, p: usize) -> Result<ExactNumNumber, Error> {
         acc = acc.div(
             &ExactNumNumber::from_word(k as Word, p)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         k += 1;
     }
@@ -5322,7 +5323,7 @@ fn rgamma(x: &ExactNumNumber, p: usize, cc: &mut Consts) -> Result<ExactNumNumbe
     if terminating_neg_int(x, p)? {
         return ExactNumNumber::new2(p, Sign::Pos, false);
     }
-    ExactNumNumber::from_word(1, p)?.div(&x.gamma_at(p, cc)?, p, RoundingMode::None)
+    ExactNumNumber::from_word(1, p)?.div(&x.gamma_at(p, cc)?, p, RoundingMode::Work)
 }
 
 /// `max(|v|)` over `vals`.
@@ -5351,7 +5352,7 @@ fn series_done(
     if term_exp >= sum.exponent() - (p as i64) - 4 {
         return Ok(false);
     }
-    let seven_eighths = ExactNumNumber::from_word(7, p)?.ldexp(-3, p, RoundingMode::None)?;
+    let seven_eighths = ExactNumNumber::from_word(7, p)?.ldexp(-3, p, RoundingMode::Work)?;
     Ok(factor.abs()?.cmp(&seven_eighths) < 0)
 }
 
@@ -5368,27 +5369,27 @@ fn hypergeom_series(
     let mut term = ExactNumNumber::from_word(1, p)?;
     let mut sum = ExactNumNumber::from_word(1, p)?;
     let tiny =
-        ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) - 8), p, RoundingMode::None)?;
+        ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) - 8), p, RoundingMode::Work)?;
     let max_par = max_abs(&[a, b, c])?;
     let mut mag = one.exponent();
     let mut n: usize = 0;
     loop {
         let nn = from_usize_p(n, p)?;
-        let den = c.add(&nn, p, RoundingMode::None)?.mul(
-            &one.add(&nn, p, RoundingMode::None)?,
+        let den = c.add(&nn, p, RoundingMode::Work)?.mul(
+            &one.add(&nn, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         if den.abs()?.cmp(&tiny) < 0 {
             return Err(Error::InvalidArgument);
         }
         let factor = a
-            .add(&nn, p, RoundingMode::None)?
-            .mul(&b.add(&nn, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .mul(z, p, RoundingMode::None)?
-            .div(&den, p, RoundingMode::None)?;
-        term = term.mul(&factor, p, RoundingMode::None)?;
-        sum = sum.add(&term, p, RoundingMode::None)?;
+            .add(&nn, p, RoundingMode::Work)?
+            .mul(&b.add(&nn, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .mul(z, p, RoundingMode::Work)?
+            .div(&den, p, RoundingMode::Work)?;
+        term = term.mul(&factor, p, RoundingMode::Work)?;
+        sum = sum.add(&term, p, RoundingMode::Work)?;
         mag = mag.max(max_exp(&[&term]));
         if terminating_after(a, n + 1, p)? || terminating_after(b, n + 1, p)? {
             sum.set_inexact(false);
@@ -5454,18 +5455,18 @@ fn hyp2f1_pfaff(
     cc: &mut Consts,
 ) -> Result<Lossy, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
-    let omz = one.sub(z, p, RoundingMode::None)?;
-    let w = z.div(&z.sub(&one, p, RoundingMode::None)?, p, RoundingMode::None)?;
-    let cb = c.sub(b, p, RoundingMode::None)?;
-    let ca = c.sub(a, p, RoundingMode::None)?;
+    let omz = one.sub(z, p, RoundingMode::Work)?;
+    let w = z.div(&z.sub(&one, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
+    let cb = c.sub(b, p, RoundingMode::Work)?;
+    let ca = c.sub(a, p, RoundingMode::Work)?;
     let (s, t) = if !terminating_neg_int(&cb, p)? && terminating_neg_int(&ca, p)? {
         (b, ca)
     } else {
         (a, cb)
     };
     let (f, lost) = hyp2f1_real(s, &t, c, &w, p, cc)?;
-    let pref = omz.pow(&s.neg()?, p, RoundingMode::None, cc)?;
-    Ok((pref.mul(&f, p, RoundingMode::None)?, lost))
+    let pref = omz.pow(&s.neg()?, p, RoundingMode::Work, cc)?;
+    Ok((pref.mul(&f, p, RoundingMode::Work)?, lost))
 }
 
 /// \(1-z\) connection (DLMF 15.8.4) for \(z\in(1/2,1)\), non-terminating \(a,b\):
@@ -5481,48 +5482,48 @@ fn hyp2f1_one_minus_z(
     cc: &mut Consts,
 ) -> Result<Lossy, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
-    let zeta = one.sub(z, p, RoundingMode::None)?;
-    let ca = c.sub(a, p, RoundingMode::None)?;
-    let cb = c.sub(b, p, RoundingMode::None)?;
-    let m = ca.sub(b, p, RoundingMode::None)?;
+    let zeta = one.sub(z, p, RoundingMode::Work)?;
+    let ca = c.sub(a, p, RoundingMode::Work)?;
+    let cb = c.sub(b, p, RoundingMode::Work)?;
+    let m = ca.sub(b, p, RoundingMode::Work)?;
     if let Some(mi) = as_i32_exact(&m, p)? {
         if mi < 0 {
             // Euler (DLMF 15.8.1): F(a,b;c;z) = ζ^m F(c−a,c−b;c;z), whose c−a−b is −m > 0.
             let (f, lost) = hyp2f1_real(&ca, &cb, c, z, p, cc)?;
-            let pref = zeta.pow(&m, p, RoundingMode::None, cc)?;
-            return Ok((pref.mul(&f, p, RoundingMode::None)?, lost));
+            let pref = zeta.pow(&m, p, RoundingMode::Work, cc)?;
+            return Ok((pref.mul(&f, p, RoundingMode::Work)?, lost));
         }
         return hyp2f1_log_case(a, b, c, &zeta, mi as u32, p, cc);
     }
     let gc = c.gamma_at(p, cc)?;
-    let r1 = rgamma(&ca, p, cc)?.mul(&rgamma(&cb, p, cc)?, p, RoundingMode::None)?;
+    let r1 = rgamma(&ca, p, cc)?.mul(&rgamma(&cb, p, cc)?, p, RoundingMode::Work)?;
     let (t1, l1) = if r1.is_zero() {
         (r1, 0)
     } else {
-        let (f, l) = hypergeom_series(a, b, &one.sub(&m, p, RoundingMode::None)?, &zeta, p)?;
+        let (f, l) = hypergeom_series(a, b, &one.sub(&m, p, RoundingMode::Work)?, &zeta, p)?;
         let t = gc
-            .mul(&m.gamma_at(p, cc)?, p, RoundingMode::None)?
-            .mul(&r1, p, RoundingMode::None)?
-            .mul(&f, p, RoundingMode::None)?;
+            .mul(&m.gamma_at(p, cc)?, p, RoundingMode::Work)?
+            .mul(&r1, p, RoundingMode::Work)?
+            .mul(&f, p, RoundingMode::Work)?;
         (t, l)
     };
-    let r2 = rgamma(a, p, cc)?.mul(&rgamma(b, p, cc)?, p, RoundingMode::None)?;
+    let r2 = rgamma(a, p, cc)?.mul(&rgamma(b, p, cc)?, p, RoundingMode::Work)?;
     let (t2, l2) = if r2.is_zero() {
         (r2, 0)
     } else {
-        let (f, l) = hypergeom_series(&ca, &cb, &one.add(&m, p, RoundingMode::None)?, &zeta, p)?;
+        let (f, l) = hypergeom_series(&ca, &cb, &one.add(&m, p, RoundingMode::Work)?, &zeta, p)?;
         let t = gc
-            .mul(&m.neg()?.gamma_at(p, cc)?, p, RoundingMode::None)?
-            .mul(&r2, p, RoundingMode::None)?
+            .mul(&m.neg()?.gamma_at(p, cc)?, p, RoundingMode::Work)?
+            .mul(&r2, p, RoundingMode::Work)?
             .mul(
-                &zeta.pow(&m, p, RoundingMode::None, cc)?,
+                &zeta.pow(&m, p, RoundingMode::Work, cc)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?
-            .mul(&f, p, RoundingMode::None)?;
+            .mul(&f, p, RoundingMode::Work)?;
         (t, l)
     };
-    let v = t1.add(&t2, p, RoundingMode::None)?;
+    let v = t1.add(&t2, p, RoundingMode::Work)?;
     let lost = l1.max(l2).max(lost_bits(max_exp(&[&t1, &t2]), &v));
     Ok((v, lost))
 }
@@ -5543,8 +5544,8 @@ fn hyp2f1_log_case(
 ) -> Result<Lossy, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
     let mw = ExactNumNumber::from_word(m as Word, p)?;
-    let am = a.add(&mw, p, RoundingMode::None)?;
-    let bm = b.add(&mw, p, RoundingMode::None)?;
+    let am = a.add(&mw, p, RoundingMode::Work)?;
+    let bm = b.add(&mw, p, RoundingMode::Work)?;
     let gc = c.gamma_at(p, cc)?;
 
     let mut s1 = ExactNumNumber::new2(p, Sign::Pos, false)?;
@@ -5553,35 +5554,35 @@ fn hyp2f1_log_case(
         let mut t = ExactNumNumber::from_word(1, p)?;
         let mut mag = Exponent::MIN;
         for n in 0..m {
-            s1 = s1.add(&t, p, RoundingMode::None)?;
+            s1 = s1.add(&t, p, RoundingMode::Work)?;
             mag = mag.max(max_exp(&[&t]));
             if n + 1 < m {
                 let nw = ExactNumNumber::from_word(n as Word, p)?;
                 let n1 = ExactNumNumber::from_word((n + 1) as Word, p)?;
                 let num = a
-                    .add(&nw, p, RoundingMode::None)?
-                    .mul(&b.add(&nw, p, RoundingMode::None)?, p, RoundingMode::None)?
-                    .mul(zeta, p, RoundingMode::None)?;
-                let den = n1.mul(&n1.sub(&mw, p, RoundingMode::None)?, p, RoundingMode::None)?;
+                    .add(&nw, p, RoundingMode::Work)?
+                    .mul(&b.add(&nw, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+                    .mul(zeta, p, RoundingMode::Work)?;
+                let den = n1.mul(&n1.sub(&mw, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
                 t = t
-                    .mul(&num, p, RoundingMode::None)?
-                    .div(&den, p, RoundingMode::None)?;
+                    .mul(&num, p, RoundingMode::Work)?
+                    .div(&den, p, RoundingMode::Work)?;
             }
         }
         l1 = lost_bits(mag, &s1);
         let pref = mw
             .gamma_at(p, cc)?
-            .mul(&gc, p, RoundingMode::None)?
-            .mul(&rgamma(&am, p, cc)?, p, RoundingMode::None)?
-            .mul(&rgamma(&bm, p, cc)?, p, RoundingMode::None)?;
-        s1 = pref.mul(&s1, p, RoundingMode::None)?;
+            .mul(&gc, p, RoundingMode::Work)?
+            .mul(&rgamma(&am, p, cc)?, p, RoundingMode::Work)?
+            .mul(&rgamma(&bm, p, cc)?, p, RoundingMode::Work)?;
+        s1 = pref.mul(&s1, p, RoundingMode::Work)?;
     }
 
     let mut coef = zeta
-        .powi(m as usize, p, RoundingMode::None)?
-        .mul(&gc, p, RoundingMode::None)?
-        .mul(&rgamma(a, p, cc)?, p, RoundingMode::None)?
-        .mul(&rgamma(b, p, cc)?, p, RoundingMode::None)?;
+        .powi(m as usize, p, RoundingMode::Work)?
+        .mul(&gc, p, RoundingMode::Work)?
+        .mul(&rgamma(a, p, cc)?, p, RoundingMode::Work)?
+        .mul(&rgamma(b, p, cc)?, p, RoundingMode::Work)?;
     if coef.is_zero() {
         return Ok((s1, l1));
     }
@@ -5589,54 +5590,54 @@ fn hyp2f1_log_case(
         coef = coef.neg()?;
     }
 
-    let ln_z = zeta.ln(p, RoundingMode::None, cc)?;
+    let ln_z = zeta.ln(p, RoundingMode::Work, cc)?;
     let mut psi_n1 = one.digamma_at(p, cc)?;
-    let mut psi_nm1 = mw.add(&one, p, RoundingMode::None)?.digamma_at(p, cc)?;
+    let mut psi_nm1 = mw.add(&one, p, RoundingMode::Work)?.digamma_at(p, cc)?;
     let mut psi_a = am.digamma_at(p, cc)?;
     let mut psi_b = bm.digamma_at(p, cc)?;
-    let mut t = one.div(&factorial(m as usize, p)?, p, RoundingMode::None)?;
+    let mut t = one.div(&factorial(m as usize, p)?, p, RoundingMode::Work)?;
     let mut s2 = ExactNumNumber::new2(p, Sign::Pos, false)?;
     let max_par = max_abs(&[&am, &bm, &mw])?;
     let mut mag = Exponent::MIN;
     let mut n: usize = 0;
     loop {
         let br = ln_z
-            .sub(&psi_n1, p, RoundingMode::None)?
-            .sub(&psi_nm1, p, RoundingMode::None)?
-            .add(&psi_a, p, RoundingMode::None)?
-            .add(&psi_b, p, RoundingMode::None)?;
-        s2 = s2.add(&t.mul(&br, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            .sub(&psi_n1, p, RoundingMode::Work)?
+            .sub(&psi_nm1, p, RoundingMode::Work)?
+            .add(&psi_a, p, RoundingMode::Work)?
+            .add(&psi_b, p, RoundingMode::Work)?;
+        s2 = s2.add(&t.mul(&br, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         let part =
             max_exp(&[&t]).saturating_add(max_exp(&[&ln_z, &psi_n1, &psi_nm1, &psi_a, &psi_b]));
         mag = mag.max(part);
         let nw = from_usize_p(n, p)?;
         let n1 = from_usize_p(n + 1, p)?;
         let nm1 = from_usize_p(n + (m as usize) + 1, p)?;
-        let an = am.add(&nw, p, RoundingMode::None)?;
-        let bn = bm.add(&nw, p, RoundingMode::None)?;
+        let an = am.add(&nw, p, RoundingMode::Work)?;
+        let bn = bm.add(&nw, p, RoundingMode::Work)?;
         let factor = an
-            .mul(&bn, p, RoundingMode::None)?
-            .mul(zeta, p, RoundingMode::None)?
-            .div(&n1.mul(&nm1, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            .mul(&bn, p, RoundingMode::Work)?
+            .mul(zeta, p, RoundingMode::Work)?
+            .div(&n1.mul(&nm1, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         if series_done(part, &s2, &factor, &nw, &max_par, p)? {
             let l2 = lost_bits(mag, &s2);
-            let t2 = coef.mul(&s2, p, RoundingMode::None)?;
-            let v = s1.sub(&t2, p, RoundingMode::None)?;
+            let t2 = coef.mul(&s2, p, RoundingMode::Work)?;
+            let v = s1.sub(&t2, p, RoundingMode::Work)?;
             let lost = l1.max(l2).max(lost_bits(max_exp(&[&s1, &t2]), &v));
             return Ok((v, lost));
         }
         if nw.cmp(&max_par) > 0 && factor.abs()?.cmp(&one) >= 0 && zeta.abs()?.cmp(&one) >= 0 {
             return Err(Error::InvalidArgument);
         }
-        t = t.mul(&factor, p, RoundingMode::None)?;
-        psi_n1 = psi_n1.add(&one.div(&n1, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        t = t.mul(&factor, p, RoundingMode::Work)?;
+        psi_n1 = psi_n1.add(&one.div(&n1, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         psi_nm1 = psi_nm1.add(
-            &one.div(&nm1, p, RoundingMode::None)?,
+            &one.div(&nm1, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
-        psi_a = psi_a.add(&one.div(&an, p, RoundingMode::None)?, p, RoundingMode::None)?;
-        psi_b = psi_b.add(&one.div(&bn, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        psi_a = psi_a.add(&one.div(&an, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
+        psi_b = psi_b.add(&one.div(&bn, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
     }
 }
@@ -5653,22 +5654,22 @@ fn gauss_z_one(
     cc: &mut Consts,
 ) -> Result<ExactNumNumber, Error> {
     let cab = c
-        .sub(a, p, RoundingMode::None)?
-        .sub(b, p, RoundingMode::None)?;
+        .sub(a, p, RoundingMode::Work)?
+        .sub(b, p, RoundingMode::Work)?;
     if !cab.is_positive() || cab.is_zero() {
         return Err(Error::InvalidArgument);
     }
     let gc = c.gamma_at(p, cc)?;
     let gcab = cab.gamma_at(p, cc)?;
-    let rca = rgamma(&c.sub(a, p, RoundingMode::None)?, p, cc)?;
-    let rcb = rgamma(&c.sub(b, p, RoundingMode::None)?, p, cc)?;
-    gc.mul(&gcab, p, RoundingMode::None)?
-        .mul(&rca, p, RoundingMode::None)?
-        .mul(&rcb, p, RoundingMode::None)
+    let rca = rgamma(&c.sub(a, p, RoundingMode::Work)?, p, cc)?;
+    let rcb = rgamma(&c.sub(b, p, RoundingMode::Work)?, p, cc)?;
+    gc.mul(&gcab, p, RoundingMode::Work)?
+        .mul(&rca, p, RoundingMode::Work)?
+        .mul(&rcb, p, RoundingMode::Work)
 }
 
 fn tiny_spread(p: usize) -> Result<ExactNumNumber, Error> {
-    ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) / 3 + 16), p, RoundingMode::None)
+    ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) / 3 + 16), p, RoundingMode::Work)
 }
 
 /// The larger of `a` and `b` (`a` on a tie), borrowed.
@@ -5693,7 +5694,7 @@ fn close_enough(dev: &ExactNumNumber, an: &ExactNumNumber, p: usize) -> Result<b
     let one = ExactNumNumber::from_word(1, p)?;
     let a = an.abs()?;
     let scale = en_max(&a, &one);
-    let thresh = tiny_spread(p)?.mul(scale, p, RoundingMode::None)?;
+    let thresh = tiny_spread(p)?.mul(scale, p, RoundingMode::Work)?;
     Ok(dev.cmp(&thresh) < 0)
 }
 
@@ -5704,9 +5705,9 @@ fn max_dev3(
     z: &ExactNumNumber,
     p: usize,
 ) -> Result<ExactNumNumber, Error> {
-    let dx = an.sub(x, p, RoundingMode::None)?.abs()?;
-    let dy = an.sub(y, p, RoundingMode::None)?.abs()?;
-    let dz = an.sub(z, p, RoundingMode::None)?.abs()?;
+    let dx = an.sub(x, p, RoundingMode::Work)?.abs()?;
+    let dy = an.sub(y, p, RoundingMode::Work)?.abs()?;
+    let dz = an.sub(z, p, RoundingMode::Work)?.abs()?;
     Ok(en_max_owned(en_max_owned(dx, dy), dz))
 }
 
@@ -5728,40 +5729,40 @@ fn carlson_rc(
     // |x − y| < 2^-(p+8)·max(x, y). (It used the absolute 2^-(p/3+16) before, which capped R_J —
     // and so Π — at about 340 bits for p = 512; the atan/atanh forms below do not cancel.)
     let rel = ExactNumNumber::from_word(1, p)?
-        .ldexp(-((p as Exponent) + 8), p, RoundingMode::None)?
-        .mul(en_max(x, y), p, RoundingMode::None)?;
-    if x.sub(y, p, RoundingMode::None)?.abs()?.cmp(&rel) < 0 {
+        .ldexp(-((p as Exponent) + 8), p, RoundingMode::Work)?
+        .mul(en_max(x, y), p, RoundingMode::Work)?;
+    if x.sub(y, p, RoundingMode::Work)?.abs()?.cmp(&rel) < 0 {
         return ExactNumNumber::from_word(1, p)?.div(
-            &x.sqrt(p, RoundingMode::None)?,
+            &x.sqrt(p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
     }
     if x.is_zero() {
-        let mut hp = cc.pi_num(p, RoundingMode::None)?;
-        hp.div_by_2(RoundingMode::None);
-        return hp.div(&y.sqrt(p, RoundingMode::None)?, p, RoundingMode::None);
+        let mut hp = cc.pi_num(p, RoundingMode::Work)?;
+        hp.div_by_2(RoundingMode::Work);
+        return hp.div(&y.sqrt(p, RoundingMode::Work)?, p, RoundingMode::Work);
     }
     if y.cmp(x) > 0 {
         let d = y
-            .sub(x, p, RoundingMode::None)?
-            .sqrt(p, RoundingMode::None)?;
+            .sub(x, p, RoundingMode::Work)?
+            .sqrt(p, RoundingMode::Work)?;
         let arg = y
-            .sub(x, p, RoundingMode::None)?
-            .div(x, p, RoundingMode::None)?
-            .sqrt(p, RoundingMode::None)?;
-        arg.atan(p, RoundingMode::None, cc)?
-            .div(&d, p, RoundingMode::None)
+            .sub(x, p, RoundingMode::Work)?
+            .div(x, p, RoundingMode::Work)?
+            .sqrt(p, RoundingMode::Work)?;
+        arg.atan(p, RoundingMode::Work, cc)?
+            .div(&d, p, RoundingMode::Work)
     } else {
         let d = x
-            .sub(y, p, RoundingMode::None)?
-            .sqrt(p, RoundingMode::None)?;
+            .sub(y, p, RoundingMode::Work)?
+            .sqrt(p, RoundingMode::Work)?;
         let arg = x
-            .sub(y, p, RoundingMode::None)?
-            .div(x, p, RoundingMode::None)?
-            .sqrt(p, RoundingMode::None)?;
-        arg.atanh(p, RoundingMode::None, cc)?
-            .div(&d, p, RoundingMode::None)
+            .sub(y, p, RoundingMode::Work)?
+            .div(x, p, RoundingMode::Work)?
+            .sqrt(p, RoundingMode::Work)?;
+        arg.atanh(p, RoundingMode::Work, cc)?
+            .div(&d, p, RoundingMode::Work)
     }
 }
 
@@ -5791,30 +5792,30 @@ fn carlson_rf(
         let y = y_s.as_ref().unwrap_or(y0);
         let z = z_s.as_ref().unwrap_or(z0);
         let an = x
-            .add(y, p, RoundingMode::None)?
-            .add(z, p, RoundingMode::None)?
-            .div(&three, p, RoundingMode::None)?;
+            .add(y, p, RoundingMode::Work)?
+            .add(z, p, RoundingMode::Work)?
+            .div(&three, p, RoundingMode::Work)?;
         if close_enough(&max_dev3(&an, x, y, z, p)?, &an, p)? {
             return rf_series(&an, x, y, z, p);
         }
-        let sx = x.sqrt(p, RoundingMode::None)?;
-        let sy = y.sqrt(p, RoundingMode::None)?;
-        let sz = z.sqrt(p, RoundingMode::None)?;
+        let sx = x.sqrt(p, RoundingMode::Work)?;
+        let sy = y.sqrt(p, RoundingMode::Work)?;
+        let sz = z.sqrt(p, RoundingMode::Work)?;
         let lam = sx
-            .mul(&sy, p, RoundingMode::None)?
-            .add(&sy.mul(&sz, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .add(&sz.mul(&sx, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            .mul(&sy, p, RoundingMode::Work)?
+            .add(&sy.mul(&sz, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .add(&sz.mul(&sx, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         x_s = Some(
-            x.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            x.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
         y_s = Some(
-            y.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            y.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
         z_s = Some(
-            z.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            z.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
     }
 }
@@ -5827,67 +5828,67 @@ fn rf_series(
     p: usize,
 ) -> Result<ExactNumNumber, Error> {
     let xx = an
-        .sub(x, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
+        .sub(x, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
     let yy = an
-        .sub(y, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
+        .sub(y, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
     let zz = an
-        .sub(z, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
-    let e2 = xx.mul(&yy, p, RoundingMode::None)?.sub(
-        &zz.mul(&zz, p, RoundingMode::None)?,
+        .sub(z, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
+    let e2 = xx.mul(&yy, p, RoundingMode::Work)?.sub(
+        &zz.mul(&zz, p, RoundingMode::Work)?,
         p,
-        RoundingMode::None,
+        RoundingMode::Work,
     )?;
     let e3 = xx
-        .mul(&yy, p, RoundingMode::None)?
-        .mul(&zz, p, RoundingMode::None)?;
-    let e2s = e2.mul(&e2, p, RoundingMode::None)?;
+        .mul(&yy, p, RoundingMode::Work)?
+        .mul(&zz, p, RoundingMode::Work)?;
+    let e2s = e2.mul(&e2, p, RoundingMode::Work)?;
     let one = ExactNumNumber::from_word(1, p)?;
     let w = |n: Word| ExactNumNumber::from_word(n, p);
     // Carlson 1995 power series once the spread is \(2^{-p/3}\).
     let s = one
         .sub(
-            &e2.div(&w(10)?, p, RoundingMode::None)?,
+            &e2.div(&w(10)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .add(
-            &e3.div(&w(14)?, p, RoundingMode::None)?,
+            &e3.div(&w(14)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .add(
-            &e2s.div(&w(24)?, p, RoundingMode::None)?,
+            &e2s.div(&w(24)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .sub(
             &w(3)?
-                .mul(&e2, p, RoundingMode::None)?
-                .mul(&e3, p, RoundingMode::None)?
-                .div(&w(44)?, p, RoundingMode::None)?,
+                .mul(&e2, p, RoundingMode::Work)?
+                .mul(&e3, p, RoundingMode::Work)?
+                .div(&w(44)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .sub(
             &w(5)?
-                .mul(&e2, p, RoundingMode::None)?
-                .mul(&e2s, p, RoundingMode::None)?
-                .div(&w(208)?, p, RoundingMode::None)?,
+                .mul(&e2, p, RoundingMode::Work)?
+                .mul(&e2s, p, RoundingMode::Work)?
+                .div(&w(208)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .add(
             &w(3)?
-                .mul(&e2s, p, RoundingMode::None)?
-                .mul(&e3, p, RoundingMode::None)?
-                .div(&w(104)?, p, RoundingMode::None)?,
+                .mul(&e2s, p, RoundingMode::Work)?
+                .mul(&e3, p, RoundingMode::Work)?
+                .div(&w(104)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
-    s.div(&an.sqrt(p, RoundingMode::None)?, p, RoundingMode::None)
+    s.div(&an.sqrt(p, RoundingMode::Work)?, p, RoundingMode::Work)
 }
 
 /// \(R_D(x,y,z)\). \(z>0\); \(x,y\ge 0\); at most one of \(x,y\) may be 0.
@@ -5918,45 +5919,45 @@ fn carlson_rd(
         let y = y_s.as_ref().unwrap_or(y0);
         let z = z_s.as_ref().unwrap_or(z0);
         let an = x
-            .add(y, p, RoundingMode::None)?
-            .add(&three.mul(z, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .div(&five, p, RoundingMode::None)?;
+            .add(y, p, RoundingMode::Work)?
+            .add(&three.mul(z, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .div(&five, p, RoundingMode::Work)?;
         if close_enough(&max_dev3(&an, x, y, z, p)?, &an, p)? {
             let series = rd_series(&an, x, y, z, p)?;
-            return three.mul(&sum, p, RoundingMode::None)?.add(
-                &fac.mul(&series, p, RoundingMode::None)?,
+            return three.mul(&sum, p, RoundingMode::Work)?.add(
+                &fac.mul(&series, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
         }
-        let sx = x.sqrt(p, RoundingMode::None)?;
-        let sy = y.sqrt(p, RoundingMode::None)?;
-        let sz = z.sqrt(p, RoundingMode::None)?;
+        let sx = x.sqrt(p, RoundingMode::Work)?;
+        let sy = y.sqrt(p, RoundingMode::Work)?;
+        let sz = z.sqrt(p, RoundingMode::Work)?;
         let lam = sx
-            .mul(&sy, p, RoundingMode::None)?
-            .add(&sy.mul(&sz, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .add(&sz.mul(&sx, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            .mul(&sy, p, RoundingMode::Work)?
+            .add(&sy.mul(&sz, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .add(&sz.mul(&sx, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         sum = sum.add(
             &fac.div(
-                &sz.mul(&z.add(&lam, p, RoundingMode::None)?, p, RoundingMode::None)?,
+                &sz.mul(&z.add(&lam, p, RoundingMode::Work)?, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
-        fac = fac.div(&four, p, RoundingMode::None)?;
+        fac = fac.div(&four, p, RoundingMode::Work)?;
         x_s = Some(
-            x.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            x.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
         y_s = Some(
-            y.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            y.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
         z_s = Some(
-            z.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            z.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
     }
 }
@@ -5969,73 +5970,73 @@ fn rd_series(
     p: usize,
 ) -> Result<ExactNumNumber, Error> {
     let xx = an
-        .sub(x, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
+        .sub(x, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
     let yy = an
-        .sub(y, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
+        .sub(y, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
     let zz = an
-        .sub(z, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
-    let e2 = xx.mul(&yy, p, RoundingMode::None)?.sub(
-        &zz.mul(&zz, p, RoundingMode::None)?,
+        .sub(z, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
+    let e2 = xx.mul(&yy, p, RoundingMode::Work)?.sub(
+        &zz.mul(&zz, p, RoundingMode::Work)?,
         p,
-        RoundingMode::None,
+        RoundingMode::Work,
     )?;
     let e3 = xx
-        .mul(&yy, p, RoundingMode::None)?
-        .mul(&zz, p, RoundingMode::None)?;
-    let e2s = e2.mul(&e2, p, RoundingMode::None)?;
+        .mul(&yy, p, RoundingMode::Work)?
+        .mul(&zz, p, RoundingMode::Work)?;
+    let e2s = e2.mul(&e2, p, RoundingMode::Work)?;
     let one = ExactNumNumber::from_word(1, p)?;
     let w = |n: Word| ExactNumNumber::from_word(n, p);
     let s = one
         .sub(
             &w(3)?
-                .mul(&e2, p, RoundingMode::None)?
-                .div(&w(14)?, p, RoundingMode::None)?,
+                .mul(&e2, p, RoundingMode::Work)?
+                .div(&w(14)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .add(
-            &e3.div(&w(6)?, p, RoundingMode::None)?,
+            &e3.div(&w(6)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
-        )?
-        .add(
-            &w(9)?
-                .mul(&e2s, p, RoundingMode::None)?
-                .div(&w(88)?, p, RoundingMode::None)?,
-            p,
-            RoundingMode::None,
-        )?
-        .sub(
-            &w(3)?
-                .mul(&e2, p, RoundingMode::None)?
-                .mul(&e3, p, RoundingMode::None)?
-                .div(&w(22)?, p, RoundingMode::None)?,
-            p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .add(
             &w(9)?
-                .mul(&e3, p, RoundingMode::None)?
-                .mul(&e3, p, RoundingMode::None)?
-                .div(&w(52)?, p, RoundingMode::None)?,
+                .mul(&e2s, p, RoundingMode::Work)?
+                .div(&w(88)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .sub(
             &w(3)?
-                .mul(&e2, p, RoundingMode::None)?
-                .mul(&e2s, p, RoundingMode::None)?
-                .div(&w(26)?, p, RoundingMode::None)?,
+                .mul(&e2, p, RoundingMode::Work)?
+                .mul(&e3, p, RoundingMode::Work)?
+                .div(&w(22)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
+        )?
+        .add(
+            &w(9)?
+                .mul(&e3, p, RoundingMode::Work)?
+                .mul(&e3, p, RoundingMode::Work)?
+                .div(&w(52)?, p, RoundingMode::Work)?,
+            p,
+            RoundingMode::Work,
+        )?
+        .sub(
+            &w(3)?
+                .mul(&e2, p, RoundingMode::Work)?
+                .mul(&e2s, p, RoundingMode::Work)?
+                .div(&w(26)?, p, RoundingMode::Work)?,
+            p,
+            RoundingMode::Work,
         )?;
     s.div(
-        &an.mul(&an.sqrt(p, RoundingMode::None)?, p, RoundingMode::None)?,
+        &an.mul(&an.sqrt(p, RoundingMode::Work)?, p, RoundingMode::Work)?,
         p,
-        RoundingMode::None,
+        RoundingMode::Work,
     )
 }
 
@@ -6072,66 +6073,66 @@ fn carlson_rj(
         let z = z_s.as_ref().unwrap_or(z0);
         let pv = pv_s.as_ref().unwrap_or(p0);
         let an = x
-            .add(y, p, RoundingMode::None)?
-            .add(z, p, RoundingMode::None)?
-            .add(&two.mul(pv, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .div(&five, p, RoundingMode::None)?;
+            .add(y, p, RoundingMode::Work)?
+            .add(z, p, RoundingMode::Work)?
+            .add(&two.mul(pv, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .div(&five, p, RoundingMode::Work)?;
         let d4 = max_dev3(&an, x, y, z, p)?;
-        let dp = an.sub(pv, p, RoundingMode::None)?.abs()?;
+        let dp = an.sub(pv, p, RoundingMode::Work)?.abs()?;
         if close_enough(en_max(&d4, &dp), &an, p)? {
             let series = rj_series(&an, x, y, z, pv, p)?;
-            return three.mul(&sum, p, RoundingMode::None)?.add(
-                &fac.mul(&series, p, RoundingMode::None)?,
+            return three.mul(&sum, p, RoundingMode::Work)?.add(
+                &fac.mul(&series, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
         }
-        let sx = x.sqrt(p, RoundingMode::None)?;
-        let sy = y.sqrt(p, RoundingMode::None)?;
-        let sz = z.sqrt(p, RoundingMode::None)?;
+        let sx = x.sqrt(p, RoundingMode::Work)?;
+        let sy = y.sqrt(p, RoundingMode::Work)?;
+        let sz = z.sqrt(p, RoundingMode::Work)?;
         let lam = sx
-            .mul(&sy, p, RoundingMode::None)?
-            .add(&sy.mul(&sz, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .add(&sz.mul(&sx, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            .mul(&sy, p, RoundingMode::Work)?
+            .add(&sy.mul(&sz, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+            .add(&sz.mul(&sx, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
         let alpha = pv
             .mul(
-                &sx.add(&sy, p, RoundingMode::None)?
-                    .add(&sz, p, RoundingMode::None)?,
+                &sx.add(&sy, p, RoundingMode::Work)?
+                    .add(&sz, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?
             .add(
-                &sx.mul(&sy, p, RoundingMode::None)?
-                    .mul(&sz, p, RoundingMode::None)?,
+                &sx.mul(&sy, p, RoundingMode::Work)?
+                    .mul(&sz, p, RoundingMode::Work)?,
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-        let alpha = alpha.mul(&alpha, p, RoundingMode::None)?;
-        let pl = pv.add(&lam, p, RoundingMode::None)?;
+        let alpha = alpha.mul(&alpha, p, RoundingMode::Work)?;
+        let pl = pv.add(&lam, p, RoundingMode::Work)?;
         let beta = pv
-            .mul(&pl, p, RoundingMode::None)?
-            .mul(&pl, p, RoundingMode::None)?;
+            .mul(&pl, p, RoundingMode::Work)?
+            .mul(&pl, p, RoundingMode::Work)?;
         sum = sum.add(
-            &fac.mul(&carlson_rc(&alpha, &beta, p, cc)?, p, RoundingMode::None)?,
+            &fac.mul(&carlson_rc(&alpha, &beta, p, cc)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
-        fac = fac.div(&four, p, RoundingMode::None)?;
+        fac = fac.div(&four, p, RoundingMode::Work)?;
         x_s = Some(
-            x.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            x.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
         y_s = Some(
-            y.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            y.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
         z_s = Some(
-            z.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            z.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
         pv_s = Some(
-            pv.add(&lam, p, RoundingMode::None)?
-                .div(&four, p, RoundingMode::None)?,
+            pv.add(&lam, p, RoundingMode::Work)?
+                .div(&four, p, RoundingMode::Work)?,
         );
     }
 }
@@ -6145,91 +6146,91 @@ fn rj_series(
     p: usize,
 ) -> Result<ExactNumNumber, Error> {
     let xx = an
-        .sub(x, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
+        .sub(x, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
     let yy = an
-        .sub(y, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
+        .sub(y, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
     let zz = an
-        .sub(z, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
+        .sub(z, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
     let pp = an
-        .sub(pv, p, RoundingMode::None)?
-        .div(an, p, RoundingMode::None)?;
+        .sub(pv, p, RoundingMode::Work)?
+        .div(an, p, RoundingMode::Work)?;
     let xyz = xx
-        .mul(&yy, p, RoundingMode::None)?
-        .mul(&zz, p, RoundingMode::None)?;
+        .mul(&yy, p, RoundingMode::Work)?
+        .mul(&zz, p, RoundingMode::Work)?;
     let xy_xz_yz = xx
-        .mul(&yy, p, RoundingMode::None)?
-        .add(&xx.mul(&zz, p, RoundingMode::None)?, p, RoundingMode::None)?
-        .add(&yy.mul(&zz, p, RoundingMode::None)?, p, RoundingMode::None)?;
-    let p2 = pp.mul(&pp, p, RoundingMode::None)?;
-    let p3 = p2.mul(&pp, p, RoundingMode::None)?;
+        .mul(&yy, p, RoundingMode::Work)?
+        .add(&xx.mul(&zz, p, RoundingMode::Work)?, p, RoundingMode::Work)?
+        .add(&yy.mul(&zz, p, RoundingMode::Work)?, p, RoundingMode::Work)?;
+    let p2 = pp.mul(&pp, p, RoundingMode::Work)?;
+    let p3 = p2.mul(&pp, p, RoundingMode::Work)?;
     let two = ExactNumNumber::from_word(2, p)?;
     let three = ExactNumNumber::from_word(3, p)?;
     let e2 = xy_xz_yz.sub(
-        &three.mul(&p2, p, RoundingMode::None)?,
+        &three.mul(&p2, p, RoundingMode::Work)?,
         p,
-        RoundingMode::None,
+        RoundingMode::Work,
     )?;
     let e3 = xyz
-        .add(&two.mul(&p3, p, RoundingMode::None)?, p, RoundingMode::None)?
+        .add(&two.mul(&p3, p, RoundingMode::Work)?, p, RoundingMode::Work)?
         .sub(
-            &pp.mul(&xy_xz_yz, p, RoundingMode::None)?,
+            &pp.mul(&xy_xz_yz, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
-    let e2s = e2.mul(&e2, p, RoundingMode::None)?;
+    let e2s = e2.mul(&e2, p, RoundingMode::Work)?;
     let one = ExactNumNumber::from_word(1, p)?;
     let w = |n: Word| ExactNumNumber::from_word(n, p);
     let s = one
         .sub(
             &w(3)?
-                .mul(&e2, p, RoundingMode::None)?
-                .div(&w(14)?, p, RoundingMode::None)?,
+                .mul(&e2, p, RoundingMode::Work)?
+                .div(&w(14)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .add(
-            &e3.div(&w(6)?, p, RoundingMode::None)?,
+            &e3.div(&w(6)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
-        )?
-        .add(
-            &w(9)?
-                .mul(&e2s, p, RoundingMode::None)?
-                .div(&w(88)?, p, RoundingMode::None)?,
-            p,
-            RoundingMode::None,
-        )?
-        .sub(
-            &w(3)?
-                .mul(&e2, p, RoundingMode::None)?
-                .mul(&e3, p, RoundingMode::None)?
-                .div(&w(22)?, p, RoundingMode::None)?,
-            p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .add(
             &w(9)?
-                .mul(&e3, p, RoundingMode::None)?
-                .mul(&e3, p, RoundingMode::None)?
-                .div(&w(52)?, p, RoundingMode::None)?,
+                .mul(&e2s, p, RoundingMode::Work)?
+                .div(&w(88)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?
         .sub(
             &w(3)?
-                .mul(&e2, p, RoundingMode::None)?
-                .mul(&e2s, p, RoundingMode::None)?
-                .div(&w(26)?, p, RoundingMode::None)?,
+                .mul(&e2, p, RoundingMode::Work)?
+                .mul(&e3, p, RoundingMode::Work)?
+                .div(&w(22)?, p, RoundingMode::Work)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
+        )?
+        .add(
+            &w(9)?
+                .mul(&e3, p, RoundingMode::Work)?
+                .mul(&e3, p, RoundingMode::Work)?
+                .div(&w(52)?, p, RoundingMode::Work)?,
+            p,
+            RoundingMode::Work,
+        )?
+        .sub(
+            &w(3)?
+                .mul(&e2, p, RoundingMode::Work)?
+                .mul(&e2s, p, RoundingMode::Work)?
+                .div(&w(26)?, p, RoundingMode::Work)?,
+            p,
+            RoundingMode::Work,
         )?;
     s.div(
-        &an.mul(&an.sqrt(p, RoundingMode::None)?, p, RoundingMode::None)?,
+        &an.mul(&an.sqrt(p, RoundingMode::Work)?, p, RoundingMode::Work)?,
         p,
-        RoundingMode::None,
+        RoundingMode::Work,
     )
 }
 
@@ -6282,10 +6283,10 @@ fn hankel_order_ok(x: &ExactNumNumber, nu: &ExactNumNumber) -> bool {
     let Ok(an) = nu.abs() else {
         return false;
     };
-    let Ok(nu2) = an.mul(&an, p, RoundingMode::None) else {
+    let Ok(nu2) = an.mul(&an, p, RoundingMode::Work) else {
         return false;
     };
-    let Ok(two_x) = two.mul(&ax, p, RoundingMode::None) else {
+    let Ok(two_x) = two.mul(&ax, p, RoundingMode::Work) else {
         return false;
     };
     nu2.cmp(&two_x) < 0
@@ -6305,7 +6306,7 @@ fn from_usize_p(n: usize, p: usize) -> Result<ExactNumNumber, Error> {
     let pw = p.max(128);
     let mut v = ExactNumNumber::from_u128(n as u128, pw)?;
     if pw != p {
-        v.set_precision(p, RoundingMode::None)?;
+        v.set_precision(p, RoundingMode::Work)?;
     }
     Ok(v)
 }
@@ -6345,7 +6346,7 @@ fn bessel_int_order_neg_x(
 ) -> Result<ExactNumNumber, Error> {
     let pe = round_p(nu.mantissa_max_bit_len().max(WORD_BIT_SIZE) + WORD_BIT_SIZE);
     let two = ExactNumNumber::from_word(2, WORD_BIT_SIZE)?;
-    let odd = !nu.is_zero() && !nu.div(&two, pe, RoundingMode::None)?.is_int();
+    let odd = !nu.is_zero() && !nu.div(&two, pe, RoundingMode::Work)?.is_int();
     let ax = x.abs()?;
     if odd {
         match f(&ax, nu, p, crate::common::util::invert_rm_for_sign(rm), cc) {
@@ -6361,15 +6362,14 @@ fn bessel_int_order_neg_x(
 /// `±max` for a finite overflow when `rm` rounds toward zero for its sign, else `ExponentOverflow`
 /// (C99 7.12.1 / IEEE 754 7.4: a genuine overflow, not a pole, follows the rounding direction).
 fn overflow_in_rm(s: Sign, p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
-    let toward_zero = matches!(
-        (s.is_positive(), rm),
-        (_, RoundingMode::ToZero) | (true, RoundingMode::Down) | (false, RoundingMode::Up)
-    );
-    if !toward_zero {
+    if !rm.saturates_overflow(s.is_positive()) {
         return Err(Error::ExponentOverflow(s));
     }
     let mut m = ExactNumNumber::max_value(p)?;
-    m.set_precision(p, RoundingMode::ToZero)?;
+    // `None` keeps the storage precision (every bit of rp(p, 64)), as `result_to_ext_rm` does.
+    if rm != RoundingMode::None {
+        m.set_precision(p, RoundingMode::ToZero)?;
+    }
     m.set_sign(s);
     m.set_inexact(true);
     Ok(m)
@@ -6440,14 +6440,14 @@ fn estimate_log2_leading_ji(
     xq.set_precision(q, RoundingMode::ToEven)?;
     xq.set_inexact(false);
     let one = N::from_word(1, q)?;
-    let ap1 = aq.add(&one, q, RoundingMode::None)?;
+    let ap1 = aq.add(&one, q, RoundingMode::Work)?;
     if gamma_arg_too_close_to_nonpos_int(&ap1, q)? {
         return Ok(None);
     }
-    let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
-    let la = xq.ln(q, RoundingMode::None, cc)?;
-    let al = aq.mul(&la, q, RoundingMode::None)?;
-    let lg = match ap1.ln_gamma(q, RoundingMode::None, cc) {
+    let ln2 = cc.ln_2_num(q, RoundingMode::Work)?;
+    let la = xq.ln(q, RoundingMode::Work, cc)?;
+    let al = aq.mul(&la, q, RoundingMode::Work)?;
+    let lg = match ap1.ln_gamma(q, RoundingMode::Work, cc) {
         Ok(v) => v,
         Err(Error::ExponentOverflow(_)) | Err(Error::DivisionByZero) => return Ok(None),
         Err(e) => return Err(e),
@@ -6455,10 +6455,10 @@ fn estimate_log2_leading_ji(
     if (lg.exponent() as i128).unsigned_abs() > 60 {
         return Ok(None);
     }
-    let d = al.sub(&lg, q, RoundingMode::None)?;
+    let d = al.sub(&lg, q, RoundingMode::Work)?;
     let lam = d
-        .div(&ln2, q, RoundingMode::None)?
-        .sub(&aq, q, RoundingMode::None)?;
+        .div(&ln2, q, RoundingMode::Work)?
+        .sub(&aq, q, RoundingMode::Work)?;
     if lam.exponent() > 62 {
         let n = if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 };
         return Ok(Some(n));
@@ -6487,11 +6487,11 @@ fn gamma_arg_too_close_to_nonpos_int(z: &ExactNumNumber, q: usize) -> Result<boo
     let ceil: &N = if z.is_int() {
         &fl
     } else {
-        fl_up = fl.add(&one, q, RoundingMode::None)?;
+        fl_up = fl.add(&one, q, RoundingMode::Work)?;
         &fl_up
     };
-    let d_fl = z.sub(&fl, q, RoundingMode::None)?.abs()?;
-    let d_ce = ceil.sub(z, q, RoundingMode::None)?.abs()?;
+    let d_fl = z.sub(&fl, q, RoundingMode::Work)?.abs()?;
+    let d_ce = ceil.sub(z, q, RoundingMode::Work)?.abs()?;
     let (d, n) = if d_fl.cmp(&d_ce) <= 0 { (d_fl, &fl) } else { (d_ce, ceil) };
     let close = d.is_zero() || d.exponent() <= -80;
     Ok(close && !n.is_positive())
@@ -6513,7 +6513,7 @@ fn bessel_ji_scaled(
     let two = N::from_word(2, WORD_BIT_SIZE)?;
     let one = N::from_word(1, WORD_BIT_SIZE)?;
     let is_odd = |v: &N| -> Result<bool, Error> {
-        Ok(!v.is_zero() && !v.div(&two, pa, RoundingMode::None)?.is_int())
+        Ok(!v.is_zero() && !v.div(&two, pa, RoundingMode::Work)?.is_int())
     };
     // Sign of L (and of the result: S > 0).
     let neg = if int {
@@ -6528,8 +6528,8 @@ fn bessel_ji_scaled(
     let (mut m, ex) = x.abs()?.frexp()?;
     m.set_inexact(false);
     let b = if a.is_negative() {
-        let f = a.sub(&a.floor_ref()?, pa, RoundingMode::None)?;
-        let g = one.sub(&f, pa, RoundingMode::None)?;
+        let f = a.sub(&a.floor_ref()?, pa, RoundingMode::Work)?;
+        let g = one.sub(&f, pa, RoundingMode::Work)?;
         if f.cmp(&g) < 0 {
             f
         } else {
@@ -6581,12 +6581,12 @@ fn bessel_ji_scaled(
             let pm = round_p(k * mb + WORD_BIT_SIZE);
             let mut mk = N::from_word(1, pm)?;
             for _ in 0..k {
-                mk = mk.mul(&m, pm, RoundingMode::None)?;
+                mk = mk.mul(&m, pm, RoundingMode::Work)?;
             }
             let bl = (usize::BITS - k.leading_zeros()) as usize;
             let fk = factorial(k, round_p(k * bl + WORD_BIT_SIZE))?;
             let pq = pm.max(w + WORD_BIT_SIZE);
-            let mut g = mk.div(&fk, pq, RoundingMode::None)?;
+            let mut g = mk.div(&fk, pq, RoundingMode::Work)?;
             let exact = !g.inexact();
             g.set_inexact(false);
             let k = k as i128;
@@ -6594,15 +6594,15 @@ fn bessel_ji_scaled(
         } else {
             let mut q = w + 4 * WORD_BIT_SIZE;
             let lam = loop {
-                let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
-                let la = x.abs()?.ln(q, RoundingMode::None, cc)?;
-                let al = a.mul(&la, q, RoundingMode::None)?;
-                let ap1 = a.add(&one, pa + q, RoundingMode::None)?;
-                let lg = ap1.ln_gamma(q, RoundingMode::None, cc)?;
-                let d = al.sub(&lg, q, RoundingMode::None)?;
+                let ln2 = cc.ln_2_num(q, RoundingMode::Work)?;
+                let la = x.abs()?.ln(q, RoundingMode::Work, cc)?;
+                let al = a.mul(&la, q, RoundingMode::Work)?;
+                let ap1 = a.add(&one, pa + q, RoundingMode::Work)?;
+                let lg = ap1.ln_gamma(q, RoundingMode::Work, cc)?;
+                let d = al.sub(&lg, q, RoundingMode::Work)?;
                 let lam = d
-                    .div(&ln2, q, RoundingMode::None)?
-                    .sub(&a, q, RoundingMode::None)?;
+                    .div(&ln2, q, RoundingMode::Work)?
+                    .sub(&a, q, RoundingMode::Work)?;
                 let e_max = [al.exponent(), lg.exponent(), a.exponent(), lam.exponent(), 1]
                     .into_iter()
                     .max()
@@ -6619,13 +6619,13 @@ fn bessel_ji_scaled(
                 (N::from_word(1, WORD_BIT_SIZE)?, n, false)
             } else {
                 let fl = lam.floor_ref()?;
-                let fr = lam.sub(&fl, q, RoundingMode::None)?;
+                let fr = lam.sub(&fl, q, RoundingMode::Work)?;
                 let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
                 let nf = if fl.is_negative() { -nf } else { nf };
-                let ln2 = cc.ln_2_num(w + WORD_BIT_SIZE, RoundingMode::None)?;
-                let g = fr.mul(&ln2, w + WORD_BIT_SIZE, RoundingMode::None)?.exp(
+                let ln2 = cc.ln_2_num(w + WORD_BIT_SIZE, RoundingMode::Work)?;
+                let g = fr.mul(&ln2, w + WORD_BIT_SIZE, RoundingMode::Work)?.exp(
                     w + WORD_BIT_SIZE,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                     cc,
                 )?;
                 (g, nf, false)
@@ -6647,12 +6647,12 @@ fn bessel_ji_scaled(
             (N::from_word(1, WORD_BIT_SIZE)?, lr + 1)
         } else {
             let ws = w + WORD_BIT_SIZE;
-            let half = m.div(&two, ws, RoundingMode::None)?;
+            let half = m.div(&two, ws, RoundingMode::Work)?;
             // (x/2)² = (m/2)² · 2^(2ex), scaled in two steps (2ex can pass the exponent type).
-            let mut hh = half.mul(&half, ws, RoundingMode::None)?;
+            let mut hh = half.mul(&half, ws, RoundingMode::Work)?;
             hh = hh
-                .ldexp(ex, ws, RoundingMode::None)?
-                .ldexp(ex, ws, RoundingMode::None)?;
+                .ldexp(ex, ws, RoundingMode::Work)?
+                .ldexp(ex, ws, RoundingMode::Work)?;
             if hh.is_zero() || hh.is_subnormal() {
                 // ν within ~2^EXPONENT_MIN of an integer: t_1 would lose bits; refuse.
                 return Err(Error::PrecisionRetryExhausted);
@@ -6668,12 +6668,12 @@ fn bessel_ji_scaled(
                 k += 1;
                 let kk = from_usize_p(k, ws)?;
                 let den =
-                    kk.add(&a, pa + ws, RoundingMode::None)?
-                        .mul(&kk, ws, RoundingMode::None)?;
+                    kk.add(&a, pa + ws, RoundingMode::Work)?
+                        .mul(&kk, ws, RoundingMode::Work)?;
                 t = t
-                    .mul(&hh, ws, RoundingMode::None)?
-                    .div(&den, ws, RoundingMode::None)?;
-                s = s.add(&t, ws, RoundingMode::None)?;
+                    .mul(&hh, ws, RoundingMode::Work)?
+                    .div(&den, ws, RoundingMode::Work)?;
+                s = s.add(&t, ws, RoundingMode::Work)?;
                 if t.is_zero() || t.exponent() < stop {
                     break;
                 }
@@ -6690,14 +6690,14 @@ fn bessel_ji_scaled(
             if !i {
                 d = d.neg()?;
             }
-            let mut v = g.add(&d, wp + 2 * WORD_BIT_SIZE, RoundingMode::None)?;
+            let mut v = g.add(&d, wp + 2 * WORD_BIT_SIZE, RoundingMode::Work)?;
             v.set_sign(sign);
             let mut r = scale_in_rm(v, n, p, rm)?;
             r.set_inexact(true);
             return Ok(Some(r));
         }
         let wp = w + 2 * WORD_BIT_SIZE;
-        let pv = g.mul(&s, wp, RoundingMode::None)?;
+        let pv = g.mul(&s, wp, RoundingMode::Work)?;
         let c = (s_err.max(-(w as i128) - 10) + 2).max(-(wp as i128) + 4);
         let mut eps = N::from_word(1, WORD_BIT_SIZE)?;
         eps.set_exponent(c as Exponent + 1);
@@ -6775,10 +6775,10 @@ fn bessel_yk_scaled(
             // μ = 1: relative next term is O(x^2 log x), still ~ 2^(2 ex).
             N::from_word(1, WORD_BIT_SIZE)?
         } else {
-            a.sub(&one, pa, RoundingMode::None)?
+            a.sub(&one, pa, RoundingMode::Work)?
         }
     } else {
-        one.sub(&a, pa, RoundingMode::None)?.abs()?
+        one.sub(&a, pa, RoundingMode::Work)?.abs()?
     };
     let (m, ex) = x.abs()?.frexp()?;
     let lr = 2 * (ex as i128 - 1) - (den.exponent() as i128 - 1);
@@ -6800,16 +6800,16 @@ fn bessel_yk_scaled(
         if int {
             // Y_{-n} = (-1)^n Y_n, Y_n < 0 for small x: flip when n is odd? Y_n
             // leading is negative; (-1)^n * (negative) is positive iff n is odd.
-            let odd = !a.is_zero() && !a.div(&two, pa, RoundingMode::None)?.is_int();
+            let odd = !a.is_zero() && !a.div(&two, pa, RoundingMode::Work)?.is_int();
             if odd {
                 sign = Sign::Pos;
             }
         } else {
             // Y_{-μ} ∼ -(1/π) Γ(μ) (x/2)^{-μ} cos(μπ): flip when cos(μπ) < 0.
-            let pi = cc.pi_num(pa, RoundingMode::None)?;
+            let pi = cc.pi_num(pa, RoundingMode::Work)?;
             let c = a
-                .mul(&pi, pa, RoundingMode::None)?
-                .cos(pa, RoundingMode::None, cc)?;
+                .mul(&pi, pa, RoundingMode::Work)?
+                .cos(pa, RoundingMode::Work, cc)?;
             if c.is_negative() {
                 sign = Sign::Pos;
             }
@@ -6833,12 +6833,12 @@ fn bessel_yk_scaled(
             let pm = round_p(k * mb + WORD_BIT_SIZE);
             let mut mk = N::from_word(1, pm)?;
             for _ in 0..k {
-                mk = mk.mul(&m, pm, RoundingMode::None)?;
+                mk = mk.mul(&m, pm, RoundingMode::Work)?;
             }
             let bl = (usize::BITS - (k.saturating_sub(1)).leading_zeros()) as usize;
             let fk = factorial(k - 1, round_p((k - 1) * bl.max(1) + WORD_BIT_SIZE))?;
             let pq = pm.max(w + WORD_BIT_SIZE);
-            let mut g = fk.div(&mk, pq, RoundingMode::None)?;
+            let mut g = fk.div(&mk, pq, RoundingMode::Work)?;
             let exact = !g.inexact();
             g.set_inexact(false);
             let k = k as i128;
@@ -6846,19 +6846,19 @@ fn bessel_yk_scaled(
         } else {
             let mut q = w + 4 * WORD_BIT_SIZE;
             let lam = loop {
-                let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
-                let lx = x.ln(q, RoundingMode::None, cc)?;
-                let lg = a.ln_gamma(q, RoundingMode::None, cc)?;
+                let ln2 = cc.ln_2_num(q, RoundingMode::Work)?;
+                let lx = x.ln(q, RoundingMode::Work, cc)?;
+                let lg = a.ln_gamma(q, RoundingMode::Work, cc)?;
                 // Λ = log2(Γ(μ)) - μ (log2(x) - 1) = lnΓ(μ)/ln2 - μ log2(x) + μ
                 let lam = lg
-                    .div(&ln2, q, RoundingMode::None)?
+                    .div(&ln2, q, RoundingMode::Work)?
                     .sub(
-                        &a.mul(&lx, q, RoundingMode::None)?
-                            .div(&ln2, q, RoundingMode::None)?,
+                        &a.mul(&lx, q, RoundingMode::Work)?
+                            .div(&ln2, q, RoundingMode::Work)?,
                         q,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     )?
-                    .add(&a, q, RoundingMode::None)?;
+                    .add(&a, q, RoundingMode::Work)?;
                 let e_max = [lg.exponent(), a.exponent(), lam.exponent(), 1]
                     .into_iter()
                     .max()
@@ -6874,13 +6874,13 @@ fn bessel_yk_scaled(
                 (N::from_word(1, WORD_BIT_SIZE)?, n, false)
             } else {
                 let fl = lam.floor_ref()?;
-                let fr = lam.sub(&fl, q, RoundingMode::None)?;
+                let fr = lam.sub(&fl, q, RoundingMode::Work)?;
                 let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
                 let nf = if fl.is_negative() { -nf } else { nf };
-                let ln2 = cc.ln_2_num(w + WORD_BIT_SIZE, RoundingMode::None)?;
-                let g = fr.mul(&ln2, w + WORD_BIT_SIZE, RoundingMode::None)?.exp(
+                let ln2 = cc.ln_2_num(w + WORD_BIT_SIZE, RoundingMode::Work)?;
+                let g = fr.mul(&ln2, w + WORD_BIT_SIZE, RoundingMode::Work)?.exp(
                     w + WORD_BIT_SIZE,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                     cc,
                 )?;
                 (g, nf, false)
@@ -6890,10 +6890,10 @@ fn bessel_yk_scaled(
         // the lo/hi interval (a factor in [0, 1] cannot un-overflow a minpos
         // leading term, and the half-odd case was already dispatched).
         if is_k {
-            g = g.div(&two, w + WORD_BIT_SIZE, RoundingMode::None)?;
+            g = g.div(&two, w + WORD_BIT_SIZE, RoundingMode::Work)?;
         } else {
-            let pi = cc.pi_num(w + WORD_BIT_SIZE, RoundingMode::None)?;
-            g = g.div(&pi, w + WORD_BIT_SIZE, RoundingMode::None)?;
+            let pi = cc.pi_num(w + WORD_BIT_SIZE, RoundingMode::Work)?;
+            g = g.div(&pi, w + WORD_BIT_SIZE, RoundingMode::Work)?;
         }
         let g_exact = g_exact && is_k && !g.inexact();
 
@@ -6905,7 +6905,7 @@ fn bessel_yk_scaled(
             // rounding when the leading term is a p-bit dyadic.
             let mut d = N::from_word(1, WORD_BIT_SIZE)?;
             d.set_exponent(g.exponent() - wp as Exponent);
-            let mut v = g.sub(&d, wp + 2 * WORD_BIT_SIZE, RoundingMode::None)?;
+            let mut v = g.sub(&d, wp + 2 * WORD_BIT_SIZE, RoundingMode::Work)?;
             v.set_sign(sign);
             let mut r = scale_in_rm(v, n, p, rm)?;
             r.set_inexact(true);
@@ -6926,30 +6926,30 @@ fn bessel_yk_scaled(
             if e_m1.unsigned_abs() > Word::MAX as u128 {
                 (N::from_word(1, WORD_BIT_SIZE)?, lr + 1)
             } else {
-                let ln2 = cc.ln_2_num(ws, RoundingMode::None)?;
-                let lm = m.ln(ws, RoundingMode::None, cc)?;
+                let ln2 = cc.ln_2_num(ws, RoundingMode::Work)?;
+                let lm = m.ln(ws, RoundingMode::Work, cc)?;
                 let mut ev = N::from_word(e_m1.unsigned_abs() as Word, ws)?;
                 if e_m1 < 0 {
                     ev = ev.neg()?;
                 }
                 let lxd2 =
-                    ev.mul(&ln2, ws, RoundingMode::None)?
-                        .add(&lm, ws, RoundingMode::None)?;
-                let gam = cc.euler_gamma_num(ws, RoundingMode::None)?;
-                let half = one.div(&two, ws, RoundingMode::None)?;
+                    ev.mul(&ln2, ws, RoundingMode::Work)?
+                        .add(&lm, ws, RoundingMode::Work)?;
+                let gam = cc.euler_gamma_num(ws, RoundingMode::Work)?;
+                let half = one.div(&two, ws, RoundingMode::Work)?;
                 let paren =
-                    lxd2.add(&gam, ws, RoundingMode::None)?
-                        .sub(&half, ws, RoundingMode::None)?;
-                let mut xx2 = m.mul(&m, ws, RoundingMode::None)?;
+                    lxd2.add(&gam, ws, RoundingMode::Work)?
+                        .sub(&half, ws, RoundingMode::Work)?;
+                let mut xx2 = m.mul(&m, ws, RoundingMode::Work)?;
                 xx2 = xx2
-                    .ldexp(ex, ws, RoundingMode::None)?
-                    .ldexp(ex, ws, RoundingMode::None)?
-                    .div(&two, ws, RoundingMode::None)?;
-                let t = xx2.mul(&paren, ws, RoundingMode::None)?;
+                    .ldexp(ex, ws, RoundingMode::Work)?
+                    .ldexp(ex, ws, RoundingMode::Work)?
+                    .div(&two, ws, RoundingMode::Work)?;
+                let t = xx2.mul(&paren, ws, RoundingMode::Work)?;
                 let s = if is_k {
-                    one.add(&t, ws, RoundingMode::None)?
+                    one.add(&t, ws, RoundingMode::Work)?
                 } else {
-                    one.sub(&t, ws, RoundingMode::None)?
+                    one.sub(&t, ws, RoundingMode::Work)?
                 };
                 let rem = 4 * e_m1 + (e_m1.unsigned_abs().max(1).ilog2() as i128) + 8;
                 (s, rem)
@@ -6960,26 +6960,26 @@ fn bessel_yk_scaled(
             // (x/2)^{2μ} Γ(1−μ)/Γ(1+μ) (times cos(μπ) for Y), which is O(x^{2μ})
             // and sits inside a 2048-bit grid when μ is a fraction and x = 2^{-1000}.
             let ws = w + WORD_BIT_SIZE;
-            let half = m.div(&two, ws, RoundingMode::None)?;
-            let mut hh = half.mul(&half, ws, RoundingMode::None)?;
+            let half = m.div(&two, ws, RoundingMode::Work)?;
+            let mut hh = half.mul(&half, ws, RoundingMode::Work)?;
             hh = hh
-                .ldexp(ex, ws, RoundingMode::None)?
-                .ldexp(ex, ws, RoundingMode::None)?;
+                .ldexp(ex, ws, RoundingMode::Work)?
+                .ldexp(ex, ws, RoundingMode::Work)?;
             let t1 = hh.div(
-                &a.sub(&one, pa + ws, RoundingMode::None)?,
+                &a.sub(&one, pa + ws, RoundingMode::Work)?,
                 ws,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
             let mut s = if is_k {
-                one.sub(&t1, ws, RoundingMode::None)?
+                one.sub(&t1, ws, RoundingMode::Work)?
             } else {
-                one.add(&t1, ws, RoundingMode::None)?
+                one.add(&t1, ws, RoundingMode::Work)?
             };
             let mut rem = 2 * lr + 8;
             if opp_maybe {
                 let q = ws + WORD_BIT_SIZE;
-                let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
-                let lm = m.ln(q, RoundingMode::None, cc)?;
+                let ln2 = cc.ln_2_num(q, RoundingMode::Work)?;
+                let lm = m.ln(q, RoundingMode::Work, cc)?;
                 let e_m1 = ex as i128 - 1;
                 if e_m1.unsigned_abs() <= Word::MAX as u128 {
                     let mut ev = N::from_word(e_m1.unsigned_abs() as Word, q)?;
@@ -6987,34 +6987,34 @@ fn bessel_yk_scaled(
                         ev = ev.neg()?;
                     }
                     let lxd2 =
-                        ev.mul(&ln2, q, RoundingMode::None)?
-                            .add(&lm, q, RoundingMode::None)?;
+                        ev.mul(&ln2, q, RoundingMode::Work)?
+                            .add(&lm, q, RoundingMode::Work)?;
                     let two_mu_lx =
-                        a.mul(&lxd2, q, RoundingMode::None)?
-                            .mul(&two, q, RoundingMode::None)?;
+                        a.mul(&lxd2, q, RoundingMode::Work)?
+                            .mul(&two, q, RoundingMode::Work)?;
                     let lg_m =
-                        one.sub(&a, q, RoundingMode::None)?
-                            .ln_gamma(q, RoundingMode::None, cc)?;
+                        one.sub(&a, q, RoundingMode::Work)?
+                            .ln_gamma(q, RoundingMode::Work, cc)?;
                     let lg_p =
-                        one.add(&a, q, RoundingMode::None)?
-                            .ln_gamma(q, RoundingMode::None, cc)?;
-                    let lam = two_mu_lx.add(&lg_m, q, RoundingMode::None)?.sub(
+                        one.add(&a, q, RoundingMode::Work)?
+                            .ln_gamma(q, RoundingMode::Work, cc)?;
+                    let lam = two_mu_lx.add(&lg_m, q, RoundingMode::Work)?.sub(
                         &lg_p,
                         q,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     )?;
-                    let rterm = lam.exp(q, RoundingMode::None, cc)?;
+                    let rterm = lam.exp(q, RoundingMode::Work, cc)?;
                     if is_k {
-                        s = s.sub(&rterm, q, RoundingMode::None)?;
+                        s = s.sub(&rterm, q, RoundingMode::Work)?;
                     } else {
-                        let pi = cc.pi_num(q, RoundingMode::None)?;
+                        let pi = cc.pi_num(q, RoundingMode::Work)?;
                         let c =
-                            a.mul(&pi, q, RoundingMode::None)?
-                                .cos(q, RoundingMode::None, cc)?;
+                            a.mul(&pi, q, RoundingMode::Work)?
+                                .cos(q, RoundingMode::Work, cc)?;
                         s = s.sub(
-                            &rterm.mul(&c, q, RoundingMode::None)?,
+                            &rterm.mul(&c, q, RoundingMode::Work)?,
                             q,
-                            RoundingMode::None,
+                            RoundingMode::Work,
                         )?;
                     }
                     // leftover r · (x/2)^2
@@ -7023,7 +7023,7 @@ fn bessel_yk_scaled(
             }
             (s, rem)
         };
-        let pv = g.mul(&s, wp, RoundingMode::None)?;
+        let pv = g.mul(&s, wp, RoundingMode::Work)?;
         let c = (s_err.max(-(w as i128) - 10) + 2).max(-(wp as i128) + 4);
         let mut eps = N::from_word(1, WORD_BIT_SIZE)?;
         eps.set_exponent(c as Exponent + 1);
@@ -7078,7 +7078,7 @@ fn bessel_ji_at_zero(
     let pe = round_p(a.mantissa_max_bit_len().max(WORD_BIT_SIZE) + WORD_BIT_SIZE);
     let m = a.floor()?;
     let two = ExactNumNumber::from_word(2, WORD_BIT_SIZE)?;
-    let m_odd = !m.is_zero() && !m.div(&two, pe, RoundingMode::None)?.is_int();
+    let m_odd = !m.is_zero() && !m.div(&two, pe, RoundingMode::Work)?.is_int();
     if nu.is_int() {
         let neg = (x.is_negative() && m_odd) != (!i && nu.is_negative() && m_odd);
         return ExactNumNumber::new2(p, if neg { Sign::Neg } else { Sign::Pos }, inexact);
@@ -7113,15 +7113,15 @@ fn bessel_y_at_zero(nu: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Err
     let pe = round_p(a.mantissa_max_bit_len().max(WORD_BIT_SIZE) + WORD_BIT_SIZE);
     let m = nu.abs()?.floor()?;
     let two = ExactNumNumber::from_word(2, WORD_BIT_SIZE)?;
-    let m_odd = !m.is_zero() && !m.div(&two, pe, RoundingMode::None)?.is_int();
-    let t = a.sub(&m, pe, RoundingMode::None)?;
+    let m_odd = !m.is_zero() && !m.div(&two, pe, RoundingMode::Work)?.is_int();
+    let t = a.sub(&m, pe, RoundingMode::Work)?;
     if t.is_zero() {
         return inf(m_odd);
     }
     let half = ExactNumNumber::from_word(1, WORD_BIT_SIZE)?.ldexp(
         -1,
         WORD_BIT_SIZE,
-        RoundingMode::None,
+        RoundingMode::Work,
     )?;
     let c = t.cmp(&half);
     if c == 0 {
@@ -7155,16 +7155,16 @@ fn harmonic_u(n: usize, p: usize) -> Result<ExactNumNumber, Error> {
         let t = ExactNumNumber::from_word(1, p)?.div(
             &ExactNumNumber::from_word(k as Word, p)?,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
-        h = h.add(&t, p, RoundingMode::None)?;
+        h = h.add(&t, p, RoundingMode::Work)?;
     }
     Ok(h)
 }
 
 fn half_integer_n(nu: &ExactNumNumber, p: usize) -> Result<Option<u32>, Error> {
     let two = ExactNumNumber::from_word(2, p)?;
-    let two_nu = nu.mul(&two, p, RoundingMode::None)?;
+    let two_nu = nu.mul(&two, p, RoundingMode::Work)?;
     let Some(t) = as_i32_exact(&two_nu, p)? else {
         return Ok(None);
     };
@@ -7190,12 +7190,12 @@ fn floor_nonneg_u32(x: &ExactNumNumber, p: usize) -> Result<u32, Error> {
 }
 
 fn two_times(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Error> {
-    x.mul(&ExactNumNumber::from_word(2, p)?, p, RoundingMode::None)
+    x.mul(&ExactNumNumber::from_word(2, p)?, p, RoundingMode::Work)
 }
 
 fn one_half(p: usize) -> Result<ExactNumNumber, Error> {
     let mut h = ExactNumNumber::from_word(1, p)?;
-    h.div_by_2(RoundingMode::None);
+    h.div_by_2(RoundingMode::Work);
     Ok(h)
 }
 
@@ -7234,7 +7234,7 @@ pub(crate) fn even_bernoulli(n: usize, p: usize) -> Result<Vec<ExactNumNumber>, 
     // T_k < (2k)! < 2^{2k·log2(2k)}: this precision holds every integer exactly.
     let log2 = usize::BITS as usize - (2 * n).leading_zeros() as usize;
     let pi = round_p(2 * n * (log2 + 1) + 2 * WORD_BIT_SIZE);
-    let exact = RoundingMode::None;
+    let exact = RoundingMode::Work;
     let word = |v: usize| ExactNumNumber::from_word(v as Word, pi);
     let mut t: Vec<ExactNumNumber> = Vec::with_capacity(n + 1);
     t.push(ExactNumNumber::new(pi)?);
@@ -7307,13 +7307,13 @@ fn pow_ui(base: &ExactNumNumber, exp: usize, p: usize) -> Result<ExactNumNumber,
     loop {
         let b = b_slot.as_ref().unwrap_or(base);
         if e & 1 == 1 {
-            acc = acc.mul(b, p, RoundingMode::None)?;
+            acc = acc.mul(b, p, RoundingMode::Work)?;
         }
         e >>= 1;
         if e == 0 {
             return Ok(acc);
         }
-        let sq = b.mul(b, p, RoundingMode::None)?;
+        let sq = b.mul(b, p, RoundingMode::Work)?;
         b_slot = Some(sq);
     }
 }
@@ -7675,7 +7675,7 @@ impl BernoulliCache {
         let mut acc = ExactNumNumber::new(pn)?;
         for j in 1..=n {
             let prev = self.row.get(n - j).ok_or(Error::InvalidArgument)?;
-            let sum = acc.add(prev, pn, RoundingMode::None)?;
+            let sum = acc.add(prev, pn, RoundingMode::Work)?;
             next.push(acc);
             acc = sum;
         }
@@ -7716,7 +7716,7 @@ impl BernoulliCache {
             let k = self.exact.len() + 1;
             let t = self.row.last().ok_or(Error::InvalidArgument)?;
             let pb = round_p(t.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE);
-            let mut num = t.mul(&from_usize_p(2 * k, pb)?, pb, RoundingMode::None)?;
+            let mut num = t.mul(&from_usize_p(2 * k, pb)?, pb, RoundingMode::Work)?;
             if k.is_multiple_of(2) {
                 num = num.neg()?;
             }
@@ -7727,8 +7727,8 @@ impl BernoulliCache {
                 pow.exponent() + Exponent::try_from(2 * k).map_err(|_| Error::InvalidArgument)?,
             );
             let den = pow
-                .sub(&one, pd, RoundingMode::None)?
-                .mul(&pow, pd, RoundingMode::None)?;
+                .sub(&one, pd, RoundingMode::Work)?
+                .mul(&pow, pd, RoundingMode::Work)?;
             self.exact.push((
                 bernoulli_rev::num_to_int(&num)?,
                 bernoulli_rev::num_to_int(&den)?,
@@ -7759,8 +7759,8 @@ impl BernoulliCache {
             // dest `p` (FLINT `arb_set_round_fmpz` / `arb_div_fmpz`).
             let pn = round_p(num.bit_length().max(64).saturating_add(WORD_BIT_SIZE));
             let pd = round_p(den.bit_length().max(64).saturating_add(WORD_BIT_SIZE));
-            let nf = num.to_exact_num_number(pn, RoundingMode::None)?;
-            let df = den.to_exact_num_number(pd, RoundingMode::None)?;
+            let nf = num.to_exact_num_number(pn, RoundingMode::Work)?;
+            let df = den.to_exact_num_number(pd, RoundingMode::Work)?;
             slot.1.push(nf.div(&df, p, RoundingMode::ToEven)?);
         }
         Ok(())
@@ -7984,14 +7984,14 @@ pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNu
     let q = s.d.mul_full_prec(&s.d)?;
     // A/B = V / (D·(Q + T)) (the k = 0 term of B is 1, i.e. Q/Q).
     let den = s.d.mul_full_prec(&q.add_full_prec(&s.t)?)?;
-    let ab = s.v.div(&den, pw, RoundingMode::None)?;
-    let ln_n = ExactNumNumber::from_word(Word::from(j), pw)?.mul(ln2, pw, RoundingMode::None)?;
-    ab.sub(&ln_n, pw, RoundingMode::None)
+    let ab = s.v.div(&den, pw, RoundingMode::Work)?;
+    let ln_n = ExactNumNumber::from_word(Word::from(j), pw)?.mul(ln2, pw, RoundingMode::Work)?;
+    ab.sub(&ln_n, pw, RoundingMode::Work)
 }
 
 fn exact_mul_num(x: &ExactNumNumber, y: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
     let w = round_p(x.mantissa_max_bit_len() + y.mantissa_max_bit_len() + WORD_BIT_SIZE);
-    let v = x.mul(y, w, RoundingMode::None)?;
+    let v = x.mul(y, w, RoundingMode::Work)?;
     if v.inexact() {
         return Err(Error::InvalidArgument);
     }
@@ -8009,7 +8009,7 @@ fn exact_add_num(x: &ExactNumNumber, y: &ExactNumNumber) -> Result<ExactNumNumbe
     let ex = x.exponent().max(y.exponent());
     let lo = (x.exponent() - w_of(x)).min(y.exponent() - w_of(y));
     let w = round_p(usize::try_from(ex - lo).unwrap_or(0) + 2 * WORD_BIT_SIZE);
-    let v = x.add(y, w, RoundingMode::None)?;
+    let v = x.add(y, w, RoundingMode::Work)?;
     if v.inexact() {
         return Err(Error::InvalidArgument);
     }
@@ -8077,7 +8077,7 @@ fn lambert_w_guess(
 ) -> Result<ExactNumNumber, Error> {
     type N = ExactNumNumber;
     let p = 2 * WORD_BIT_SIZE;
-    let nr = RoundingMode::None;
+    let nr = RoundingMode::Work;
     let one = N::from_word(1, p)?;
     let quarter = {
         let mut q = N::from_word(1, p)?;
@@ -8129,7 +8129,7 @@ fn lambert_w_bracketed(
     cc: &mut Consts,
 ) -> Result<Option<ExactNumNumber>, Error> {
     type N = ExactNumNumber;
-    let nr = RoundingMode::None;
+    let nr = RoundingMode::Work;
     let one = N::from_word(1, WORD_BIT_SIZE)?;
     // Log form w + ln|w| = ln|x| for W₀(x > 1) and W₋₁(x >= −1/4): no e^w over/underflow.
     let log_form = if minus1 {

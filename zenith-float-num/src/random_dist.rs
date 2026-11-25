@@ -26,8 +26,8 @@ fn random_unit(p: usize, rm: RoundingMode) -> ExactNum {
     let mut acc = ExactNum::from_u8(0, pw);
     for _ in 0..nwords {
         let w: Word = random();
-        acc = acc.ldexp(WORD_BIT_SIZE as Exponent, pw, RoundingMode::None);
-        acc = acc.add(&ExactNum::from_word(w, pw), pw, RoundingMode::None);
+        acc = acc.ldexp(WORD_BIT_SIZE as Exponent, pw, RoundingMode::Work);
+        acc = acc.add(&ExactNum::from_word(w, pw), pw, RoundingMode::Work);
     }
     acc.ldexp(-((nwords * WORD_BIT_SIZE) as Exponent), p, rm)
 }
@@ -82,9 +82,9 @@ impl ExactNum {
             None => return NAN,
             _ => {}
         }
-        let u = random_unit(p, RoundingMode::None);
-        let span = ExactNum::sub_ref(b, a, p, RoundingMode::None);
-        span.mul(&u, p, RoundingMode::None).add(a, p, rm)
+        let u = random_unit(p, RoundingMode::Work);
+        let span = ExactNum::sub_ref(b, a, p, RoundingMode::Work);
+        span.mul(&u, p, RoundingMode::Work).add(a, p, rm)
     }
 
     /// Gaussian \(N(\mu,\sigma^2)\) via Box–Muller at `(p, rm)`.
@@ -101,7 +101,7 @@ impl ExactNum {
             return dist_nan();
         }
         let pw = p.saturating_add(WORD_BIT_SIZE);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let u1 = random_unit_open(pw, none);
         let u2 = random_unit(pw, none);
         let two = ExactNum::from_u8(2, pw);
@@ -122,7 +122,7 @@ impl ExactNum {
             return dist_nan();
         }
         let pw = p.saturating_add(WORD_BIT_SIZE);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let u = random_unit_open(pw, none);
         u.ln(pw, none, cc).neg().div(lambda, p, rm)
     }

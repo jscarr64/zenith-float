@@ -54,7 +54,7 @@ impl ExactNumNumber {
 
     /// Newton: `x ← x * (2 − a x)`, doubling working precision each step.
     fn reciprocal_newton(&self, p: usize) -> Result<Self, Error> {
-        let rm = RoundingMode::None;
+        let rm = RoundingMode::Work;
         let p = round_p(p);
 
         let mut a = self.with_sign(Sign::Pos)?;
@@ -98,7 +98,7 @@ impl ExactNumNumber {
         mut x: Self,
         p_next: usize,
     ) -> Result<Self, Error> {
-        let rm = RoundingMode::None;
+        let rm = RoundingMode::Work;
         x.set_precision(p_next, rm)?;
         let mut a_k = a.try_rounded_to(p_next, rm)?;
         a_k.set_inexact(false);

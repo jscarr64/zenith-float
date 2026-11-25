@@ -119,7 +119,7 @@ fn round(
     let above_half = rem > half || (rem == half && sticky);
     let tie = rem == half && !sticky;
     let up = match rm {
-        RoundingMode::ToZero | RoundingMode::None => false,
+        RoundingMode::ToZero | RoundingMode::None | RoundingMode::Work => false,
         RoundingMode::FromZero => inexact,
         RoundingMode::Up => inexact && !neg,
         RoundingMode::Down => inexact && neg,
@@ -213,8 +213,9 @@ fn want(
 
 fn toward_zero(rm: RoundingMode, neg: bool) -> bool {
     match rm {
-        RoundingMode::ToZero => true,
-        RoundingMode::None => false,
+        // None rounds toward zero at the storage precision, so it saturates (F-B, ZF-M27 M27-OVF); Work is internal.
+        RoundingMode::ToZero | RoundingMode::None => true,
+        RoundingMode::Work => false,
         RoundingMode::Down => !neg,
         RoundingMode::Up => neg,
         RoundingMode::FromZero | RoundingMode::ToEven | RoundingMode::ToOdd => false,
@@ -256,13 +257,14 @@ fn check(
         Want::Zero { neg } => got.is_zero() && got.is_negative() == neg,
         Want::Overflow { neg } => {
             if toward_zero(rm, neg) {
-                // The largest finite value at exactly p bits: (2^p - 1) * 2^(EXPONENT_MAX - p).
-                let n = (1u128 << p) - 1;
+                // The largest finite value at exactly p bits (None: every storage bit): (2^b - 1) * 2^(EXPONENT_MAX - b).
+                let b = if rm == RoundingMode::None { STORAGE } else { p };
+                let n = (1u128 << b) - 1;
                 let max = to_num(
                     &Val {
                         neg,
                         n,
-                        e: EXPONENT_MAX - i64::from(p),
+                        e: EXPONENT_MAX - i64::from(b),
                     },
                     0,
                 )?;

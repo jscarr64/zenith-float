@@ -53,15 +53,15 @@ impl ExactNumNumber {
                     // ln(2 * |x|) = ln(2) + ln(|x|)
                     p_x = round_p(p_x + 2);
 
-                    let lnx = x.ln(p_x, RoundingMode::None, cc)?;
+                    let lnx = x.ln(p_x, RoundingMode::Work, cc)?;
 
-                    let ln2 = cc.ln_2_num(p_x, RoundingMode::None)?;
+                    let ln2 = cc.ln_2_num(p_x, RoundingMode::Work)?;
 
-                    ln2.add(&lnx, p_x, RoundingMode::None)?
+                    ln2.add(&lnx, p_x, RoundingMode::Work)?
                 } else {
                     x.set_exponent(self.exponent() + 1);
 
-                    let lnx = x.ln(p_x, RoundingMode::None, cc)?;
+                    let lnx = x.ln(p_x, RoundingMode::Work, cc)?;
 
                     x.set_exponent(self.exponent());
 
@@ -77,15 +77,15 @@ impl ExactNumNumber {
                 };
                 p_x = round_p(p_x + extra);
 
-                let xx = x.mul(&x, p_x, RoundingMode::None)?;
+                let xx = x.mul(&x, p_x, RoundingMode::Work)?;
 
-                let d1 = xx.add(&ONE, p_x, RoundingMode::None)?;
+                let d1 = xx.add(&ONE, p_x, RoundingMode::Work)?;
 
-                let d2 = d1.sqrt(p_x, RoundingMode::None)?;
+                let d2 = d1.sqrt(p_x, RoundingMode::Work)?;
 
                 let d3 = d2.add(&x, p_x, RoundingMode::FromZero)?;
 
-                d3.ln(p_x, RoundingMode::None, cc)?
+                d3.ln(p_x, RoundingMode::Work, cc)?
             };
 
             if ret.try_set_precision(p, rm, p_x)? {

@@ -55,8 +55,8 @@ where
         return None;
     }
     let wrk = work_p(p);
-    let mut fa = f(&a, wrk, RoundingMode::None, cc);
-    let mut fb = f(&b, wrk, RoundingMode::None, cc);
+    let mut fa = f(&a, wrk, RoundingMode::Work, cc);
+    let mut fb = f(&b, wrk, RoundingMode::Work, cc);
     if !opposite_signs(&fa, &fb) {
         return None;
     }
@@ -65,14 +65,14 @@ where
     loop {
         k += 1;
         let mid =
-            ExactNum::add_ref(&a, &b, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
+            ExactNum::add_ref(&a, &b, wrk, RoundingMode::Work).div(&two, wrk, RoundingMode::Work);
         if !strictly_inside(&mid, &a, &b) {
             // The bracket is two adjacent working-precision values: `tol` is below resolution.
             let mut out = mid;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
         }
-        let fm = f(&mid, wrk, RoundingMode::None, cc);
+        let fm = f(&mid, wrk, RoundingMode::Work, cc);
         if !finite(&fm) {
             return None;
         }
@@ -81,9 +81,9 @@ where
         if fm.is_zero()
             || below_tol(
                 &if left {
-                    ExactNum::sub_ref(&mid, &a, wrk, RoundingMode::None)
+                    ExactNum::sub_ref(&mid, &a, wrk, RoundingMode::Work)
                 } else {
-                    ExactNum::sub_ref(&b, &mid, wrk, RoundingMode::None)
+                    ExactNum::sub_ref(&b, &mid, wrk, RoundingMode::Work)
                 }
                 .abs(),
                 tol,
@@ -150,14 +150,14 @@ where
     let wrk = work_p(p);
     let mut x = x0;
     for k in 1..=max_iter {
-        let y = f(&x, wrk, RoundingMode::None, cc);
-        let d = df(&x, wrk, RoundingMode::None, cc);
+        let y = f(&x, wrk, RoundingMode::Work, cc);
+        let d = df(&x, wrk, RoundingMode::Work, cc);
         if !finite(&y) || !finite(&d) || d.is_zero() {
             return None;
         }
         let y_zero = y.is_zero();
-        let step = y.div(&d, wrk, RoundingMode::None);
-        x = x.sub(&step, wrk, RoundingMode::None);
+        let step = y.div(&d, wrk, RoundingMode::Work);
+        x = x.sub(&step, wrk, RoundingMode::Work);
         if !finite(&x) {
             return None;
         }
@@ -210,38 +210,38 @@ where
     }
     let wrk = work_p(p);
     let two = ExactNum::from_u8(2, wrk);
-    let mut fa = f(&a, wrk, RoundingMode::None, cc);
-    let mut fb = f(&b, wrk, RoundingMode::None, cc);
+    let mut fa = f(&a, wrk, RoundingMode::Work, cc);
+    let mut fb = f(&b, wrk, RoundingMode::Work, cc);
     if !opposite_signs(&fa, &fb) {
         return None;
     }
     let mut k = 0usize;
     loop {
         k += 1;
-        let den = ExactNum::sub_ref(&fb, &fa, wrk, RoundingMode::None);
+        let den = ExactNum::sub_ref(&fb, &fa, wrk, RoundingMode::Work);
         if den.is_zero() {
             return None;
         }
-        let c = ExactNum::mul_ref(&a, &fb, wrk, RoundingMode::None)
+        let c = ExactNum::mul_ref(&a, &fb, wrk, RoundingMode::Work)
             .sub(
-                &ExactNum::mul_ref(&b, &fa, wrk, RoundingMode::None),
+                &ExactNum::mul_ref(&b, &fa, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
-            .div(&den, wrk, RoundingMode::None);
+            .div(&den, wrk, RoundingMode::Work);
         if finite(&c) && !strictly_inside(&c, &a, &b) {
             // The secant point hit an endpoint: the bracket is at working resolution.
             let mut out = c;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
         }
-        let fc = f(&c, wrk, RoundingMode::None, cc);
+        let fc = f(&c, wrk, RoundingMode::Work, cc);
         if !finite(&c) || !finite(&fc) {
             return None;
         }
         if fc.is_zero()
             || below_tol(
-                &ExactNum::sub_ref(&b, &a, wrk, RoundingMode::None).abs(),
+                &ExactNum::sub_ref(&b, &a, wrk, RoundingMode::Work).abs(),
                 tol,
             )
         {
@@ -252,11 +252,11 @@ where
         if opposite_signs(&fa, &fc) {
             b = c;
             fb = fc;
-            fa = fa.div(&two, wrk, RoundingMode::None);
+            fa = fa.div(&two, wrk, RoundingMode::Work);
         } else {
             a = c;
             fa = fc;
-            fb = fb.div(&two, wrk, RoundingMode::None);
+            fb = fb.div(&two, wrk, RoundingMode::Work);
         }
     }
 }
@@ -316,7 +316,7 @@ where
         return None;
     }
     let wrk = work_p(p);
-    let none = RoundingMode::None;
+    let none = RoundingMode::Work;
     let one = ExactNum::from_u8(1, wrk);
     let two = ExactNum::from_u8(2, wrk);
     let half_tol = if tol.is_negative() {

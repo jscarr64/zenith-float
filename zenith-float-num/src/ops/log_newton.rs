@@ -43,14 +43,14 @@ fn eval_log_poly(w: &ExactNumNumber, n: usize, p: usize) -> Result<ExactNumNumbe
     let n = n.clamp(1, LOG_COEFFS.len());
     let mut acc = coeff_term(LOG_COEFFS[n - 1], p)?;
     for k in (0..n - 1).rev() {
-        acc = acc.mul(w, p, RoundingMode::None)?;
+        acc = acc.mul(w, p, RoundingMode::Work)?;
         if LOG_COEFFS[k] != 0 {
             let c = coeff_term(LOG_COEFFS[k], p)?;
-            acc = acc.add(&c, p, RoundingMode::None)?;
+            acc = acc.add(&c, p, RoundingMode::Work)?;
         }
     }
     let den = ExactNumNumber::from_u64_internal(LOG_DEN, p)?;
-    acc.div(&den, p, RoundingMode::None)
+    acc.div(&den, p, RoundingMode::Work)
 }
 
 fn newton_term_count(prec: usize) -> usize {
@@ -82,7 +82,7 @@ impl ExactNumNumber {
     /// `|self - 1| < 2^{-p/16}`, the FLINT near-1 shortcut threshold.
     pub(crate) fn ln_is_near_one(&self, p: usize) -> Result<bool, Error> {
         let wp = p.saturating_add(8).max(WORD_BIT_SIZE);
-        let d = self.sub(&ONE, wp, RoundingMode::None)?;
+        let d = self.sub(&ONE, wp, RoundingMode::Work)?;
         let x1mag = abs_bound_lt_2exp(&d);
         Ok(x1mag < -((p as i64) / 16))
     }
@@ -91,7 +91,7 @@ impl ExactNumNumber {
     /// `arb_log_newton`.
     pub(crate) fn ln_near_one(&self, p: usize) -> Result<Self, Error> {
         let wp = p.saturating_add(16).max(WORD_BIT_SIZE);
-        let t = self.sub(&ONE, wp, RoundingMode::None)?;
+        let t = self.sub(&ONE, wp, RoundingMode::Work)?;
         let x1mag = abs_bound_lt_2exp(&t);
         if t.is_zero() {
             return Self::from_word(0, p);
@@ -117,7 +117,7 @@ impl ExactNumNumber {
         let d = self.sub(
             &ONE,
             p.saturating_add(8).max(WORD_BIT_SIZE),
-            RoundingMode::None,
+            RoundingMode::Work,
         )?;
         let x1mag = abs_bound_lt_2exp(&d);
 
@@ -127,14 +127,14 @@ impl ExactNumNumber {
 
         if x1mag < -((p as i64) / 16) {
             let mut ret = self.ln_near_one(p)?;
-            ret.set_precision(p, RoundingMode::None)?;
+            ret.set_precision(p, RoundingMode::Work)?;
             return Ok(ret);
         }
 
         if p <= ARB_LOG_NEWTON_PREC / 2 {
             let mut x = self.clone()?;
-            x.set_precision(p, RoundingMode::None)?;
-            return Self::ln_series(x, RoundingMode::None);
+            x.set_precision(p, RoundingMode::Work)?;
+            return Self::ln_series(x, RoundingMode::Work);
         }
 
         let n = newton_term_count(p);
@@ -148,8 +148,8 @@ impl ExactNumNumber {
 
         let t = if seed_p <= ARB_LOG_NEWTON_PREC / 2 {
             Self::ln_series(
-                self.try_rounded_to(seed_p, RoundingMode::None)?,
-                RoundingMode::None,
+                self.try_rounded_to(seed_p, RoundingMode::Work)?,
+                RoundingMode::Work,
             )?
         } else {
             self.ln_newton(seed_p, cc)?
@@ -161,16 +161,16 @@ impl ExactNumNumber {
             neg_t.set_sign(if t.is_negative() { Sign::Pos } else { Sign::Neg });
         }
         // exp of a seed-sized argument at wp bits: uses bit-burst when wp is large.
-        let e = neg_t.exp(wp, RoundingMode::None, cc)?;
+        let e = neg_t.exp(wp, RoundingMode::Work, cc)?;
         let mut xw = self.clone()?;
-        xw.set_precision(wp, RoundingMode::None)?;
+        xw.set_precision(wp, RoundingMode::Work)?;
         let w = xw
-            .mul(&e, wp, RoundingMode::None)?
-            .sub(&ONE, wp2, RoundingMode::None)?;
+            .mul(&e, wp, RoundingMode::Work)?
+            .sub(&ONE, wp2, RoundingMode::Work)?;
 
         let corr = eval_log_poly(&w, n, wp2)?;
-        let mut ret = t.add(&corr, p, RoundingMode::None)?;
-        ret.set_precision(p, RoundingMode::None)?;
+        let mut ret = t.add(&corr, p, RoundingMode::Work)?;
+        ret.set_precision(p, RoundingMode::Work)?;
         Ok(ret)
     }
 }

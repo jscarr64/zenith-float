@@ -69,10 +69,10 @@ impl ExactNumNumber {
         loop {
             let p_x = p_wrk + 3;
 
-            let mut ret = match y.div(x, p_x, RoundingMode::None) {
+            let mut ret = match y.div(x, p_x, RoundingMode::Work) {
                 // |y / x| is beyond the largest number: the angle is `+-pi/2` for either sign of `x`.
                 Err(Error::ExponentOverflow(_)) => {
-                    Self::signed_half_pi(y.sign(), p_x, RoundingMode::None, cc, inexact)?
+                    Self::signed_half_pi(y.sign(), p_x, RoundingMode::Work, cc, inexact)?
                 }
                 Err(e) => return Err(e),
                 Ok(q) => {
@@ -85,13 +85,13 @@ impl ExactNumNumber {
                         a.set_inexact(a.inexact() | inexact);
                         return Ok(a);
                     }
-                    let a = q.atan(p_x, RoundingMode::None, cc)?;
+                    let a = q.atan(p_x, RoundingMode::Work, cc)?;
                     if x.is_positive() {
                         a
                     } else {
                         // `signed_pi` already carries `y`'s sign: Q2 is `atan + π`, Q3 is `atan − π`.
-                        let pi = Self::signed_pi(y.sign(), p_x, RoundingMode::None, cc, false)?;
-                        a.add(&pi, p_x, RoundingMode::None)?
+                        let pi = Self::signed_pi(y.sign(), p_x, RoundingMode::Work, cc, false)?;
+                        a.add(&pi, p_x, RoundingMode::Work)?
                     }
                 }
             };

@@ -20,13 +20,13 @@ fn ui(k: usize, p: usize) -> ExactComplex {
 }
 
 fn add_ui(x: &ExactComplex, k: usize, p: usize) -> ExactComplex {
-    ExactComplex::add_ref(x, &ui(k, p), p, RoundingMode::None)
+    ExactComplex::add_ref(x, &ui(k, p), p, RoundingMode::Work)
 }
 
 /// `log2(|z|)` rounded up to an integer, in `Q32`: `|z|` in `[2^(e-1), 2^e)` at 64 bits gives `e`. Overestimating by at
 /// most one bit only adds a few terms. `0` for a non-finite `z`; the caller handles `z = 0`.
 fn log2_mag(z: &ExactComplex) -> i128 {
-    match z.abs(64, RoundingMode::None).exponent() {
+    match z.abs(64, RoundingMode::Work).exponent() {
         Some(e) => i128::from(e).saturating_mul(ONE),
         None => 0,
     }
@@ -50,7 +50,7 @@ fn choose_n_0f1(a: &ExactComplex, z: &ExactComplex, prec: usize) -> Option<usize
         return Some(1);
     }
     let log2_z = log2_mag(z);
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let are = rough_mid(a.re());
     let aim2 = rough_mid(a.im()).sqr(64, rm);
     let n_max = u32::MAX as usize;
@@ -107,7 +107,7 @@ fn rough_mid(x: &ExactNum) -> ExactNum {
     if !(-1022..=63).contains(&e) {
         return one;
     }
-    let m = one.ldexp(e, 64, RoundingMode::None);
+    let m = one.ldexp(e, 64, RoundingMode::Work);
     if x.is_negative() {
         m.neg()
     } else {
@@ -125,7 +125,7 @@ fn factor_upper(z: Option<&ExactComplex>, p: usize) -> ExactComplex {
 
 /// `C(k) = (a+k)(1+k)`.
 fn factor_lower(a: &ExactComplex, k: usize, p: usize) -> ExactComplex {
-    add_ui(a, k, p).mul(&ui(k + 1, p), p, RoundingMode::None)
+    add_ui(a, k, p).mul(&ui(k + 1, p), p, RoundingMode::Work)
 }
 
 /// Arb `bsplit` for `{}_0F_1`, `invz = 0`.
@@ -151,21 +151,21 @@ fn bsplit(
         let b_out = if bb - m == 1 {
             // B2 = C2
             let sum = if m - aa == 1 {
-                ExactComplex::add_ref(&a1, &c1, p, RoundingMode::None)
+                ExactComplex::add_ref(&a1, &c1, p, RoundingMode::Work)
             } else {
-                ExactComplex::add_ref(&a1, &b1, p, RoundingMode::None)
+                ExactComplex::add_ref(&a1, &b1, p, RoundingMode::Work)
             };
-            sum.mul(&c2, p, RoundingMode::None)
+            sum.mul(&c2, p, RoundingMode::Work)
         } else {
             let t = if m - aa == 1 {
-                c1.mul(&c2, p, RoundingMode::None)
+                c1.mul(&c2, p, RoundingMode::Work)
             } else {
-                b1.mul(&c2, p, RoundingMode::None)
+                b1.mul(&c2, p, RoundingMode::Work)
             };
-            t.add(&a1.mul(&b2, p, RoundingMode::None), p, RoundingMode::None)
+            t.add(&a1.mul(&b2, p, RoundingMode::Work), p, RoundingMode::Work)
         };
-        let a_out = a1.mul(&a2, p, RoundingMode::None);
-        let c_out = c1.mul(&c2, p, RoundingMode::None);
+        let a_out = a1.mul(&a2, p, RoundingMode::Work);
+        let c_out = c1.mul(&c2, p, RoundingMode::Work);
         (a_out, b_out, c_out)
     }
 }
@@ -185,9 +185,9 @@ fn sum_forward(
         // term *= z / ((a+k)(k+1))
         let den = factor_lower(a, k, p);
         term = term
-            .mul(z, p, RoundingMode::None)
-            .div(&den, p, RoundingMode::None);
-        s = s.add(&term, p, RoundingMode::None);
+            .mul(z, p, RoundingMode::Work)
+            .div(&den, p, RoundingMode::Work);
+        s = s.add(&term, p, RoundingMode::Work);
         k += 1;
     }
     (s, term)
@@ -209,8 +209,8 @@ pub(crate) fn hypgeom_0f1(a: &ExactComplex, z: &ExactComplex, p: usize) -> Exact
     // bound in pfq_direct. Ziv on the Bessel entry already covers the remainder;
     // the sum itself is (A+B)/C over 0..n-1, same as pfq_sum_bs.
     let (u, v, w) = bsplit(a, z, 0, n - 1, p);
-    u.add(&v, p, RoundingMode::None)
-        .div(&w, p, RoundingMode::None)
+    u.add(&v, p, RoundingMode::Work)
+        .div(&w, p, RoundingMode::Work)
 }
 
 #[cfg(test)]

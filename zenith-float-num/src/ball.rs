@@ -97,7 +97,7 @@ impl Ball {
         let down = RoundingMode::Down;
         let mid = self.mid.exp(p, rm, cc);
         let hi = self.mid.exp(p, up, cc).mul(&self.rad.exp(p, up, cc), p, up);
-        let neg_r = ExactNum::from_i8(-1, p).mul(&self.rad, p, RoundingMode::None);
+        let neg_r = ExactNum::from_i8(-1, p).mul(&self.rad, p, RoundingMode::Work);
         let lo = self
             .mid
             .exp(p, down, cc)
@@ -245,7 +245,7 @@ impl Ball {
         if x.is_nan() || self.mid.is_nan() || self.rad.is_nan() {
             return false;
         }
-        let d = ExactNum::sub_ref(&self.mid, x, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&self.mid, x, p, RoundingMode::Work).abs();
         matches!(d.compare(&self.rad), Some(c) if c <= 0)
     }
 }
@@ -406,7 +406,7 @@ impl ComplexBall {
         if z.is_nan() || self.mid.is_nan() || self.rad.is_nan() {
             return false;
         }
-        let d = ExactComplex::sub_ref(z, &self.mid, p, RoundingMode::None).abs(p, RoundingMode::Up);
+        let d = ExactComplex::sub_ref(z, &self.mid, p, RoundingMode::Work).abs(p, RoundingMode::Up);
         matches!(d.compare(&self.rad), Some(c) if c <= 0)
     }
 }
@@ -456,7 +456,7 @@ where
     loop {
         let mut xs = alloc::vec::Vec::with_capacity(inputs.len());
         for x in inputs {
-            match x.try_rounded_to(p_wrk, RoundingMode::None) {
+            match x.try_rounded_to(p_wrk, RoundingMode::Work) {
                 Ok(y) => xs.push(y),
                 Err(e) => return ExactNum::nan(Some(e)),
             }

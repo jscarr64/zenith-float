@@ -40,7 +40,7 @@ fn split_prec(s: &str) -> (&str, usize) {
 
 pub(super) fn rm_name(rm: RoundingMode) -> &'static str {
     match rm {
-        RoundingMode::None => "None",
+        RoundingMode::None | RoundingMode::Work => "None",
         RoundingMode::Up => "Up",
         RoundingMode::Down => "Down",
         RoundingMode::ToZero => "ToZero",

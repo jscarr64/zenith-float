@@ -323,7 +323,7 @@ impl ExactNumPoly {
                     return Some(ExactInt::zero());
                 }
                 let w = c.mantissa_max_bit_len()?;
-                let x = c.ldexp_ref(k, w, RoundingMode::None);
+                let x = c.ldexp_ref(k, w, RoundingMode::Work);
                 if !x.is_int() {
                     return None;
                 }
@@ -340,7 +340,7 @@ impl ExactNumPoly {
         };
         let exact = |x: &ExactInt| {
             let w = x.bit_length().max(1).div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
-            x.to_exact_num(w, RoundingMode::None)
+            x.to_exact_num(w, RoundingMode::Work)
         };
         let lcn = exact(lc);
         let xs: Vec<ExactNum> = v
@@ -444,7 +444,7 @@ impl ExactNumPoly {
         let wrk = Self::work_p(p);
         let lc = self.leading();
         if n == 1 {
-            let r = self.coeff(0).div(&lc, wrk, RoundingMode::None).neg();
+            let r = self.coeff(0).div(&lc, wrk, RoundingMode::Work).neg();
             let mut r = r;
             let _ = r.set_precision(p, rm);
             return Some(vec![r]);
@@ -454,30 +454,30 @@ impl ExactNumPoly {
         let b = self.coeff(1);
         let c = self.coeff(0);
         let four = ExactNum::from_u8(4, wrk);
-        let disc = b.sqr(wrk, RoundingMode::None).sub(
+        let disc = b.sqr(wrk, RoundingMode::Work).sub(
             &four
-                .mul(&a, wrk, RoundingMode::None)
-                .mul(&c, wrk, RoundingMode::None),
+                .mul(&a, wrk, RoundingMode::Work)
+                .mul(&c, wrk, RoundingMode::Work),
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         if disc.is_negative() {
             return Some(Vec::new());
         }
-        let two_a = ExactNum::from_u8(2, wrk).mul(&a, wrk, RoundingMode::None);
+        let two_a = ExactNum::from_u8(2, wrk).mul(&a, wrk, RoundingMode::Work);
         if two_a.is_zero() {
             return None;
         }
-        let sqrt_d = disc.sqrt(wrk, RoundingMode::None);
+        let sqrt_d = disc.sqrt(wrk, RoundingMode::Work);
         // `-b + sqrt_d` is `sqrt_d - b`; `-b - sqrt_d` is `-sqrt_d - b` (same value, same rounding).
         let neg_sqrt_d = sqrt_d.neg_via_mul();
         let mut r1 = sqrt_d
-            .sub(&b, wrk, RoundingMode::None)
-            .div(&two_a, wrk, RoundingMode::None);
+            .sub(&b, wrk, RoundingMode::Work)
+            .div(&two_a, wrk, RoundingMode::Work);
         let mut r0 =
             neg_sqrt_d
-                .sub(&b, wrk, RoundingMode::None)
-                .div(&two_a, wrk, RoundingMode::None);
+                .sub(&b, wrk, RoundingMode::Work)
+                .div(&two_a, wrk, RoundingMode::Work);
         let _ = r0.set_precision(p, rm);
         let _ = r1.set_precision(p, rm);
         if disc.is_zero() {

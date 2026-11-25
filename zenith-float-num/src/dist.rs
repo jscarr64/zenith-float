@@ -74,7 +74,7 @@ impl ExactNum {
             return ExactNum::from_u8(0, p);
         }
         let pw = work_p(p);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let z = ExactNum::sub_ref(self, mu, pw, none);
         let two = ExactNum::from_u8(2, pw);
         let sig2 = sigma.sqr(pw, none);
@@ -132,7 +132,7 @@ impl ExactNum {
             return dist_nan();
         }
         let pw = work_p(p);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let two = ExactNum::from_u8(2, pw);
         let z = ExactNum::sub_ref(self, mu, pw, none).div(
             &two.sqrt(pw, none).mul(sigma, pw, none),
@@ -169,7 +169,7 @@ impl ExactNum {
             return dist_nan();
         }
         let pw = work_p(p);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let am1 = ExactNum::from_u8(1, pw).neg().add(alpha, pw, none);
         let xb = ExactNum::div_ref(self, beta, pw, none);
         let num = self
@@ -210,7 +210,7 @@ impl ExactNum {
             return dist_nan();
         }
         let pw = work_p(p);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let one = ExactNum::from_u8(1, pw);
         let am1 = ExactNum::from_u8(1, pw).neg().add(alpha, pw, none);
         let bm1 = ExactNum::from_u8(1, pw).neg().add(beta, pw, none);
@@ -245,7 +245,7 @@ impl ExactNum {
             return dist_nan();
         }
         let pw = work_p(p);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let kf = ExactNum::from_u8(1, pw)
             .add(self, pw, none)
             .gamma(pw, none, cc);
@@ -284,7 +284,7 @@ impl ExactNum {
             return dist_nan();
         }
         let pw = work_p(p);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let c = binom_mul(n, self, pw);
         let q = ExactNum::from_u8(1, pw).sub(prob, pw, none);
         let nmk = ExactNum::sub_ref(n, self, pw, none);
@@ -310,7 +310,7 @@ impl ExactNum {
             return dist_nan();
         }
         let pw = work_p(p);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let two = ExactNum::from_u8(2, pw);
         let s = ExactNum::div_ref(k, &two, pw, none);
         let xh = ExactNum::div_ref(self, &two, pw, none);
@@ -336,7 +336,7 @@ impl ExactNum {
             return dist_nan();
         }
         let pw = work_p(p);
-        let none = RoundingMode::None;
+        let none = RoundingMode::Work;
         let one = ExactNum::from_u8(1, pw);
         let two = ExactNum::from_u8(2, pw);
         let np1 = ExactNum::from_u8(1, pw).add(nu, pw, none);
@@ -359,7 +359,7 @@ impl ExactNum {
 }
 
 fn binom_mul(n: &ExactNum, k: &ExactNum, pw: usize) -> ExactNum {
-    let none = RoundingMode::None;
+    let none = RoundingMode::Work;
     let one = ExactNum::from_u8(1, pw);
     if k.is_zero() {
         return one;

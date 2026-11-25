@@ -80,7 +80,7 @@ impl Consts {
         p: usize,
         rm: RoundingMode,
     ) -> Result<ExactNum, Error> {
-        if !(MIN_PRECISION..=MAX_PRECISION).contains(&p) || rm == RoundingMode::None {
+        if !(MIN_PRECISION..=MAX_PRECISION).contains(&p) || rm.skips_rounding() {
             return Err(Error::InvalidArgument);
         }
         let mut w = round_p(p)
@@ -138,9 +138,9 @@ impl Consts {
             .checked_add(WORD_BIT_SIZE)
             .ok_or(Error::InvalidArgument)?;
         let mut end = if up {
-            a.add(&eps, wide, RoundingMode::None)?
+            a.add(&eps, wide, RoundingMode::Work)?
         } else {
-            a.sub(&eps, wide, RoundingMode::None)?
+            a.sub(&eps, wide, RoundingMode::Work)?
         };
         end.set_precision(p, rm)?;
         Ok(end)

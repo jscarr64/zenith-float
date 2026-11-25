@@ -41,16 +41,16 @@ impl ExactNumNumber {
 
         loop {
             let p_x = p_wrk + add_p;
-            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::Work)?;
             x.set_inexact(false);
 
-            let mut ret = x.asin(p_x, RoundingMode::None, cc)?;
+            let mut ret = x.asin(p_x, RoundingMode::Work, cc)?;
 
-            let mut pi = cc.pi_num(p_x, RoundingMode::None)?;
+            let mut pi = cc.pi_num(p_x, RoundingMode::Work)?;
             pi.set_exponent(pi.exponent() - 1);
 
-            let ret2 = pi.add(&ret, p_x, RoundingMode::None)?;
-            ret = pi.sub(&ret, p_x, RoundingMode::None)?;
+            let ret2 = pi.add(&ret, p_x, RoundingMode::Work)?;
+            ret = pi.sub(&ret, p_x, RoundingMode::Work)?;
 
             let t = ret
                 .exponent()

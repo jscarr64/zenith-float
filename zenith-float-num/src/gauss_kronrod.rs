@@ -226,7 +226,7 @@ fn ord_num(a: &ExactNum, b: &ExactNum) -> Ordering {
 
 /// `β_j = j² / (4j² − 1)` for `j = 1..=count` (Laurie’s squared sub-diagonals).
 fn legendre_beta_sq(count: usize, p: usize) -> Option<Vec<ExactNum>> {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let one = ExactNum::from_u8(1, p);
     let mut b = Vec::with_capacity(count);
     for j in 1..=count {
@@ -255,7 +255,7 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
     let slen = n / 2 + 2;
     let mut s = vec![ExactNum::new(p); slen];
     let mut t = vec![ExactNum::new(p); slen];
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     t[1] = b[n].clone();
 
     for m in 0..n.saturating_sub(1) {
@@ -356,7 +356,7 @@ fn s_set(s: &mut [ExactNum], idx: i32, value: ExactNum) -> Option<()> {
 ///
 /// `p_0 = 1`, `p_1 = λ`, `p_{k+1} = λ p_k − β_k p_{k−1}`.
 fn char_poly(lam: &ExactNum, beta: &[ExactNum], p: usize) -> Option<(ExactNum, ExactNum)> {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     // `None` in `p0` / `p1` stands for `λ` itself, read through the borrow: `p_1 = λ` is
     // never copied.
     let one = ExactNum::from_u8(1, p);
@@ -394,7 +394,7 @@ fn polish_root(
     mut hi: ExactNum,
     p: usize,
 ) -> Option<ExactNum> {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let two = ExactNum::from_u8(2, p);
     let (mut flo, _) = char_poly(&lo, beta, p)?;
     if flo.is_zero() {
@@ -461,7 +461,7 @@ fn positive_roots(beta: &[ExactNum], want: usize, p: usize) -> Option<Vec<ExactN
 }
 
 fn isolate_roots(beta: &[ExactNum], want: usize, steps: usize, p: usize) -> Option<Vec<ExactNum>> {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let denom = ExactNum::from_u32(steps as u32, p);
     let x1 = ExactNum::from_u32(1, p).div(&denom, p, rm);
     let (mut prev_y, _) = char_poly(&x1, beta, p)?;
@@ -517,7 +517,7 @@ fn jacobi_weight(
     mu0: &ExactNum,
     p: usize,
 ) -> Option<ExactNum> {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let m = beta_sq.len() + 1;
     let mut off = Vec::with_capacity(beta_sq.len());
     for b in beta_sq {
@@ -564,7 +564,7 @@ fn jacobi_weight(
 }
 
 fn weight_sum_ok(weights: &[ExactNum], target: &ExactNum, p: usize) -> bool {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let mut acc = ExactNum::new(p);
     for w in weights {
         acc = acc.add(w, p, rm);
@@ -658,7 +658,7 @@ fn eval_panel<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let two = ExactNum::from_u8(2, p);
     let half = ExactNum::sub_ref(b, a, p, rm).div(&two, p, rm);
     let mid = ExactNum::add_ref(a, b, p, rm).div(&two, p, rm);
@@ -721,10 +721,10 @@ where
     let wrk = work_p(p);
     let (nodes, w_gauss, w_kronrod) =
         kronrod_legendre_at(GK_GAUSS_ORDER, wrk, cc).ok_or(QuadratureError::NotConverged)?;
-    let aa = a.rounded_to(wrk, RoundingMode::None);
-    let bb = b.rounded_to(wrk, RoundingMode::None);
+    let aa = a.rounded_to(wrk, RoundingMode::Work);
+    let bb = b.rounded_to(wrk, RoundingMode::Work);
     let (k, g) = eval_panel(&mut f, [&aa, &bb], [&nodes, &w_gauss, &w_kronrod], wrk, cc)?;
-    let err = ExactNum::sub_ref(&k, &g, wrk, RoundingMode::None).abs();
+    let err = ExactNum::sub_ref(&k, &g, wrk, RoundingMode::Work).abs();
     if !finite(&k) || !finite(&g) || !finite(&err) {
         return Err(QuadratureError::NotConverged);
     }
@@ -739,7 +739,7 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
     if seq.is_empty() || seq.iter().any(|s| !finite(s)) {
         return None;
     }
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let n = seq.len();
     let mut cols: Vec<Vec<ExactNum>> = Vec::with_capacity(n);
     cols.push(seq.to_vec());
@@ -804,7 +804,7 @@ pub fn wynn_epsilon(seq: &[ExactNum], p: usize, rm: RoundingMode) -> Option<Exac
         if !finite(s) {
             return None;
         }
-        let y = s.rounded_to(wrk, RoundingMode::None);
+        let y = s.rounded_to(wrk, RoundingMode::Work);
         lifted.push(y);
     }
     let value = wynn_table(&lifted, wrk)?.value;
@@ -812,7 +812,7 @@ pub fn wynn_epsilon(seq: &[ExactNum], p: usize, rm: RoundingMode) -> Option<Exac
 }
 
 fn abs_tolerance(tol_rel: &ExactNum, estimate: &ExactNum, p: usize) -> ExactNum {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let floor = tiny(p, 1);
     let one = ExactNum::from_u8(1, p);
     let negated;
@@ -835,7 +835,7 @@ fn abs_tolerance(tol_rel: &ExactNum, estimate: &ExactNum, p: usize) -> ExactNum 
 }
 
 fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
-    let rm = RoundingMode::None;
+    let rm = RoundingMode::Work;
     let mut k = ExactNum::new(p);
     let mut g = ExactNum::new(p);
     let mut e = ExactNum::new(p);
@@ -917,11 +917,11 @@ where
     let wrk = work_p(p);
     let (nodes, w_gauss, w_kronrod) =
         kronrod_legendre_at(GK_GAUSS_ORDER, wrk, cc).ok_or(QuadratureError::NotConverged)?;
-    let aa = a.rounded_to(wrk, RoundingMode::None);
-    let bb = b.rounded_to(wrk, RoundingMode::None);
-    let tol_work = tol_rel.rounded_to(wrk, RoundingMode::None);
+    let aa = a.rounded_to(wrk, RoundingMode::Work);
+    let bb = b.rounded_to(wrk, RoundingMode::Work);
+    let tol_work = tol_rel.rounded_to(wrk, RoundingMode::Work);
     let (k0, g0) = eval_panel(&mut f, [&aa, &bb], [&nodes, &w_gauss, &w_kronrod], wrk, cc)?;
-    let err0 = ExactNum::sub_ref(&k0, &g0, wrk, RoundingMode::None).abs();
+    let err0 = ExactNum::sub_ref(&k0, &g0, wrk, RoundingMode::Work).abs();
     let mut panels = vec![Panel {
         a: aa,
         b: bb,
@@ -964,7 +964,7 @@ where
             if let Some(ex) = wynn_table(&seq, wrk) {
                 if ex.order >= 2 {
                     if let Some(prev) = &prev_eps {
-                        let de = ExactNum::sub_ref(&ex.value, prev, wrk, RoundingMode::None).abs();
+                        let de = ExactNum::sub_ref(&ex.value, prev, wrk, RoundingMode::Work).abs();
                         if finite(&de) && leq(&de, &tol) {
                             let raw =
                                 if de.compare(&total_err) == Some(1) { de } else { total_err };
@@ -1002,10 +1002,10 @@ where
         let left_a = core::mem::replace(&mut panels[worst].a, ExactNum::new(wrk));
         let right_b = core::mem::replace(&mut panels[worst].b, ExactNum::new(wrk));
         let two = ExactNum::from_u8(2, wrk);
-        let mid = ExactNum::add_ref(&left_a, &right_b, wrk, RoundingMode::None).div(
+        let mid = ExactNum::add_ref(&left_a, &right_b, wrk, RoundingMode::Work).div(
             &two,
             wrk,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         if mid.compare(&left_a) != Some(1) || mid.compare(&right_b) != Some(-1) {
             return Err(QuadratureError::NotConverged);
@@ -1024,8 +1024,8 @@ where
             wrk,
             cc,
         )?;
-        let e1 = ExactNum::sub_ref(&k1, &g1, wrk, RoundingMode::None).abs();
-        let e2 = ExactNum::sub_ref(&k2, &g2, wrk, RoundingMode::None).abs();
+        let e1 = ExactNum::sub_ref(&k1, &g1, wrk, RoundingMode::Work).abs();
+        let e2 = ExactNum::sub_ref(&k2, &g2, wrk, RoundingMode::Work).abs();
         panels[worst] = Panel {
             a: left_a,
             b: mid.clone(),
@@ -1132,7 +1132,7 @@ where
     if !finite(&step) {
         return ExactNum::new(p);
     }
-    let end = end.rounded_to(p, RoundingMode::None);
+    let end = end.rounded_to(p, RoundingMode::Work);
     let x = if positive { end.add(&step, p, rm) } else { end.sub(&step, p, rm) };
     let jac = one.div(&den.sqr(p, rm), p, rm);
     weighted_sample(f, x, jac, p, rm, cc)

@@ -43,10 +43,10 @@ impl ExactNumNumber {
             // `1/(2x²)` is far below the working precision.
             let p_exp = Exponent::try_from(p_x).map_err(|_| Error::InvalidArgument)?;
             if self.is_positive() && self.exponent() > p_exp + 2 {
-                let r = one.div(self, p_x, RoundingMode::None)?;
+                let r = one.div(self, p_x, RoundingMode::Work)?;
                 let mut ret =
-                    self.ln(p_x, RoundingMode::None, cc)?
-                        .add(&r, p_x, RoundingMode::None)?;
+                    self.ln(p_x, RoundingMode::Work, cc)?
+                        .add(&r, p_x, RoundingMode::Work)?;
                 if ret.try_set_precision(p, rm, p_wrk)? {
                     ret.set_inexact(true);
                     return Ok(ret);
@@ -55,7 +55,7 @@ impl ExactNumNumber {
                 continue;
             }
 
-            let u = one.add(self, p_x, RoundingMode::None)?;
+            let u = one.add(self, p_x, RoundingMode::Work)?;
 
             if u.is_zero() {
                 return Err(Error::DivisionByZero);
@@ -65,15 +65,15 @@ impl ExactNumNumber {
             }
 
             let mut ret = if u.cmp(&one) == 0 {
-                self.try_rounded_to(p_x, RoundingMode::None)?
+                self.try_rounded_to(p_x, RoundingMode::Work)?
             } else {
-                let ln_u = u.ln(p_x, RoundingMode::None, cc)?;
-                let um1 = u.sub(&one, p_x, RoundingMode::None)?;
+                let ln_u = u.ln(p_x, RoundingMode::Work, cc)?;
+                let um1 = u.sub(&one, p_x, RoundingMode::Work)?;
                 if um1.cmp(self) == 0 {
                     ln_u
                 } else {
-                    ln_u.mul(self, p_x, RoundingMode::None)?
-                        .div(&um1, p_x, RoundingMode::None)?
+                    ln_u.mul(self, p_x, RoundingMode::Work)?
+                        .div(&um1, p_x, RoundingMode::Work)?
                 }
             };
 

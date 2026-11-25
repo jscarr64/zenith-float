@@ -87,12 +87,12 @@ impl PiCache {
         let p0 = p.add_full_prec(&q1)?;
 
         let f3 = ExactNumNumber::from_word(10005, 1)?;
-        let f4 = f3.sqrt(k, RoundingMode::None)?;
+        let f4 = f3.sqrt(k, RoundingMode::Work)?;
         let prec = p0.mantissa_max_bit_len().max(f4.mantissa_max_bit_len());
-        let f5 = p0.mul(&f4, prec, RoundingMode::None)?;
+        let f5 = p0.mul(&f4, prec, RoundingMode::Work)?;
 
         let prec = q0.mantissa_max_bit_len().max(f5.mantissa_max_bit_len());
-        let ret = q0.div(&f5, prec, RoundingMode::None)?;
+        let ret = q0.div(&f5, prec, RoundingMode::Work)?;
 
         Ok(ret)
     }

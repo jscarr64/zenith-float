@@ -73,13 +73,13 @@ fn to_exact(bits: u16, f: Layout, p: usize) -> ExactNum {
         FpCategory::Zero => ExactNum::from_u8(0, p),
         // (-1)^s * m * 2^(1 - bias - frac)
         FpCategory::Subnormal => {
-            ExactNum::from_u64(u64::from(m), p).ldexp(1 - f.bias - fr, p, RoundingMode::None)
+            ExactNum::from_u64(u64::from(m), p).ldexp(1 - f.bias - fr, p, RoundingMode::Work)
         }
         // (-1)^s * (2^frac + m) * 2^(e - bias - frac)
         FpCategory::Normal => ExactNum::from_u64(u64::from(m | f.hidden()), p).ldexp(
             Exponent::from(e) - f.bias - fr,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         ),
     };
     if neg {
@@ -136,7 +136,7 @@ fn leading_zero_bits(words: &[Word]) -> Option<usize> {
 fn overflow(sign: u16, f: Layout, rm: RoundingMode) -> Result<u16, Error> {
     let neg = sign != 0;
     let to_inf = match rm {
-        RoundingMode::None => return Err(Error::InvalidArgument),
+        RoundingMode::None | RoundingMode::Work => return Err(Error::InvalidArgument),
         RoundingMode::ToEven | RoundingMode::ToOdd | RoundingMode::FromZero => true,
         RoundingMode::ToZero => false,
         RoundingMode::Up => !neg,
@@ -194,7 +194,7 @@ fn from_exact(x: &ExactNum, f: Layout, rm: RoundingMode) -> Result<u16, Error> {
     let inexact = round || sticky;
     let odd = q & 1 == 1;
     let up = match rm {
-        RoundingMode::None => {
+        RoundingMode::None | RoundingMode::Work => {
             if inexact {
                 return Err(Error::InvalidArgument);
             }

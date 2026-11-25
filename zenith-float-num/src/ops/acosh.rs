@@ -53,11 +53,11 @@ impl ExactNumNumber {
                     // ln(2) + ln(x)
                     p_x += 4; // ln2, ln x and their sum: below 3 ulps of p_x
 
-                    let lnx = x.ln(p_x, RoundingMode::None, cc)?;
+                    let lnx = x.ln(p_x, RoundingMode::Work, cc)?;
 
-                    let ln2 = cc.ln_2_num(p_x, RoundingMode::None)?;
+                    let ln2 = cc.ln_2_num(p_x, RoundingMode::Work)?;
 
-                    ln2.add(&lnx, p_x, RoundingMode::None)?
+                    ln2.add(&lnx, p_x, RoundingMode::Work)?
                 } else {
                     // ln at p_x is within one p_x ulp and ln(2x) - acosh(x) = 1/(4x^2) + ... is far below it;
                     // 3 guard bits keep the sum under the 2^-p_wrk the rounding test is told (it was 0).
@@ -67,11 +67,11 @@ impl ExactNumNumber {
                         0,
                         self.exponent() + 1,
                         self.mantissa_max_bit_len(),
-                        RoundingMode::None,
+                        RoundingMode::Work,
                         (false, None),
                     )?;
 
-                    two_x.ln(p_x, RoundingMode::None, cc)?
+                    two_x.ln(p_x, RoundingMode::Work, cc)?
                 }
             } else {
                 // ln(x + sqrt(x*x - 1))
@@ -82,15 +82,15 @@ impl ExactNumNumber {
 
                 p_x += 6 + additional_prec;
 
-                let xx = x.mul(x, p_x, RoundingMode::None)?;
+                let xx = x.mul(x, p_x, RoundingMode::Work)?;
 
-                let d1 = xx.sub(&ONE, p_x, RoundingMode::None)?;
+                let d1 = xx.sub(&ONE, p_x, RoundingMode::Work)?;
 
-                let d2 = d1.sqrt(p_x, RoundingMode::None)?;
+                let d2 = d1.sqrt(p_x, RoundingMode::Work)?;
 
                 let d3 = d2.add(x, p_x, RoundingMode::FromZero)?;
 
-                d3.ln(p_x, RoundingMode::None, cc)?
+                d3.ln(p_x, RoundingMode::Work, cc)?
             };
 
             if ret.try_set_precision(p, rm, p_wrk)? {

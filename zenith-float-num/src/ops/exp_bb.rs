@@ -146,7 +146,7 @@ fn exp_sum_bs_simple(x: &ExactInt, r: i64, n: i64) -> Result<(ExactInt, ExactInt
 }
 
 fn int_to_num(i: &ExactInt, p: usize) -> Result<ExactNumNumber, Error> {
-    i.to_exact_num_number(p, RoundingMode::None)
+    i.to_exact_num_number(p, RoundingMode::Work)
 }
 
 fn int_mul(a: &ExactInt, b: &ExactInt) -> Result<ExactInt, Error> {
@@ -214,11 +214,11 @@ pub(crate) fn exp_arf_bb(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber,
                 let mut tnum = int_to_num(&tt, work)?;
                 tnum.set_exponent(tnum.exponent() - qexp);
                 let qnum = int_to_num(&qq, work)?;
-                let w = tnum.div(&qnum, wp_usize, RoundingMode::None)?;
+                let w = tnum.div(&qnum, wp_usize, RoundingMode::Work)?;
                 let one = ExactNumNumber::from_word(1, wp_usize)?;
-                one.add(&w, wp_usize, RoundingMode::None)?
+                one.add(&w, wp_usize, RoundingMode::Work)?
             };
-            z = z.mul(&one_plus, wp_usize, RoundingMode::None)?;
+            z = z.mul(&one_plus, wp_usize, RoundingMode::Work)?;
         }
 
         // Remove the used bits: t -= u << (wp - r)
@@ -244,10 +244,10 @@ pub(crate) fn exp_arf_bb(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber,
                 let mut tnum = int_to_num(&tt, work)?;
                 tnum.set_exponent(tnum.exponent() - qexp);
                 let qnum = int_to_num(&qq, work)?;
-                let w = tnum.div(&qnum, wp_usize, RoundingMode::None)?;
+                let w = tnum.div(&qnum, wp_usize, RoundingMode::Work)?;
                 let one = ExactNumNumber::from_word(1, wp_usize)?;
-                let one_plus = one.add(&w, wp_usize, RoundingMode::None)?;
-                z = z.mul(&one_plus, wp_usize, RoundingMode::None)?;
+                let one_plus = one.add(&w, wp_usize, RoundingMode::Work)?;
+                z = z.mul(&one_plus, wp_usize, RoundingMode::Work)?;
             }
             break;
         }
@@ -255,10 +255,10 @@ pub(crate) fn exp_arf_bb(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber,
 
     // exp(x) = exp(x/2^q)^{2^q}
     for _ in 0..q {
-        z = z.mul(&z, wp_usize, RoundingMode::None)?;
+        z = z.mul(&z, wp_usize, RoundingMode::Work)?;
     }
 
-    z.set_precision(p, RoundingMode::None)?;
+    z.set_precision(p, RoundingMode::Work)?;
     // exp(x) for a nonzero x is never a dyadic number; the sum above can still land exactly on a rounding
     // midpoint (one Taylor term for a tiny x: 1 + x), which the caller must not round as an exact tie.
     z.set_inexact(true);

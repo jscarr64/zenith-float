@@ -1,5 +1,5 @@
 //! `add`, `sub`, `mul`, `div` and `sqr` with subnormal operands (either side, either sign) are correctly
-//! rounded in all 7 modes (None as MPFR toward zero at rp(p, 64), FIXLIST ZF-M27; one queued NONE-GAP row): checked against MPFR on the shifted frame (`shifted.rs`: MPFR alone cannot hold the operands below
+//! rounded in all 7 modes (None as MPFR toward zero at rp(p, 64), FIXLIST ZF-M27; an overflow saturates to +-MAX, M27-OVF): checked against MPFR on the shifted frame (`shifted.rs`: MPFR alone cannot hold the operands below
 //! `EXPONENT_MIN`) on a grid of subnormal and tiny normal
 //! operands, through the borrowed forms (`*_ref`) and the owned forms. The kernels take a subnormal operand
 //! as stored instead of normalizing a copy of it (`num.rs`), and this test is the outside oracle for that.
@@ -19,17 +19,6 @@ const MODES: [RoundingMode; 7] = [
     RoundingMode::ToZero,
     RoundingMode::FromZero,
     RoundingMode::None,
-];
-
-/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
-/// Up, Down, ToZero, FromZero). NONE-GAP F-B: a `None` quotient that overflows gives +-Inf; Jeff ruled +-MAX.
-const NONE_GAP_MODES: [RoundingMode; 6] = [
-    RoundingMode::ToEven,
-    RoundingMode::ToOdd,
-    RoundingMode::Up,
-    RoundingMode::Down,
-    RoundingMode::ToZero,
-    RoundingMode::FromZero,
 ];
 
 /// Result precisions (whole words: the library rounds `p` up to a word) and operand precisions.
@@ -88,8 +77,8 @@ fn subnormal_operands_match_mpfr_in_every_mode() -> Result<(), Box<dyn std::erro
                         (BinOp::Add, "add", &MODES[..]),
                         (BinOp::Sub, "sub", &MODES[..]),
                         (BinOp::Mul, "mul", &MODES[..]),
-                        // NONE-GAP F-B: a quotient by a subnormal overflows (ZF-M27)
-                        (BinOp::Div, "div", &NONE_GAP_MODES[..]),
+                        // F-B (ZF-M27, M27-OVF): a quotient by a subnormal overflows; None saturates to +-MAX, checked in every mode
+                        (BinOp::Div, "div", &MODES[..]),
                     ] {
                         for &rm in modes {
                             let want = sh::ref_binop(&t1, &t2, op, p as u32, rm)?;
@@ -119,9 +108,8 @@ fn subnormal_operands_match_mpfr_in_every_mode() -> Result<(), Box<dyn std::erro
             }
         }
     }
-    // every operand pair, sign pattern, precision, mode and op: none is skipped (7 modes for add, sub and mul; 6 for
-    // div, the queued NONE-GAP F-B row)
-    assert_eq!(checked, 27 * 27 * 3 * 3 * (7 * 3 + 6) * 2);
+    // every operand pair, sign pattern, precision, mode and op: none is skipped (7 modes for each op)
+    assert_eq!(checked, 27 * 27 * 3 * 3 * (7 * 4) * 2);
     Ok(())
 }
 

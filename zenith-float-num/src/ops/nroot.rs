@@ -89,7 +89,7 @@ impl ExactNumNumber {
             .saturating_add(WORD_BIT_SIZE);
         // A candidate rounded up past the largest number whose power fits (the root of a number near the top of
         // the range) has a power above the range: it is not the exact root.
-        let pw = match r.powi(n, bits, RoundingMode::None) {
+        let pw = match r.powi(n, bits, RoundingMode::Work) {
             Ok(pw) => pw,
             Err(Error::ExponentOverflow(_)) => return Ok(None),
             Err(e) => return Err(e),
@@ -141,25 +141,25 @@ impl ExactNumNumber {
         let b = (u64::BITS - e_abs.leading_zeros()) as usize + 1;
         let n_bits = (usize::BITS - n.leading_zeros()) as usize;
         let p_s = p_wrk + 12 + b + n_bits + 4;
-        let ln = abs_self.ln(p_s, RoundingMode::None, &mut cc)?;
-        let inv_n = n_num.reciprocal(p_s, RoundingMode::None)?;
+        let ln = abs_self.ln(p_s, RoundingMode::Work, &mut cc)?;
+        let inv_n = n_num.reciprocal(p_s, RoundingMode::Work)?;
         let mut x =
-            ln.mul(&inv_n, p_s, RoundingMode::None)?
-                .exp(p_s, RoundingMode::None, &mut cc)?;
+            ln.mul(&inv_n, p_s, RoundingMode::Work)?
+                .exp(p_s, RoundingMode::Work, &mut cc)?;
 
         loop {
             let p_x = p_wrk + 12;
-            x.set_precision(p_x, RoundingMode::None)?;
+            x.set_precision(p_x, RoundingMode::Work)?;
 
-            let x_nm1 = x.powi(nm1, p_x, RoundingMode::None)?;
-            let quot = abs_self.div(&x_nm1, p_x, RoundingMode::None)?;
+            let x_nm1 = x.powi(nm1, p_x, RoundingMode::Work)?;
+            let quot = abs_self.div(&x_nm1, p_x, RoundingMode::Work)?;
             let scaled = x.mul(
                 &Self::from_word(nm1 as crate::Word, p_x)?,
                 p_x,
-                RoundingMode::None,
+                RoundingMode::Work,
             )?;
-            let mut x_new = scaled.add(&quot, p_x, RoundingMode::None)?;
-            x_new = x_new.div(&n_num, p_x, RoundingMode::None)?;
+            let mut x_new = scaled.add(&quot, p_x, RoundingMode::Work)?;
+            x_new = x_new.div(&n_num, p_x, RoundingMode::Work)?;
 
             if x_new.try_set_precision(p, rm, p_wrk)? {
                 // The Newton value is exact only up to its working noise, so rounding it flags the result
@@ -177,8 +177,8 @@ impl ExactNumNumber {
             // still-live operands.
             let cand =
                 scaled
-                    .add(&quot, p_x, RoundingMode::None)?
-                    .div(&n_num, p_x, RoundingMode::None)?;
+                    .add(&quot, p_x, RoundingMode::Work)?
+                    .div(&n_num, p_x, RoundingMode::Work)?;
             if let Some(r) = Self::nth_root_exact_candidate(abs_self, &cand, n, p)? {
                 break Ok(r);
             }

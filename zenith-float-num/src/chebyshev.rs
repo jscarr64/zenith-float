@@ -118,12 +118,12 @@ where
     let wrk = work_p(p);
     reserve_probe(p)?;
     reserve_probe(wrk)?;
-    let (mid, half) = unit_map(a, b, wrk, RoundingMode::None);
+    let (mid, half) = unit_map(a, b, wrk, RoundingMode::Work);
     let mut fx = Vec::with_capacity(n);
     for k in 0..n {
-        let t = unit_node(k, n, wrk, RoundingMode::None, cc);
-        let x = map_from_unit(&t, &mid, &half, wrk, RoundingMode::None);
-        let y = f(&x, wrk, RoundingMode::None, cc);
+        let t = unit_node(k, n, wrk, RoundingMode::Work, cc);
+        let x = map_from_unit(&t, &mid, &half, wrk, RoundingMode::Work);
+        let y = f(&x, wrk, RoundingMode::Work, cc);
         if !finite(&y) {
             return Err(Error::InvalidArgument);
         }
@@ -134,19 +134,19 @@ where
     for j in 0..n {
         let mut s = ExactNum::new(wrk);
         for (k, fxk) in fx.iter().enumerate().take(n) {
-            let w = node_cos_j(j, k, n, wrk, RoundingMode::None, cc);
+            let w = node_cos_j(j, k, n, wrk, RoundingMode::Work, cc);
             s = s.add(
-                &w.mul(fxk, wrk, RoundingMode::None),
+                &w.mul(fxk, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
         }
         let scale = if j == 0 {
-            ExactNum::from_u8(1, wrk).div(&n_f, wrk, RoundingMode::None)
+            ExactNum::from_u8(1, wrk).div(&n_f, wrk, RoundingMode::Work)
         } else {
-            ExactNum::from_u8(2, wrk).div(&n_f, wrk, RoundingMode::None)
+            ExactNum::from_u8(2, wrk).div(&n_f, wrk, RoundingMode::Work)
         };
-        let mut c = s.mul(&scale, wrk, RoundingMode::None);
+        let mut c = s.mul(&scale, wrk, RoundingMode::Work);
         let _ = c.set_precision(p, rm);
         coeffs.push(c);
     }
@@ -169,17 +169,17 @@ pub fn clenshaw(coeffs: &[ExactNum], x: &ExactNum, p: usize, rm: RoundingMode) -
     let mut b2 = ExactNum::new(wrk);
     for c in coeffs.iter().skip(1).rev() {
         let t = ExactNum::from_u8(2, wrk)
-            .mul(x, wrk, RoundingMode::None)
-            .mul(&b1, wrk, RoundingMode::None)
-            .sub(&b2, wrk, RoundingMode::None)
-            .add(c, wrk, RoundingMode::None);
+            .mul(x, wrk, RoundingMode::Work)
+            .mul(&b1, wrk, RoundingMode::Work)
+            .sub(&b2, wrk, RoundingMode::Work)
+            .add(c, wrk, RoundingMode::Work);
         b2 = b1;
         b1 = t;
     }
     let mut y = b1
-        .mul(x, wrk, RoundingMode::None)
-        .sub(&b2, wrk, RoundingMode::None)
-        .add(&coeffs[0], wrk, RoundingMode::None);
+        .mul(x, wrk, RoundingMode::Work)
+        .sub(&b2, wrk, RoundingMode::Work)
+        .add(&coeffs[0], wrk, RoundingMode::Work);
     let _ = y.set_precision(p, rm);
     y
 }

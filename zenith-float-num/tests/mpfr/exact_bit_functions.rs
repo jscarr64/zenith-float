@@ -30,8 +30,7 @@ pub const MODES: [RoundingMode; 7] = [
 
 /// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
 /// Up, Down, ToZero, FromZero), for the families that fail the strict None oracle. NONE-GAP F-A: an exact `pow` /
-/// `nth_root` result comes back as its predecessor at rp(p, 64), flagged inexact. NONE-GAP F-B: a `None` overflow gives
-/// +-Inf; Jeff ruled +-MAX.
+/// `nth_root` result comes back as its predecessor at rp(p, 64), flagged inexact.
 pub const NONE_GAP_MODES: [RoundingMode; 6] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,

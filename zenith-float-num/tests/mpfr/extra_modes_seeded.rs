@@ -323,7 +323,7 @@ fn const_family_extra_modes() -> Res {
 }
 
 /// compare_special_test family: the special-value operands drawn there (zeros, +-1, tiny and large normals), add, sub,
-/// mul, div and ln. No pair overflows: a None overflow is NONE-GAP F-B, queued for ZF-M27.
+/// mul, div and ln. No pair overflows (a None overflow saturates to +-MAX, F-B, checked in overflow_modes).
 #[test]
 fn special_values_family_extra_modes() -> Res {
     let mut cc = Consts::new()?;

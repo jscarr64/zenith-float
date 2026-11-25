@@ -67,7 +67,7 @@ fn traverse_binary(
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
-                let ret = zenith_float::ExactNum::add_ref(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::None);
+                let ret = zenith_float::ExactNum::add_ref(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::Work);
                 if arg1.inexact_accumulated() || arg2.inexact_accumulated() {
                     if let (Some(e1), Some(e2), Some(e3)) = (arg1.exponent(), arg2.exponent(), ret.exponent()) {
                         if (e1 as isize - e2 as isize).abs() <= 1 && arg1.sign() != arg2.sign() {
@@ -87,7 +87,7 @@ fn traverse_binary(
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
-                let ret = zenith_float::ExactNum::sub_ref(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::None);
+                let ret = zenith_float::ExactNum::sub_ref(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::Work);
                 if arg1.inexact_accumulated() || arg2.inexact_accumulated() {
                     if let (Some(e1), Some(e2), Some(e3)) = (arg1.exponent(), arg2.exponent(), ret.exponent()) {
                         if (e1 as isize - e2 as isize).abs() <= 1 && arg1.sign() == arg2.sign() {
@@ -105,11 +105,11 @@ fn traverse_binary(
         BinOp::Mul(_) => {
             err.push(3);
             quote!(
-                zenith_float::ExactNum::mul(#left_expr, &(#right_expr), p_wrk, zenith_float::RoundingMode::None))
+                zenith_float::ExactNum::mul(#left_expr, &(#right_expr), p_wrk, zenith_float::RoundingMode::Work))
         }
         BinOp::Div(_) => {
             err.push(3);
-            quote!(zenith_float::ExactNum::div(#left_expr, &(#right_expr), p_wrk, zenith_float::RoundingMode::None))
+            quote!(zenith_float::ExactNum::div(#left_expr, &(#right_expr), p_wrk, zenith_float::RoundingMode::Work))
         }
         BinOp::Rem(_) => {
             quote!(zenith_float::ExactNum::rem(&(#left_expr), &(#right_expr)))
@@ -137,9 +137,9 @@ fn one_arg_fun(
     err.push(initial_err);
 
     let ret = if use_cc {
-        quote!(#fun(&(#arg), p_wrk, zenith_float::RoundingMode::None, cc))
+        quote!(#fun(&(#arg), p_wrk, zenith_float::RoundingMode::Work, cc))
     } else {
-        quote!(#fun(&(#arg), p_wrk, zenith_float::RoundingMode::None))
+        quote!(#fun(&(#arg), p_wrk, zenith_float::RoundingMode::Work))
     };
 
     Ok(ret)
@@ -160,9 +160,9 @@ fn two_arg_fun(
     err.push(initial_err);
 
     let ret = if use_cc {
-        quote!(#fun(&(#arg1), &(#arg2), p_wrk, zenith_float::RoundingMode::None, cc))
+        quote!(#fun(&(#arg1), &(#arg2), p_wrk, zenith_float::RoundingMode::Work, cc))
     } else {
-        quote!(#fun(&(#arg1), &(#arg2), p_wrk, zenith_float::RoundingMode::None))
+        quote!(#fun(&(#arg1), &(#arg2), p_wrk, zenith_float::RoundingMode::Work))
     };
 
     Ok(ret)
@@ -184,9 +184,9 @@ fn three_arg_fun(
     err.push(initial_err);
 
     let ret = if use_cc {
-        quote!(#fun(&(#arg1), &(#arg2), &(#arg3), p_wrk, zenith_float::RoundingMode::None, cc))
+        quote!(#fun(&(#arg1), &(#arg2), &(#arg3), p_wrk, zenith_float::RoundingMode::Work, cc))
     } else {
-        quote!(#fun(&(#arg1), &(#arg2), &(#arg3), p_wrk, zenith_float::RoundingMode::None))
+        quote!(#fun(&(#arg1), &(#arg2), &(#arg3), p_wrk, zenith_float::RoundingMode::Work))
     };
     Ok(ret)
 }
@@ -207,7 +207,7 @@ fn root_fun(
         &(#arg),
         #n as usize,
         p_wrk,
-        zenith_float::RoundingMode::None
+        zenith_float::RoundingMode::Work
     )))
 }
 
@@ -234,7 +234,7 @@ fn ldexp_fun(
         (#arg),
         #n as zenith_float::Exponent,
         p_wrk,
-        zenith_float::RoundingMode::None
+        zenith_float::RoundingMode::Work
     )))
 }
 
@@ -254,7 +254,7 @@ fn bessel_j_fun(
         &(#arg),
         #n as usize,
         p_wrk,
-        zenith_float::RoundingMode::None,
+        zenith_float::RoundingMode::Work,
         cc
     )))
 }
@@ -278,7 +278,7 @@ fn four_arg_fun(
         &(#arg3),
         &(#arg4),
         p_wrk,
-        zenith_float::RoundingMode::None,
+        zenith_float::RoundingMode::Work,
         cc
     )))
 }
@@ -297,7 +297,7 @@ fn legendre_p_fun(
         &(#arg),
         #n as u32,
         p_wrk,
-        zenith_float::RoundingMode::None
+        zenith_float::RoundingMode::Work
     )))
 }
 
@@ -317,7 +317,7 @@ fn legendre_p_assoc_fun(
         #n as u32,
         #m as i32,
         p_wrk,
-        zenith_float::RoundingMode::None
+        zenith_float::RoundingMode::Work
     )))
 }
 
@@ -344,7 +344,7 @@ fn one_arg_fun_errcheck(
             continue;
         }
 
-        #fun(&arg, p_wrk, zenith_float::RoundingMode::None, cc)
+        #fun(&arg, p_wrk, zenith_float::RoundingMode::Work, cc)
     }))
 }
 
@@ -371,7 +371,7 @@ fn trig_fun(
             continue;
         }
 
-        #fun(&arg, p_wrk, zenith_float::RoundingMode::None, cc)
+        #fun(&arg, p_wrk, zenith_float::RoundingMode::Work, cc)
     }))
 }
 
@@ -402,7 +402,7 @@ fn two_arg_fun_errcheck(
             continue;
         }
 
-        #fun(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::None, cc)
+        #fun(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::Work, cc)
     }))
 }
 
@@ -1171,19 +1171,19 @@ fn traverse_paren(
 
 fn traverse_path(expr: &ExprPath) -> Result<TokenStream, Error> {
     Ok(if expr.path.is_ident("pi") {
-        quote!({ cc.pi(p_wrk, zenith_float::RoundingMode::None) })
+        quote!({ cc.pi(p_wrk, zenith_float::RoundingMode::Work) })
     } else if expr.path.is_ident("e") {
-        quote!({ cc.e(p_wrk, zenith_float::RoundingMode::None) })
+        quote!({ cc.e(p_wrk, zenith_float::RoundingMode::Work) })
     } else if expr.path.is_ident("ln_2") {
-        quote!({ cc.ln_2(p_wrk, zenith_float::RoundingMode::None) })
+        quote!({ cc.ln_2(p_wrk, zenith_float::RoundingMode::Work) })
     } else if expr.path.is_ident("ln_10") {
-        quote!({ cc.ln_10(p_wrk, zenith_float::RoundingMode::None) })
+        quote!({ cc.ln_10(p_wrk, zenith_float::RoundingMode::Work) })
     } else if expr.path.is_ident("sqrt2") {
-        quote!({ cc.sqrt2(p_wrk, zenith_float::RoundingMode::None) })
+        quote!({ cc.sqrt2(p_wrk, zenith_float::RoundingMode::Work) })
     } else if expr.path.is_ident("phi") {
-        quote!({ cc.phi(p_wrk, zenith_float::RoundingMode::None) })
+        quote!({ cc.phi(p_wrk, zenith_float::RoundingMode::Work) })
     } else if expr.path.is_ident("euler_gamma") {
-        quote!({ cc.euler_gamma(p_wrk, zenith_float::RoundingMode::None) })
+        quote!({ cc.euler_gamma(p_wrk, zenith_float::RoundingMode::Work) })
     } else {
         quote!({
             let mut arg = zenith_float::ExactNum::from_ext(&(#expr), p_wrk, zenith_float::RoundingMode::ToEven, cc);

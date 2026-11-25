@@ -33,8 +33,8 @@ impl ExactNumNumber {
         let add_p = (3 - TRIG_EXP_THRES) as usize;
         let mut p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);
         loop {
-            let x = self.try_rounded_to(p_x, RoundingMode::None)?;
-            let mut r = x.reduce_trig_arg(cc, RoundingMode::None)?;
+            let x = self.try_rounded_to(p_x, RoundingMode::Work)?;
+            let mut r = x.reduce_trig_arg(cc, RoundingMode::Work)?;
             if r.is_zero() {
                 p_x = round_p(p_x.saturating_mul(2));
                 continue;

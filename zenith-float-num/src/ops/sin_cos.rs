@@ -51,16 +51,16 @@ impl ExactNumNumber {
         let mut add_p = (3 - TRIG_EXP_THRES) as usize;
         loop {
             let p_x = p_wrk + add_p;
-            let mut x = self.try_rounded_to(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_to(p_x, RoundingMode::Work)?;
 
-            x = x.reduce_trig_arg(cc, RoundingMode::None)?;
+            x = x.reduce_trig_arg(cc, RoundingMode::Work)?;
 
-            let (t, _q) = x.trig_arg_pi_proximity(cc, RoundingMode::None)?;
+            let (t, _q) = x.trig_arg_pi_proximity(cc, RoundingMode::Work)?;
             if add_p < t {
                 add_p = t;
             } else {
-                let mut cs = x.cos_series(RoundingMode::None)?;
-                let mut sn = x.sin_series(RoundingMode::None)?;
+                let mut cs = x.cos_series(RoundingMode::Work)?;
+                let mut sn = x.sin_series(RoundingMode::Work)?;
 
                 let sn_ok = sn.try_set_precision(p, rm, p_wrk)?;
                 let cs_ok = cs.try_set_precision(p, rm, p_wrk)?;

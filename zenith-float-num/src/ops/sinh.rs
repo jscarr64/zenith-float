@@ -43,20 +43,20 @@ impl ExactNumNumber {
             // |self| widened to p_x (above its precision) with flags cleared: a new value each pass, which
             // sinh_series consumes
             let p_x = p_wrk + 4;
-            let mut x = self.try_rounded_exact(p_x, RoundingMode::None)?;
+            let mut x = self.try_rounded_exact(p_x, RoundingMode::Work)?;
             x.set_sign(Sign::Pos);
 
             let mut ret = if x.exponent() <= 0 {
-                Self::sinh_series(x, p_x, RoundingMode::None)?
+                Self::sinh_series(x, p_x, RoundingMode::Work)?
             } else {
                 let mut val = if ethres > x.mantissa_max_bit_len() + 2 {
                     // e^|x| / 2 * signum(self)
 
-                    x.exp(p_x, RoundingMode::None, cc)
+                    x.exp(p_x, RoundingMode::Work, cc)
                 } else {
                     // (e^x - e^(-x)) / 2
 
-                    let ex = match x.exp(p_x, RoundingMode::None, cc) {
+                    let ex = match x.exp(p_x, RoundingMode::Work, cc) {
                         Ok(val) => val,
                         Err(Error::ExponentOverflow(_)) => {
                             return Err(Error::ExponentOverflow(self.sign()));
@@ -64,9 +64,9 @@ impl ExactNumNumber {
                         Err(err) => return Err(err),
                     };
 
-                    let xe = ex.reciprocal(p_x, RoundingMode::None)?;
+                    let xe = ex.reciprocal(p_x, RoundingMode::Work)?;
 
-                    ex.sub(&xe, p_x, RoundingMode::None)
+                    ex.sub(&xe, p_x, RoundingMode::Work)
                 }
                 .map_err(|e| -> Error {
                     if let Error::ExponentOverflow(_) = e {
@@ -76,7 +76,7 @@ impl ExactNumNumber {
                     }
                 })?;
 
-                val.div_by_2(RoundingMode::None);
+                val.div_by_2(RoundingMode::Work);
 
                 val
             };

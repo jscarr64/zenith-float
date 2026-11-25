@@ -19,7 +19,7 @@ use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::ops::Neg;
 
-const NR: RoundingMode = RoundingMode::None;
+const NR: RoundingMode = RoundingMode::Work;
 
 const ATANH_4_X: &[&str] = &["251", "449", "4801", "8749"];
 const ATANH_4_DEN: u64 = 1;

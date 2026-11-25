@@ -27,7 +27,9 @@ const MODES: [RoundingMode; 7] = [
 ];
 
 fn expect_overflow(r: &ExactNum, negative: bool, p: usize, rm: RoundingMode, what: &str) {
+    // None rounds toward zero at rp(p, 64), so it saturates too (F-B, ZF-M27 M27-OVF)
     let toward_zero = rm == RoundingMode::ToZero
+        || rm == RoundingMode::None
         || (rm == RoundingMode::Down && !negative)
         || (rm == RoundingMode::Up && negative);
 

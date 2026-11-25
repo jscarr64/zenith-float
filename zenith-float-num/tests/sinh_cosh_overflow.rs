@@ -17,21 +17,10 @@ const MODES: [RoundingMode; 7] = [
     RoundingMode::None,
 ];
 
-/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
-/// Up, Down, ToZero, FromZero). NONE-GAP F-B: a `None` overflow gives +-Inf; Jeff ruled +-MAX (toward zero at rp(p,
-/// 64)).
-const NONE_GAP_MODES: [RoundingMode; 6] = [
-    RoundingMode::ToEven,
-    RoundingMode::ToOdd,
-    RoundingMode::Up,
-    RoundingMode::Down,
-    RoundingMode::ToZero,
-    RoundingMode::FromZero,
-];
-
 fn expected(neg: bool, rm: RoundingMode, p: usize) -> ExactNum {
     let to_max = match rm {
-        RoundingMode::ToZero => true,
+        // None rounds toward zero at rp(p, 64): it saturates too (F-B, M27-OVF)
+        RoundingMode::ToZero | RoundingMode::None => true,
         RoundingMode::Down => !neg,
         RoundingMode::Up => neg,
         _ => false,
@@ -66,8 +55,8 @@ fn sinh_cosh_overflow_is_directional_in_every_mode_and_sign() -> Result<(), Erro
                 ("max", signed(ExactNum::max_value(p))),
             ];
             for (label, x) in xs {
-                // NONE-GAP F-B: sinh/cosh overflow under None (ZF-M27)
-                for rm in NONE_GAP_MODES {
+                // F-B (ZF-M27, M27-OVF): sinh/cosh overflow under None; None saturates to +-MAX, checked in every mode
+                for rm in MODES {
                     for (name, got, rneg) in [
                         ("sinh", x.sinh(p, rm, &mut cc), neg),
                         ("cosh", x.cosh(p, rm, &mut cc), false),
@@ -88,7 +77,7 @@ fn sinh_cosh_overflow_is_directional_in_every_mode_and_sign() -> Result<(), Erro
             }
         }
     }
-    assert_eq!(checked, 216);
+    assert_eq!(checked, 252);
     assert!(
         bad.is_empty(),
         "{} of {checked} wrong:\n{}",

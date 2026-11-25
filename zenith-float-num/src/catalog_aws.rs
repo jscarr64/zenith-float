@@ -43,7 +43,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-const N: RoundingMode = RoundingMode::None;
+const N: RoundingMode = RoundingMode::Work;
 const UP: RoundingMode = RoundingMode::Up;
 const DN: RoundingMode = RoundingMode::Down;
 
@@ -89,11 +89,7 @@ fn work_or_refuse(p: usize) -> Result<usize, ExactNum> {
 
 /// C99 7.12.1 overflow: MAX when the mode rounds toward zero, else signed Inf.
 pub(crate) fn overflow_signed(neg: bool, p: usize, rm: RoundingMode) -> ExactNum {
-    let toward_zero = matches!(
-        (!neg, rm),
-        (_, RoundingMode::ToZero) | (true, RoundingMode::Down) | (false, RoundingMode::Up)
-    );
-    if toward_zero {
+    if rm.saturates_overflow(!neg) {
         let mut m = ExactNum::max_value(p);
         if neg {
             m.set_sign(Sign::Neg);
@@ -458,7 +454,7 @@ fn struve_series(
     // An index that does not fit in usize is an index-type limit, not a cap.
     let nu_p0 = ExactNum::add_ref(nu, &three_half, wp, N);
     if nonpos_int(&nu_p0) {
-        let m = nu_p0.neg().to_u64(RoundingMode::None).ok()?;
+        let m = nu_p0.neg().to_u64(RoundingMode::Work).ok()?;
         let k0 = m.checked_add(1)?;
         k = usize::try_from(k0).ok()?;
     }

@@ -195,7 +195,7 @@ fn pick(lo: u16, cmp: i32, neg: bool, rm: RoundingMode) -> Result<u16, Error> {
     let hi = lo + 1;
     let s = if neg { 0x8000 } else { 0 };
     let mag = match rm {
-        RoundingMode::None => return Err(Error::InvalidArgument),
+        RoundingMode::None | RoundingMode::Work => return Err(Error::InvalidArgument),
         RoundingMode::ToEven | RoundingMode::ToOdd => {
             if cmp < 0 {
                 lo
@@ -402,13 +402,14 @@ fn extremes(f: &Fmt) {
                 RoundingMode::ToEven
                 | RoundingMode::ToOdd
                 | RoundingMode::ToZero
-                | RoundingMode::None => false,
+                | RoundingMode::None
+                | RoundingMode::Work => false,
             };
             let to_inf = match rm {
                 RoundingMode::Up => !neg,
                 RoundingMode::Down => neg,
                 RoundingMode::FromZero | RoundingMode::ToEven | RoundingMode::ToOdd => true,
-                RoundingMode::ToZero | RoundingMode::None => false,
+                RoundingMode::ToZero | RoundingMode::None | RoundingMode::Work => false,
             };
             let (wt, wh) = if rm == RoundingMode::None {
                 (Err(Error::InvalidArgument), Err(Error::InvalidArgument))

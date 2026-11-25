@@ -59,13 +59,13 @@ impl ExactNum {
             return finish_ref(self, p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = self.rounded_to(wrk, RoundingMode::None);
+        let mut cur = self.rounded_to(wrk, RoundingMode::Work);
         for k in 1..n {
             let kf = ExactNum::from_u32(k as u32, wrk);
-            let next = ExactNum::mul_ref(self, &cur, wrk, RoundingMode::None).sub(
-                &kf.mul(&prev, wrk, RoundingMode::None),
+            let next = ExactNum::mul_ref(self, &cur, wrk, RoundingMode::Work).sub(
+                &kf.mul(&prev, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             prev = cur;
             cur = next;
@@ -97,19 +97,19 @@ impl ExactNum {
             return finish(ExactNum::from_u8(1, wrk), p, rm);
         }
         if n == 1 {
-            return finish(two.mul(self, wrk, RoundingMode::None), p, rm);
+            return finish(two.mul(self, wrk, RoundingMode::Work), p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = ExactNum::from_u8(2, wrk).mul(self, wrk, RoundingMode::None);
+        let mut cur = ExactNum::from_u8(2, wrk).mul(self, wrk, RoundingMode::Work);
         for k in 1..n {
             let two_k = ExactNum::from_u32((2 * k) as u32, wrk);
             let next = ExactNum::from_u8(2, wrk)
-                .mul(self, wrk, RoundingMode::None)
-                .mul(&cur, wrk, RoundingMode::None)
+                .mul(self, wrk, RoundingMode::Work)
+                .mul(&cur, wrk, RoundingMode::Work)
                 .sub(
-                    &two_k.mul(&prev, wrk, RoundingMode::None),
+                    &two_k.mul(&prev, wrk, RoundingMode::Work),
                     wrk,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 );
             prev = cur;
             cur = next;
@@ -166,31 +166,31 @@ impl ExactNum {
         }
         if n == 1 {
             return finish(
-                one.add(alpha, wrk, RoundingMode::None)
-                    .sub(self, wrk, RoundingMode::None),
+                one.add(alpha, wrk, RoundingMode::Work)
+                    .sub(self, wrk, RoundingMode::Work),
                 p,
                 rm,
             );
         }
         let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = one
-            .add(alpha, wrk, RoundingMode::None)
-            .sub(self, wrk, RoundingMode::None);
+            .add(alpha, wrk, RoundingMode::Work)
+            .sub(self, wrk, RoundingMode::Work);
         for k in 1..n {
             let kf = ExactNum::from_u32(k as u32, wrk);
             let two_k_1 = ExactNum::from_u32((2 * k + 1) as u32, wrk);
             let coeff =
                 two_k_1
-                    .add(alpha, wrk, RoundingMode::None)
-                    .sub(self, wrk, RoundingMode::None);
-            let k_a = kf.add(alpha, wrk, RoundingMode::None);
-            let num = coeff.mul(&cur, wrk, RoundingMode::None).sub(
-                &k_a.mul(&prev, wrk, RoundingMode::None),
+                    .add(alpha, wrk, RoundingMode::Work)
+                    .sub(self, wrk, RoundingMode::Work);
+            let k_a = kf.add(alpha, wrk, RoundingMode::Work);
+            let num = coeff.mul(&cur, wrk, RoundingMode::Work).sub(
+                &k_a.mul(&prev, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             let den = ExactNum::from_u32((k + 1) as u32, wrk);
-            let next = num.div(&den, wrk, RoundingMode::None);
+            let next = num.div(&den, wrk, RoundingMode::Work);
             prev = cur;
             cur = next;
         }
@@ -223,12 +223,12 @@ impl ExactNum {
             return finish_ref(self, p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = self.rounded_to(wrk, RoundingMode::None);
+        let mut cur = self.rounded_to(wrk, RoundingMode::Work);
         for _ in 1..n {
             let next = ExactNum::from_u8(2, wrk)
-                .mul(self, wrk, RoundingMode::None)
-                .mul(&cur, wrk, RoundingMode::None)
-                .sub(&prev, wrk, RoundingMode::None);
+                .mul(self, wrk, RoundingMode::Work)
+                .mul(&cur, wrk, RoundingMode::Work)
+                .sub(&prev, wrk, RoundingMode::Work);
             prev = cur;
             cur = next;
         }
@@ -259,15 +259,15 @@ impl ExactNum {
             return finish(ExactNum::from_u8(1, wrk), p, rm);
         }
         if n == 1 {
-            return finish(two.mul(self, wrk, RoundingMode::None), p, rm);
+            return finish(two.mul(self, wrk, RoundingMode::Work), p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = ExactNum::from_u8(2, wrk).mul(self, wrk, RoundingMode::None);
+        let mut cur = ExactNum::from_u8(2, wrk).mul(self, wrk, RoundingMode::Work);
         for _ in 1..n {
             let next = ExactNum::from_u8(2, wrk)
-                .mul(self, wrk, RoundingMode::None)
-                .mul(&cur, wrk, RoundingMode::None)
-                .sub(&prev, wrk, RoundingMode::None);
+                .mul(self, wrk, RoundingMode::Work)
+                .mul(&cur, wrk, RoundingMode::Work)
+                .sub(&prev, wrk, RoundingMode::Work);
             prev = cur;
             cur = next;
         }
@@ -307,39 +307,39 @@ impl ExactNum {
         let two = ExactNum::from_u8(2, wrk);
         if n == 1 {
             return finish(
-                two.mul(lambda, wrk, RoundingMode::None)
-                    .mul(self, wrk, RoundingMode::None),
+                two.mul(lambda, wrk, RoundingMode::Work)
+                    .mul(self, wrk, RoundingMode::Work),
                 p,
                 rm,
             );
         }
         let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = ExactNum::from_u8(2, wrk)
-            .mul(lambda, wrk, RoundingMode::None)
-            .mul(self, wrk, RoundingMode::None);
+            .mul(lambda, wrk, RoundingMode::Work)
+            .mul(self, wrk, RoundingMode::Work);
         for k in 1..n {
             let two_n_l = ExactNum::from_u8(2, wrk).mul(
-                &ExactNum::from_u32(k as u32, wrk).add(lambda, wrk, RoundingMode::None),
+                &ExactNum::from_u32(k as u32, wrk).add(lambda, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             let n_2l_1 = ExactNum::from_u32(k as u32, wrk)
                 .add(
-                    &ExactNum::from_u8(2, wrk).mul(lambda, wrk, RoundingMode::None),
+                    &ExactNum::from_u8(2, wrk).mul(lambda, wrk, RoundingMode::Work),
                     wrk,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )
-                .sub(&one, wrk, RoundingMode::None);
+                .sub(&one, wrk, RoundingMode::Work);
             let num = two_n_l
-                .mul(self, wrk, RoundingMode::None)
-                .mul(&cur, wrk, RoundingMode::None)
+                .mul(self, wrk, RoundingMode::Work)
+                .mul(&cur, wrk, RoundingMode::Work)
                 .sub(
-                    &n_2l_1.mul(&prev, wrk, RoundingMode::None),
+                    &n_2l_1.mul(&prev, wrk, RoundingMode::Work),
                     wrk,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 );
             let den = ExactNum::from_u32((k + 1) as u32, wrk);
-            let next = num.div(&den, wrk, RoundingMode::None);
+            let next = num.div(&den, wrk, RoundingMode::Work);
             prev = cur;
             cur = next;
         }
@@ -394,17 +394,17 @@ impl ExactNum {
             return finish(one, p, rm);
         }
         // α+β of two borrowed (retry-invariant) inputs that are read again below.
-        let apb = ExactNum::add_ref(alpha, beta, wrk, RoundingMode::None);
-        let amb = ExactNum::sub_ref(alpha, beta, wrk, RoundingMode::None);
+        let apb = ExactNum::add_ref(alpha, beta, wrk, RoundingMode::Work);
+        let amb = ExactNum::sub_ref(alpha, beta, wrk, RoundingMode::Work);
         let p1 = amb
             .add(
                 &ExactNum::from_u8(2, wrk)
-                    .add(&apb, wrk, RoundingMode::None)
-                    .mul(self, wrk, RoundingMode::None),
+                    .add(&apb, wrk, RoundingMode::Work)
+                    .mul(self, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
-            .div(&two, wrk, RoundingMode::None);
+            .div(&two, wrk, RoundingMode::Work);
         if n == 1 {
             return finish(p1, p, rm);
         }
@@ -413,57 +413,57 @@ impl ExactNum {
         for k in 1..n {
             let k1 = ExactNum::from_u32((k + 1) as u32, wrk);
             let two_k_apb =
-                ExactNum::from_u32((2 * k) as u32, wrk).add(&apb, wrk, RoundingMode::None);
+                ExactNum::from_u32((2 * k) as u32, wrk).add(&apb, wrk, RoundingMode::Work);
             let two_k_apb_1 = ExactNum::from_u32((2 * k) as u32, wrk)
-                .add(&apb, wrk, RoundingMode::None)
-                .add(&one, wrk, RoundingMode::None);
+                .add(&apb, wrk, RoundingMode::Work)
+                .add(&one, wrk, RoundingMode::Work);
             let two_k_apb_2 = ExactNum::from_u32((2 * k) as u32, wrk)
-                .add(&apb, wrk, RoundingMode::None)
-                .add(&two, wrk, RoundingMode::None);
+                .add(&apb, wrk, RoundingMode::Work)
+                .add(&two, wrk, RoundingMode::Work);
             let a_den = ExactNum::from_u8(2, wrk)
-                .mul(&k1, wrk, RoundingMode::None)
+                .mul(&k1, wrk, RoundingMode::Work)
                 .mul(
                     &ExactNum::from_u32(k as u32, wrk)
-                        .add(&apb, wrk, RoundingMode::None)
-                        .add(&one, wrk, RoundingMode::None),
+                        .add(&apb, wrk, RoundingMode::Work)
+                        .add(&one, wrk, RoundingMode::Work),
                     wrk,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )
-                .mul(&two_k_apb, wrk, RoundingMode::None);
-            let a2mb2 = alpha.sqr(wrk, RoundingMode::None).sub(
-                &beta.sqr(wrk, RoundingMode::None),
+                .mul(&two_k_apb, wrk, RoundingMode::Work);
+            let a2mb2 = alpha.sqr(wrk, RoundingMode::Work).sub(
+                &beta.sqr(wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
-            let b_num = a2mb2.mul(&two_k_apb_1, wrk, RoundingMode::None);
-            let c_num = two_k_apb.mul(&two_k_apb_1, wrk, RoundingMode::None).mul(
+            let b_num = a2mb2.mul(&two_k_apb_1, wrk, RoundingMode::Work);
+            let c_num = two_k_apb.mul(&two_k_apb_1, wrk, RoundingMode::Work).mul(
                 &two_k_apb_2,
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             let d_num = ExactNum::from_u8(2, wrk)
                 .mul(
-                    &ExactNum::from_u32(k as u32, wrk).add(alpha, wrk, RoundingMode::None),
+                    &ExactNum::from_u32(k as u32, wrk).add(alpha, wrk, RoundingMode::Work),
                     wrk,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )
                 .mul(
-                    &ExactNum::from_u32(k as u32, wrk).add(beta, wrk, RoundingMode::None),
+                    &ExactNum::from_u32(k as u32, wrk).add(beta, wrk, RoundingMode::Work),
                     wrk,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )
-                .mul(&two_k_apb_2, wrk, RoundingMode::None);
+                .mul(&two_k_apb_2, wrk, RoundingMode::Work);
             let lin = b_num.add(
-                &c_num.mul(self, wrk, RoundingMode::None),
+                &c_num.mul(self, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
-            let num = lin.mul(&cur, wrk, RoundingMode::None).sub(
-                &d_num.mul(&prev, wrk, RoundingMode::None),
+            let num = lin.mul(&cur, wrk, RoundingMode::Work).sub(
+                &d_num.mul(&prev, wrk, RoundingMode::Work),
                 wrk,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
-            let next = num.div(&a_den, wrk, RoundingMode::None);
+            let next = num.div(&a_den, wrk, RoundingMode::Work);
             prev = cur;
             cur = next;
         }

@@ -125,7 +125,7 @@ impl Ball {
         // range keeps every bit (up to MAX_PRECISION), so `lost` is false there and ε comes from round_to's own flag.
         // A `mul_full_prec` exponent overflow passes through `finish` to all reals; pinned by
         // tests/harness/slice_arith.rs `overflow_is_all_reals` (line 424).
-        let sq = m.mul_full_prec(m);
+        let sq = m.mul_full_work(m);
         let lost = sq.inexact();
         finish("Ball::sqr", round_to(&sq, prec), &rad, prec, lost)
     }
@@ -215,7 +215,7 @@ impl Ball {
                 let root_up = if neg {
                     // m < 0 < m + r: hi = m + r exactly when r is a zenith-float value (16.S1.7), else r (>= m + r).
                     match r.to_exact_num() {
-                        Ok(rn) => Mag::from_exact_num(&rn.add_full_prec(m)).sqrt_up(),
+                        Ok(rn) => Mag::from_exact_num(&rn.add_full_work(m)).sqrt_up(),
                         Err(_) => r.sqrt_up(),
                     }
                 } else {
@@ -303,11 +303,11 @@ impl Ball {
         let (Mid::Value(lo), Mid::Value(hi)) = (classify(OP, lo)?, classify(OP, hi)?) else {
             return Ball::all_reals(prec);
         };
-        let Mid::Value(mid) = classify(OP, lo.add_full_prec(&hi).ldexp(-1, prec, MID_RM))? else {
+        let Mid::Value(mid) = classify(OP, lo.add_full_work(&hi).ldexp(-1, prec, MID_RM))? else {
             return Ball::all_reals(prec);
         };
-        let rad = Mag::from_exact_num(&hi.sub_full_prec(&mid))
-            .max(Mag::from_exact_num(&mid.sub_full_prec(&lo)));
+        let rad = Mag::from_exact_num(&hi.sub_full_work(&mid))
+            .max(Mag::from_exact_num(&mid.sub_full_work(&lo)));
         Ball::from_mid_rad(mid, rad, prec)
     }
 }
@@ -429,7 +429,7 @@ fn endpoint_signs(a: &Ball, b: &Ball) -> Option<(Ordering, Ordering)> {
     if r1.is_infinity() || r2.is_infinity() {
         return None;
     }
-    let d = a.mid().sub_full_prec(b.mid());
+    let d = a.mid().sub_full_work(b.mid());
     if d.inexact() || d.is_nan() {
         return None;
     }

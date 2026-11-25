@@ -34,8 +34,7 @@ const MODES: [RoundingMode; 7] = [
 
 /// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
 /// Up, Down, ToZero, FromZero), for the families that fail the strict None oracle. NONE-GAP F-A: an exact `pow` /
-/// `nth_root` result comes back as its predecessor at rp(p, 64), flagged inexact. NONE-GAP F-B: a `None` overflow gives
-/// +-Inf; Jeff ruled +-MAX.
+/// `nth_root` result comes back as its predecessor at rp(p, 64), flagged inexact.
 const NONE_GAP_MODES: [RoundingMode; 6] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
@@ -310,8 +309,8 @@ fn reciprocal_over_the_whole_range() -> Res {
             precisions: &RECIPROCAL_PRECISIONS,
             flags: true,
             skip: no_skip,
-            // NONE-GAP F-B: reciprocal overflows at the top of the range (ZF-M27)
-            modes: &NONE_GAP_MODES,
+            // F-B (ZF-M27, M27-OVF): reciprocal overflows at the top of the range; None saturates to +-MAX, checked in every mode
+            modes: &MODES,
         },
         |x, p, rm| x.reciprocal(p, rm),
         sh::ref_recip,
@@ -471,8 +470,8 @@ fn hypot_over_the_whole_range() -> Res {
         "hypot",
         &binary_operands(),
         &PRECISIONS,
-        // NONE-GAP F-B: hypot of huge operands overflows (ZF-M27)
-        &NONE_GAP_MODES,
+        // F-B (ZF-M27, M27-OVF): hypot of huge operands overflows; None saturates to +-MAX, checked in every mode
+        &MODES,
         no_pair_skipped,
         |a, b, p, rm, _| a.hypot(b, p, rm),
         sh::ref_hypot,
@@ -637,8 +636,8 @@ fn primitives_at_20000_bits() -> Res {
             precisions: &[20_000],
             flags: true,
             skip: no_skip,
-            // NONE-GAP F-B: reciprocal of a tiny operand overflows (ZF-M27)
-            modes: &NONE_GAP_MODES,
+            // F-B (ZF-M27, M27-OVF): reciprocal of a tiny operand overflows; None saturates to +-MAX, checked in every mode
+            modes: &MODES,
         },
         |x, p, rm| x.reciprocal(p, rm),
         sh::ref_recip,
@@ -777,8 +776,8 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
             precisions: &[24, 64, 128, 129, 192, 200, 256, 512],
             flags: true,
             skip: no_skip,
-            // NONE-GAP F-B: reciprocal of a tiny operand overflows (ZF-M27)
-            modes: &NONE_GAP_MODES,
+            // F-B (ZF-M27, M27-OVF): reciprocal of a tiny operand overflows; None saturates to +-MAX, checked in every mode
+            modes: &MODES,
         },
         |x, p, rm| x.reciprocal(p, rm),
         sh::ref_recip,
@@ -790,8 +789,14 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
     for k in [MIN - 1, MIN] {
         let x = zf(1, k, true);
         for p in [129usize, 192, 256] {
-            // MODE-SUBSET mode-specific: the modes that give -Inf for 1/-2^k; Up and ToZero give -MAX (sweep above). None
-            // is NONE-GAP F-B: today -Inf where the ruling is -MAX, queued for ZF-M27 (no row here, nothing pinned)
+            // F-B (ZF-M27, M27-OVF): None saturates to -MAX at rp(p, 64), flagged inexact
+            let got = x.reciprocal(p, RoundingMode::None);
+            assert!(
+                got.inexact() && got.compare(&ExactNum::min_value(p)) == Some(0),
+                "1 / -2^{k} at {p} bits None: {got:?}"
+            );
+            seen += 1;
+            // MODE-SUBSET mode-specific: the modes that give -Inf for 1/-2^k; Up and ToZero give -MAX (sweep above)
             for rm in [
                 RoundingMode::ToEven,
                 RoundingMode::ToOdd,
@@ -804,7 +809,7 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
             }
         }
     }
-    assert_eq!(seen, 24);
+    assert_eq!(seen, 30);
     Ok(())
 }
 

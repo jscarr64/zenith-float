@@ -16,18 +16,6 @@ const MODES: [RoundingMode; 7] = [
     RoundingMode::None,
 ];
 
-/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
-/// Up, Down, ToZero, FromZero). NONE-GAP F-B: a `None` overflow gives +-Inf; Jeff ruled +-MAX (toward zero at rp(p,
-/// 64)).
-const NONE_GAP_MODES: [RoundingMode; 6] = [
-    RoundingMode::ToEven,
-    RoundingMode::ToOdd,
-    RoundingMode::Up,
-    RoundingMode::Down,
-    RoundingMode::ToZero,
-    RoundingMode::FromZero,
-];
-
 fn precisions() -> [usize; 4] {
     [WORD_BIT_SIZE, 2 * WORD_BIT_SIZE, 3 * WORD_BIT_SIZE, 64 * WORD_BIT_SIZE]
 }
@@ -95,8 +83,8 @@ fn ldexp_reaches_both_limits() {
 #[test]
 fn arithmetic_at_the_top_of_the_range() {
     for p in precisions() {
-        // NONE-GAP F-B: 2*max, max+max and max/0.5 overflow under None (ZF-M27)
-        for rm in NONE_GAP_MODES {
+        // F-B (ZF-M27, M27-OVF): 2*max, max+max and max/0.5 overflow under None; None saturates to +-MAX, checked in every mode
+        for rm in MODES {
             for negative in [false, true] {
                 let two = ExactNum::from_u8(2, p);
                 let half = ExactNum::from_u8(1, p).ldexp(-1, p, rm);
@@ -130,7 +118,9 @@ fn arithmetic_at_the_top_of_the_range() {
                     ExactNum::sub_ref(&max, &max, p, rm).is_zero(),
                     "{info} max-max"
                 );
+                // None rounds toward zero at rp(p, 64), so it saturates too (F-B, M27-OVF)
                 let toward_zero = rm == RoundingMode::ToZero
+                    || rm == RoundingMode::None
                     || (rm == RoundingMode::Down && !negative)
                     || (rm == RoundingMode::Up && negative);
                 for r in [

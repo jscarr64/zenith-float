@@ -321,4 +321,31 @@ pub enum RoundingMode {
     /// At `p = 4`, 17/16 is an exact tie and rounds to 1.000 under `ToEven` and to 1.001 under `ToOdd`;
     /// 33/32 is below the tie and rounds to 1.000 under both (sticky round-to-odd would give 1.001).
     ToOdd = 64,
+
+    /// Working mode for intermediate steps: rounds exactly as [`RoundingMode::None`], but an overflow of finite
+    /// operands stays `+-Inf` (an explicit overflow signal) where `None` saturates to the signed largest value
+    /// (ZF-M27 rulings M27-FB / M27-OVF). The library's own kernels run in this mode and test `is_inf` for
+    /// overflow; a public result is rounded in the caller's mode. Hidden: `zenith-float-macro` expands to it.
+    #[doc(hidden)]
+    Work = 128,
+}
+
+impl RoundingMode {
+    /// `None` or the working mode [`RoundingMode::Work`]: no rounding step of its own.
+    pub(crate) const fn skips_rounding(self) -> bool {
+        matches!(self, RoundingMode::None | RoundingMode::Work)
+    }
+
+    /// Whether an overflow of finite operands with a `positive` result saturates to the signed largest value: the
+    /// mode rounds toward zero for that sign (C99 7.12.1 / IEEE 754 7.4). `None` is toward zero at rp(p, 64), so it
+    /// saturates (ZF-M27 rulings M27-FB / M27-OVF); the working mode `Work` keeps +-Inf, the library's own overflow
+    /// signal.
+    pub(crate) const fn saturates_overflow(self, positive: bool) -> bool {
+        matches!(
+            (positive, self),
+            (_, RoundingMode::ToZero | RoundingMode::None)
+                | (true, RoundingMode::Down)
+                | (false, RoundingMode::Up)
+        )
+    }
 }

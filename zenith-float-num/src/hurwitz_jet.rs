@@ -25,7 +25,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-const NR: RoundingMode = RoundingMode::None;
+const NR: RoundingMode = RoundingMode::Work;
 const UP: RoundingMode = RoundingMode::Up;
 
 /// Length-2 jet `c0 + c1 x` of a function of the series variable `x`.

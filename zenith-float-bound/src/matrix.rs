@@ -166,7 +166,7 @@ where
         if rad.is_infinity() {
             return Ball::all_reals(prec);
         }
-        let p = match rounded(op, ma.mul_full_prec(mb).ldexp(0, w, MID_RM), w)? {
+        let p = match rounded(op, ma.mul_full_work(mb).ldexp(0, w, MID_RM), w)? {
             Step::Value(v, e) => {
                 rad = rad.add_up(&e);
                 v

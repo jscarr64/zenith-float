@@ -47,7 +47,7 @@ fn stirling_choose_param(z: &ExactComplex, p: usize, digamma: bool) -> (usize, u
     let w_ceil = u32::try_from((beta_pct * prec as u128).div_ceil(100))
         .unwrap_or(u32::MAX)
         .max(1);
-    let w2 = ExactNum::from_u32(w_ceil, wp).sqr(wp, RoundingMode::None);
+    let w2 = ExactNum::from_u32(w_ceil, wp).sqr(wp, RoundingMode::Work);
     let one = ExactComplex::one(wp);
     // `z + r`; `None` while r = 0 (z read in place).
     let mut shifted: Option<ExactComplex> = None;
@@ -57,24 +57,24 @@ fn stirling_choose_param(z: &ExactComplex, p: usize, digamma: bool) -> (usize, u
         let re_lt_one = t.re().is_negative()
             || t.re().is_zero()
             || matches!(t.re().compare(&ExactNum::from_u8(1, wp)), Some(c) if c < 0);
-        let az2 = t.re().sqr(wp, RoundingMode::None).add(
-            &t.im().sqr(wp, RoundingMode::None),
+        let az2 = t.re().sqr(wp, RoundingMode::Work).add(
+            &t.im().sqr(wp, RoundingMode::Work),
             wp,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         let mag_lt = matches!(az2.compare(&w2), Some(c) if c < 0) || az2.is_nan();
         if !re_lt_one && !mag_lt {
             break;
         }
         r = r.saturating_add(1);
-        let next = ExactComplex::add_ref(t, &one, wp, RoundingMode::None);
+        let next = ExactComplex::add_ref(t, &one, wp, RoundingMode::Work);
         shifted = Some(next);
         if r > prec.saturating_mul(2).saturating_add(16) {
             break;
         }
     }
     let t = shifted.as_ref().unwrap_or(z);
-    let log2z = match t.abs(wp, RoundingMode::None).exponent() {
+    let log2z = match t.abs(wp, RoundingMode::Work).exponent() {
         Some(e) => i128::from(e).saturating_sub(1).saturating_mul(ONE),
         None => 0,
     };
@@ -165,7 +165,7 @@ fn add_ui_c(z: &ExactComplex, n: usize, p: usize) -> Cow<'_, ExactComplex> {
         return Cow::Borrowed(z);
     }
     let add = ExactComplex::from_real(exact_from_usize(n, p), p);
-    Cow::Owned(ExactComplex::add_ref(z, &add, p, RoundingMode::None))
+    Cow::Owned(ExactComplex::add_ref(z, &add, p, RoundingMode::Work))
 }
 
 fn exact_from_usize(n: usize, p: usize) -> ExactNum {
@@ -203,12 +203,12 @@ fn rising_block_coeffs(k: usize, l: usize) -> Vec<ExactNum> {
     for j in 0..l {
         let a = exact_from_usize(k + j, p);
         let mut nxt = alloc::vec![ExactNum::new(p); c.len() + 1];
-        nxt[0] = ExactNum::mul_ref(&c[0], &a, p, RoundingMode::None);
+        nxt[0] = ExactNum::mul_ref(&c[0], &a, p, RoundingMode::Work);
         for i in 1..c.len() {
-            nxt[i] = ExactNum::mul_ref(&c[i], &a, p, RoundingMode::None).add(
+            nxt[i] = ExactNum::mul_ref(&c[i], &a, p, RoundingMode::Work).add(
                 &c[i - 1],
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
         }
         // The old top coefficient moves up unchanged; c is replaced next.
@@ -237,7 +237,7 @@ fn rising2_ui_rs(x: &ExactComplex, n: usize, p: usize) -> (ExactComplex, ExactCo
     owned.push(ExactComplex::one(wp));
     for j in 2..=m {
         let prev = if j == 2 { x } else { &owned[j - 2] };
-        let next = prev.mul(x, wp, RoundingMode::None);
+        let next = prev.mul(x, wp, RoundingMode::Work);
         owned.push(next);
     }
     let mut xpow: Vec<&ExactComplex> = Vec::with_capacity(m + 1);
@@ -253,11 +253,11 @@ fn rising2_ui_rs(x: &ExactComplex, n: usize, p: usize) -> (ExactComplex, ExactCo
         acc = Some(match acc {
             None => (pk, dpk),
             Some((tv, dtv)) => {
-                let new_t = tv.mul(&pk, wp, RoundingMode::None);
-                let new_dt = dtv.mul(&pk, wp, RoundingMode::None).add(
-                    &tv.mul(&dpk, wp, RoundingMode::None),
+                let new_t = tv.mul(&pk, wp, RoundingMode::Work);
+                let new_dt = dtv.mul(&pk, wp, RoundingMode::Work).add(
+                    &tv.mul(&dpk, wp, RoundingMode::Work),
                     wp,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 );
                 (new_t, new_dt)
             }
@@ -278,7 +278,7 @@ fn rising_block_eval(
             xpow[1],
             &ExactComplex::from_real(exact_from_usize(k, wp), wp),
             wp,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         return (xk, ExactComplex::one(wp));
     }
@@ -287,19 +287,19 @@ fn rising_block_eval(
     for i in 0..=l {
         let ci = ExactComplex::from_real(c[i].clone(), wp);
         pval = pval.add(
-            &xpow[i].mul(&ci, wp, RoundingMode::None),
+            &xpow[i].mul(&ci, wp, RoundingMode::Work),
             wp,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
     }
     let mut dp = ExactComplex::zero(wp);
     for i in 1..=l {
-        let ci = ExactNum::mul_ref(&c[i], &exact_from_usize(i, wp), wp, RoundingMode::None);
+        let ci = ExactNum::mul_ref(&c[i], &exact_from_usize(i, wp), wp, RoundingMode::Work);
         let ci = ExactComplex::from_real(ci, wp);
         dp = dp.add(
-            &xpow[i - 1].mul(&ci, wp, RoundingMode::None),
+            &xpow[i - 1].mul(&ci, wp, RoundingMode::Work),
             wp,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
     }
     (pval, dp)
@@ -333,20 +333,20 @@ pub(crate) fn two_c(p: usize) -> ExactComplex {
 }
 
 pub(crate) fn half_c(p: usize) -> ExactComplex {
-    let h = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
+    let h = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::Work);
     ExactComplex::from_real(h, p)
 }
 
 pub(crate) fn pi_c(p: usize, cc: &mut Consts) -> ExactComplex {
-    ExactComplex::from_real(cc.pi(p, RoundingMode::None), p)
+    ExactComplex::from_real(cc.pi(p, RoundingMode::Work), p)
 }
 
 /// Guard bits for [`ExactComplex::erf_power_series`]: `1.5·2^e + 16` with \(\lvert u\rvert^2<2^e\).
 fn erf_series_guard_bits(u: &ExactComplex) -> usize {
-    let a2 = u.re().sqr(64, RoundingMode::None).add(
-        &u.im().sqr(64, RoundingMode::None),
+    let a2 = u.re().sqr(64, RoundingMode::Work).add(
+        &u.im().sqr(64, RoundingMode::Work),
         64,
-        RoundingMode::None,
+        RoundingMode::Work,
     );
     match a2.exponent() {
         Some(e) if e > 0 && !a2.is_zero() => (3usize << (e as u32).min(40)) / 2 + 16,
@@ -359,17 +359,17 @@ fn finite_parts(z: &ExactComplex) -> bool {
 }
 
 pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
-    let m = t.abs(p, RoundingMode::None);
+    let m = t.abs(p, RoundingMode::Work);
     m.is_zero() || m.exponent().is_some_and(|e| e + (p as i64) < 0)
 }
 
 fn l1_below_series_bound(z: &ExactComplex, p: usize) -> bool {
     let (re, im) = (z.re(), z.im());
     let s = match (re.is_negative(), im.is_negative()) {
-        (false, false) => ExactNum::add_ref(re, im, p, RoundingMode::None),
-        (false, true) => ExactNum::sub_ref(re, im, p, RoundingMode::None),
-        (true, false) => ExactNum::sub_ref(im, re, p, RoundingMode::None),
-        (true, true) => re.neg_via_mul().sub(im, p, RoundingMode::None),
+        (false, false) => ExactNum::add_ref(re, im, p, RoundingMode::Work),
+        (false, true) => ExactNum::sub_ref(re, im, p, RoundingMode::Work),
+        (true, false) => ExactNum::sub_ref(im, re, p, RoundingMode::Work),
+        (true, true) => re.neg_via_mul().sub(im, p, RoundingMode::Work),
     };
     let bound = ExactNum::from_u32(FADDEEVA_SERIES_L1, p);
     matches!(s.compare(&bound), Some(c) if c < 0)
@@ -381,8 +381,8 @@ fn use_faddeeva_series(z: &ExactComplex, p: usize) -> bool {
     if l1_below_series_bound(z, p) {
         return true;
     }
-    let az = z.abs(p, RoundingMode::None);
-    let az2 = az.sqr(p, RoundingMode::None);
+    let az = z.abs(p, RoundingMode::Work);
+    let az2 = az.sqr(p, RoundingMode::Work);
     let thresh = ExactNum::from_u32(p.min(u32::MAX as usize) as u32, p);
     matches!(az2.compare(&thresh), Some(c) if c < 0)
 }
@@ -453,7 +453,7 @@ fn factorial_um1(n: u32, p: usize) -> ExactComplex {
     let mut acc = ExactNum::from_u8(1, p);
     if n >= 2 {
         for k in 2..n {
-            acc = acc.mul(&ExactNum::from_u32(k, p), p, RoundingMode::None);
+            acc = acc.mul(&ExactNum::from_u32(k, p), p, RoundingMode::Work);
         }
     }
     ExactComplex::from_real(acc, p)
@@ -569,7 +569,7 @@ fn stirling_improved_plan(
 fn fact_ui(n: usize, p: usize) -> ExactNum {
     let mut acc = ExactNum::from_u8(1, p);
     for i in 2..=n {
-        acc = acc.mul(&exact_from_usize(i, p), p, RoundingMode::None);
+        acc = acc.mul(&exact_from_usize(i, p), p, RoundingMode::Work);
     }
     acc
 }
@@ -590,16 +590,16 @@ fn num_pow_ui(base: usize, exp: usize, p: usize) -> ExactNum {
     let mut e = exp;
     loop {
         if e & 1 == 1 {
-            acc = acc.mul(&b, wp, RoundingMode::None);
+            acc = acc.mul(&b, wp, RoundingMode::Work);
         }
         e >>= 1;
         if e == 0 {
             break;
         }
-        b = ExactNum::mul_ref(&b, &b, wp, RoundingMode::None);
+        b = ExactNum::mul_ref(&b, &b, wp, RoundingMode::Work);
     }
     if wp != p {
-        let _ = acc.set_precision(p, RoundingMode::None);
+        let _ = acc.set_precision(p, RoundingMode::Work);
     }
     acc
 }
@@ -615,13 +615,13 @@ fn c_pow_ui(base: &ExactComplex, exp: usize, p: usize) -> ExactComplex {
     loop {
         let b = squared.as_ref().unwrap_or(base);
         if e & 1 == 1 {
-            acc = acc.mul(b, p, RoundingMode::None);
+            acc = acc.mul(b, p, RoundingMode::Work);
         }
         e >>= 1;
         if e == 0 {
             return acc;
         }
-        let next = b.mul(b, p, RoundingMode::None);
+        let next = b.mul(b, p, RoundingMode::Work);
         squared = Some(next);
     }
 }
@@ -633,7 +633,7 @@ fn c_powers(base: &ExactComplex, n: usize, p: usize) -> Vec<ExactComplex> {
     }
     v.push(ExactComplex::new(base.re().clone(), base.im().clone()));
     for _ in 2..=n {
-        let next = v[v.len() - 1].mul(base, p, RoundingMode::None);
+        let next = v[v.len() - 1].mul(base, p, RoundingMode::Work);
         v.push(next);
     }
     v
@@ -645,7 +645,7 @@ fn ui_pair_c(a: usize, b: usize, p: usize) -> ExactComplex {
         ExactComplex::from_real(ExactNum::from_u32(prod as u32, p), p)
     } else {
         ExactComplex::from_real(
-            exact_from_usize(a, p).mul(&exact_from_usize(b, p), p, RoundingMode::None),
+            exact_from_usize(a, p).mul(&exact_from_usize(b, p), p, RoundingMode::Work),
             p,
         )
     }
@@ -664,13 +664,13 @@ fn stirling_log_sum_horner(z: &ExactComplex, terms: usize, p: usize) -> ExactCom
         let k = k + 1;
         let two_k = ExactNum::from_u32((2 * k) as u32, p);
         let two_k_m1 = ExactNum::from_u32((2 * k - 1) as u32, p);
-        let den_r = two_k.mul(&two_k_m1, p, RoundingMode::None);
+        let den_r = two_k.mul(&two_k_m1, p, RoundingMode::Work);
         let zpow = zpow_owned.as_ref().unwrap_or(z);
-        let den = ExactComplex::from_real(den_r, p).mul(zpow, p, RoundingMode::None);
-        let term = ExactComplex::from_real(b, p).div(&den, p, RoundingMode::None);
-        s = s.add(&term, p, RoundingMode::None);
+        let den = ExactComplex::from_real(den_r, p).mul(zpow, p, RoundingMode::Work);
+        let term = ExactComplex::from_real(b, p).div(&den, p, RoundingMode::Work);
+        s = s.add(&term, p, RoundingMode::Work);
         let e = term
-            .abs(p, RoundingMode::None)
+            .abs(p, RoundingMode::Work)
             .exponent()
             .unwrap_or(Exponent::MIN);
         if term_negligible(&term, p) {
@@ -681,15 +681,15 @@ fn stirling_log_sum_horner(z: &ExactComplex, terms: usize, p: usize) -> ExactCom
         }
         prev_e = e;
         let next = zpow
-            .mul(z, p, RoundingMode::None)
-            .mul(z, p, RoundingMode::None);
+            .mul(z, p, RoundingMode::Work)
+            .mul(z, p, RoundingMode::Work);
         zpow_owned = Some(next);
     }
     s
 }
 
 fn stirling_digamma_coeff_sum_horner(z: &ExactComplex, terms: usize, p: usize) -> ExactComplex {
-    let z2 = z.mul(z, p, RoundingMode::None);
+    let z2 = z.mul(z, p, RoundingMode::Work);
     let mut zp = ExactComplex::one(p);
     let bs = match even_bernoulli_numbers(terms, p) {
         Ok(v) => v,
@@ -699,13 +699,13 @@ fn stirling_digamma_coeff_sum_horner(z: &ExactComplex, terms: usize, p: usize) -
     let mut prev_e = Exponent::MIN;
     for (k, b) in bs.into_iter().enumerate() {
         let k = k + 1;
-        zp = zp.mul(&z2, p, RoundingMode::None);
+        zp = zp.mul(&z2, p, RoundingMode::Work);
         let two_k = ExactComplex::from_real(ExactNum::from_u32((2 * k) as u32, p), p);
-        let den = two_k.mul(&zp, p, RoundingMode::None);
-        let term = ExactComplex::from_real(b, p).div(&den, p, RoundingMode::None);
-        s = s.add(&term, p, RoundingMode::None);
+        let den = two_k.mul(&zp, p, RoundingMode::Work);
+        let term = ExactComplex::from_real(b, p).div(&den, p, RoundingMode::Work);
+        s = s.add(&term, p, RoundingMode::Work);
         let e = term
-            .abs(p, RoundingMode::None)
+            .abs(p, RoundingMode::Work)
             .exponent()
             .unwrap_or(Exponent::MIN);
         if term_negligible(&term, p) {
@@ -740,12 +740,12 @@ fn stirling_sum_s3(
     let pi = pi_c(wp, cc);
     // u = -1 / (2 π z)^2
     let two_pi_z = two_c(wp)
-        .mul(&pi, wp, RoundingMode::None)
-        .mul(z, wp, RoundingMode::None);
+        .mul(&pi, wp, RoundingMode::Work)
+        .mul(z, wp, RoundingMode::Work);
     let mut u = ExactComplex::one(wp).div(
-        &two_pi_z.mul(&two_pi_z, wp, RoundingMode::None),
+        &two_pi_z.mul(&two_pi_z, wp, RoundingMode::Work),
         wp,
-        RoundingMode::None,
+        RoundingMode::Work,
     );
     u = u.neg();
     let tail_len = nterms.saturating_sub(m_head);
@@ -771,12 +771,12 @@ fn stirling_sum_s3(
                     k2p = k2p.mul(
                         &exact_from_usize(k.saturating_mul(k), wp),
                         wp,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     );
                     ukpow.push(uj.div(
                         &ExactComplex::from_real(k2p.clone(), wp),
                         wp,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     ));
                 }
                 while ukpow.len() <= mblk {
@@ -787,7 +787,7 @@ fn stirling_sum_s3(
             } else {
                 for j in 1..=mblk.min(ukpow.len().saturating_sub(1)) {
                     let shift = -2 * (j as i64);
-                    ukpow[j] = ukpow[j].ldexp(shift, wp, RoundingMode::None);
+                    ukpow[j] = ukpow[j].ldexp(shift, wp, RoundingMode::Work);
                 }
                 kpow_exp = kpow_exp.saturating_add(2 * (m_head as i64));
             }
@@ -803,9 +803,9 @@ fn stirling_sum_s3(
                         ui_pair_c(2 * n, 2 * n - 1, wp)
                     };
                     let addend = &ukpow[i % mblk];
-                    s4 = s4.mul_add(&coeff, addend, wp, RoundingMode::None);
+                    s4 = s4.mul_add(&coeff, addend, wp, RoundingMode::Work);
                     if i != 0 && i.is_multiple_of(mblk) {
-                        s4 = s4.mul(&ukpow[mblk], wp, RoundingMode::None);
+                        s4 = s4.mul(&ukpow[mblk], wp, RoundingMode::Work);
                     }
                     if n == m_head {
                         break;
@@ -817,13 +817,13 @@ fn stirling_sum_s3(
                 s4 = s4.div(
                     &ExactComplex::from_real(kpow.clone(), wp),
                     wp,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 );
                 if kpow_exp != 0 {
-                    s4 = s4.ldexp(-kpow_exp, wp, RoundingMode::None);
+                    s4 = s4.ldexp(-kpow_exp, wp, RoundingMode::Work);
                 }
             }
-            s3 = s3.add(&s4, wp, RoundingMode::None);
+            s3 = s3.add(&s4, wp, RoundingMode::Work);
             let nxt = k.saturating_mul(2);
             if nxt <= k {
                 break;
@@ -840,14 +840,14 @@ fn stirling_sum_s3(
     let fact = ExactComplex::from_real(fact_ui(fact_n, wp), wp);
     let u_m = c_pow_ui(&u, m_head, wp);
     s3 = s3
-        .mul(&fact, wp, RoundingMode::None)
-        .mul(&u_m, wp, RoundingMode::None);
+        .mul(&fact, wp, RoundingMode::Work)
+        .mul(&u_m, wp, RoundingMode::Work);
     if !digamma {
-        s3 = s3.mul(z, wp, RoundingMode::None);
+        s3 = s3.mul(z, wp, RoundingMode::Work);
     }
-    s3 = s3.ldexp(1, wp, RoundingMode::None).neg();
+    s3 = s3.ldexp(1, wp, RoundingMode::Work).neg();
     if wp != p {
-        let _ = s3.set_precision(p, RoundingMode::None);
+        let _ = s3.set_precision(p, RoundingMode::Work);
     }
     s3
 }
@@ -861,8 +861,8 @@ fn stirling_log_sum_s2(z: &ExactComplex, m_head: usize, p: usize) -> ExactComple
         Ok(v) => v,
         Err(e) => return nan_pair(e),
     };
-    let zinv = ExactComplex::one(p).div(z, p, RoundingMode::None);
-    let w = zinv.mul(&zinv, p, RoundingMode::None);
+    let zinv = ExactComplex::one(p).div(z, p, RoundingMode::Work);
+    let w = zinv.mul(&zinv, p, RoundingMode::Work);
     let mblk = m_head.isqrt().max(1);
     let upow = c_powers(&w, mblk, p);
     let mut s2 = ExactComplex::new(ExactNum::new(p), ExactNum::new(p));
@@ -873,24 +873,24 @@ fn stirling_log_sum_s2(z: &ExactComplex, m_head: usize, p: usize) -> ExactComple
         let den_r = ExactNum::from_u32((2 * n) as u32, p).mul(
             &ExactNum::from_u32((2 * n - 1) as u32, p),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         let mut term = ExactComplex::from_real(b.clone(), p).div(
             &ExactComplex::from_real(den_r, p),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
-        term = term.mul(&upow[i % mblk], p, RoundingMode::None);
-        s2 = s2.add(&term, p, RoundingMode::None);
+        term = term.mul(&upow[i % mblk], p, RoundingMode::Work);
+        s2 = s2.add(&term, p, RoundingMode::Work);
         if i != 0 && i.is_multiple_of(mblk) {
-            s2 = s2.mul(&upow[mblk], p, RoundingMode::None);
+            s2 = s2.mul(&upow[mblk], p, RoundingMode::Work);
         }
         if n == 1 {
             break;
         }
         n -= 1;
     }
-    s2.mul(&zinv, p, RoundingMode::None)
+    s2.mul(&zinv, p, RoundingMode::Work)
 }
 
 fn stirling_digamma_sum_s2(z: &ExactComplex, m_head: usize, p: usize) -> ExactComplex {
@@ -902,8 +902,8 @@ fn stirling_digamma_sum_s2(z: &ExactComplex, m_head: usize, p: usize) -> ExactCo
         Ok(v) => v,
         Err(e) => return nan_pair(e),
     };
-    let zinv = ExactComplex::one(p).div(z, p, RoundingMode::None);
-    let w = zinv.mul(&zinv, p, RoundingMode::None);
+    let zinv = ExactComplex::one(p).div(z, p, RoundingMode::Work);
+    let w = zinv.mul(&zinv, p, RoundingMode::Work);
     let mblk = m_head.isqrt().max(1);
     let upow = c_powers(&w, mblk, p);
     let mut s2 = ExactComplex::new(ExactNum::new(p), ExactNum::new(p));
@@ -914,11 +914,11 @@ fn stirling_digamma_sum_s2(z: &ExactComplex, m_head: usize, p: usize) -> ExactCo
     loop {
         let b = &bs[n - 1];
         let den = ExactComplex::from_real(ExactNum::from_u32((2 * n) as u32, p), p);
-        let mut term = ExactComplex::from_real(b.clone(), p).div(&den, p, RoundingMode::None);
-        term = term.mul(&upow[n % mblk], p, RoundingMode::None);
-        s2 = s2.add(&term, p, RoundingMode::None);
+        let mut term = ExactComplex::from_real(b.clone(), p).div(&den, p, RoundingMode::Work);
+        term = term.mul(&upow[n % mblk], p, RoundingMode::Work);
+        s2 = s2.add(&term, p, RoundingMode::Work);
         if n.is_multiple_of(mblk) && n != 0 {
-            s2 = s2.mul(&upow[mblk], p, RoundingMode::None);
+            s2 = s2.mul(&upow[mblk], p, RoundingMode::Work);
         }
         if n == 1 {
             break;
@@ -945,7 +945,7 @@ fn stirling_log_sum_improved(
     } else {
         ExactComplex::new(ExactNum::new(p), ExactNum::new(p))
     };
-    s2.add(&s3, p, RoundingMode::None)
+    s2.add(&s3, p, RoundingMode::Work)
 }
 
 fn stirling_digamma_coeff_sum_improved(
@@ -965,7 +965,7 @@ fn stirling_digamma_coeff_sum_improved(
     } else {
         ExactComplex::new(ExactNum::new(p), ExactNum::new(p))
     };
-    s2.add(&s3, p, RoundingMode::None)
+    s2.add(&s3, p, RoundingMode::Work)
 }
 
 impl ExactComplex {
@@ -1228,7 +1228,7 @@ impl ExactComplex {
             } else {
                 rm
             };
-            let mut im = cc.pi(dest, rm_im).ldexp(-1, dest, RoundingMode::None);
+            let mut im = cc.pi(dest, rm_im).ldexp(-1, dest, RoundingMode::Work);
             if im_neg {
                 im = im.neg();
             }
@@ -1243,7 +1243,7 @@ impl ExactComplex {
         // On the real axis the imaginary part is exactly zero: the complex path only leaves rounding noise
         // there, which never rounds.
         if self.im().is_zero() {
-            return ExactComplex::from_real(self.re().erf(work_p, RoundingMode::None, cc), work_p);
+            return ExactComplex::from_real(self.re().erf(work_p, RoundingMode::Work, cc), work_p);
         }
         // On the imaginary axis erf(±0 + iy) = ±0 + i·erfi(y) (erf is odd and real on the real
         // axis): the real part is that exact signed zero, not the rounding noise of 1 − erfc.
@@ -1262,14 +1262,14 @@ impl ExactComplex {
             ExactComplex::one(work_p).sub(
                 &self.erfc_via_faddeeva_plain(work_p, dest_p, cc),
                 work_p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
         }
     }
 
     fn erfc_at_plain(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if self.im().is_zero() {
-            return ExactComplex::from_real(self.re().erfc(work_p, RoundingMode::None, cc), work_p);
+            return ExactComplex::from_real(self.re().erfc(work_p, RoundingMode::Work, cc), work_p);
         }
         // erfc(±0 + iy) = 1 − i·erfi(y): the real part is exactly 1.
         if self.re().is_zero() {
@@ -1280,7 +1280,7 @@ impl ExactComplex {
             ExactComplex::one(work_p).sub(
                 &Self::erf_power_series_plain(self, work_p, cc),
                 work_p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
         } else {
             self.erfc_via_faddeeva_plain(work_p, dest_p, cc)
@@ -1289,24 +1289,24 @@ impl ExactComplex {
 
     /// `erfc(z) = e^{-z²} w(iz)`, with the reflection form when `Re(z) ≤ 0`.
     fn erfc_via_faddeeva_plain(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
-        let z2 = self.mul(self, work_p, RoundingMode::None);
-        let em = neg_c(z2).exp(work_p, RoundingMode::None, cc);
-        let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
+        let z2 = self.mul(self, work_p, RoundingMode::Work);
+        let em = neg_c(z2).exp(work_p, RoundingMode::Work, cc);
+        let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::Work);
         if re_positive(self) {
             em.mul(
                 &Self::faddeeva_plain(&iz, work_p, dest_p, cc),
                 work_p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
         } else {
             two_c(work_p).sub(
                 &em.mul(
                     &Self::faddeeva_plain(&neg_c(iz), work_p, dest_p, cc),
                     work_p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 ),
                 work_p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
         }
     }
@@ -1314,16 +1314,16 @@ impl ExactComplex {
     /// Faddeeva \(w(z)=e^{-z^2}\mathrm{erfc}(-iz)\). Reduces to \(\mathrm{Im}\,z\ge 0\).
     fn faddeeva_plain(z: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if im_negative_or_neg_real(z) {
-            let z2 = z.mul(z, work_p, RoundingMode::None);
+            let z2 = z.mul(z, work_p, RoundingMode::Work);
             let two_exp = two_c(work_p).mul(
-                &neg_c(z2).exp(work_p, RoundingMode::None, cc),
+                &neg_c(z2).exp(work_p, RoundingMode::Work, cc),
                 work_p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             return two_exp.sub(
                 &Self::faddeeva_upper_plain(&z.neg_via_mul(), work_p, dest_p, cc),
                 work_p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
         }
         Self::faddeeva_upper_plain(z, work_p, dest_p, cc)
@@ -1339,13 +1339,13 @@ impl ExactComplex {
 
     /// Poppe–Wijers power series: \(w(z)=e^{-z^2}(1-\mathrm{erf}(-iz))\).
     fn faddeeva_series_plain(z: &Self, p: usize, cc: &mut Consts) -> Self {
-        let u = neg_c(ExactComplex::i(p)).mul(z, p, RoundingMode::None);
+        let u = neg_c(ExactComplex::i(p)).mul(z, p, RoundingMode::Work);
         let erf_u = Self::erf_power_series_plain(&u, p, cc);
-        let erfc_u = ExactComplex::one(p).sub(&erf_u, p, RoundingMode::None);
-        let z2 = z.mul(z, p, RoundingMode::None);
+        let erfc_u = ExactComplex::one(p).sub(&erf_u, p, RoundingMode::Work);
+        let z2 = z.mul(z, p, RoundingMode::Work);
         neg_c(z2)
-            .exp(p, RoundingMode::None, cc)
-            .mul(&erfc_u, p, RoundingMode::None)
+            .exp(p, RoundingMode::Work, cc)
+            .mul(&erfc_u, p, RoundingMode::Work)
     }
 
     /// Entire power series \(\mathrm{erf}(u)=\frac{2}{\sqrt\pi}\sum(-1)^n u^{2n+1}/(n!(2n+1))\).
@@ -1354,18 +1354,18 @@ impl ExactComplex {
     /// runs with `1.5·bound(|u|²) + 16` guard bits (\(\log_2 e<1.5\)).
     fn erf_power_series_plain(u: &Self, dest_p: usize, cc: &mut Consts) -> Self {
         let p = dest_p + erf_series_guard_bits(u);
-        let pi = cc.pi(p, RoundingMode::None);
-        let sqrt_pi = pi.sqrt(p, RoundingMode::None);
-        let scale = ExactNum::from_u8(2, p).div(&sqrt_pi, p, RoundingMode::None);
-        let u2 = u.mul(u, p, RoundingMode::None);
+        let pi = cc.pi(p, RoundingMode::Work);
+        let sqrt_pi = pi.sqrt(p, RoundingMode::Work);
+        let scale = ExactNum::from_u8(2, p).div(&sqrt_pi, p, RoundingMode::Work);
+        let u2 = u.mul(u, p, RoundingMode::Work);
         // The power and the sum both start at `u` itself: `None` reads the borrowed `u`.
         let mut upow: Option<Self> = None;
         let mut nfact = ExactNum::from_u8(1, p);
         let mut sum: Option<Self> = None;
         let mut n: u32 = 1;
         let sum = loop {
-            nfact = nfact.mul(&ExactNum::from_u32(n, p), p, RoundingMode::None);
-            let upow_new = upow.as_ref().unwrap_or(u).mul(&u2, p, RoundingMode::None);
+            nfact = nfact.mul(&ExactNum::from_u32(n, p), p, RoundingMode::Work);
+            let upow_new = upow.as_ref().unwrap_or(u).mul(&u2, p, RoundingMode::Work);
             let two_n_1 = n
                 .checked_mul(2)
                 .and_then(|v| v.checked_add(1))
@@ -1373,13 +1373,13 @@ impl ExactComplex {
             let Some(two_n_1) = two_n_1 else {
                 return nan_pair(Error::PrecisionRetryExhausted);
             };
-            let den = two_n_1.mul(&nfact, p, RoundingMode::None);
-            let mut t = upow_new.div(&ExactComplex::from_real(den, p), p, RoundingMode::None);
+            let den = two_n_1.mul(&nfact, p, RoundingMode::Work);
+            let mut t = upow_new.div(&ExactComplex::from_real(den, p), p, RoundingMode::Work);
             if n % 2 == 1 {
                 t = neg_c(t);
             }
             let sum_new =
-                ExactComplex::add_ref(sum.as_ref().unwrap_or(u), &t, p, RoundingMode::None);
+                ExactComplex::add_ref(sum.as_ref().unwrap_or(u), &t, p, RoundingMode::Work);
             if term_negligible(&t, p) {
                 break sum_new;
             }
@@ -1390,13 +1390,13 @@ impl ExactComplex {
             sum = Some(sum_new);
             n = next;
         };
-        ExactComplex::from_real(scale, p).mul(&sum, dest_p, RoundingMode::None)
+        ExactComplex::from_real(scale, p).mul(&sum, dest_p, RoundingMode::Work)
     }
 
     /// \(w(z)\sim i/(z\sqrt\pi)\sum(2m-1)!!/(2z^2)^m\) for \(\mathrm{Im}\,z\ge 0\).
     fn faddeeva_asymp_plain(z: &Self, p: usize, cc: &mut Consts) -> Self {
-        let z2 = z.mul(z, p, RoundingMode::None);
-        let two_z2 = two_c(p).mul(&z2, p, RoundingMode::None);
+        let z2 = z.mul(z, p, RoundingMode::Work);
+        let two_z2 = two_c(p).mul(&z2, p, RoundingMode::Work);
         let mut term = ExactComplex::one(p);
         let mut s = ExactComplex::one(p);
         let mut prev_e = Exponent::MIN;
@@ -1408,11 +1408,11 @@ impl ExactComplex {
             };
             let odd = ExactComplex::from_real(ExactNum::from_u32(odd_n, p), p);
             term = term
-                .mul(&odd, p, RoundingMode::None)
-                .div(&two_z2, p, RoundingMode::None);
-            s = s.add(&term, p, RoundingMode::None);
+                .mul(&odd, p, RoundingMode::Work)
+                .div(&two_z2, p, RoundingMode::Work);
+            s = s.add(&term, p, RoundingMode::Work);
             let e = term
-                .abs(p, RoundingMode::None)
+                .abs(p, RoundingMode::Work)
                 .exponent()
                 .unwrap_or(Exponent::MIN);
             if term_negligible(&term, p) {
@@ -1428,11 +1428,11 @@ impl ExactComplex {
             m = next;
         }
         let sqrt_pi =
-            ExactComplex::from_real(cc.pi(p, RoundingMode::None).sqrt(p, RoundingMode::None), p);
-        let den = z.mul(&sqrt_pi, p, RoundingMode::None);
+            ExactComplex::from_real(cc.pi(p, RoundingMode::Work).sqrt(p, RoundingMode::Work), p);
+        let den = z.mul(&sqrt_pi, p, RoundingMode::Work);
         ExactComplex::i(p)
-            .div(&den, p, RoundingMode::None)
-            .mul(&s, p, RoundingMode::None)
+            .div(&den, p, RoundingMode::Work)
+            .mul(&s, p, RoundingMode::Work)
     }
 
     /// `erf` of a ball `w`: the library `erf` at the center (each part within 4 ulps at `q`)
@@ -1442,7 +1442,7 @@ impl ExactComplex {
     /// \(|\delta| \le 1/4\). `None` when the ball is too wide for that bound.
     pub(crate) fn erf_of_ball(w: &CB, q: usize, cc: &mut Consts) -> Option<CB> {
         let c = ExactComplex::new(w.re.v.clone(), w.im.v.clone());
-        let v = c.erf(q, RoundingMode::None, cc);
+        let v = c.erf(q, RoundingMode::Work, cc);
         let (v_re, v_im) = v.into_parts();
         let re = RB::rounded(v_re, q)?;
         let im = RB::rounded(v_im, q)?;
@@ -1468,7 +1468,7 @@ impl ExactComplex {
         // On the real axis the imaginary part is exactly zero (+0, as `from_real`).
         if self.im().is_zero() {
             return Some(CB::from_real(RB::rounded(
-                self.re().erf(q, RoundingMode::None, cc),
+                self.re().erf(q, RoundingMode::Work, cc),
                 q,
             )?));
         }
@@ -1492,7 +1492,7 @@ impl ExactComplex {
     fn erfc_ball(&self, q: usize, dest_p: usize, cc: &mut Consts) -> Option<CB> {
         if self.im().is_zero() {
             return Some(CB::from_real(RB::rounded(
-                self.re().erfc(q, RoundingMode::None, cc),
+                self.re().erfc(q, RoundingMode::Work, cc),
                 q,
             )?));
         }
@@ -1564,7 +1564,7 @@ impl ExactComplex {
     fn erf_series_ball(u: &Self, dest_p: usize, cc: &mut Consts) -> Option<CB> {
         let guard = erf_series_guard_bits(u);
         let p = dest_p + guard;
-        let pi = RB::rounded(cc.pi(p, RoundingMode::None), p)?;
+        let pi = RB::rounded(cc.pi(p, RoundingMode::Work), p)?;
         let scale = RB::exact(ExactNum::from_u8(2, WORD_BIT_SIZE)).div(&pi.sqrt(p)?, p)?;
         let ub = CB::exact(u);
         let mu2 = ub.mul(&ub, p)?.neg();
@@ -1632,7 +1632,7 @@ impl ExactComplex {
                 let next = tm.mul_u64(2 * m as u64 + 1).mul_pow2(-lo2);
                 let k = Self::asymp_csc_bound(z)?;
                 s = s.widen(next.mul(k));
-                let sqrt_pi = RB::rounded(cc.pi(q, RoundingMode::None), q)?.sqrt(q)?;
+                let sqrt_pi = RB::rounded(cc.pi(q, RoundingMode::Work), q)?.sqrt(q)?;
                 let den = zb.mul_real(&sqrt_pi, q)?;
                 return CB::i().div(&den, q)?.mul(&s, q);
             }
@@ -1662,11 +1662,11 @@ impl ExactComplex {
         }
         if !re_positive(self) && !self.re().is_zero() {
             let pi = pi_c(p, cc);
-            let piz = pi.mul(self, p, RoundingMode::None);
-            let s = piz.sin(p, RoundingMode::None, cc);
-            let omz = ExactComplex::one(p).sub(self, p, RoundingMode::None);
+            let piz = pi.mul(self, p, RoundingMode::Work);
+            let s = piz.sin(p, RoundingMode::Work, cc);
+            let omz = ExactComplex::one(p).sub(self, p, RoundingMode::Work);
             let g = omz.gamma_positive(p, cc);
-            return pi.div(&s.mul(&g, p, RoundingMode::None), p, RoundingMode::None);
+            return pi.div(&s.mul(&g, p, RoundingMode::Work), p, RoundingMode::Work);
         }
         self.gamma_positive(p, cc)
     }
@@ -1691,12 +1691,12 @@ impl ExactComplex {
         let (r, terms) = stirling_choose_param(self, p, false);
         let zr = add_ui_c(self, r, p);
         let lg = zr.ln_gamma_stirling_with(p, terms, cc);
-        let g = lg.exp(p, RoundingMode::None, cc);
+        let g = lg.exp(p, RoundingMode::Work, cc);
         if r == 0 {
             return g;
         }
         let (acc, _) = rising2_ui_rs(self, r, p);
-        g.div(&acc, p, RoundingMode::None)
+        g.div(&acc, p, RoundingMode::Work)
     }
 
     /// Continuous \(\log(\sin(\pi z))\) as in Arb `acb_log_sin_pi`.
@@ -1707,34 +1707,34 @@ impl ExactComplex {
     /// imaginary part \(-\pi\).
     fn log_sin_pi(z: &Self, p: usize, cc: &mut Consts) -> Self {
         let pi = pi_c(p, cc);
-        let two_pi = two_c(p).mul(&pi, p, RoundingMode::None);
-        let ln2 = ExactComplex::from_real(cc.ln_2(p, RoundingMode::None), p);
+        let two_pi = two_c(p).mul(&pi, p, RoundingMode::Work);
+        let ln2 = ExactComplex::from_real(cc.ln_2(p, RoundingMode::Work), p);
         let i = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(1, p));
-        let zmh = ExactComplex::sub_ref(z, &half_c(p), p, RoundingMode::None);
-        let i_pi = i.mul(&pi, p, RoundingMode::None);
+        let zmh = ExactComplex::sub_ref(z, &half_c(p), p, RoundingMode::Work);
+        let i_pi = i.mul(&pi, p, RoundingMode::Work);
         // Arb: Im(z) < 0 is a numeric comparison, so Im = −0 takes the real-cut form.
         if z.im().is_negative() && !z.im().is_zero() {
-            let phase = i_pi.mul(&zmh, p, RoundingMode::None);
+            let phase = i_pi.mul(&zmh, p, RoundingMode::Work);
             let w = i
-                .mul(&two_pi, p, RoundingMode::None)
+                .mul(&two_pi, p, RoundingMode::Work)
                 .neg()
-                .mul(z, p, RoundingMode::None)
-                .exp(p, RoundingMode::None, cc);
-            phase.sub(&ln2, p, RoundingMode::None).add(
-                &w.neg().log1p(p, RoundingMode::None, cc),
+                .mul(z, p, RoundingMode::Work)
+                .exp(p, RoundingMode::Work, cc);
+            phase.sub(&ln2, p, RoundingMode::Work).add(
+                &w.neg().log1p(p, RoundingMode::Work, cc),
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
         } else {
-            let phase = i_pi.neg().mul(&zmh, p, RoundingMode::None);
+            let phase = i_pi.neg().mul(&zmh, p, RoundingMode::Work);
             let w = i
-                .mul(&two_pi, p, RoundingMode::None)
-                .mul(z, p, RoundingMode::None)
-                .exp(p, RoundingMode::None, cc);
-            phase.sub(&ln2, p, RoundingMode::None).add(
-                &w.neg().log1p(p, RoundingMode::None, cc),
+                .mul(&two_pi, p, RoundingMode::Work)
+                .mul(z, p, RoundingMode::Work)
+                .exp(p, RoundingMode::Work, cc);
+            phase.sub(&ln2, p, RoundingMode::Work).add(
+                &w.neg().log1p(p, RoundingMode::Work, cc),
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
         }
     }
@@ -1742,35 +1742,35 @@ impl ExactComplex {
     /// Principal \(\ln\) of `acc`, plus \(2\pi i k\) so the argument matches
     /// the sum of principal args of the rising-factorial factors (Arb).
     fn ln_rising_from_product(acc: &Self, arg_sum: &ExactNum, p: usize, cc: &mut Consts) -> Self {
-        let prin = acc.ln(p, RoundingMode::None, cc);
-        let two_pi = cc.pi(p, RoundingMode::None).ldexp(1, p, RoundingMode::None);
-        let delta = ExactNum::sub_ref(arg_sum, prin.im(), p, RoundingMode::None).div(
+        let prin = acc.ln(p, RoundingMode::Work, cc);
+        let two_pi = cc.pi(p, RoundingMode::Work).ldexp(1, p, RoundingMode::Work);
+        let delta = ExactNum::sub_ref(arg_sum, prin.im(), p, RoundingMode::Work).div(
             &two_pi,
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
-        let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
-        let k = delta.add(&half, p, RoundingMode::None).floor();
+        let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::Work);
+        let k = delta.add(&half, p, RoundingMode::Work).floor();
         if k.is_zero() {
             return prin;
         }
         let (re, im) = prin.into_parts();
         let im = k
-            .mul(&two_pi, p, RoundingMode::None)
-            .add(&im, p, RoundingMode::None);
+            .mul(&two_pi, p, RoundingMode::Work)
+            .add(&im, p, RoundingMode::Work);
         ExactComplex::new(re, im)
     }
 
     fn ln_gamma_at(&self, p: usize, cc: &mut Consts) -> Self {
         if let Some(n) = self.small_pos_int(p) {
-            return factorial_um1_work(n, p).ln(p, RoundingMode::None, cc);
+            return factorial_um1_work(n, p).ln(p, RoundingMode::Work, cc);
         }
         if !re_positive(self) && !self.re().is_zero() {
-            let omz = ExactComplex::one(p).sub(self, p, RoundingMode::None);
+            let omz = ExactComplex::one(p).sub(self, p, RoundingMode::Work);
             return pi_c(p, cc)
-                .ln(p, RoundingMode::None, cc)
-                .sub(&Self::log_sin_pi(self, p, cc), p, RoundingMode::None)
-                .sub(&omz.ln_gamma_positive(p, cc), p, RoundingMode::None);
+                .ln(p, RoundingMode::Work, cc)
+                .sub(&Self::log_sin_pi(self, p, cc), p, RoundingMode::Work)
+                .sub(&omz.ln_gamma_positive(p, cc), p, RoundingMode::Work);
         }
         self.ln_gamma_positive(p, cc)
     }
@@ -1795,38 +1795,38 @@ impl ExactComplex {
             let z = shifted.as_ref().unwrap_or(self);
             arg_sum = ExactNum::add_ref(
                 &arg_sum,
-                &z.im().atan2(z.re(), p, RoundingMode::None, cc),
+                &z.im().atan2(z.re(), p, RoundingMode::Work, cc),
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
-            let next = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
+            let next = ExactComplex::add_ref(z, &one, p, RoundingMode::Work);
             shifted = Some(next);
         }
         lg.sub(
             &Self::ln_rising_from_product(&acc, &arg_sum, p, cc),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
     }
 
     fn ln_gamma_stirling_with(&self, p: usize, terms: usize, cc: &mut Consts) -> Self {
-        let ln_z = self.ln(p, RoundingMode::None, cc);
-        let zmh = half_c(p).neg().add(self, p, RoundingMode::None);
-        let mut s = zmh.mul(&ln_z, p, RoundingMode::None);
-        s = s.sub(self, p, RoundingMode::None);
-        let two_pi = two_c(p).mul(&pi_c(p, cc), p, RoundingMode::None);
-        let ln_two_pi = two_pi.ln(p, RoundingMode::None, cc);
+        let ln_z = self.ln(p, RoundingMode::Work, cc);
+        let zmh = half_c(p).neg().add(self, p, RoundingMode::Work);
+        let mut s = zmh.mul(&ln_z, p, RoundingMode::Work);
+        s = s.sub(self, p, RoundingMode::Work);
+        let two_pi = two_c(p).mul(&pi_c(p, cc), p, RoundingMode::Work);
+        let ln_two_pi = two_pi.ln(p, RoundingMode::Work, cc);
         s = s.add(
-            &ln_two_pi.mul(&half_c(p), p, RoundingMode::None),
+            &ln_two_pi.mul(&half_c(p), p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
         let sum = if use_stirling_improved(p, terms) {
             stirling_log_sum_improved(self, terms, p, cc)
         } else {
             stirling_log_sum_horner(self, terms, p)
         };
-        s.add(&sum, p, RoundingMode::None)
+        s.add(&sum, p, RoundingMode::Work)
     }
 
     pub(crate) fn digamma_at(&self, p: usize, cc: &mut Consts) -> Self {
@@ -1837,7 +1837,7 @@ impl ExactComplex {
             // ψ(n) = −γ + H_{n−1} for positive integers.
             if self.re().is_int() {
                 if let Ok(n) = self.re().to_u32(RoundingMode::ToZero) {
-                    let g = cc.euler_gamma(p, RoundingMode::None);
+                    let g = cc.euler_gamma(p, RoundingMode::Work);
                     let mut v = -g;
                     if n >= 2 {
                         let mut h = ExactNum::new(p);
@@ -1845,17 +1845,17 @@ impl ExactComplex {
                             let t = ExactNum::from_u8(1, p).div(
                                 &ExactNum::from_u32(k, p),
                                 p,
-                                RoundingMode::None,
+                                RoundingMode::Work,
                             );
-                            h = h.add(&t, p, RoundingMode::None);
+                            h = h.add(&t, p, RoundingMode::Work);
                         }
-                        v = v.add(&h, p, RoundingMode::None);
+                        v = v.add(&h, p, RoundingMode::Work);
                     }
                     return ExactComplex::from_real(v, p);
                 }
             } else {
                 // ψ(n+½) = −γ − 2 ln 2 + Σ_{k=1}^{n} 2/(2k−1) (DLMF 5.4.13–14).
-                let twice = self.re().ldexp_ref(1, p, RoundingMode::None);
+                let twice = self.re().ldexp_ref(1, p, RoundingMode::Work);
                 if twice.is_int() {
                     if let Ok(m) = twice.to_u32(RoundingMode::ToZero) {
                         if m % 2 == 1 {
@@ -1863,19 +1863,19 @@ impl ExactComplex {
                             // Same finite-sum cutoff as the real kernel
                             // (n ≤ 4p + 4096); larger half-integers use Stirling.
                             if n <= p.saturating_mul(4).saturating_add(4096) {
-                                let g = cc.euler_gamma(p, RoundingMode::None);
-                                let ln2 = cc.ln_2(p, RoundingMode::None);
-                                let two_ln2 = ln2.ldexp(1, p, RoundingMode::None);
-                                let mut v = g.neg().sub(&two_ln2, p, RoundingMode::None);
+                                let g = cc.euler_gamma(p, RoundingMode::Work);
+                                let ln2 = cc.ln_2(p, RoundingMode::Work);
+                                let two_ln2 = ln2.ldexp(1, p, RoundingMode::Work);
+                                let mut v = g.neg().sub(&two_ln2, p, RoundingMode::Work);
                                 let two = ExactNum::from_u8(2, p);
                                 for k in 1..=n {
                                     let t = ExactNum::div_ref(
                                         &two,
                                         &ExactNum::from_u32((2 * k - 1) as u32, p),
                                         p,
-                                        RoundingMode::None,
+                                        RoundingMode::Work,
                                     );
-                                    v = v.add(&t, p, RoundingMode::None);
+                                    v = v.add(&t, p, RoundingMode::Work);
                                 }
                                 return ExactComplex::from_real(v, p);
                             }
@@ -1886,18 +1886,18 @@ impl ExactComplex {
         }
         if !re_positive(self) && !self.re().is_zero() {
             let one = ExactComplex::one(p);
-            let omz = one.sub(self, p, RoundingMode::None);
+            let omz = one.sub(self, p, RoundingMode::Work);
             let psi = omz.digamma_positive(p, cc);
-            let piz = pi_c(p, cc).mul(self, p, RoundingMode::None);
-            let cot = piz.cos(p, RoundingMode::None, cc).div(
-                &piz.sin(p, RoundingMode::None, cc),
+            let piz = pi_c(p, cc).mul(self, p, RoundingMode::Work);
+            let cot = piz.cos(p, RoundingMode::Work, cc).div(
+                &piz.sin(p, RoundingMode::Work, cc),
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             return psi.sub(
-                &pi_c(p, cc).mul(&cot, p, RoundingMode::None),
+                &pi_c(p, cc).mul(&cot, p, RoundingMode::Work),
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
         }
         self.digamma_positive(p, cc)
@@ -1912,21 +1912,21 @@ impl ExactComplex {
             return psi;
         }
         let (rf, rf_d) = rising2_ui_rs(self, r, p);
-        let h = rf_d.div(&rf, p, RoundingMode::None);
-        psi.sub(&h, p, RoundingMode::None)
+        let h = rf_d.div(&rf, p, RoundingMode::Work);
+        psi.sub(&h, p, RoundingMode::Work)
     }
 
     fn digamma_asymp(&self, p: usize, terms: usize, cc: &mut Consts) -> Self {
-        let ln_z = self.ln(p, RoundingMode::None, cc);
-        let two_z = two_c(p).mul(self, p, RoundingMode::None);
-        let half_inv = ExactComplex::one(p).div(&two_z, p, RoundingMode::None);
-        let s = ln_z.sub(&half_inv, p, RoundingMode::None);
+        let ln_z = self.ln(p, RoundingMode::Work, cc);
+        let two_z = two_c(p).mul(self, p, RoundingMode::Work);
+        let half_inv = ExactComplex::one(p).div(&two_z, p, RoundingMode::Work);
+        let s = ln_z.sub(&half_inv, p, RoundingMode::Work);
         let coeff = if use_stirling_improved(p, terms) {
             stirling_digamma_coeff_sum_improved(self, terms, p, cc)
         } else {
             stirling_digamma_coeff_sum_horner(self, terms, p)
         };
-        s.sub(&coeff, p, RoundingMode::None)
+        s.sub(&coeff, p, RoundingMode::Work)
     }
 }
 

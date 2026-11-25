@@ -57,8 +57,8 @@ impl ECache {
     fn calc_e(p: &ExactNumNumber, q: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
         // 1 + pk / qk
         let prec = p.mantissa_max_bit_len().max(q.mantissa_max_bit_len());
-        let f0 = p.div(q, prec, RoundingMode::None)?;
-        f0.add(&ONE, prec, RoundingMode::None)
+        let f0 = p.div(q, prec, RoundingMode::Work)?;
+        f0.add(&ONE, prec, RoundingMode::Work)
     }
 
     pub fn new() -> Result<Self, Error> {

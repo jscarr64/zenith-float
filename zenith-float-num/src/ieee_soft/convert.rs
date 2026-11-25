@@ -27,7 +27,7 @@ pub(super) fn to_exact(bits: u64, f: Format, p: usize) -> ExactNum {
         Class::Norm | Class::Sub => {
             let mut x = ExactNum::from_u64(u.sig, p);
             let sh = u.exp - f.bias - f.frac as i32;
-            x = x.ldexp(Exponent::from(sh), p, RoundingMode::None);
+            x = x.ldexp(Exponent::from(sh), p, RoundingMode::Work);
             if u.sign {
                 x.neg()
             } else {

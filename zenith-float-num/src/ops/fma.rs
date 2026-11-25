@@ -80,7 +80,7 @@ impl ExactNumNumber {
         if off != 0 && !sum.is_zero() {
             // Every bit of the exact (stand-in) sum is kept, padded to two guard bits past `p`.
             let w = sum.mantissa_max_bit_len().max(p + WORD_BIT_SIZE);
-            sum.set_precision(w, RoundingMode::None)?;
+            sum.set_precision(w, RoundingMode::Work)?;
             let at = i128::from(sum.exponent()) + off;
             let mut ret = sum.place_scaled(at, false, p, rm)?;
             ret.set_inexact(ret.inexact() | inexact);

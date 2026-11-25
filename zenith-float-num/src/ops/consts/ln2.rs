@@ -85,9 +85,9 @@ fn eval_log2(k: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
     let (_p, q, t) = bsplit(0, n, false);
     // ln2 = T / (Q * 2160)
     let q2160 = q.mul_u64(2160);
-    let t_num = t.to_exact_num_number(wp, RoundingMode::None)?;
-    let q_num = q2160.to_exact_num_number(wp, RoundingMode::None)?;
-    let mut val = t_num.div(&q_num, wp, RoundingMode::None)?;
+    let t_num = t.to_exact_num_number(wp, RoundingMode::Work)?;
+    let q_num = q2160.to_exact_num_number(wp, RoundingMode::Work)?;
+    let mut val = t_num.div(&q_num, wp, RoundingMode::Work)?;
     val.set_precision(k, rm)?;
     Ok(val)
 }
@@ -122,7 +122,7 @@ impl Ln2Cache {
                     return Ok(ret);
                 }
             } else {
-                self.val = eval_log2(p_wrk, RoundingMode::None)?;
+                self.val = eval_log2(p_wrk, RoundingMode::Work)?;
                 // the cache keeps its full value; the caller gets it rounded to k, written straight from it
                 if let Some(ret) = self.val.try_rounded_checked(k, rm, p_wrk)? {
                     return Ok(ret);

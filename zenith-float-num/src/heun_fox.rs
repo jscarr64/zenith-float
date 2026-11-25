@@ -42,11 +42,11 @@ fn pow_real(z: &ExactNum, e: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     }
     if z.is_negative() {
         if let Some(n) = small_int(e, p, -64, 64) {
-            return z.powsi(n as i64, p, RoundingMode::None);
+            return z.powsi(n as i64, p, RoundingMode::Work);
         }
         return cat_nan();
     }
-    z.pow(e, p, RoundingMode::None, cc)
+    z.pow(e, p, RoundingMode::Work, cc)
 }
 
 fn gamma_ratio(
@@ -63,21 +63,21 @@ fn gamma_ratio(
     }
     let mut num = ExactNum::from_u8(1, p);
     for x in gn {
-        let g = x.gamma(p, RoundingMode::None, cc);
+        let g = x.gamma(p, RoundingMode::Work, cc);
         if !finite(&g) {
             return Err(());
         }
-        num = num.mul(&g, p, RoundingMode::None);
+        num = num.mul(&g, p, RoundingMode::Work);
     }
     let mut den = ExactNum::from_u8(1, p);
     for x in gd {
-        let g = x.gamma(p, RoundingMode::None, cc);
+        let g = x.gamma(p, RoundingMode::Work, cc);
         if !finite(&g) {
             return Ok(None);
         }
-        den = den.mul(&g, p, RoundingMode::None);
+        den = den.mul(&g, p, RoundingMode::Work);
     }
-    Ok(Some(num.div(&den, p, RoundingMode::None)))
+    Ok(Some(num.div(&den, p, RoundingMode::Work)))
 }
 
 fn odd_i(n: i32) -> bool {
@@ -152,7 +152,7 @@ fn meijer_g_series(
     } else {
         z_pow = pow_real(
             z,
-            &ExactNum::from_u8(1, p).div(r, p, RoundingMode::None),
+            &ExactNum::from_u8(1, p).div(r, p, RoundingMode::Work),
             p,
             cc,
         );
@@ -176,25 +176,25 @@ fn meijer_g_series(
             let mut gn = Vec::new();
             for (j, bj) in b.iter().enumerate().take(m) {
                 if j != h {
-                    gn.push(ExactNum::sub_ref(bj, bh, p, RoundingMode::None));
+                    gn.push(ExactNum::sub_ref(bj, bh, p, RoundingMode::Work));
                 }
             }
             for aj in a.iter().take(n) {
-                gn.push(ExactNum::sub_ref(&one, aj, p, RoundingMode::None).add(
+                gn.push(ExactNum::sub_ref(&one, aj, p, RoundingMode::Work).add(
                     bh,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 ));
             }
             let mut gd = Vec::new();
             for aj in a.iter().skip(n) {
-                gd.push(ExactNum::sub_ref(aj, bh, p, RoundingMode::None));
+                gd.push(ExactNum::sub_ref(aj, bh, p, RoundingMode::Work));
             }
             for bj in b.iter().skip(m) {
-                gd.push(ExactNum::sub_ref(&one, bj, p, RoundingMode::None).add(
+                gd.push(ExactNum::sub_ref(&one, bj, p, RoundingMode::Work).add(
                     bh,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 ));
             }
             let ratio = match gamma_ratio(&gn, &gd, p, cc) {
@@ -204,23 +204,23 @@ fn meijer_g_series(
             };
             let mut hn = Vec::with_capacity(pn);
             for aj in &a {
-                hn.push(ExactNum::sub_ref(&one, aj, p, RoundingMode::None).add(
+                hn.push(ExactNum::sub_ref(&one, aj, p, RoundingMode::Work).add(
                     bh,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 ));
             }
             let mut hd = Vec::with_capacity(qn.saturating_sub(1));
             for (j, bj) in b.iter().enumerate() {
                 if j != h {
-                    hd.push(ExactNum::sub_ref(&one, bj, p, RoundingMode::None).add(
+                    hd.push(ExactNum::sub_ref(&one, bj, p, RoundingMode::Work).add(
                         bh,
                         p,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     ));
                 }
             }
-            let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::None, cc);
+            let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::Work, cc);
             if f.is_nan() {
                 return GEval::Singular;
             }
@@ -228,7 +228,7 @@ fn meijer_g_series(
             let expn = if r_is_one {
                 bh
             } else {
-                expn_div = ExactNum::div_ref(bh, r, p, RoundingMode::None);
+                expn_div = ExactNum::div_ref(bh, r, p, RoundingMode::Work);
                 &expn_div
             };
             let zp = pow_real(z, expn, p, cc);
@@ -244,7 +244,7 @@ fn meijer_g_series(
                 }
                 let neg = ratio.is_negative() ^ zp.is_negative() ^ f.is_negative();
                 let term = if neg { crate::ext::INF_NEG } else { crate::ext::INF_POS };
-                sum = sum.add(&term, p, RoundingMode::None);
+                sum = sum.add(&term, p, RoundingMode::Work);
                 if sum.is_nan() {
                     return GEval::Singular;
                 }
@@ -252,10 +252,10 @@ fn meijer_g_series(
             }
             sum = sum.add(
                 &ratio
-                    .mul(&zp, p, RoundingMode::None)
-                    .mul(&f, p, RoundingMode::None),
+                    .mul(&zp, p, RoundingMode::Work)
+                    .mul(&f, p, RoundingMode::Work),
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
         }
     } else {
@@ -263,7 +263,7 @@ fn meijer_g_series(
         let inv_z = if z_to_inv_r.is_zero() {
             return GEval::Bad;
         } else {
-            ExactNum::from_u8(1, p).div(z_to_inv_r, p, RoundingMode::None)
+            ExactNum::from_u8(1, p).div(z_to_inv_r, p, RoundingMode::Work)
         };
         let hz = if sign_odd { inv_z.neg() } else { inv_z };
         for k in 0..n {
@@ -271,25 +271,25 @@ fn meijer_g_series(
             let mut gn = Vec::new();
             for (j, aj) in a.iter().enumerate().take(n) {
                 if j != k {
-                    gn.push(ExactNum::sub_ref(ak, aj, p, RoundingMode::None));
+                    gn.push(ExactNum::sub_ref(ak, aj, p, RoundingMode::Work));
                 }
             }
             for bj in b.iter().take(m) {
-                gn.push(ExactNum::sub_ref(&one, ak, p, RoundingMode::None).add(
+                gn.push(ExactNum::sub_ref(&one, ak, p, RoundingMode::Work).add(
                     bj,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 ));
             }
             let mut gd = Vec::new();
             for bj in b.iter().skip(m) {
-                gd.push(ExactNum::sub_ref(ak, bj, p, RoundingMode::None));
+                gd.push(ExactNum::sub_ref(ak, bj, p, RoundingMode::Work));
             }
             for aj in a.iter().skip(n) {
-                gd.push(ExactNum::sub_ref(&one, ak, p, RoundingMode::None).add(
+                gd.push(ExactNum::sub_ref(&one, ak, p, RoundingMode::Work).add(
                     aj,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 ));
             }
             let ratio = match gamma_ratio(&gn, &gd, p, cc) {
@@ -299,33 +299,33 @@ fn meijer_g_series(
             };
             let mut hn = Vec::with_capacity(qn);
             for bj in &b {
-                hn.push(ExactNum::sub_ref(&one, ak, p, RoundingMode::None).add(
+                hn.push(ExactNum::sub_ref(&one, ak, p, RoundingMode::Work).add(
                     bj,
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 ));
             }
             let mut hd = Vec::with_capacity(pn.saturating_sub(1));
             for (j, aj) in a.iter().enumerate() {
                 if j != k {
-                    hd.push(ExactNum::from_u8(1, p).add(aj, p, RoundingMode::None).sub(
+                    hd.push(ExactNum::from_u8(1, p).add(aj, p, RoundingMode::Work).sub(
                         ak,
                         p,
-                        RoundingMode::None,
+                        RoundingMode::Work,
                     ));
                 }
             }
-            let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::None, cc);
+            let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::Work, cc);
             if !finite(&f) {
                 return GEval::Singular;
             }
             let expn = if r_is_one {
-                ExactNum::sub_ref(ak, &one, p, RoundingMode::None)
+                ExactNum::sub_ref(ak, &one, p, RoundingMode::Work)
             } else {
                 ExactNum::from_u8(1, p)
                     .neg()
-                    .add(ak, p, RoundingMode::None)
-                    .div(r, p, RoundingMode::None)
+                    .add(ak, p, RoundingMode::Work)
+                    .div(r, p, RoundingMode::Work)
             };
             let zp = pow_real(z, &expn, p, cc);
             if !finite(&zp) {
@@ -333,10 +333,10 @@ fn meijer_g_series(
             }
             sum = sum.add(
                 &ratio
-                    .mul(&zp, p, RoundingMode::None)
-                    .mul(&f, p, RoundingMode::None),
+                    .mul(&zp, p, RoundingMode::Work)
+                    .mul(&f, p, RoundingMode::Work),
                 p,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
         }
     }
@@ -407,13 +407,13 @@ impl JetW {
         }
     }
     fn mul_n(&self, x: &ExactNum, y: &ExactNum) -> ExactNum {
-        let r = ExactNum::mul_ref(x, y, self.wp, RoundingMode::None);
+        let r = ExactNum::mul_ref(x, y, self.wp, RoundingMode::Work);
         self.note(&r);
         r
     }
     fn add_n(&self, x: ExactNum, y: &ExactNum) -> ExactNum {
         self.note(y);
-        x.add(y, self.wp, RoundingMode::None)
+        x.add(y, self.wp, RoundingMode::Work)
     }
     fn zero(&self) -> Jet {
         Jet {
@@ -442,7 +442,7 @@ impl JetW {
                 .zip(&b.c)
                 .map(|(x, y)| {
                     self.note(y);
-                    ExactNum::add_ref(x, y, self.wp, RoundingMode::None)
+                    ExactNum::add_ref(x, y, self.wp, RoundingMode::Work)
                 })
                 .collect(),
         }
@@ -484,7 +484,7 @@ impl JetW {
         let n = self.len();
         let mut inv: Vec<ExactNum> = Vec::with_capacity(n);
         let u0 = u[0];
-        inv.push(ExactNum::from_u8(1, self.wp).div(u0, self.wp, RoundingMode::None));
+        inv.push(ExactNum::from_u8(1, self.wp).div(u0, self.wp, RoundingMode::Work));
         self.note(&inv[0]);
         for k in 1..n {
             let mut s = ExactNum::new(self.wp);
@@ -494,7 +494,7 @@ impl JetW {
                     s = self.add_n(s, &t);
                 }
             }
-            let q = s.neg().div(u0, self.wp, RoundingMode::None);
+            let q = s.neg().div(u0, self.wp, RoundingMode::Work);
             self.note(&q);
             inv.push(q);
         }
@@ -521,7 +521,7 @@ impl JetW {
             let inv_n = ExactNum::from_u8(1, self.wp).div(
                 &ExactNum::from_i32(n, self.wp),
                 self.wp,
-                RoundingMode::None,
+                RoundingMode::Work,
             );
             t = self.scale(&self.mul(&t, s), &inv_n);
             r = self.add(&r, &t);
@@ -533,7 +533,7 @@ impl JetW {
     /// elsewhere \(\Gamma(x)\exp\sum_{j\ge1}\psi^{(j-1)}(x)(c\varepsilon)^j/j!\) (DLMF 5.7.3 / 5.15).
     fn gamma(&self, x: &ExactNum, c: i32, cc: &mut Consts) -> Option<Jet> {
         if gamma_pole(x) {
-            let n = x.neg_ref().to_u32(RoundingMode::None).ok()?;
+            let n = x.neg_ref().to_u32(RoundingMode::Work).ok()?;
             if n > 4096 {
                 return None;
             }
@@ -544,7 +544,7 @@ impl JetW {
             }
             return self.div(&g1, &den);
         }
-        let g = x.gamma(self.wp, RoundingMode::None, cc);
+        let g = x.gamma(self.wp, RoundingMode::Work, cc);
         if !finite(&g) || g.is_zero() {
             return None;
         }
@@ -552,17 +552,17 @@ impl JetW {
         let mut ck = ExactNum::from_u8(1, self.wp);
         let mut fact = ExactNum::from_u8(1, self.wp);
         for j in 1..=self.hi.max(0) {
-            ck = ck.mul(&ExactNum::from_i32(c, self.wp), self.wp, RoundingMode::None);
-            fact = fact.mul(&ExactNum::from_i32(j, self.wp), self.wp, RoundingMode::None);
-            let psi = x.polygamma((j - 1) as usize, self.wp, RoundingMode::None, cc);
+            ck = ck.mul(&ExactNum::from_i32(c, self.wp), self.wp, RoundingMode::Work);
+            fact = fact.mul(&ExactNum::from_i32(j, self.wp), self.wp, RoundingMode::Work);
+            let psi = x.polygamma((j - 1) as usize, self.wp, RoundingMode::Work, cc);
             if !finite(&psi) {
                 return None;
             }
             if let Some(i) = self.idx(j) {
-                s.c[i] = psi.mul(&ck, self.wp, RoundingMode::None).div(
+                s.c[i] = psi.mul(&ck, self.wp, RoundingMode::Work).div(
                     &fact,
                     self.wp,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 );
                 self.note(&s.c[i]);
             }
@@ -611,11 +611,11 @@ fn min_shift_gap(b: &ExactNum, wp: usize) -> ExactNum {
     if !b.is_negative() {
         return if b.is_zero() { one } else { dn64(b) };
     }
-    let f = ExactNum::sub_ref(b, &b.floor_ref(), wp, RoundingMode::None);
+    let f = ExactNum::sub_ref(b, &b.floor_ref(), wp, RoundingMode::Work);
     if f.is_zero() {
         return one;
     }
-    let g = ExactNum::sub_ref(&ExactNum::from_u8(1, wp), &f, wp, RoundingMode::None);
+    let g = ExactNum::sub_ref(&ExactNum::from_u8(1, wp), &f, wp, RoundingMode::Work);
     if lt(&f, &g) {
         dn64(&f)
     } else {
@@ -656,7 +656,7 @@ fn pfq_jet(
         }
     }
     let re = rho.exponent()? - 1;
-    let rho = ExactNum::from_u8(1, 64).ldexp(re, 64, RoundingMode::None);
+    let rho = ExactNum::from_u8(1, 64).ldexp(re, 64, RoundingMode::Work);
     let crho = |c: i32| ExactNum::from_i32(c.abs(), 64).mul(&rho, 64, up);
     let amax = hn
         .iter()
@@ -684,7 +684,7 @@ fn pfq_jet(
         // |x| prod(...); `None` while it is still |x| (read in place).
         let mut nb_slot: Option<ExactNum> = None;
         for (a, c) in hn {
-            let v = ExactNum::add_ref(a, &kk, wp, RoundingMode::None);
+            let v = ExactNum::add_ref(a, &kk, wp, RoundingMode::Work);
             let f = up64(&v).add(&crho(*c), 64, up);
             nb_slot = Some(ExactNum::mul_ref(
                 nb_slot.as_ref().unwrap_or(&ax),
@@ -698,7 +698,7 @@ fn pfq_jet(
         let mut den = w.scalar(ExactNum::from_u64(k_next, wp));
         let mut db = ExactNum::from_u64(k_next, 64);
         for (b, c) in hd {
-            let v = ExactNum::add_ref(b, &kk, wp, RoundingMode::None);
+            let v = ExactNum::add_ref(b, &kk, wp, RoundingMode::Work);
             let inf = if v.is_zero() {
                 ExactNum::from_i32(c.abs(), 64).mul(&rho, 64, dn)
             } else {
@@ -809,10 +809,10 @@ fn meijer_jet_limit(
         let wp = p.max(span).saturating_add(extra);
         let one = ExactNum::from_u8(1, wp);
         // w and ln w at wp.
-        let lnz = z.ln(wp, RoundingMode::None, cc);
-        let lnw0 = if r_is_one { lnz } else { lnz.div(r, wp, RoundingMode::None) };
+        let lnz = z.ln(wp, RoundingMode::Work, cc);
+        let lnw0 = if r_is_one { lnz } else { lnz.div(r, wp, RoundingMode::Work) };
         let lnw = if invert { lnw0.neg() } else { lnw0 };
-        let w = lnw.exp(wp, RoundingMode::None, cc);
+        let w = lnw.exp(wp, RoundingMode::Work, cc);
         let w_exp = w;
         let w: &ExactNum = if r_is_one && !invert { z } else { &w_exp };
         if !finite(w) || !finite(&lnw) {
@@ -829,9 +829,9 @@ fn meijer_jet_limit(
         let mut mag = i64::MIN / 4;
         let mut ops: u64 = 0;
         let mut tol_used = i64::MIN / 4;
-        let d1 = |u: &ExactNum, v: &ExactNum| ExactNum::sub_ref(u, v, wp, RoundingMode::None);
+        let d1 = |u: &ExactNum, v: &ExactNum| ExactNum::sub_ref(u, v, wp, RoundingMode::Work);
         let d2 = |u: &ExactNum, v: &ExactNum| {
-            ExactNum::sub_ref(&one, u, wp, RoundingMode::None).add(v, wp, RoundingMode::None)
+            ExactNum::sub_ref(&one, u, wp, RoundingMode::Work).add(v, wp, RoundingMode::Work)
         };
         for h in 0..m {
             let bh = b[h];
@@ -889,7 +889,7 @@ fn meijer_jet_limit(
             }
             let mut s = jw.zero();
             if let Some(i) = jw.idx(1) {
-                s.c[i] = ExactNum::from_i32(cb[h], wp).mul(&lnw, wp, RoundingMode::None);
+                s.c[i] = ExactNum::from_i32(cb[h], wp).mul(&lnw, wp, RoundingMode::Work);
             }
             let wj = jw.scale(&jw.mul(&ratio, &jw.exp0(&s)), &wb);
             let weights: Vec<ExactNum> = (jw.lo..=jw.hi)
@@ -980,7 +980,7 @@ fn meijer_zero_limit(
     let wp = p.max(span).saturating_add(4 * crate::defs::WORD_BIT_SIZE);
     let one = ExactNum::from_u8(1, wp);
     let int_diff =
-        |x: &ExactNum, y: &ExactNum| ExactNum::sub_ref(x, y, wp, RoundingMode::None).is_int();
+        |x: &ExactNum, y: &ExactNum| ExactNum::sub_ref(x, y, wp, RoundingMode::Work).is_int();
     let le = |x: &ExactNum, y: &ExactNum| matches!(x.compare(y), Some(c) if c <= 0);
     let order = |s: &ExactNum| -> i64 {
         let nb = bm.iter().filter(|b| int_diff(s, b) && le(b, s)).count() as i64;
@@ -988,7 +988,7 @@ fn meijer_zero_limit(
         let nq = bq
             .iter()
             .filter(|b| {
-                int_diff(s, b) && le(s, &ExactNum::sub_ref(b, &one, wp, RoundingMode::None))
+                int_diff(s, b) && le(s, &ExactNum::sub_ref(b, &one, wp, RoundingMode::Work))
             })
             .count() as i64;
         nb - na - nq
@@ -1021,36 +1021,36 @@ fn meijer_zero_limit(
     };
     let d = f - 1;
     let fact = |k: &ExactNum, cc: &mut Consts| {
-        ExactNum::add_ref(k, &one, wp, RoundingMode::None).gamma(wp, RoundingMode::None, cc)
+        ExactNum::add_ref(k, &one, wp, RoundingMode::Work).gamma(wp, RoundingMode::Work, cc)
     };
-    let even = |k: &ExactNum| k.ldexp_ref(-1, wp, RoundingMode::None).is_int();
+    let even = |k: &ExactNum| k.ldexp_ref(-1, wp, RoundingMode::Work).is_int();
     let mut c = ExactNum::from_u8(1, wp);
     for bj in bm {
         // Γ(b - s) near s*: argument -k gives -(-1)^k/k! per unit of (s - s*).
-        let v = ExactNum::sub_ref(bj, s, wp, RoundingMode::None);
+        let v = ExactNum::sub_ref(bj, s, wp, RoundingMode::Work);
         let t = if gamma_pole(&v) {
             let k = v.neg_ref();
-            let q = ExactNum::div_ref(&one, &fact(&k, cc), wp, RoundingMode::None);
+            let q = ExactNum::div_ref(&one, &fact(&k, cc), wp, RoundingMode::Work);
             if even(&k) {
                 q.neg()
             } else {
                 q
             }
         } else {
-            v.gamma(wp, RoundingMode::None, cc)
+            v.gamma(wp, RoundingMode::Work, cc)
         };
-        c = c.mul(&t, wp, RoundingMode::None);
+        c = c.mul(&t, wp, RoundingMode::Work);
     }
     for aj in an {
-        let v = ExactNum::sub_ref(&one, aj, wp, RoundingMode::None).add(s, wp, RoundingMode::None);
+        let v = ExactNum::sub_ref(&one, aj, wp, RoundingMode::Work).add(s, wp, RoundingMode::Work);
         if gamma_pole(&v) {
             return cat_nan();
         }
-        c = c.mul(&v.gamma(wp, RoundingMode::None, cc), wp, RoundingMode::None);
+        c = c.mul(&v.gamma(wp, RoundingMode::Work, cc), wp, RoundingMode::Work);
     }
     for aj in ap {
         // 1/Γ(a - s): argument -k gives -(-1)^k k!.
-        let v = ExactNum::sub_ref(aj, s, wp, RoundingMode::None);
+        let v = ExactNum::sub_ref(aj, s, wp, RoundingMode::Work);
         let t = if gamma_pole(&v) {
             let k = v.neg_ref();
             let q = fact(&k, cc);
@@ -1061,16 +1061,16 @@ fn meijer_zero_limit(
             }
         } else {
             ExactNum::from_u8(1, wp).div(
-                &v.gamma(wp, RoundingMode::None, cc),
+                &v.gamma(wp, RoundingMode::Work, cc),
                 wp,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
         };
-        c = c.mul(&t, wp, RoundingMode::None);
+        c = c.mul(&t, wp, RoundingMode::Work);
     }
     for bj in bq {
         // 1/Γ(1 - b + s): argument -k gives (-1)^k k!.
-        let v = ExactNum::sub_ref(&one, bj, wp, RoundingMode::None).add(s, wp, RoundingMode::None);
+        let v = ExactNum::sub_ref(&one, bj, wp, RoundingMode::Work).add(s, wp, RoundingMode::Work);
         let t = if gamma_pole(&v) {
             let k = v.neg_ref();
             let q = fact(&k, cc);
@@ -1081,12 +1081,12 @@ fn meijer_zero_limit(
             }
         } else {
             ExactNum::from_u8(1, wp).div(
-                &v.gamma(wp, RoundingMode::None, cc),
+                &v.gamma(wp, RoundingMode::Work, cc),
                 wp,
-                RoundingMode::None,
+                RoundingMode::Work,
             )
         };
-        c = c.mul(&t, wp, RoundingMode::None);
+        c = c.mul(&t, wp, RoundingMode::Work);
     }
     if !finite(&c) || c.is_zero() {
         return cat_nan();
@@ -1112,7 +1112,7 @@ fn meijer_zero_limit(
 fn nonremovable(an: &[&ExactNum], bm: &[&ExactNum], wp: usize) -> bool {
     an.iter().any(|a| {
         bm.iter().any(|b| {
-            let d = ExactNum::sub_ref(a, b, wp, RoundingMode::None);
+            let d = ExactNum::sub_ref(a, b, wp, RoundingMode::Work);
             d.is_int() && d.is_positive() && !d.is_zero()
         })
     })
@@ -1156,7 +1156,7 @@ fn meijer_removable_limit(
     } else {
         w_pow = pow_real(
             z,
-            &ExactNum::from_u8(1, p).div(r, p, RoundingMode::None),
+            &ExactNum::from_u8(1, p).div(r, p, RoundingMode::Work),
             p,
             cc,
         );
@@ -1170,7 +1170,7 @@ fn meijer_removable_limit(
     }
     let refl = |xs: &[&ExactNum]| -> Vec<ExactNum> {
         xs.iter()
-            .map(|x| ExactNum::sub_ref(&ExactNum::from_u8(1, wp), x, wp, RoundingMode::None))
+            .map(|x| ExactNum::sub_ref(&ExactNum::from_u8(1, wp), x, wp, RoundingMode::Work))
             .collect()
     };
     let [bm_r, bq_r, an_r, ap_r] = [refl(bm), refl(bq), refl(an), refl(ap)];
@@ -1297,7 +1297,7 @@ fn all_unit_scales(xs: &[(ExactNum, ExactNum)], p: usize) -> bool {
 
 fn pow_u64(base: &ExactNum, n: u64, p: usize, cc: &mut Consts) -> ExactNum {
     if n <= i64::MAX as u64 {
-        base.powsi(n as i64, p, RoundingMode::None)
+        base.powsi(n as i64, p, RoundingMode::Work)
     } else {
         pow_real(base, &ExactNum::from_u64(n, p), p, cc)
     }
@@ -1955,7 +1955,7 @@ where
 {
     let up = RoundingMode::Up;
     let dn = RoundingMode::Down;
-    let nr = RoundingMode::None;
+    let nr = RoundingMode::Work;
     let one64 = ExactNum::from_u8(1, 64);
     let az = ub64(z);
     let mut az_dn = z.abs_ref();
@@ -2181,7 +2181,7 @@ fn heun_g_series(
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
-    let nr = RoundingMode::None;
+    let nr = RoundingMode::Work;
     let v = with_loss(p, |wp| {
         let one = ExactNum::from_u8(1, wp);
         let eps = heun_eps(alpha, beta, gamma, delta, wp);
@@ -2270,7 +2270,7 @@ fn heun_c_series(
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
-    let nr = RoundingMode::None;
+    let nr = RoundingMode::Work;
     let v = with_loss(p, |wp| {
         let one = ExactNum::from_u8(1, wp);
         // l1 n + l0 = n(n-1+γ+δ-ε) - q - (n+1)(n+γ); κ_n = B_n = (ε n + α - ε)/((n+1)(n+γ)).
@@ -2324,7 +2324,7 @@ fn heun_g_jet(
     [a, q, alpha, beta, gamma, delta]: [&ExactNum; 6],
     p: usize,
 ) -> Option<(ExactNum, ExactNum, bool, Vec<ExactNum>)> {
-    let nr = RoundingMode::None;
+    let nr = RoundingMode::Work;
     with_loss_jet(p, |wp| {
         let one = ExactNum::from_u8(1, wp);
         let eps = heun_eps(alpha, beta, gamma, delta, wp);
@@ -2410,7 +2410,7 @@ fn heun_c_jet(
     q: &ExactNum,
     p: usize,
 ) -> Option<(ExactNum, ExactNum, bool, Vec<ExactNum>)> {
-    let nr = RoundingMode::None;
+    let nr = RoundingMode::Work;
     with_loss_jet(p, |wp| {
         let one = ExactNum::from_u8(1, wp);
         let l1 = ExactNum::sub_ref(delta, eps, wp, nr).sub(&ExactNum::from_u8(2, wp), wp, nr);
@@ -2501,9 +2501,9 @@ fn segment_hits(z: &ExactNum, s: &ExactNum) -> bool {
 }
 
 fn min_dist(z: &ExactNum, sings: &[ExactNum], p: usize) -> ExactNum {
-    let mut m = ExactNum::sub_ref(z, &sings[0], p, RoundingMode::None).abs();
+    let mut m = ExactNum::sub_ref(z, &sings[0], p, RoundingMode::Work).abs();
     for s in &sings[1..] {
-        let d = ExactNum::sub_ref(z, s, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(z, s, p, RoundingMode::Work).abs();
         if matches!(d.compare(&m), Some(c) if c < 0) {
             m = d;
         }
@@ -2515,8 +2515,8 @@ fn horner(coefs: &[ExactNum], z: &ExactNum, p: usize) -> ExactNum {
     let mut acc = ExactNum::new(p);
     for c in coefs.iter().rev() {
         acc = acc
-            .mul(z, p, RoundingMode::None)
-            .add(c, p, RoundingMode::None);
+            .mul(z, p, RoundingMode::Work)
+            .add(c, p, RoundingMode::Work);
     }
     acc
 }
@@ -2528,10 +2528,10 @@ fn heun_eps(
     delta: &ExactNum,
     p: usize,
 ) -> ExactNum {
-    ExactNum::add_ref(alpha, beta, p, RoundingMode::None)
-        .sub(gamma, p, RoundingMode::None)
-        .sub(delta, p, RoundingMode::None)
-        .add(&ExactNum::from_u8(1, p), p, RoundingMode::None)
+    ExactNum::add_ref(alpha, beta, p, RoundingMode::Work)
+        .sub(gamma, p, RoundingMode::Work)
+        .sub(delta, p, RoundingMode::Work)
+        .add(&ExactNum::from_u8(1, p), p, RoundingMode::Work)
 }
 
 fn params_exact(xs: &[&ExactNum]) -> bool {
@@ -2551,7 +2551,7 @@ fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         return false;
     }
     let tight = p.saturating_mul(2).max(64);
-    let d = ExactNum::sub_ref(a, b, tight, RoundingMode::None).abs();
+    let d = ExactNum::sub_ref(a, b, tight, RoundingMode::Work).abs();
     if d.is_zero() {
         return true;
     }
@@ -2571,18 +2571,18 @@ fn heun_g_is_2f1(
 ) -> bool {
     let one = ExactNum::from_u8(1, p);
     if params_exact(&[a, q, alpha, beta, gamma, delta]) {
-        let q_star = a.mul_full_prec(alpha).mul_full_prec(beta);
+        let q_star = a.mul_full_work(alpha).mul_full_work(beta);
         let d_star = alpha
-            .add_full_prec(beta)
-            .sub_full_prec(gamma)
-            .add_full_prec(&one);
+            .add_full_work(beta)
+            .sub_full_work(gamma)
+            .add_full_work(&one);
         return exactly_equal(q, &q_star) && exactly_equal(delta, &d_star);
     }
     let q_star =
-        ExactNum::mul_ref(a, alpha, p, RoundingMode::None).mul(beta, p, RoundingMode::None);
-    let d_star = ExactNum::add_ref(alpha, beta, p, RoundingMode::None)
-        .sub(gamma, p, RoundingMode::None)
-        .add(&one, p, RoundingMode::None);
+        ExactNum::mul_ref(a, alpha, p, RoundingMode::Work).mul(beta, p, RoundingMode::Work);
+    let d_star = ExactNum::add_ref(alpha, beta, p, RoundingMode::Work)
+        .sub(gamma, p, RoundingMode::Work)
+        .add(&one, p, RoundingMode::Work);
     agrees_tight(q, &q_star, p) && agrees_tight(delta, &d_star, p)
 }
 
@@ -2610,61 +2610,61 @@ fn heun_g_ode(
 ) -> Option<OdePoly> {
     let one = ExactNum::from_u8(1, p);
     let eps = heun_eps(alpha, beta, gamma, delta, p);
-    let zm1 = ExactNum::from_u8(1, p).neg().add(z0, p, RoundingMode::None);
-    let zma = ExactNum::sub_ref(z0, a, p, RoundingMode::None);
-    let a0 = ExactNum::mul_ref(z0, &zm1, p, RoundingMode::None).mul(&zma, p, RoundingMode::None);
+    let zm1 = ExactNum::from_u8(1, p).neg().add(z0, p, RoundingMode::Work);
+    let zma = ExactNum::sub_ref(z0, a, p, RoundingMode::Work);
+    let a0 = ExactNum::mul_ref(z0, &zm1, p, RoundingMode::Work).mul(&zma, p, RoundingMode::Work);
     if a0.is_zero() || !finite(&a0) {
         return None;
     }
     let three = ExactNum::from_u8(3, p);
     let a2 = three
-        .mul(z0, p, RoundingMode::None)
-        .sub(&one, p, RoundingMode::None)
-        .sub(a, p, RoundingMode::None);
-    let a1 = ExactNum::mul_ref(z0, &zm1, p, RoundingMode::None)
+        .mul(z0, p, RoundingMode::Work)
+        .sub(&one, p, RoundingMode::Work)
+        .sub(a, p, RoundingMode::Work);
+    let a1 = ExactNum::mul_ref(z0, &zm1, p, RoundingMode::Work)
         .add(
-            &ExactNum::mul_ref(z0, &zma, p, RoundingMode::None),
+            &ExactNum::mul_ref(z0, &zma, p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
         .add(
-            &ExactNum::mul_ref(&zm1, &zma, p, RoundingMode::None),
+            &ExactNum::mul_ref(&zm1, &zma, p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
-    let b0 = ExactNum::mul_ref(&zm1, &zma, p, RoundingMode::None)
-        .mul(gamma, p, RoundingMode::None)
+    let b0 = ExactNum::mul_ref(&zm1, &zma, p, RoundingMode::Work)
+        .mul(gamma, p, RoundingMode::Work)
         .add(
-            &ExactNum::mul_ref(z0, &zma, p, RoundingMode::None).mul(delta, p, RoundingMode::None),
+            &ExactNum::mul_ref(z0, &zma, p, RoundingMode::Work).mul(delta, p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
         .add(
-            &ExactNum::mul_ref(z0, &zm1, p, RoundingMode::None).mul(&eps, p, RoundingMode::None),
+            &ExactNum::mul_ref(z0, &zm1, p, RoundingMode::Work).mul(&eps, p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
     // (z0 - 1) + (z0 - a), with z0 - 1 formed afresh
     let b1 = ExactNum::from_u8(1, p)
         .neg()
-        .add(z0, p, RoundingMode::None)
-        .add(&zma, p, RoundingMode::None)
-        .mul(gamma, p, RoundingMode::None)
+        .add(z0, p, RoundingMode::Work)
+        .add(&zma, p, RoundingMode::Work)
+        .mul(gamma, p, RoundingMode::Work)
         .add(
-            &zma.add(z0, p, RoundingMode::None)
-                .mul(delta, p, RoundingMode::None),
+            &zma.add(z0, p, RoundingMode::Work)
+                .mul(delta, p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
         .add(
-            &zm1.add(z0, p, RoundingMode::None)
-                .mul(&eps, p, RoundingMode::None),
+            &zm1.add(z0, p, RoundingMode::Work)
+                .mul(&eps, p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
     let b2 =
-        ExactNum::add_ref(gamma, delta, p, RoundingMode::None).add(&eps, p, RoundingMode::None);
-    let ab = ExactNum::mul_ref(alpha, beta, p, RoundingMode::None);
+        ExactNum::add_ref(gamma, delta, p, RoundingMode::Work).add(&eps, p, RoundingMode::Work);
+    let ab = ExactNum::mul_ref(alpha, beta, p, RoundingMode::Work);
     Some(OdePoly {
         a0,
         a1,
@@ -2673,7 +2673,7 @@ fn heun_g_ode(
         b0,
         b1,
         b2,
-        c0: ExactNum::mul_ref(&ab, z0, p, RoundingMode::None).sub(q, p, RoundingMode::None),
+        c0: ExactNum::mul_ref(&ab, z0, p, RoundingMode::Work).sub(q, p, RoundingMode::Work),
         c1: ab,
     })
 }
@@ -2688,31 +2688,31 @@ fn heun_c_ode(
     p: usize,
 ) -> Option<OdePoly> {
     let one = ExactNum::from_u8(1, p);
-    let zm1 = ExactNum::from_u8(1, p).neg().add(z0, p, RoundingMode::None);
-    let a0 = ExactNum::mul_ref(z0, &zm1, p, RoundingMode::None);
+    let zm1 = ExactNum::from_u8(1, p).neg().add(z0, p, RoundingMode::Work);
+    let a0 = ExactNum::mul_ref(z0, &zm1, p, RoundingMode::Work);
     if a0.is_zero() || !finite(&a0) {
         return None;
     }
     let two = ExactNum::from_u8(2, p);
     let a1 = two
-        .mul(z0, p, RoundingMode::None)
-        .sub(&one, p, RoundingMode::None);
-    let b0 = ExactNum::mul_ref(gamma, &zm1, p, RoundingMode::None)
+        .mul(z0, p, RoundingMode::Work)
+        .sub(&one, p, RoundingMode::Work);
+    let b0 = ExactNum::mul_ref(gamma, &zm1, p, RoundingMode::Work)
         .add(
-            &ExactNum::mul_ref(delta, z0, p, RoundingMode::None),
+            &ExactNum::mul_ref(delta, z0, p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         )
         .add(
-            &zm1.mul(z0, p, RoundingMode::None)
-                .mul(eps, p, RoundingMode::None),
+            &zm1.mul(z0, p, RoundingMode::Work)
+                .mul(eps, p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
-    let b1 = ExactNum::add_ref(gamma, delta, p, RoundingMode::None).add(
-        &ExactNum::mul_ref(eps, &a1, p, RoundingMode::None),
+    let b1 = ExactNum::add_ref(gamma, delta, p, RoundingMode::Work).add(
+        &ExactNum::mul_ref(eps, &a1, p, RoundingMode::Work),
         p,
-        RoundingMode::None,
+        RoundingMode::Work,
     );
     Some(OdePoly {
         a0,
@@ -2722,7 +2722,7 @@ fn heun_c_ode(
         b0,
         b1,
         b2: eps.clone(),
-        c0: ExactNum::mul_ref(alpha, z0, p, RoundingMode::None).sub(q, p, RoundingMode::None),
+        c0: ExactNum::mul_ref(alpha, z0, p, RoundingMode::Work).sub(q, p, RoundingMode::Work),
         c1: alpha.clone(),
     })
 }
@@ -2787,7 +2787,7 @@ fn amin_on_disk(zc: &ExactNum, sings: &[ExactNum], rho: &ExactNum) -> Option<Exa
     let dn = RoundingMode::Down;
     let mut prod = ExactNum::from_u8(1, 64);
     for s in sings {
-        let mut d = ExactNum::sub_ref(zc, s, 64, RoundingMode::None).abs();
+        let mut d = ExactNum::sub_ref(zc, s, 64, RoundingMode::Work).abs();
         let _ = d.set_precision(64, dn);
         let gap = ExactNum::sub_ref(&d, rho, 64, dn);
         if !gap.is_positive() || gap.is_zero() || !finite(&gap) {
@@ -2867,7 +2867,7 @@ fn majorant_m(
         &ExactNum::mul_ref(&rp, &y0, 64, up),
         &yp0,
         64,
-        RoundingMode::None,
+        RoundingMode::Work,
     ))
     .div(&sd, 64, up);
     let e = exp_up_bound(&ExactNum::mul_ref(&rp, rho, 64, up))?;
@@ -3006,7 +3006,7 @@ fn taylor_step(
     }
     let up = RoundingMode::Up;
     let dn = RoundingMode::Down;
-    let nr = RoundingMode::None;
+    let nr = RoundingMode::Work;
     let mut ah = h.abs_ref();
     let _ = ah.set_precision(64, up);
     let mut radius = min_dist(zc, sings, 64);
@@ -3362,7 +3362,7 @@ where
     let acc = p.saturating_add(64);
     let up = RoundingMode::Up;
     loop {
-        let rem = ExactNum::sub_ref(target, &zc, p, RoundingMode::None);
+        let rem = ExactNum::sub_ref(target, &zc, p, RoundingMode::Work);
         if close_enough(&rem, target, p) || rem.is_zero() {
             if !finite(&y.mid) {
                 return None;
@@ -3382,7 +3382,7 @@ where
         if dist.is_zero() || !finite(&dist) {
             return None;
         }
-        let step = dist.ldexp(-1, p, RoundingMode::None);
+        let step = dist.ldexp(-1, p, RoundingMode::Work);
         let h = if matches!(rem.abs_cmp(&step), Some(c) if c <= 0) {
             rem
         } else if rem.is_negative() {
@@ -3398,7 +3398,7 @@ where
         }
         let ode = ode_at(&zc, acc)?;
         let (yn, ypn) = step_with_rad(&ode, [&y, &yp], &h, &zc, sings, p, acc)?;
-        let next = ExactNum::add_ref(&h, &zc, p, RoundingMode::None);
+        let next = ExactNum::add_ref(&h, &zc, p, RoundingMode::Work);
         if next.compare(&zc) == Some(0) {
             if !finite(&yn.mid) {
                 return None;
@@ -3412,7 +3412,7 @@ where
 }
 
 fn disk_seed(z: &ExactNum, radius: ExactNum, p: usize) -> ExactNum {
-    let half = radius.ldexp(-1, p, RoundingMode::None);
+    let half = radius.ldexp(-1, p, RoundingMode::Work);
     if z.is_negative() {
         half.neg()
     } else {
@@ -3423,7 +3423,7 @@ fn disk_seed(z: &ExactNum, radius: ExactNum, p: usize) -> ExactNum {
 fn heun_g_seed(z: &ExactNum, a: &ExactNum, wp: usize) -> ExactNum {
     let one = ExactNum::from_u8(1, wp);
     if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
-        let mut half = a.neg_via_mul().ldexp(-1, wp, RoundingMode::None);
+        let mut half = a.neg_via_mul().ldexp(-1, wp, RoundingMode::Work);
         if half.is_negative() != z.is_negative() {
             half = -half;
         }
@@ -3552,8 +3552,8 @@ fn fox_h_gauss(
         let ai_us = usize::try_from(ai_int).ok()?;
         let aif = ExactNum::from_u64(ai_int, p);
         for k in 0..ai_us {
-            let num = ExactNum::from_u64(k as u64, p).add(ai, p, RoundingMode::None);
-            a_tilde.push(num.div(&aif, p, RoundingMode::None));
+            let num = ExactNum::from_u64(k as u64, p).add(ai, p, RoundingMode::Work);
+            a_tilde.push(num.div(&aif, p, RoundingMode::Work));
         }
     }
     let mut b_tilde = Vec::new();
@@ -3561,8 +3561,8 @@ fn fox_h_gauss(
         let bj_us = usize::try_from(bj_int).ok()?;
         let bif = ExactNum::from_u64(bj_int, p);
         for k in 0..bj_us {
-            let num = ExactNum::from_u64(k as u64, p).add(bj, p, RoundingMode::None);
-            b_tilde.push(num.div(&bif, p, RoundingMode::None));
+            let num = ExactNum::from_u64(k as u64, p).add(bj, p, RoundingMode::Work);
+            b_tilde.push(num.div(&bif, p, RoundingMode::Work));
         }
     }
     let n_tilde = a_int
@@ -3587,49 +3587,49 @@ fn fox_h_gauss(
     let c_star_num: i128 = 2 * ((m + n) as i128) - (pn as i128) - (qn as i128);
     let one = ExactNum::from_u8(1, p);
     let two = ExactNum::from_u8(2, p);
-    let half = ExactNum::from_u8(1, p).div(&two, p, RoundingMode::None);
+    let half = ExactNum::from_u8(1, p).div(&two, p, RoundingMode::Work);
     let mut beta = ExactNum::from_u8(1, p);
     for &ai in &a_int {
         let base = ExactNum::from_u64(ai, p);
-        beta = beta.div(&pow_u64(&base, ai, p, cc), p, RoundingMode::None);
+        beta = beta.div(&pow_u64(&base, ai, p, cc), p, RoundingMode::Work);
     }
     for &bj in &b_int {
         let base = ExactNum::from_u64(bj, p);
-        beta = beta.mul(&pow_u64(&base, bj, p, cc), p, RoundingMode::None);
+        beta = beta.mul(&pow_u64(&base, bj, p, cc), p, RoundingMode::Work);
     }
     let mut m_fac = ExactNum::from_u8(1, p);
     for (bj, &bj_int) in b.iter().zip(b_int.iter()) {
         let base = ExactNum::from_u64(bj_int, p);
-        let expn = ExactNum::sub_ref(bj, &half, p, RoundingMode::None);
-        m_fac = m_fac.mul(&pow_real(&base, &expn, p, cc), p, RoundingMode::None);
+        let expn = ExactNum::sub_ref(bj, &half, p, RoundingMode::Work);
+        m_fac = m_fac.mul(&pow_real(&base, &expn, p, cc), p, RoundingMode::Work);
     }
     for (ai, &ai_int) in a.iter().zip(a_int.iter()) {
         let base = ExactNum::from_u64(ai_int, p);
         let expn = ExactNum::from_u8(1, p)
-            .div(&two, p, RoundingMode::None)
+            .div(&two, p, RoundingMode::Work)
             .neg()
-            .add(ai, p, RoundingMode::None);
-        m_fac = m_fac.div(&pow_real(&base, &expn, p, cc), p, RoundingMode::None);
+            .add(ai, p, RoundingMode::Work);
+        m_fac = m_fac.div(&pow_real(&base, &expn, p, cc), p, RoundingMode::Work);
     }
-    let pi = cc.pi(p, RoundingMode::None);
-    let two_pi = ExactNum::from_u8(2, p).mul(&pi, p, RoundingMode::None);
+    let pi = cc.pi(p, RoundingMode::Work);
+    let two_pi = ExactNum::from_u8(2, p).mul(&pi, p, RoundingMode::Work);
     // (2π)^{c* - a*/2} with c* = c_star_num/2
     let expn = ExactNum::from_i128(c_star_num, p)
-        .div(&two, p, RoundingMode::None)
+        .div(&two, p, RoundingMode::Work)
         .sub(
-            &ExactNum::from_i128(a_star, p).div(&two, p, RoundingMode::None),
+            &ExactNum::from_i128(a_star, p).div(&two, p, RoundingMode::Work),
             p,
-            RoundingMode::None,
+            RoundingMode::Work,
         );
     let pre = ExactNum::from_u64(d, p)
-        .mul(&pow_real(&two_pi, &expn, p, cc), p, RoundingMode::None)
-        .mul(&m_fac, p, RoundingMode::None);
-    let r = one.div(&ExactNum::from_u64(d, p), p, RoundingMode::None);
+        .mul(&pow_real(&two_pi, &expn, p, cc), p, RoundingMode::Work)
+        .mul(&m_fac, p, RoundingMode::Work);
+    let r = one.div(&ExactNum::from_u64(d, p), p, RoundingMode::Work);
     let beta_r = pow_real(&beta, &r, p, cc);
     if !finite(&beta_r) || beta_r.is_zero() {
         return None;
     }
-    let z_arg = ExactNum::div_ref(z, &beta_r, p, RoundingMode::None);
+    let z_arg = ExactNum::div_ref(z, &beta_r, p, RoundingMode::Work);
     let an_t = &a_tilde[..n_t];
     let ap_t = &a_tilde[n_t..];
     let bm_t = &b_tilde[..m_t];
@@ -3638,7 +3638,7 @@ fn fox_h_gauss(
     if !finite(&g) || !finite(&pre) {
         return None;
     }
-    Some(pre.mul(&g, p, RoundingMode::None))
+    Some(pre.mul(&g, p, RoundingMode::Work))
 }
 
 fn all_scales_positive(
@@ -3665,22 +3665,22 @@ fn fox_choose_series(
 ) -> u8 {
     let mut delta = ExactNum::new(p);
     for (_, s) in bm.iter().chain(bq.iter()) {
-        delta = delta.add(s, p, RoundingMode::None);
+        delta = delta.add(s, p, RoundingMode::Work);
     }
     for (_, s) in an.iter().chain(ap.iter()) {
-        delta = delta.sub(s, p, RoundingMode::None);
+        delta = delta.sub(s, p, RoundingMode::Work);
     }
     let mut typ = if delta.is_zero() {
         let mut beta = ExactNum::from_u8(1, p);
         for (_, s) in an.iter().chain(ap.iter()) {
-            beta = beta.mul(&pow_real(s, s, p, cc), p, RoundingMode::None);
+            beta = beta.mul(&pow_real(s, s, p, cc), p, RoundingMode::Work);
         }
         for (_, s) in bm.iter().chain(bq.iter()) {
             let den = pow_real(s, s, p, cc);
             if !finite(&den) || den.is_zero() {
                 return 1;
             }
-            beta = beta.div(&den, p, RoundingMode::None);
+            beta = beta.div(&den, p, RoundingMode::Work);
         }
         if matches!(z.abs_cmp(&beta), Some(c) if c > 0) {
             2u8
@@ -3704,9 +3704,9 @@ fn fox_choose_series(
 fn lin_scale(c: &ExactNum, s: &ExactNum, slope: &ExactNum, p: usize) -> ExactNum {
     ExactNum::add_ref(
         c,
-        &ExactNum::mul_ref(s, slope, p, RoundingMode::None),
+        &ExactNum::mul_ref(s, slope, p, RoundingMode::Work),
         p,
-        RoundingMode::None,
+        RoundingMode::Work,
     )
 }
 
@@ -3727,7 +3727,7 @@ fn fox_term_ratio(
         return Err(());
     }
     Ok(Some(
-        ExactNum::mul_ref(pref, &ratio, p, RoundingMode::None).mul(zp, p, RoundingMode::None),
+        ExactNum::mul_ref(pref, &ratio, p, RoundingMode::Work).mul(zp, p, RoundingMode::Work),
     ))
 }
 
@@ -3769,14 +3769,14 @@ fn fox_h_residue(
             if !bh_s.is_positive() {
                 return GEval::Bad;
             }
-            let inv_b = ExactNum::div_ref(&one, bh_s, p, RoundingMode::None);
+            let inv_b = ExactNum::div_ref(&one, bh_s, p, RoundingMode::Work);
             if !finite(&inv_b) {
                 return GEval::Bad;
             }
             // s = -(b_h + k)/B_h, z^{-s} = z^{b_h/B_h} (z^{1/B_h})^k
             let mut zp = pow_real(
                 z,
-                &ExactNum::mul_ref(bh, &inv_b, p, RoundingMode::None),
+                &ExactNum::mul_ref(bh, &inv_b, p, RoundingMode::Work),
                 p,
                 cc,
             );
@@ -3784,14 +3784,14 @@ fn fox_h_residue(
             if !finite(&zp) || !finite(&z_step) {
                 return GEval::Bad;
             }
-            let mut pref = ExactNum::div_ref(&one, bh_s, p, RoundingMode::None);
+            let mut pref = ExactNum::div_ref(&one, bh_s, p, RoundingMode::Work);
             let mut k: u64 = 0;
             let mut grew = 0u32;
             let mut prev_exp: Option<i64> = None;
             loop {
-                let s = ExactNum::add_ref(bh, &ExactNum::from_u64(k, p), p, RoundingMode::None)
+                let s = ExactNum::add_ref(bh, &ExactNum::from_u64(k, p), p, RoundingMode::Work)
                     .neg()
-                    .div(bh_s, p, RoundingMode::None);
+                    .div(bh_s, p, RoundingMode::Work);
                 let mut gn = Vec::new();
                 let mut gd = Vec::new();
                 for (j, (bj, bj_s)) in bm.iter().enumerate() {
@@ -3802,7 +3802,7 @@ fn fox_h_residue(
                 }
                 for (ai, ai_s) in an {
                     gn.push(lin_scale(
-                        &ExactNum::sub_ref(&one, ai, p, RoundingMode::None),
+                        &ExactNum::sub_ref(&one, ai, p, RoundingMode::Work),
                         &ai_s.neg_ref(),
                         &s,
                         p,
@@ -3813,7 +3813,7 @@ fn fox_h_residue(
                 }
                 for (bj, bj_s) in bq {
                     gd.push(lin_scale(
-                        &ExactNum::sub_ref(&one, bj, p, RoundingMode::None),
+                        &ExactNum::sub_ref(&one, bj, p, RoundingMode::Work),
                         &bj_s.neg_ref(),
                         &s,
                         p,
@@ -3826,7 +3826,7 @@ fn fox_h_residue(
                         if !finite(&term) {
                             return GEval::Singular;
                         }
-                        sum = sum.add(&term, p, RoundingMode::None);
+                        sum = sum.add(&term, p, RoundingMode::Work);
                         if !finite(&sum) {
                             return GEval::Singular;
                         }
@@ -3856,8 +3856,8 @@ fn fox_h_residue(
                 };
                 pref = pref
                     .neg()
-                    .div(&ExactNum::from_u64(k_next, p), p, RoundingMode::None);
-                zp = zp.mul(&z_step, p, RoundingMode::None);
+                    .div(&ExactNum::from_u64(k_next, p), p, RoundingMode::Work);
+                zp = zp.mul(&z_step, p, RoundingMode::Work);
                 k = k_next;
             }
         }
@@ -3867,7 +3867,7 @@ fn fox_h_residue(
             if !ak_s.is_positive() {
                 return GEval::Bad;
             }
-            let inv_a = ExactNum::div_ref(&one, ak_s, p, RoundingMode::None);
+            let inv_a = ExactNum::div_ref(&one, ak_s, p, RoundingMode::Work);
             if !finite(&inv_a) {
                 return GEval::Bad;
             }
@@ -3876,24 +3876,24 @@ fn fox_h_residue(
             // (the minus from dw = -A ds cancels the clockwise sign). z^{-s} starts
             // at z^{-(1-a_k)/A_k} and multiplies by z^{-1/A_k} each step.
             let s0 =
-                ExactNum::sub_ref(&one, ak, p, RoundingMode::None).div(ak_s, p, RoundingMode::None);
+                ExactNum::sub_ref(&one, ak, p, RoundingMode::Work).div(ak_s, p, RoundingMode::Work);
             let mut zp = pow_real(z, &s0.neg(), p, cc);
             let z_step = pow_real(z, &inv_a.neg(), p, cc);
             if !finite(&zp) || !finite(&z_step) {
                 return GEval::Bad;
             }
-            let mut pref = ExactNum::div_ref(&one, ak_s, p, RoundingMode::None);
+            let mut pref = ExactNum::div_ref(&one, ak_s, p, RoundingMode::Work);
             let mut ell: u64 = 0;
             let mut grew = 0u32;
             let mut prev_exp: Option<i64> = None;
             loop {
                 let s = ExactNum::add_ref(
-                    &ExactNum::sub_ref(&one, ak, p, RoundingMode::None),
+                    &ExactNum::sub_ref(&one, ak, p, RoundingMode::Work),
                     &ExactNum::from_u64(ell, p),
                     p,
-                    RoundingMode::None,
+                    RoundingMode::Work,
                 )
-                .div(ak_s, p, RoundingMode::None);
+                .div(ak_s, p, RoundingMode::Work);
                 let mut gn = Vec::new();
                 let mut gd = Vec::new();
                 for (j, (ai, ai_s)) in an.iter().enumerate() {
@@ -3901,7 +3901,7 @@ fn fox_h_residue(
                         continue;
                     }
                     gn.push(lin_scale(
-                        &ExactNum::sub_ref(&one, ai, p, RoundingMode::None),
+                        &ExactNum::sub_ref(&one, ai, p, RoundingMode::Work),
                         &ai_s.neg_ref(),
                         &s,
                         p,
@@ -3912,7 +3912,7 @@ fn fox_h_residue(
                 }
                 for (bj, bj_s) in bq {
                     gd.push(lin_scale(
-                        &ExactNum::sub_ref(&one, bj, p, RoundingMode::None),
+                        &ExactNum::sub_ref(&one, bj, p, RoundingMode::Work),
                         &bj_s.neg_ref(),
                         &s,
                         p,
@@ -3928,7 +3928,7 @@ fn fox_h_residue(
                         if !finite(&term) {
                             return GEval::Singular;
                         }
-                        sum = sum.add(&term, p, RoundingMode::None);
+                        sum = sum.add(&term, p, RoundingMode::Work);
                         if !finite(&sum) {
                             return GEval::Singular;
                         }
@@ -3958,8 +3958,8 @@ fn fox_h_residue(
                 };
                 pref = pref
                     .neg()
-                    .div(&ExactNum::from_u64(ell_next, p), p, RoundingMode::None);
-                zp = zp.mul(&z_step, p, RoundingMode::None);
+                    .div(&ExactNum::from_u64(ell_next, p), p, RoundingMode::Work);
+                zp = zp.mul(&z_step, p, RoundingMode::Work);
                 ell = ell_next;
             }
         }

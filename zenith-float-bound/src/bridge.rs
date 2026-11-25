@@ -112,7 +112,7 @@ impl Mag {
             eb.checked_sub(ea)?
         };
         if gap <= EXACT_GAP {
-            let d = a.sub_full_prec(b);
+            let d = a.sub_full_work(b);
             if d.inexact() {
                 return None;
             }
@@ -145,11 +145,11 @@ impl Mag {
             .ok()?;
         let a_pos = !a.is_negative();
         let (u, v) = if a_pos {
-            (a.sub_full_prec(&s), b.add_full_prec(&s))
+            (a.sub_full_work(&s), b.add_full_work(&s))
         } else {
-            (a.add_full_prec(&s), b.sub_full_prec(&s))
+            (a.add_full_work(&s), b.sub_full_work(&s))
         };
-        let z = u.sub_full_prec(&v);
+        let z = u.sub_full_work(&v);
         if [&u, &v, &z].iter().any(|x| x.inexact() || not_finite(x)) {
             return None;
         }
@@ -190,25 +190,25 @@ impl Mag {
             // self = 2^e = h + h with h = 2^(e-1) = Mag(TOP, e), in range since big has exponent e.
             let h = Mag::finite(TOP, e).ok()?.to_exact_num().ok()?;
             let once = if big_neg {
-                big.add_full_prec(&h)
+                big.add_full_work(&h)
             } else {
-                big.sub_full_prec(&h)
+                big.sub_full_work(&h)
             };
             if once.inexact() || once.is_nan() {
                 return None;
             }
             if big_neg {
-                once.add_full_prec(&h)
+                once.add_full_work(&h)
             } else {
-                once.sub_full_prec(&h)
+                once.sub_full_work(&h)
             }
         } else {
             // me == e: self < 2^e, in range since big has exponent e.
             let m = self.to_exact_num().ok()?;
             if big_neg {
-                big.add_full_prec(&m)
+                big.add_full_work(&m)
             } else {
-                big.sub_full_prec(&m)
+                big.sub_full_work(&m)
             }
         };
         if ur.inexact() || ur.is_nan() {
@@ -235,9 +235,9 @@ impl Mag {
                     let small_pos = !small.is_negative();
                     let fs_plus = small_pos == ts_pos;
                     let z = if u_keep == fs_plus {
-                        ur.add_full_prec(small)
+                        ur.add_full_work(small)
                     } else {
-                        ur.sub_full_prec(small)
+                        ur.sub_full_work(small)
                     };
                     if z.inexact() || z.is_nan() {
                         return None;
