@@ -9056,10 +9056,9 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
-        let mut held_f20 = 0usize;
+        let mut f20_exact = 0usize;
         let mut f26_poles = 0usize;
         let mut f27_poles = 0usize;
-        let mut held_logb = 0usize;
         for i in (0..11).chain(21..23) {
             for p in [64usize, 200] {
                 // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
@@ -9110,8 +9109,14 @@ mod grid_digest_tests {
                     count += 8;
                     for b in [2usize, 4, 6] {
                         let r = operand(i).log(&operand(b), p, rm, &mut cc);
-                        // F-20 (N-5): log(x, x) = 1 is exact, but ToEven at p = 64 flags it inexact.
-                        let f20 = i == b && r.inexact();
+                        // F-20 (N-5, ZF-M27): log(x, x) = 1 is exact for x > 0, x != 1 (operand 2 is 1).
+                        let f20 = i == b && b != 2;
+                        if f20 && (r.compare(&ExactNum::from_u8(1, 64)) != Some(0) || r.inexact()) {
+                            return Err(format!(
+                                "F-20: logb(x, x) p={p} {rm:?} gives {r:?}, ruled exact 1"
+                            )
+                            .into());
+                        }
                         // F-26 (P20, POLE-01, MPFR): logb(x, 1) for finite 0 < x < 1 is the signed pole -Inf.
                         // Operand 2 is 1; logb(1, 1) -> NaN stays as it is.
                         // F-27 (P20 POLE-04, ln(+-0) = -Inf read as ln(x) / ln(b)): logb(+-0, b) is +Inf for
@@ -9130,38 +9135,25 @@ mod grid_digest_tests {
                                 .into());
                             }
                         }
-                        held_f20 += usize::from(f20);
+                        f20_exact += usize::from(f20);
                         f26_poles += usize::from(f26);
                         f27_poles += usize::from(f27);
-                        dd_held(
-                            &mut h,
-                            &mut held_logb,
-                            f20,
-                            DigestCell {
-                                op: "logb",
-                                args: &[&operand(i), &operand(b)],
-                                ints: &[],
-                                p,
-                                rm,
-                                r: &r,
-                            },
-                        )?;
+                        dd(&mut h, "logb", &[&operand(i), &operand(b)], &[], p, rm, &r)?;
                         count += 1;
                     }
                 }
             }
         }
         assert_eq!(count, 13 * 2 * 2 * 11);
-        // F-20 (N-5, ZF-M27): logb(third(64), third(64)) and logb(third(320), third(320)) at p = 64 ToEven (exactly 1,
-        // flagged inexact) are not hashed
-        assert_eq!(held_f20, 2);
+        // F-20 (N-5, ZF-M27): logb(third(64), third(64)) and logb(third(320), third(320)), p = 64 and 200, ToEven and
+        // Down, are exactly 1 and not inexact, asserted and hashed
+        assert_eq!(f20_exact, 8);
         // F-26 (ZF-M27): logb(x, 1) = -Inf for x in {third(64), third(320), operand 21}, p = 64 and 200, ToEven and
         // Down (the modes this loop runs), asserted and hashed
         assert_eq!(f26_poles, 12);
         // F-27 (ZF-M27): logb(+-0, b) for b in {1, third(64), third(320)}, p = 64 and 200, ToEven and Down: -Inf for
         // b = 1, +Inf for b < 1, asserted and hashed
         assert_eq!(f27_poles, 24);
-        assert_eq!(held_logb, held_f20);
         println!("ziv entry points digest = {}", h.finish());
         // Re-recorded: the old value (2_735_357_469_467_868_262) pinned a wrong `log1p` result for the positive
         // subnormal operand 21 with `Down` (the argument itself instead of the argument minus one grid unit);
@@ -9174,7 +9166,9 @@ mod grid_digest_tests {
         // Re-pinned (F9d-16): was 16_270_962_408_906_483_201, with the 24 F-27 logb(+-0, b) = NaN cells in.
         // Re-pinned (ZF-M27 F-26/F-27): was 14_118_851_892_563_545_474, without the 36 pole cells; they are hashed
         // as -Inf / +Inf (with them skipped the new code reproduces the old pin, r7-tools/f26/skipcheck.log).
-        assert_eq!(h.finish(), 14_161_510_883_704_499_533);
+        // Re-pinned (ZF-M27 F-20): was 14_161_510_883_704_499_533, without the 2 cells (p = 64 ToEven); they are
+        // hashed exact (with them skipped the new code reproduces the old pin, r7-tools/f20/skipcheck.log).
+        assert_eq!(h.finish(), 10_285_795_546_633_967_165);
         Ok(())
     }
 
@@ -9186,7 +9180,7 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
-        let mut held_f20 = 0usize;
+        let mut f20_exact = 0usize;
         // (x, base, expected exact result or None when the result is not exact)
         let cases: [(ExactNum, ExactNum, Option<ExactNum>); 8] = [
             (
@@ -9227,31 +9221,29 @@ mod grid_digest_tests {
                     if let Some(w) = &want {
                         assert!(ExactNum::sub_ref(&got, w, 64, RoundingMode::ToEven).is_zero());
                     }
-                    // F-20 (N-5): an exact result flagged inexact (ToEven at p = 64 and 128) is a known-wrong flag.
-                    let f20 = want.is_some() && got.inexact();
-                    dd_held(
-                        &mut h,
-                        &mut held_f20,
-                        f20,
-                        DigestCell {
-                            op: "logb",
-                            args: &[&x, &b],
-                            ints: &[],
-                            p,
-                            rm,
-                            r: &got,
-                        },
-                    )?;
+                    // F-20 (N-5, ZF-M27): an exact result is not flagged inexact, in every mode and precision.
+                    if want.is_some() {
+                        if got.inexact() {
+                            return Err(format!(
+                                "F-20: log({x}, {b}) p={p} {rm:?} exact but flagged inexact"
+                            )
+                            .into());
+                        }
+                        f20_exact += 1;
+                    }
+                    dd(&mut h, "logb", &[&x, &b], &[], p, rm, &got)?;
                     count += 1;
                 }
             }
         }
         assert_eq!(count, 8 * 4 * 3);
-        // F-20 (N-5, ZF-M27): the five exact cases at p = 64 and 128 in ToEven (flagged inexact) are not hashed
-        assert_eq!(held_f20, 10);
+        // F-20 (N-5, ZF-M27): the five exact cases at every precision and mode are exact (not inexact) and hashed
+        assert_eq!(f20_exact, 5 * 4 * 3);
         println!("log exact digest = {}", h.finish());
         // Re-pinned (F9d-7): was 11_246_996_610_564_981_343, with the 10 F-20 cells in.
-        assert_eq!(h.finish(), 4_476_836_513_075_177_053);
+        // Re-pinned (ZF-M27 F-20): was 4_476_836_513_075_177_053, without the 10 cells (p = 64 and 128 ToEven); they
+        // are hashed exact (with them skipped the new code reproduces the old pin, r7-tools/f20/skipcheck.log).
+        assert_eq!(h.finish(), 5_188_671_040_694_229_412);
         Ok(())
     }
 

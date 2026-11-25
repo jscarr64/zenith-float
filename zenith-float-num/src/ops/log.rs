@@ -487,8 +487,10 @@ impl ExactNumNumber {
 
             if ret.try_set_precision(p, rm, p_wrk)? {
                 // The per-operation flag is the quotient's own (an exact 0 for log(1) stays exact); the operands'
-                // history goes to the accumulated flag only.
-                let rounded = ret.inexact();
+                // history goes to the accumulated flag only. Where an exact result is not a rounding boundary
+                // (ToEven / ToOdd), the close quotient rounds to it on this path, flagged: the exact-dyadic check
+                // clears that flag (F-20, N-5, ZF-M27).
+                let rounded = ret.inexact() && !log_is_exact_dyadic(self, &y, &ret)?;
                 ret.set_inexact(rounded | self.inexact() | n.inexact());
                 ret.set_op_inexact(rounded);
                 return Ok(ret);
