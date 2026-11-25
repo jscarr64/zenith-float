@@ -180,5 +180,31 @@ git -C "$e" commit -q -m first 2>/dev/null && ok "hook: first commit of a new re
 # outside a work tree the hook fails closed with its own message (Cassie N6 X16)
 out=$(cd "$work/notgit" && bash "$hook" 2>&1); rc=$?
 [ $rc = 2 ] && grep -q 'pre-commit: not in a git work tree' <<<"$out" && ok "hook outside a work tree: rc 2" || { bad "hook outside a work tree (rc=$rc)"; show "$out"; }
+# ---- --scan DIR: DIR and its direct children; a child with a .git it cannot read fails closed (Cassie B3) ----
+s="$work/scan"; mkdir -p "$s"
+g=$(fresh sg); b=$(fresh sb); commit_at "$b" 10 b1; commit_at "$b" 5 b2
+mv "$g" "$s/good"; mv "$b" "$s/bad"; mkdir -p "$s/plain"; git init -q --bare "$s/bare.git"
+out=$(run --all --scan "$s" 2>&1); rc=$?
+if [ $rc = 1 ] && grep -q "FAIL $s/bad" <<<"$out" && ! grep -q "FAIL $s/good" <<<"$out"; then ok "scan: bad repo named, good not, plain dir and bare repo skipped (rc=1)"; else bad "scan (rc=$rc)"; show "$out"; fi
+expect "scan: only the good repo"                        0 run --all --scan "$s/good"
+mkdir -p "$work/emptydir"; expect "scan: empty dir"      0 run --all --scan "$work/emptydir"
+expect "scan: not a directory (Cassie B7 X05)"           2 run --all --scan "$work/no-such-dir"
+s="$work/scan-broken"; mkdir -p "$s/broken"; echo "gitdir: $work/no-such-gitdir" > "$s/broken/.git"
+out=$(run --all --scan "$s" 2>&1); rc=$?
+[ $rc = 2 ] && grep -q "$s/broken" <<<"$out" && ok "scan: child whose .git points at a missing gitdir: rc 2, named" || { bad "scan: broken .git child (rc=$rc)"; show "$out"; }
+s="$work/scan-head"; mkdir -p "$s"; c=$(fresh sh); commit_at "$c" 60 h1; commit_at "$c" 50 h2; mv "$c" "$s/corrupt"; echo garbage > "$s/corrupt/.git/HEAD"
+out=$(run --all --scan "$s" 2>&1); rc=$?
+[ $rc = 2 ] && grep -q "$s/corrupt" <<<"$out" && ok "scan: child with a corrupt HEAD and 2 unpushed: rc 2, named" || { bad "scan: corrupt HEAD child (rc=$rc)"; show "$out"; }
+# linked worktrees share branches: a bad branch is reported once, not once per worktree
+r=$(fresh wt); git -C "$r" switch -q -c side2; commit_at "$r" 60 a1; commit_at "$r" 50 a2; git -C "$r" switch -q w
+git -C "$r" worktree add -q --detach "$r-l1" w 2>/dev/null; git -C "$r" worktree add -q --detach "$r-l2" w 2>/dev/null
+out=$(run --repo "$r" --repo "$r-l1" --repo "$r-l2" 2>&1); rc=$?
+k=$(grep -c 'side2: 2 commits ahead' <<<"$out")
+[ $rc = 1 ] && [ "$k" = 1 ] && ok "branch shared by 3 worktrees reported once" || { bad "branch shared by 3 worktrees reported once (rc=$rc, reported $k times)"; show "$out"; }
+out=$(run --all --scan "$work/wt" 2>&1); rc=$?
+k=$(grep -c 'side2: 2 commits ahead' <<<"$out")
+[ $rc = 1 ] && [ "$k" = 1 ] && ok "scan of 3 linked worktrees: branch reported once" || { bad "scan of 3 linked worktrees (rc=$rc, reported $k times)"; show "$out"; }
+r=$(fresh wtl); git -C "$r" worktree add -q -b wtb "$work/wtl-linked" 2>/dev/null; commit_at "$work/wtl-linked" 30 x1; commit_at "$work/wtl-linked" 20 x2
+                expect "linked worktree branch 2 ahead"    1 run --repo "$work/wtl-linked"
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
