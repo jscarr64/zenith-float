@@ -30,7 +30,7 @@ commit_at() {
   local r=$1 age=$2 msg=$3 ts=$((NOW-$2))
   echo "$msg" >> "$r/f.txt"
   git -C "$r" add f.txt
-  GIT_COMMITTER_DATE="@$ts +0000" GIT_AUTHOR_DATE="@$ts +0000" git -C "$r" commit -q --no-verify -m "$msg"
+  GIT_COMMITTER_DATE="@$ts +0000" GIT_AUTHOR_DATE="@$ts +0000" git -C "$r" commit -q -m "$msg"
 }
 # fresh NAME : origin bare repo + clone with one pushed commit on branch w (upstream set)
 fresh() {
@@ -82,6 +82,10 @@ r=$(fresh dh2); git -C "$r" switch -q --detach; commit_at "$r" 60 d1; commit_at 
                 expect "detached HEAD, 2 unpushed"         1 run --repo "$r"
 r=$(fresh dh0); git -C "$r" switch -q --detach
                 expect "detached HEAD at pushed commit"    0 run --repo "$r"
+r=$(fresh dha); git -C "$r" switch -q --detach; commit_at "$r" 1800 d1
+                expect "detached HEAD, 1 unpushed exactly 30 min" 0 run --repo "$r"
+r=$(fresh dhb); git -C "$r" switch -q --detach; commit_at "$r" 1801 d1
+                expect "detached HEAD, 1 unpushed 30 min + 1 s"   1 run --repo "$r"
 # dirty work: oldest dirty file mtime
 r=$(fresh dn);  echo x > "$r/new.txt"; touch -d "@$((NOW-60))" "$r/new.txt"
                 expect "untracked 1 min old"               0 run --repo "$r"
@@ -91,7 +95,7 @@ r=$(fresh do);  echo x > "$r/new.txt"; touch -d "@$((NOW-1801))" "$r/new.txt"
                 expect "untracked 30 min + 1 s"            1 run --repo "$r"
 r=$(fresh dm);  echo y >> "$r/f.txt"; touch -d "@$((NOW-3600))" "$r/f.txt"
                 expect "modified tracked file 1 h old"     1 run --repo "$r"
-r=$(fresh di);  echo '*.log' > "$r/.gitignore"; git -C "$r" add .gitignore; GIT_COMMITTER_DATE="@$((NOW-7000)) +0000" git -C "$r" commit -q --no-verify -m ign
+r=$(fresh di);  echo '*.log' > "$r/.gitignore"; git -C "$r" add .gitignore; GIT_COMMITTER_DATE="@$((NOW-7000)) +0000" git -C "$r" commit -q -m ign
                 git -C "$r" push -q 2>/dev/null; echo x > "$r/old.log"; touch -d "@$((NOW-9999))" "$r/old.log"
                 expect "ignored file 2.7 h old"            0 run --repo "$r"
 r=$(fresh dsub); mkdir -p "$r/d/e"; echo x > "$r/d/e/deep.txt"; touch -d "@$((NOW-4000))" "$r/d/e/deep.txt"
@@ -100,6 +104,11 @@ r=$(fresh ddn); rm -f "$r/f.txt"
                 expect "deleted tracked file, index fresh" 0 run --repo "$r"
 r=$(fresh ddo); rm -f "$r/f.txt"; touch -d "@$((NOW-4000))" "$r/.git/index"
                 expect "deleted tracked file, age from index 66 min" 1 run --repo "$r"
+r=$(fresh drn); git -C "$r" mv f.txt g.txt; touch -d "@$((NOW-60))" "$r/g.txt"; touch -d "@$((NOW-4000))" "$r/.git/index"
+                expect "staged rename: age from the new file, not the index" 0 run --repo "$r"
+# a GIT_DIR exported by a hook (git does this) must not redirect the check to another repo
+r=$(fresh ge);  commit_at "$r" 60 e1; commit_at "$r" 50 e2; o=$(fresh geo)
+                expect "GIT_DIR of another repo in the env is ignored" 1 env GIT_DIR="$o/.git" python3 -B "$dc" --now "$NOW" --repo "$r"
 # pre-commit mode
 r=$(fresh pc0); expect "pre-commit, 0 unpushed"            0 run --pre-commit --repo "$r"
 r=$(fresh pc1); commit_at "$r" 10 p1
@@ -120,9 +129,9 @@ else bad "hook: $hook missing"; fi
 # scan mode: one good and one bad repo under a directory; the bad one is named
 s="$work/scan"; mkdir -p "$s"
 g=$(fresh sg); b=$(fresh sb); commit_at "$b" 10 b1; commit_at "$b" 5 b2
-mv "$(dirname "$g")" "$s/good"; mv "$(dirname "$b")" "$s/bad"
+mv "$g" "$s/good"; mv "$b" "$s/bad"
 out=$(run --scan "$s" 2>&1); rc=$?
-if [ $rc = 1 ] && grep -q "bad/r" <<<"$out" && ! grep -q "FAIL.*good/r" <<<"$out"; then ok "scan: bad repo named, good not (rc=1)"; else bad "scan (rc=$rc)"; printf '%s\n' "$out" | sed 's/^/     | /'; fi
+if [ $rc = 1 ] && grep -q "FAIL $s/bad" <<<"$out" && ! grep -q "FAIL $s/good" <<<"$out"; then ok "scan: bad repo named, good not (rc=1)"; else bad "scan (rc=$rc)"; printf '%s\n' "$out" | sed 's/^/     | /'; fi
 expect "scan: only the good repo" 0 run --scan "$s/good"
 mkdir -p "$work/emptydir"; expect "scan: empty dir" 0 run --scan "$work/emptydir"
 # linked worktrees of one repo are reported once per worktree, branches once per repo

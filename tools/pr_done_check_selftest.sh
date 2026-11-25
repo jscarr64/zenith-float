@@ -26,7 +26,10 @@ echo "$*" >> "$MOCK/calls.log"
 case "$1 $2" in
   "pr list")
     [ -f "$MOCK/fail-list" ] && { echo "gh: HTTP 502" >&2; exit 1; }
-    cat "$MOCK/prs.json"; exit 0;;
+    repo=""; prev=""; for a in "$@"; do [ "$prev" = "-R" ] && repo="$a"; prev="$a"; done
+    f="$MOCK/prs-${repo//\//__}.json"; [ -f "$f" ] || f="$MOCK/prs.json"
+    st=all; prev=""; for a in "$@"; do [ "$prev" = "--state" ] && st="$a"; prev="$a"; done
+    python3 -c 'import json,sys; st=sys.argv[2].upper(); d=json.load(open(sys.argv[1])); print(json.dumps([p for p in d if st=="ALL" or p["state"]==st]))' "$f" "$st"; exit 0;;
   "api "*)
     path="$2"
     case "$path" in
@@ -90,6 +93,12 @@ scenario "cross-repo PR is skipped, not failed" 0 "$(printf '[{"number":16,"stat
 m="$work/m-since"; mkdir -p "$m/compare" "$m/branches"; echo "[$(pr 17 MERGED f/r rrrr '"2026-10-01T00:00:00Z"')]" > "$m/prs.json"; echo rrrr > "$m/branches/f__r"
 MOCK="$m" python3 -B "$pc" --repo o/r --since 2026-11-01 >/dev/null 2>&1; rc=$?; [ $rc = 0 ] && ok "--since skips older merges (rc=0)" || bad "--since skips older merges (rc=$rc)"
 MOCK="$m" python3 -B "$pc" --repo o/r --since 2026-09-01 >/dev/null 2>&1; rc=$?; [ $rc = 1 ] && ok "--since includes newer merges (rc=1)" || bad "--since includes newer merges (rc=$rc)"
+# --since boundary: merged ON the date is checked
+m="$work/m-since-eq"; mkdir -p "$m/compare" "$m/branches"; echo "[$(pr 18 MERGED f/s ssss '"2026-11-01T09:00:00Z"')]" > "$m/prs.json"; echo ssss > "$m/branches/f__s"
+MOCK="$m" python3 -B "$pc" --repo o/r --since 2026-11-01 >/dev/null 2>&1; rc=$?; [ $rc = 1 ] && ok "--since includes a merge on that date (rc=1)" || bad "--since boundary (rc=$rc)"
+# two repos: a bad first repo is not hidden by a good second one
+m="$work/m-two"; mkdir -p "$m/compare" "$m/branches"; echo "[$(pr 19 OPEN f/t tttt)]" > "$m/prs-o__bad.json"; echo '[]' > "$m/prs-o__good.json"; echo identical > "$m/compare/tttt"
+MOCK="$m" python3 -B "$pc" --repo o/bad --repo o/good >/dev/null 2>&1; rc=$?; [ $rc = 1 ] && ok "bad repo then good repo (rc=1)" || bad "bad repo then good repo (rc=$rc)"
 # usage
 python3 -B "$pc" >/dev/null 2>&1; rc=$?; [ $rc = 2 ] && ok "no --repo is a usage error (rc=2)" || bad "no --repo (rc=$rc)"
 echo "pr_done_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"

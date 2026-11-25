@@ -45,7 +45,7 @@ open(os.environ["STUBLOG"], "a").write("no_suppress root=%s\n" % os.path.abspath
 sys.exit(1 if os.path.exists(os.path.join(root, "SUPPRESS")) else 0)
 S
   chmod +x "$r/tools/rules_scan.sh"
-  echo base > "$r/f.txt"; git -C "$r" add -A; git -C "$r" commit -q --no-verify -m base
+  echo base > "$r/f.txt"; git -C "$r" add -A; git -C "$r" commit -q -m base
   git -C "$r" push -q origin w 2>/dev/null          # first push before the hook is enabled
   git -C "$r" config core.hooksPath .githooks
   echo "$r"
@@ -56,57 +56,66 @@ fx() { r=$(fixture "$1"); export STUBLOG="$work/$1/stub.log"; : > "$STUBLOG"; }
 push() {
   local name=$1 want=$2 r=$3 spec=${4:-w}
   local out rc
-  out=$(cd "$r" && RATCHET_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)" git push origin "$spec" 2>&1); rc=$?
+  out=$(cd "$r" && RATCHET_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)" git push origin $spec 2>&1); rc=$?
   [ $rc -ne 0 ] && rc=1
   if [ "$rc" = "$want" ]; then ok "$name"; else bad "$name (want $( [ $want = 0 ] && echo pushed || echo refused ), got $( [ $rc = 0 ] && echo pushed || echo refused ))"; printf '%s\n' "$out" | sed 's/^/     | /'; fi
 }
 c() { local r=$1; shift; git -C "$r" "$@"; }
 
-fx h1; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify
+fx h1; echo a >> "$r/f.txt"; c "$r" commit -qam a
 push "clean commit, clean tree: pushed" 0 "$r"
 grep -q "rules_scan cwd=$r " "$STUBLOG" && bad "rules_scan ran in the pusher's worktree" || ok "rules_scan did not run in the pusher's worktree"
 grep -q "rules_scan cwd=$ZF_SCRATCH/" "$STUBLOG" && ok "rules_scan ran inside the scratch clone" || { bad "rules_scan ran inside the scratch clone"; sed 's/^/     | /' "$STUBLOG"; }
 grep -q "no_suppress root=$ZF_SCRATCH/" "$STUBLOG" && ok "no_suppress ran on the scratch clone" || bad "no_suppress ran on the scratch clone"
 
-fx h2; touch "$r/VIOLATION"; c "$r" add VIOLATION; c "$r" commit -qm v --no-verify
+fx h2; touch "$r/VIOLATION"; c "$r" add VIOLATION; c "$r" commit -qm v
 push "commit carries a rules violation: refused" 1 "$r"
 
-fx h3; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify; touch "$r/VIOLATION"
+fx h3; echo a >> "$r/f.txt"; c "$r" commit -qam a; touch "$r/VIOLATION"
 push "clean commit, violation only in the dirty tree (untracked): pushed  [2:11 PM root cause]" 0 "$r"
 
-fx h3b; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify; touch "$r/SUPPRESS"
+fx h3b; echo a >> "$r/f.txt"; c "$r" commit -qam a; touch "$r/SUPPRESS"
 push "clean commit, suppression only in the dirty tree: pushed" 0 "$r"
 
-fx h3c; touch "$r/VIOLATION"; c "$r" add VIOLATION; c "$r" commit -qm v --no-verify; rm "$r/VIOLATION"
+fx h3c; touch "$r/VIOLATION"; c "$r" add VIOLATION; c "$r" commit -qm v; rm "$r/VIOLATION"
 push "violating commit, violation deleted in the dirty tree only: refused" 1 "$r"
 
-fx h4; touch "$r/SUPPRESS"; c "$r" add SUPPRESS; c "$r" commit -qm s --no-verify
+fx h4; touch "$r/SUPPRESS"; c "$r" add SUPPRESS; c "$r" commit -qm s
 push "commit carries a suppression: refused" 1 "$r"
 
-fx h5; mkdir -p "$r/tests"; echo 'assert!(false) // red first' > "$r/tests/red.rs"; c "$r" add tests; c "$r" commit -qm "red: test first" --no-verify
+fx h5; mkdir -p "$r/tests"; echo 'assert!(false) // red first' > "$r/tests/red.rs"; c "$r" add tests; c "$r" commit -qm "red: test first"
 push "red-first commit (failing test, no fix yet) alone: pushed" 0 "$r"
-echo 'assert!(true)' > "$r/tests/red.rs"; c "$r" commit -qam "fix" --no-verify
+echo 'assert!(true)' > "$r/tests/red.rs"; c "$r" commit -qam "fix"
 push "red-first then fix, range pushed: pushed" 0 "$r"
 
-fx h6; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify; old=$(c "$r" rev-parse HEAD)
-touch "$r/VIOLATION"; c "$r" add VIOLATION; c "$r" commit -qm v --no-verify
+fx h6; echo a >> "$r/f.txt"; c "$r" commit -qam a; old=$(c "$r" rev-parse HEAD)
+touch "$r/VIOLATION"; c "$r" add VIOLATION; c "$r" commit -qm v
 push "push an older clean sha while HEAD violates: pushed" 0 "$r" "$old:refs/heads/w"
 push "then the violating HEAD: refused" 1 "$r" w
 
-fx h7; c "$r" push -q origin w:refs/heads/tmpb 2>/dev/null
+fx h7; c "$r" push -q origin w:refs/heads/tmpb >/dev/null 2>&1
 push "branch deletion: pushed" 0 "$r" ":refs/heads/tmpb"
 
-fx h8; c "$r" rm -q tools/no_suppress_scan.py; c "$r" commit -qm "no no_suppress" --no-verify
+fx h8; c "$r" rm -q tools/no_suppress_scan.py; c "$r" commit -qm "no no_suppress"
 push "tree without no_suppress_scan.py: pushed (scanner absent is reported)" 0 "$r"
-fx h9; c "$r" rm -q tools/rules_scan.sh; c "$r" commit -qm "no rules_scan" --no-verify
+fx h9; c "$r" rm -q tools/rules_scan.sh; c "$r" commit -qm "no rules_scan"
 push "tree without tools/rules_scan.sh: refused (fail closed)" 1 "$r"
 
-fx h10; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify; c "$r" switch -q --detach
+fx h10; echo a >> "$r/f.txt"; c "$r" commit -qam a; c "$r" switch -q --detach
 push "detached HEAD push of HEAD:w: pushed" 0 "$r" "HEAD:refs/heads/w"
 
 # linked worktree (Paul's setup: worktree of a shared repo, detached): the clone must still check out the sha
+fx h12; echo a >> "$r/f.txt"; c "$r" commit -qam a; c "$r" branch w2
+push "same sha to two refs: pushed" 0 "$r" "w w2"
+fx h13; echo a >> "$r/f.txt"; c "$r" commit -qam a; mkdir -p "$work/h13-bin"
+printf '#!/usr/bin/env bash\n[ "${1:-}" = clone ] && { echo "shim: clone refused" >&2; exit 1; }\nexec %s "$@"\n' "$(command -v git)" > "$work/h13-bin/git"; chmod +x "$work/h13-bin/git"
+# git puts its exec dir first on a hook's PATH, so drive the hook directly with the shim first
+sha=$(c "$r" rev-parse HEAD); out=$(cd "$r" && printf 'refs/heads/w %s refs/heads/w %s\n' "$sha" 0000000000000000000000000000000000000000 \
+  | PATH="$work/h13-bin:$PATH" .githooks/pre-push origin "$work/h13/origin.git" 2>&1); rc=$?
+[ $rc -ne 0 ] && echo "$out" | grep -q 'FAIL could not check out' && ok "clean clone cannot be made: refused (fail closed)" \
+  || { bad "clean clone cannot be made: refused (fail closed) (rc=$rc)"; printf '%s\n' "$out" | sed 's/^/     | /'; }
 fx h11; c "$r" worktree add -q --detach "$work/h11-wt" HEAD 2>/dev/null
-echo a >> "$work/h11-wt/f.txt"; c "$work/h11-wt" commit -qam a --no-verify
+echo a >> "$work/h11-wt/f.txt"; c "$work/h11-wt" commit -qam a
 push "push from a detached linked worktree: pushed" 0 "$work/h11-wt" "HEAD:refs/heads/w"
 
 # scratch: nothing left behind, nothing in /tmp
