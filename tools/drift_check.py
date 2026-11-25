@@ -3,7 +3,9 @@
 
 Plan v2 C-DRIFT / C-AHEAD. FAIL (rc 1) when, in a checked work tree,
   * a local branch, or a detached HEAD, is more than MAX_AHEAD (default 1) commits ahead of what is pushed, or
-  * its OLDEST unpushed commit (committer time) is older than MAX_AGE (default 30 min; exactly 30 min passes).
+  * its OLDEST unpushed commit (committer time) is older than MAX_AGE (default 30 min; exactly 30 min passes), or
+  * its OLDEST dirty path (modified, deleted, untracked and not ignored, submodules included) is older than MAX_AGE
+    (file mtime, so a chmod or touch counts as a change; a deleted file uses the index mtime).
 "Ahead of what is pushed" = commits on the branch that are not on its upstream, when the upstream is a
 remote-tracking ref (refs/remotes/*) that exists; otherwise (no upstream, an upstream that is gone, or an upstream
 that is another LOCAL branch) commits that are on no remote-tracking ref (`--not --remotes`). A detached HEAD is
@@ -74,6 +76,34 @@ def branches(repo):
     return rows
 
 
+def dirty_span(repo):
+    """(oldest, newest) mtime among dirty paths, (None, None) when clean."""
+    out = git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none")
+    entries = out.split("\0")
+    oldest = newest = None
+    i = 0
+    index_mtime = None
+    while i < len(entries):
+        e = entries[i]
+        i += 1
+        if not e:
+            continue
+        xy, path = e[:2], e[3:]
+        if xy[0] in "RC":
+            i += 1  # the original path of a rename/copy follows
+        full = os.path.join(repo, path)
+        try:
+            m = os.lstat(full).st_mtime
+        except FileNotFoundError:
+            if index_mtime is None:
+                ix = git(repo, "rev-parse", "--git-path", "index").strip()
+                index_mtime = os.stat(ix if os.path.isabs(ix) else os.path.join(repo, ix)).st_mtime
+            m = index_mtime
+        oldest = m if oldest is None else min(oldest, m)
+        newest = m if newest is None else max(newest, m)
+    return oldest, newest
+
+
 def head_state(repo):
     """(detached?, head sha or None)."""
     try:
@@ -105,6 +135,9 @@ def check_repo(repo, now, max_ahead, max_age, report):
             report("FAIL %s detached HEAD: %d commits not on any remote ref (max %d)" % (repo, n, max_ahead)); bad = 1
         elif n and now - oldest > max_age:
             report("FAIL %s detached HEAD: unpushed commit %d s old (max %d s)" % (repo, now - oldest, max_age)); bad = 1
+    d, _ = dirty_span(repo)
+    if d is not None and now - d > max_age:
+        report("FAIL %s: dirty work %d s old (max %d s)" % (repo, int(now - d), max_age)); bad = 1
     if not bad:
         report("ok   %s" % repo)
     return bad
