@@ -96,13 +96,8 @@ impl ExactNumNumber {
     }
 
     fn process_large_exp(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let rm_mask = if self.is_positive() {
-            0b1100 // rounding down or to zero
-        } else {
-            0b1010 // rounding up or to zero
-        };
-
-        let mut ret = if rm as u32 & rm_mask != 0 {
+        // |tanh| < 1: a mode toward zero for this sign (None included, F-16 ZF-M27) gives the largest value below 1.
+        let mut ret = if rm.rounds_toward_zero(self.is_positive()) {
             let mut ret = ExactNumNumber::max_value(p)?;
             ret.set_sign(self.sign());
             ret.set_exponent(0);

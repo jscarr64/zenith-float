@@ -6362,7 +6362,7 @@ fn bessel_int_order_neg_x(
 /// `±max` for a finite overflow when `rm` rounds toward zero for its sign, else `ExponentOverflow`
 /// (C99 7.12.1 / IEEE 754 7.4: a genuine overflow, not a pole, follows the rounding direction).
 fn overflow_in_rm(s: Sign, p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
-    if !rm.saturates_overflow(s.is_positive()) {
+    if !rm.rounds_toward_zero(s.is_positive()) {
         return Err(Error::ExponentOverflow(s));
     }
     let mut m = ExactNumNumber::max_value(p)?;

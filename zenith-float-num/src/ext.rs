@@ -1854,7 +1854,7 @@ impl ExactNum {
                 // Public `None` rounds toward zero at the storage precision, so an overflow of finite operands
                 // saturates to the signed largest value (ZF-M27 rulings M27-FB / M27-OVF). The working mode `Work`
                 // keeps +-Inf: it is the library's own overflow signal.
-                if rm.saturates_overflow(s.is_positive()) {
+                if rm.rounds_toward_zero(s.is_positive()) {
                     match ExactNumNumber::max_value(p) {
                         Ok(mut m) => {
                             // The largest value representable with exactly `p` bits; `None` keeps the storage
@@ -8257,7 +8257,7 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        let mut held_f16 = 0usize;
+        let mut f16 = 0usize;
         for i in (0..11).chain(21..23).chain(100..104) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
@@ -8318,32 +8318,33 @@ mod grid_digest_tests {
                         &x().cosh(p, rm, &mut cc),
                     )?;
                     let t = x().tanh(p, rm, &mut cc);
-                    // F-16 (N-1): under None, tanh of a large argument (1e5, -192) is exactly +-1 flagged inexact;
-                    // |tanh| < 1, so toward zero at rp(p, 64) is below 1 in magnitude.
-                    let one = ExactNum::from_u8(1, 64);
-                    let unit = ExactNum::sub_ref(&t, &one, 64, RoundingMode::ToEven).is_zero()
-                        || ExactNum::add_ref(&t, &one, 64, RoundingMode::ToEven).is_zero();
-                    let f16 = rm.skips_rounding() && t.inexact() && unit;
-                    dd_held(
-                        &mut *hh,
-                        &mut held_f16,
-                        f16,
-                        DigestCell {
-                            op: "tanh",
-                            args: &[&x()],
-                            ints: &[],
-                            p,
-                            rm,
-                            r: &t,
-                        },
-                    )?;
+                    if rm == RoundingMode::None {
+                        // F-16 (ZF-M27): None is toward zero at rp(p, 64), so every None tanh cell is the ToZero
+                        // result at the word-aligned precision, bit for bit.
+                        let tz = x().tanh(p.div_ceil(64) * 64, RoundingMode::ToZero, &mut cc);
+                        assert!(
+                            same(&t, &tz)?,
+                            "tanh None != ToZero at rp: i = {i}, p = {p}"
+                        );
+                        if i == 100 || i == 102 {
+                            // |tanh| < 1 for the large arguments (1e5, -192): below 1 in magnitude, inexact.
+                            let one = ExactNum::from_u8(1, 64);
+                            let below = ExactNum::sub_ref(&t, &one, 64, RoundingMode::ToEven)
+                                .is_negative()
+                                && ExactNum::add_ref(&t, &one, 64, RoundingMode::ToEven)
+                                    .is_positive();
+                            assert!(t.inexact() && below, "tanh None at +-1: i = {i}, p = {p}");
+                            f16 += 1;
+                        }
+                    }
+                    dd(&mut *hh, "tanh", &[&x()], &[], p, rm, &t)?;
                     count += 7;
                 }
             }
         }
         assert_eq!(count, 17 * 3 * RMS.len() * 7);
-        // F-16 (N-1, ZF-M27): the None tanh cells that are exactly +-1 (flagged inexact) are not hashed
-        assert_eq!(held_f16, 6);
+        // F-16 (ZF-M27): the 6 None tanh cells of a large argument are below 1 in magnitude and hashed
+        assert_eq!(f16, 6);
         println!("trig hyperbolic grid digest = {}", h.finish());
         println!(
             "trig_hyperbolic_grid_digest ToOdd digest = {}",
@@ -8351,10 +8352,13 @@ mod grid_digest_tests {
         );
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 2_643_728_162_804_407_485);
+        // Re-pinned (ZF-M27 F-16): was 4_503_911_867_076_179_483, without the 6 None F-16 tanh cells. Cell dump diff
+        // (r7 b15): those 6 cells are added (+-(1 - 2^-rp)), and the 5 None cells of operand 22 at p = 53 (sin, tan,
+        // atan, sinh, tanh: -0, inexact) now carry the canonical zero exponent 0 (was EXPONENT_MIN); no other cell moved.
         // Re-pinned (F9d-2): was 2_882_922_101_969_868_672, with the 6 None F-16 tanh cells in.
         // Re-pinned (Tier 1 ZF-17/36): was 4_473_217_349_629_320_125. atan(-Inf) in Up/Down at p = 53, 128 now rounds
         // -pi/2 in the requested direction (6 cells).
-        assert_eq!(h.finish(), 4_503_911_867_076_179_483);
+        assert_eq!(h.finish(), 14_402_719_205_742_117_397);
         Ok(())
     }
 
@@ -8476,7 +8480,9 @@ mod grid_digest_tests {
         // Re-pinned (F9d-19): was 2_398_075_299_501_098_093, with the 72 F-12 pow/powi(NaN, 0) NaN cells in.
         // Re-pinned (ZF-M27 F-12): was 6_643_330_963_557_222_099, without the 72 cells; they are hashed as 1 (with
         // them skipped the new code reproduces the old pin).
-        assert_eq!(h.finish(), 8_327_612_704_695_740_037);
+        // Re-pinned (ZF-M27 F-16/F-17 canonical zero): was 8_327_612_704_695_740_037. Cell dump diff (r7 b15): only 25
+        // None powi cells moved, each a +-0 (inexact) whose exponent is now the canonical 0 (was EXPONENT_MIN).
+        assert_eq!(h.finish(), 12_361_659_983_220_659_266);
         Ok(())
     }
 
@@ -9331,33 +9337,38 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        let mut held_f17 = 0usize;
+        let mut f17 = 0usize;
         let mut sat = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 53, 64, 128, 200, 320] {
                 for rm in RMS {
                     let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
-                    // F-17 (N-2): reciprocal(third(320)) at p = 200 under None is exactly 3; toward zero at
-                    // rp(200, 64) is below 3.
-                    let f17 = rm.skips_rounding() && i == 6 && p == 200;
                     let r = operand(i).reciprocal(p, rm);
-                    if f17 {
-                        held_f17 += 1;
-                    } else {
-                        // F-B (ZF-M27): a None overflow saturates to +-MAX (asserted, counted in `sat`) and is hashed
-                        dd_none_ovf(
-                            &mut *hh,
-                            &mut sat,
-                            DigestCell {
-                                op: "reciprocal",
-                                args: &[&operand(i)],
-                                ints: &[],
-                                p,
-                                rm,
-                                r: &r,
-                            },
-                        )?;
+                    if rm == RoundingMode::None && i == 6 && p == 200 {
+                        // F-17 (ZF-M27): third(320) is above 1/3, so its reciprocal is below 3; None is toward
+                        // zero at rp(200, 64) = 256, below 3 and inexact (was exactly 3).
+                        let three = ExactNum::from_u8(3, 64);
+                        let below =
+                            ExactNum::sub_ref(&r, &three, 64, RoundingMode::ToEven).is_negative();
+                        assert!(
+                            r.inexact() && below,
+                            "reciprocal(third(320)) None at p = 200 is not below 3"
+                        );
+                        f17 += 1;
                     }
+                    // F-B (ZF-M27): a None overflow saturates to +-MAX (asserted, counted in `sat`) and is hashed
+                    dd_none_ovf(
+                        &mut *hh,
+                        &mut sat,
+                        DigestCell {
+                            op: "reciprocal",
+                            args: &[&operand(i)],
+                            ints: &[],
+                            p,
+                            rm,
+                            r: &r,
+                        },
+                    )?;
                     count += 1;
                     for n in [2usize, 3, 4, 5, 7] {
                         dd(
@@ -9375,8 +9386,8 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * 6 * 6 * RMS.len());
-        // F-17 (N-2, ZF-M27): the None reciprocal(third(320)) cell at p = 200 (exactly 3) is not hashed
-        assert_eq!(held_f17, 1);
+        // F-17 (ZF-M27): the None reciprocal(third(320)) cell at p = 200 is below 3 and hashed
+        assert_eq!(f17, 1);
         // F-B (ZF-M27): the 12 None overflow cells (reciprocal of the two subnormals) saturate to +-MAX, flagged
         // inexact, and are hashed
         assert_eq!(sat, 12);
@@ -9390,11 +9401,13 @@ mod grid_digest_tests {
         );
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 18_016_007_569_384_113_393);
+        // Re-pinned (ZF-M27 F-17): was 1_381_026_833_852_829_853, without the None F-17 cell; with it skipped the new
+        // code reproduces that pin, and the cell dump diff (r7 b15) shows that one cell only (3 - ulp at 256 bits).
         // Re-pinned (F9d-3): was 2_411_520_695_892_384_189, with the None F-17 cell in.
         // Re-pinned (F9d-4): was 2_925_947_817_663_390_226, with the 12 None F-B overflow cells in.
         // Re-pinned (ZF-M27 F-B): was 1_241_375_420_610_093_665,
         // with the 12 None reciprocal overflow cells in, now +-MAX inexact.
-        assert_eq!(h.finish(), 1_381_026_833_852_829_853);
+        assert_eq!(h.finish(), 17_979_663_631_175_575_781);
         Ok(())
     }
 

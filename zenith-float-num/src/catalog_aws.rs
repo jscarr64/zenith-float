@@ -89,7 +89,7 @@ fn work_or_refuse(p: usize) -> Result<usize, ExactNum> {
 
 /// C99 7.12.1 overflow: MAX when the mode rounds toward zero, else signed Inf.
 pub(crate) fn overflow_signed(neg: bool, p: usize, rm: RoundingMode) -> ExactNum {
-    if rm.saturates_overflow(!neg) {
+    if rm.rounds_toward_zero(!neg) {
         let mut m = ExactNum::max_value(p);
         if neg {
             m.set_sign(Sign::Neg);

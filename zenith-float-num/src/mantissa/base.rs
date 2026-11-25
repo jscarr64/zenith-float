@@ -45,6 +45,16 @@ pub struct AddSubSpec {
     pub full_prec: bool,
 }
 
+/// Where public `None` cuts a mantissa for a roundability check ([`Mantissa::none_cut`]).
+enum NoneCut {
+    /// No whole word is dropped (or the value is all dropped): nothing to decide here.
+    Keeps,
+    /// Fewer correct bits than the cut keeps: not roundable.
+    Unknown,
+    /// ToZero at the word cut `n_rp` with `s` correct bits.
+    ToZero(usize, usize),
+}
+
 impl Mantissa {
     // bit lenth to length in words.
     #[inline]
@@ -851,6 +861,13 @@ impl Mantissa {
     /// `round_mantissa` with or without the check leaves the same kept bits), false when it is not.
     pub(crate) fn is_roundable(&self, n: usize, rm: RoundingMode, s: usize) -> bool {
         let s = s - s % WORD_BIT_SIZE;
+        if rm == RoundingMode::None {
+            return match self.none_cut(n, s) {
+                NoneCut::Keeps => true,
+                NoneCut::Unknown => false,
+                NoneCut::ToZero(n_rp, s) => self.is_roundable(n_rp, RoundingMode::ToZero, s),
+            };
+        }
         if rm.skips_rounding() {
             return true;
         }
@@ -934,6 +951,22 @@ impl Mantissa {
         !check
     }
 
+    /// Where public `None` cuts when `n` low bits are dropped with `s` correct bits (F-17, ZF-M27). `None` truncates at
+    /// the word boundary rp(p, 64), which is toward zero there, so its roundability is ToZero's at that cut: an inexact
+    /// value whose dropped known bits are all zeros (or all ones) is not decided. (`Work` skips the check.)
+    fn none_cut(&self, n: usize, s: usize) -> NoneCut {
+        let len = self.max_bit_len();
+        let n_rp = n - n % WORD_BIT_SIZE;
+        if n_rp == 0 || n_rp >= len {
+            return NoneCut::Keeps;
+        }
+        let s = s.min(len);
+        if s + n_rp < len {
+            return NoneCut::Unknown;
+        }
+        NoneCut::ToZero(n_rp, s)
+    }
+
     /// Round `n` positions, return true if exponent is to be incremented.
     /// If `check_roundable` is true on input, the function verifies whether the mantissa is roundable, given it contains `s` correct digits.
     /// If `check_roundable` is set to false on return, in any case it means rounding was successful.
@@ -954,6 +987,23 @@ impl Mantissa {
 
         // This function is so complex, because it combines rounding for all rounding modes
         // and checks for roundability at the same time.
+
+        if rm == RoundingMode::None && *check_roundable {
+            match self.none_cut(n, s) {
+                NoneCut::Keeps => {}
+                NoneCut::Unknown => return false, // `*check_roundable` stays true: not roundable
+                NoneCut::ToZero(n_rp, s) => {
+                    return self.round_mantissa(
+                        n_rp,
+                        RoundingMode::ToZero,
+                        is_positive,
+                        check_roundable,
+                        s,
+                        inexact,
+                    );
+                }
+            }
+        }
 
         if rm.skips_rounding() {
             *check_roundable = false;

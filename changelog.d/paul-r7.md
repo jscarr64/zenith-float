@@ -67,3 +67,7 @@
   `0 < b < 1` and -Inf for `b >= 1`; `log_1(x)` is -Inf for `0 < x < 1`, +Inf for `x > 1`.
 - Batch 14 (F-20, ZF-M27): `log_b(b^k)` on the log fast path is exact (not flagged inexact) when the result is an
   exact dyadic; `log_b(b)` = 1 exactly. The held F-20 cells are asserted and hashed; two log digests re-pinned.
+- Batch 15 (F-16/F-17, ZF-M27): public `None` is toward zero at rp(p, 64) everywhere. tanh of a large argument
+  gives +-(1 - 2^-rp) under `None` (was +-1), and a Ziv loop under `None` no longer accepts an undecided truncation
+  (`reciprocal(third(320))` at p = 200 was exactly 3). A `None` truncation to zero is the canonical zero (exponent
+  0). `RoundingMode::saturates_overflow` is renamed `rounds_toward_zero`. Three grid digests re-pinned.

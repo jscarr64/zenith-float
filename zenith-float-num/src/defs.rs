@@ -336,11 +336,11 @@ impl RoundingMode {
         matches!(self, RoundingMode::None | RoundingMode::Work)
     }
 
-    /// Whether an overflow of finite operands with a `positive` result saturates to the signed largest value: the
-    /// mode rounds toward zero for that sign (C99 7.12.1 / IEEE 754 7.4). `None` is toward zero at rp(p, 64), so it
-    /// saturates (ZF-M27 rulings M27-FB / M27-OVF); the working mode `Work` keeps +-Inf, the library's own overflow
-    /// signal.
-    pub(crate) const fn saturates_overflow(self, positive: bool) -> bool {
+    /// Whether the mode rounds toward zero for a `positive` (or negative) result. An overflow of finite operands
+    /// then saturates to the signed largest value (C99 7.12.1 / IEEE 754 7.4), and a result just inside +-1 (tanh of a
+    /// large argument) stays below 1 in magnitude. `None` is toward zero at rp(p, 64) (ZF-M27 rulings M27-FB /
+    /// M27-OVF); the working mode `Work` keeps +-Inf, the library's own overflow signal, and rounds to nearest.
+    pub(crate) const fn rounds_toward_zero(self, positive: bool) -> bool {
         matches!(
             (positive, self),
             (_, RoundingMode::ToZero | RoundingMode::None)

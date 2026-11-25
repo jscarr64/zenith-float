@@ -1919,30 +1919,8 @@ impl ExactNumNumber {
         if checked && !self.m.is_roundable(len - p, rm, s) {
             return Ok(None);
         }
-        let mut r = self.try_rounded_to(p, rm)?;
-        // With the roundability check on, a directed rounding at a word boundary reads the word just below the
-        // kept ones (`round_mantissa`, word `z`) without clearing it. A value that then rounds to zero keeps its
-        // exponent there (that word is still set when the zero test runs, and set_length drops it after); the
-        // unchecked rounding clears it and gives exponent 0.
-        let drop = len.saturating_sub(p);
-        let directed = matches!(
-            rm,
-            RoundingMode::ToZero | RoundingMode::FromZero | RoundingMode::Up | RoundingMode::Down
-        );
-        if checked
-            && directed
-            && r.is_zero()
-            && !self.is_zero()
-            && drop.is_multiple_of(WORD_BIT_SIZE)
-        {
-            let s_w = s - s % WORD_BIT_SIZE;
-            let known = drop.saturating_sub(len.saturating_sub(s_w)) / WORD_BIT_SIZE;
-            let i = drop / WORD_BIT_SIZE;
-            if known > 0 && i > 0 && self.m.digits().get(i - 1).is_some_and(|w| *w != 0) {
-                r.e = self.e;
-            }
-        }
-        Ok(Some(r))
+        // A value that rounds to zero is the canonical zero (exponent 0) here as in `try_set_precision`.
+        self.try_rounded_to(p, rm).map(Some)
     }
 
     /// What `let mut x = self.clone()?; x.set_inexact(false); x.set_precision(p, rm)?; x` returns: as
@@ -2015,7 +1993,8 @@ impl ExactNumNumber {
                 return Ok((r, true));
             }
             r.e += 1;
-        } else if full_zero {
+        } else if full_zero || r.m.is_all_zero() {
+            // canonical zero, `None` truncation included (as `set_precision_internal`)
             r.m.set_bit_len(0);
             r.e = 0;
         } else if self.is_subnormal() {
@@ -2097,12 +2076,6 @@ impl ExactNumNumber {
 
         self.inexact = acc || rounded_again;
         self.op_inexact = Some(rounded || rounded_again);
-        if self.m.is_zero() {
-            // Canonical zero: exponent 0. A flushed sticky unit can leave e = EXPONENT_MIN
-            // after set_precision in RoundingMode::None, which is the same value with a
-            // different representation and would shift grid digests.
-            self.e = 0;
-        }
         Ok(self)
     }
 
@@ -2192,6 +2165,12 @@ impl ExactNumNumber {
         }
 
         self.m.set_length(p)?;
+        if self.m.is_all_zero() && self.e != 0 {
+            // `None` drops the words below rp(p, 64) here, not in `round_mantissa`: a value that truncates to zero is
+            // the canonical zero (exponent 0), as in every other mode (ruling zfn01: a flushed None underflow is e = 0).
+            self.m.set_bit_len(0);
+            self.e = 0;
+        }
 
         Ok(true)
     }
