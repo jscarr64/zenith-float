@@ -7,7 +7,8 @@
 #   3. cargo fmt --all -- --check
 #   4. cargo clippy --workspace --all-targets --all-features -- -D warnings
 #   5. tools/no_held_scan.sh                          no held, xfail, skip or inverted-expectation list anywhere
-# All five always run and report. A FAIL stops the commit; fix it, never commit with --no-verify.
+#   6. tools/hold_guard.sh                            no HOLD file changes without a Jeff ruling in tools/hold_manifest.txt
+# All six always run and report. A FAIL stops the commit; fix it, never commit with --no-verify.
 # Test: tools/test_rules_enforcement.sh part 4.
 set -u
 cd "$(git rev-parse --show-toplevel)" || exit 1
@@ -22,5 +23,6 @@ step rules-scan-counts tools/rules_scan.sh --count-only --no-rise HEAD
 step fmt cargo fmt --all -- --check
 step clippy cargo clippy --workspace --all-targets --all-features -- -D warnings
 step no-held tools/no_held_scan.sh
+step hold-guard tools/hold_guard.sh
 if [ $rc -eq 0 ]; then echo "pre-commit: ok"; else echo "pre-commit: FAIL (commit refused; fix it, never --no-verify)"; fi
 exit $rc

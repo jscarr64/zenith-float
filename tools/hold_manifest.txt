@@ -1,0 +1,22 @@
+# HOLD manifest: every held file pinned with the Jeff ruling that allows its state. Checked by tools/hold_guard.sh (P11).
+# A held file changes only together with its line here, citing Jeff's ruling for the new state (sha256, live or deleted).
+937e306652e143055f7191267a5bff974bdbfdc40577dfdabcb8fc45c06a8837  HOLD.md  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+55e3cfaf146ac7dded348c71492f5a50955ef99620485131abd959f902c58c1a  tools/held/full_gate_bound_steps.txt  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+1f4ed1a010230717ea6e654c5d69d4814ff66b124f467574070d2a75d448b76d  zenith-float-bound/src/carlson.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+a94e5e8a2d8a109efaa144a5f25eeffc6f2224009d7fa12be57af78c8caf83e3  zenith-float-bound/src/cholesky.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+da3bec6c878e14d61dc96aa6d61b7b9445b7bb4139ee66884bc0ac6e4b761a05  zenith-float-bound/src/eigen.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+706f5e28b727b28e6cd439c911d361df6766d3c1377bf6cf82c3e51ebaaea42d  zenith-float-bound/src/elementary.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+b1c6d23608a85b01c1d777983f832d5c6c459d4fe9ebc0cea177d71f220cde7c  zenith-float-bound/src/gls.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+b455bc213db9b201a68d6a202b834b038059b3c7f0866c28e655ebbdc1c8e2cb  zenith-float-bound/src/hypergeom.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+5d81bd0addde2fea7fb7ca5a54e086efbfbc7f0edd9180959c72241b9323d95c  zenith-float-bound/src/quadrature.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+a47e8d9b6da06a50bbfba0fb04823def35ebd7e3c37b018cec1bbaf1cab20a3a  zenith-float-bound/src/zf_special.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+a6868b331c2d6d241b9b8a99da02cb4852ef88cead7e316a44447ec2f5244979  zenith-float-bound/tests/harness/slice_carlson.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+5cd07a9063729368e847313020cbaf3a72b4b1b9fc1269eb171ae358612d0eb5  zenith-float-bound/tests/harness/slice_cholesky.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+dbb9c882825d3f9645b5e68b0618de461bfc41207841e5fa2bee2168569b1b9f  zenith-float-bound/tests/harness/slice_eigen.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+97358487b1937d928670f00434226aefa02794873bc2e2762438427f87be57e2  zenith-float-bound/tests/harness/slice_elementary.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+8b20f8fa80fd3e851326d75fbadf2976c5b88beab2b987c9a50991155af3cb89  zenith-float-bound/tests/harness/slice_gls.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+259eb358750be806852ffbdc9fa0187bd774dcb80af9022d6545f35aa748f4a6  zenith-float-bound/tests/harness/slice_hypergeom.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+4a01d50d7297818a4b0a476f5f4fc2f414cee2b41fbb3f41685c01a0b44238e1  zenith-float-bound/tests/harness/slice_lu/harper_la_fact.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+34a490c07a30b5e0f558bb5605159e396f67239ed3e24773ad55962570f3c68b  zenith-float-bound/tests/harness/slice_lu/held_logdet_reds.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+e2a4e632c17b3487a8545dd3551e79c22ee922f96518f1812a5a1bfece5462d1  zenith-float-bound/tests/harness/slice_quadrature.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9
+b359617b8af3bc61e92b104f97099208f998ea91c994089db10acb73e3ca0f51  zenith-float-bound/tests/harness/slice_zf_special.rs  Jeff 2026-11-10 HOLD method (HOLD.md index), content as at 26a0df9

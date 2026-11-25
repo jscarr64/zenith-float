@@ -100,3 +100,5 @@
   `EXPONENT_MAX` (a stale "known red" exclusion that never fired at its seed); the golden is unchanged.
 - Batch 24 (HOLD H05): `zenith-float-bound/src/carlson.rs` (held, not compiled) is restored to its content before batch
   14, which had edited it by mistake.
+- Batch 25 (P11): `tools/hold_guard.sh` pins every held file in `tools/hold_manifest.txt`; a held file changes only with
+  a manifest line citing Jeff's ruling. It runs in the pre-commit hook and the full gate, with its selftest.
