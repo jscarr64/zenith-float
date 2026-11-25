@@ -35,7 +35,7 @@ impl<T: Default> OrFail<T, ()> for Option<T> {
 // ---------------------------------------------------------------- big unsigned integers
 
 /// Unsigned integer, little-endian 64-bit limbs, no high zero limbs.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[derive(PartialEq, Eq, Debug, Default)]
 pub struct Big(Vec<u64>);
 
 impl Big {
@@ -408,7 +408,7 @@ enum Kind {
 
 /// An MPFR-format float: for a regular value, `m` has exactly `prec` bits and the value is
 /// `(-1)^neg * m * 2^(exp - prec)`, i.e. `0.1xxx * 2^exp` (MPFR's exponent convention).
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Float {
     prec: u32,
     kind: Kind,
@@ -1430,7 +1430,7 @@ fn shift_amount<T: TryInto<i64>>(n: T) -> i64 {
 
 // ---------------------------------------------------------------- signed big integers (rug::Integer subset)
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Integer {
     neg: bool,
     mag: Big,

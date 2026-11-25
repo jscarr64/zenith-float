@@ -68,14 +68,18 @@ pub fn mod_pow(base: &ExactInt, exp: &ExactInt, modulus: &ExactInt) -> Option<Ex
     }
     let mut acc = ExactInt::one();
     let mut b = rem_nonneg(base, &m)?;
-    let mut e = exp.clone();
+    // `None` is the caller's exponent itself, read through the borrow; every halving is owned.
+    let mut e: Option<ExactInt> = None;
     let two = two();
-    while !e.is_zero() {
-        if !is_even(&e) {
+    while !e.as_ref().unwrap_or(exp).is_zero() {
+        let er = e.as_ref().unwrap_or(exp);
+        if !is_even(er) {
             acc = mul_mod(&acc, &b, &m)?;
         }
-        e = e.div_rem(&two)?.0;
-        if !e.is_zero() {
+        let half = er.div_rem(&two)?.0;
+        let more = !half.is_zero();
+        e = Some(half);
+        if more {
             b = mul_mod(&b, &b, &m)?;
         }
     }
@@ -89,7 +93,8 @@ fn egcd(a: &ExactInt, b: &ExactInt) -> (ExactInt, ExactInt, ExactInt) {
     let (q, r) = a.div_rem(b).unwrap_or((ExactInt::zero(), ExactInt::zero()));
     let (g, x, y) = egcd(b, &r);
     // x1 = y, y1 = x - q y
-    (g, y.clone(), x.sub(&q.mul(&y)))
+    let y1 = x.sub(&q.mul(&y));
+    (g, y, y1)
 }
 
 /// Modular inverse of `a` modulo `modulus`. `None` if not invertible.
@@ -126,25 +131,32 @@ pub fn miller_rabin(n: &ExactInt, witnesses: &[ExactInt]) -> bool {
     }
     let one = ExactInt::one();
     let n_minus = n.sub(&one);
-    let mut d = n_minus.clone();
+    // `d` starts as `n - 1` itself (`None`, read through the borrow); each halving is owned.
+    let mut d: Option<ExactInt> = None;
     let mut s = 0usize;
     let two = two();
-    while !d.is_zero() && is_even(&d) {
-        d = d
+    loop {
+        let dr = d.as_ref().unwrap_or(&n_minus);
+        if dr.is_zero() || !is_even(dr) {
+            break;
+        }
+        let half = dr
             .div_rem(&two)
             .map(|(q, _)| q)
             .unwrap_or_else(ExactInt::zero);
+        d = Some(half);
         s += 1;
     }
     if s == 0 {
         return false;
     }
+    let d = d.as_ref().unwrap_or(&n_minus);
     'wit: for a in witnesses {
         let a = rem_nonneg(a, &n).unwrap_or_else(ExactInt::zero);
         if a.is_zero() || a.is_one() {
             continue;
         }
-        let mut x = match mod_pow(&a, &d, &n) {
+        let mut x = match mod_pow(&a, d, &n) {
             Some(v) => v,
             None => return false,
         };
@@ -180,16 +192,22 @@ fn brent_once(n: &ExactInt, c: &ExactInt) -> Option<ExactInt> {
     let mut x = ExactInt::zero();
     let mut ys = ExactInt::zero();
     while g.is_one() {
-        x = y.clone();
-        for _ in 0..r {
+        // `x` takes the current `y` and `y` steps on from it (`r >= 1`): a move, not a copy.
+        let y1 = pollard_f(&y, c, n)?;
+        x = core::mem::replace(&mut y, y1);
+        for _ in 1..r {
             y = pollard_f(&y, c, n)?;
         }
         let mut k = 0usize;
         while k < r && g.is_one() {
-            ys = y.clone();
             let steps = POLLARD_BRENT_M.min(r - k);
-            for _ in 0..steps {
-                y = pollard_f(&y, c, n)?;
+            for step in 0..steps {
+                // The first step's start is saved in `ys` (moved out as `y` advances).
+                let y_next = pollard_f(&y, c, n)?;
+                let y_prev = core::mem::replace(&mut y, y_next);
+                if step == 0 {
+                    ys = y_prev;
+                }
                 let diff = abs_int(&x.sub(&y));
                 q = mul_mod(&q, &diff, n)?;
             }

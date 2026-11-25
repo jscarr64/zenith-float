@@ -191,30 +191,31 @@ where
     let two = ExactNum::from_u8(2, wrk);
     let six = ExactNum::from_u8(6, wrk);
     let half_h = ExactNum::div_ref(&h, &two, wrk, RoundingMode::None);
-    let mut t = t0.rounded_to(wrk, RoundingMode::None);
-    let mut y = y0.rounded_to(wrk, RoundingMode::None);
     let mut ts = Vec::with_capacity(n_steps + 1);
     let mut ys = Vec::with_capacity(n_steps + 1);
-    ts.push(t.clone());
-    ys.push(y.clone());
+    // The rows own every state: each step reads the last one in place (`ts[k]`, `ys[k]`) and
+    // pushes the next, so no state is copied into the rows.
+    ts.push(t0.rounded_to(wrk, RoundingMode::None));
+    ys.push(y0.rounded_to(wrk, RoundingMode::None));
     for k in 0..n_steps {
-        let k1 = f(&t, &y, wrk, RoundingMode::None, cc);
+        let (t, y) = (&ts[k], &ys[k]);
+        let k1 = f(t, y, wrk, RoundingMode::None, cc);
         let y2 = ExactNum::mul_ref(&half_h, &k1, wrk, RoundingMode::None).add(
-            &y,
+            y,
             wrk,
             RoundingMode::None,
         );
-        let t2 = ExactNum::add_ref(&t, &half_h, wrk, RoundingMode::None);
+        let t2 = ExactNum::add_ref(t, &half_h, wrk, RoundingMode::None);
         let k2 = f(&t2, &y2, wrk, RoundingMode::None, cc);
         let y3 = ExactNum::mul_ref(&half_h, &k2, wrk, RoundingMode::None).add(
-            &y,
+            y,
             wrk,
             RoundingMode::None,
         );
         let k3 = f(&t2, &y3, wrk, RoundingMode::None, cc);
         let y4 =
-            ExactNum::mul_ref(&h, &k3, wrk, RoundingMode::None).add(&y, wrk, RoundingMode::None);
-        let t4 = t.add(&h, wrk, RoundingMode::None);
+            ExactNum::mul_ref(&h, &k3, wrk, RoundingMode::None).add(y, wrk, RoundingMode::None);
+        let t4 = ExactNum::add_ref(t, &h, wrk, RoundingMode::None);
         let k4 = f(&t4, &y4, wrk, RoundingMode::None, cc);
         if !finite(&k1) || !finite(&k2) || !finite(&k3) || !finite(&k4) {
             return None;
@@ -231,7 +232,8 @@ where
                 RoundingMode::None,
             )
             .add(&k4, wrk, RoundingMode::None);
-        y = y.add(
+        let y = ExactNum::add_ref(
+            y,
             &ExactNum::div_ref(&h, &six, wrk, RoundingMode::None).mul(
                 &sum,
                 wrk,
@@ -240,14 +242,14 @@ where
             wrk,
             RoundingMode::None,
         );
-        t = ExactNum::from_u64((k + 1) as u64, wrk)
+        let t = ExactNum::from_u64((k + 1) as u64, wrk)
             .mul(&h, wrk, RoundingMode::None)
             .add(t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
             return None;
         }
-        ts.push(t.clone());
-        ys.push(y.clone());
+        ts.push(t);
+        ys.push(y);
     }
     Some((to_row(p, rm, &ts)?, to_row(p, rm, &ys)?))
 }
@@ -276,30 +278,32 @@ where
     let wrk = work_p(p);
     let n_f = ExactNum::from_u64(n_steps as u64, wrk);
     let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
-    let mut t = t0.rounded_to(wrk, RoundingMode::None);
-    let mut y = y0.rounded_to(wrk, RoundingMode::None);
     let mut ts = Vec::with_capacity(n_steps + 1);
     let mut ys = Vec::with_capacity(n_steps + 1);
-    ts.push(t.clone());
-    ys.push(y.clone());
+    // The rows own every state: each step reads the last one in place (`ts[k]`, `ys[k]`) and
+    // pushes the next, so no state is copied into the rows.
+    ts.push(t0.rounded_to(wrk, RoundingMode::None));
+    ys.push(y0.rounded_to(wrk, RoundingMode::None));
     for k in 0..n_steps {
-        let yp = f(&t, &y, wrk, RoundingMode::None);
+        let (t, y) = (&ts[k], &ys[k]);
+        let yp = f(t, y, wrk, RoundingMode::None);
         if !finite(&yp) {
             return None;
         }
-        y = y.add(
+        let y = ExactNum::add_ref(
+            y,
             &yp.mul(&h, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
-        t = ExactNum::from_u64((k + 1) as u64, wrk)
+        let t = ExactNum::from_u64((k + 1) as u64, wrk)
             .mul(&h, wrk, RoundingMode::None)
             .add(t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
             return None;
         }
-        ts.push(t.clone());
-        ys.push(y.clone());
+        ts.push(t);
+        ys.push(y);
     }
     Some((to_row(p, rm, &ts)?, to_row(p, rm, &ys)?))
 }
@@ -677,8 +681,7 @@ where
                 || leftover.compare(&scale) == Some(-1)
                 || leftover.compare(&scale) == Some(0)
             {
-                t = t1.clone();
-                push_pair(&mut ts, &mut ys, t, y);
+                push_pair(&mut ts, &mut ys, t1.clone(), y);
                 break;
             }
             return Err(OdeError::ToleranceUnreachable);
@@ -922,31 +925,39 @@ where
 {
     let rm = RoundingMode::None;
     let hmin = ode_min_step(wrk, rm);
-    let mut t = t0.rounded_to(wrk, rm);
-    let mut y = y0.rounded_to(wrk, rm);
     let mut h = ExactNum::sub_ref(t1, t0, wrk, rm);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
-    push_pair(&mut ts, &mut ys, t.clone(), y.clone());
-    while t.compare(t1) == Some(-1) {
-        let remain = ExactNum::sub_ref(t1, &t, wrk, rm);
+    // The rows own the state: each pass reads the last accepted `(t, y)` in place and an
+    // accepted step pushes the next one, so no state is copied into the rows.
+    push_pair(
+        &mut ts,
+        &mut ys,
+        t0.rounded_to(wrk, rm),
+        y0.rounded_to(wrk, rm),
+    );
+    loop {
+        let (Some(t), Some(y)) = (ts.last(), ys.last()) else {
+            return Err(OdeError::InvalidArgument);
+        };
+        if t.compare(t1) != Some(-1) {
+            break;
+        }
+        let remain = ExactNum::sub_ref(t1, t, wrk, rm);
         if h.compare(&remain) == Some(1) {
             h = remain;
         }
         if !finite(&h) || h.is_zero() || h.is_negative() || h.compare(&hmin) == Some(-1) {
             return Err(OdeError::ToleranceUnreachable);
         }
-        match bs_try_step(f, &t, &y, &h, [atol, rtol], wrk, cc)? {
+        match bs_try_step(f, t, y, &h, [atol, rtol], wrk, cc)? {
             Some(yn) => {
-                t = ExactNum::add_ref(&t, &h, wrk, rm);
-                if t.compare(t1) == Some(1) {
-                    t = t1.clone();
-                }
-                if !finite(&t) || !finite(&yn) {
+                let tn = ExactNum::add_ref(t, &h, wrk, rm);
+                let tn = if tn.compare(t1) == Some(1) { t1.clone() } else { tn };
+                if !finite(&tn) || !finite(&yn) {
                     return Err(OdeError::InvalidArgument);
                 }
-                y = yn;
-                push_pair(&mut ts, &mut ys, t.clone(), y.clone());
+                push_pair(&mut ts, &mut ys, tn, yn);
                 // Grow cautiously after an accepted step.
                 h = h.ldexp(1, wrk, rm);
             }

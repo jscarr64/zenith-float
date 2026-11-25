@@ -147,9 +147,9 @@ macro_rules! test_zf_rem_pi {
 
         if ($n1).exponent().unwrap_or(0) <= 2 {
             // Identity path: rem_pi leaves |x| < 4 unchanged aside from working precision.
-            assert_float_close(
+            $crate::mpfr::common::assert_float_close_ref(
                 n3,
-                ($f1).clone(),
+                &($f1),
                 $p,
                 &format!("{:?}", $op_info),
                 true,
@@ -261,6 +261,7 @@ pub fn with_full_range<T>(f: impl FnOnce() -> T) -> T {
 }
 
 // assert float values are equal or differ not more than 1 ulp.
+/// `assert_float_close_ref` on an owned MPFR value (the macros' temporaries).
 pub fn assert_float_close(
     n: ExactNum,
     f: Float,
@@ -269,10 +270,21 @@ pub fn assert_float_close(
     eq: bool,
     cc: &mut Consts,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    assert_float_close_ref(n, &f, p, op, eq, cc)
+}
+
+pub fn assert_float_close_ref(
+    n: ExactNum,
+    f: &Float,
+    p: usize,
+    op: &str,
+    eq: bool,
+    cc: &mut Consts,
+) -> Result<(), Box<dyn std::error::Error>> {
     if n.is_inf() {
         // Inf only where MPFR is Inf: an overflow rounded toward zero is the largest
         // finite value in MPFR, so the overflow flag alone does not admit Inf.
-        assert!(f.is_infinite(), "{} zenith Inf, MPFR {}", op, show_mp(&f));
+        assert!(f.is_infinite(), "{} zenith Inf, MPFR {}", op, show_mp(f));
         if n.is_positive() {
             assert!(f.is_sign_positive(), "{}", op);
         } else {
@@ -298,7 +310,7 @@ pub fn assert_float_close(
                 f.prec()
             );
         }
-    } else if let Some(e_f) = far_exponent(&n, &f) {
+    } else if let Some(e_f) = far_exponent(&n, f) {
         // Past the former 32-bit range: MPFR's binary string would be enormous, so compare in
         // MPFR space with exact arithmetic over the full 62-bit range.
         let mlen = n.mantissa_max_bit_len().ok_or("none value")?;
@@ -307,9 +319,9 @@ pub fn assert_float_close(
         let ok = with_full_range(|| -> Result<bool, Box<dyn std::error::Error>> {
             let g = conv_to_mpfr(mlen, &n, cc)?;
             if eq {
-                return Ok(g == f);
+                return Ok(g == *f);
             }
-            let d = Float::with_val(u32::try_from(mlen + f.prec() as usize + 2)?, &g - &f).abs();
+            let d = Float::with_val(u32::try_from(mlen + f.prec() as usize + 2)?, &g - f).abs();
             if d.is_zero() {
                 return Ok(true);
             }

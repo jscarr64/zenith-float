@@ -138,6 +138,8 @@ scan --count-only >/dev/null && fail "the line without an entry passed"
 printf '%s\n%s\n' "$A" "$A" > zenith-float-num/src/x.rs
 out="$(scan --list-unlisted-clones)"; echo "$out" | grep -q '^zenith-float-num/src/x.rs:2	1	' || fail "a second line with a listed line's text rode on its entry: $out"
 scan --count-only >/dev/null && fail "one entry covered two lines"
+printf '%s\tzenith-float-num/src/x.rs:2 [clone] selftest, second line\n' "$ka" >> tools/rules_allowlist.txt
+scan --count-only >/dev/null || fail "two entries for one text did not cover its two lines: $(scan --list-unlisted-clones)"
 printf '%s\n' "$A" > zenith-float-num/src/x.rs
 scan --count-only >/dev/null || fail "the one listed clone line failed: $(scan --count-only)"
 echo 1 > tools/unlisted_clone_baseline.txt; scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/unlisted_clone_baseline.txt)" = 0 ] || fail "unlisted baseline not lowered to 0"

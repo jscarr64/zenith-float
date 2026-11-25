@@ -2735,18 +2735,28 @@ impl ExactNum {
         if self.is_nan() {
             return Self::nan(self.err());
         }
-        let sign_num = match &sign.inner {
-            Flavor::Value(v) => v.clone(),
-            Flavor::Inf(s) => with_prec(p, || ExactNumNumber::from_i8(s.to_int(), p)),
-            Flavor::NaN(_) => with_prec(p, || ExactNumNumber::new(p)),
-        };
-        let sign_num = match sign_num {
-            Ok(v) => v,
-            Err(e) => return Self::nan(Some(e)),
+        // A finite `sign` is read in place; only ±Inf / NaN build a stand-in.
+        let built;
+        let sign_num: &ExactNumNumber = match &sign.inner {
+            Flavor::Value(v) => v,
+            Flavor::Inf(s) => match with_prec(p, || ExactNumNumber::from_i8(s.to_int(), p)) {
+                Ok(v) => {
+                    built = v;
+                    &built
+                }
+                Err(e) => return Self::nan(Some(e)),
+            },
+            Flavor::NaN(_) => match with_prec(p, || ExactNumNumber::new(p)) {
+                Ok(v) => {
+                    built = v;
+                    &built
+                }
+                Err(e) => return Self::nan(Some(e)),
+            },
         };
         match &self.inner {
             Flavor::Value(v) => {
-                Self::result_to_ext(with_prec(p, || v.copysign(&sign_num, p, rm)), false, true)
+                Self::result_to_ext(with_prec(p, || v.copysign(sign_num, p, rm)), false, true)
             }
             Flavor::Inf(_) => {
                 if sign.is_negative() || (sign.is_zero() && sign_num.is_negative()) {

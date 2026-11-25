@@ -259,7 +259,6 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
     t[1] = b[n].clone();
 
     for m in 0..n.saturating_sub(1) {
-        let mut u = ExactNum::new(p);
         let k_hi = m.div_ceil(2);
         for k in (0..=k_hi).rev() {
             let mut term = ExactNum::mul_ref(&b[k + n], &s[k], p, rm);
@@ -270,19 +269,26 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
             if !finite(&term) {
                 return None;
             }
-            u = u.add(&term, p, rm);
-            s[k + 1] = u.clone();
+            // The running sum is the value just stored in `s[k + 2]` (this sweep never reads or
+            // writes that slot again), so it is read there instead of kept as a second copy.
+            let u = if k == k_hi {
+                ExactNum::new(p).add(&term, p, rm)
+            } else {
+                ExactNum::add_ref(&s[k + 2], &term, p, rm)
+            };
+            s[k + 1] = u;
         }
         core::mem::swap(&mut s, &mut t);
     }
 
-    for j in (0..=n / 2).rev() {
-        s[j + 1] = s[j].clone();
-    }
+    // Shift `s[0..=n/2]` up one slot. `s[0]` is never written by the eastward phase in either
+    // buffer, so it is still `ExactNum::new(p)`; the rotation moves the dropped top entry there
+    // and the zero is put back.
+    s[..n / 2 + 2].rotate_right(1);
+    s[0] = ExactNum::new(p);
 
     let m_stop = 2 * n - 2;
     for m in (n - 1)..m_stop {
-        let mut u = ExactNum::new(p);
         let k0 = m + 1 - n;
         let k1 = (m - 1) / 2;
         if k0 <= k1 {
@@ -296,8 +302,14 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
                 if !finite(&piece) {
                     return None;
                 }
-                u = u.sub(&piece, p, rm);
-                s_set(&mut s, j + 1, u.clone())?;
+                // The running sum is the value the previous `k` stored in `s[j]` (that slot is not
+                // read or written again this sweep), so it is read there, not kept as a copy.
+                let u = if k == k0 {
+                    ExactNum::new(p).sub(&piece, p, rm)
+                } else {
+                    ExactNum::sub_ref(s_at(&s, j)?, &piece, p, rm)
+                };
+                s_set(&mut s, j + 1, u)?;
             }
         }
         let k = m.div_ceil(2);
@@ -345,27 +357,34 @@ fn s_set(s: &mut [ExactNum], idx: i32, value: ExactNum) -> Option<()> {
 /// `p_0 = 1`, `p_1 = λ`, `p_{k+1} = λ p_k − β_k p_{k−1}`.
 fn char_poly(lam: &ExactNum, beta: &[ExactNum], p: usize) -> Option<(ExactNum, ExactNum)> {
     let rm = RoundingMode::None;
-    let mut p0 = ExactNum::from_u8(1, p);
+    // `None` in `p0` / `p1` stands for `λ` itself, read through the borrow: `p_1 = λ` is
+    // never copied.
+    let one = ExactNum::from_u8(1, p);
+    let mut p0: Option<ExactNum> = Some(ExactNum::from_u8(1, p));
     let mut d0 = ExactNum::new(p);
-    let mut p1 = lam.clone();
+    let mut p1: Option<ExactNum> = None;
     let mut d1 = ExactNum::from_u8(1, p);
-    if !finite(&p1) {
+    if !finite(lam) {
         return None;
     }
     for b in beta {
-        let p_new = ExactNum::mul_ref(lam, &p1, p, rm).sub(&p0.mul(b, p, rm), p, rm);
+        let p1_r = p1.as_ref().unwrap_or(lam);
+        let p0_b = ExactNum::mul_ref(p0.as_ref().unwrap_or(lam), b, p, rm);
+        let p_new = ExactNum::mul_ref(lam, p1_r, p, rm).sub(&p0_b, p, rm);
         let d_new =
             ExactNum::mul_ref(lam, &d1, p, rm)
-                .add(&p1, p, rm)
+                .add(p1_r, p, rm)
                 .sub(&d0.mul(b, p, rm), p, rm);
         if !finite(&p_new) || !finite(&d_new) {
             return None;
         }
         p0 = p1;
         d0 = d1;
-        p1 = p_new;
+        p1 = Some(p_new);
         d1 = d_new;
     }
+    // An empty `beta` leaves `p_1 = λ`: `λ · 1` is `λ` exactly (both at precision `p`).
+    let p1 = p1.unwrap_or_else(|| ExactNum::mul_ref(lam, &one, p, rm));
     Some((p1, d1))
 }
 
@@ -444,8 +463,8 @@ fn positive_roots(beta: &[ExactNum], want: usize, p: usize) -> Option<Vec<ExactN
 fn isolate_roots(beta: &[ExactNum], want: usize, steps: usize, p: usize) -> Option<Vec<ExactNum>> {
     let rm = RoundingMode::None;
     let denom = ExactNum::from_u32(steps as u32, p);
-    let mut prev_x = ExactNum::from_u32(1, p).div(&denom, p, rm);
-    let (mut prev_y, _) = char_poly(&prev_x, beta, p)?;
+    let x1 = ExactNum::from_u32(1, p).div(&denom, p, rm);
+    let (mut prev_y, _) = char_poly(&x1, beta, p)?;
     if !finite(&prev_y) {
         return None;
     }
@@ -459,12 +478,13 @@ fn isolate_roots(beta: &[ExactNum], want: usize, steps: usize, p: usize) -> Opti
         let sign_change =
             prev_y.is_zero() || y.is_zero() || prev_y.is_positive() != y.is_positive();
         if sign_change {
-            brackets.push((prev_x.clone(), x.clone()));
+            // The bracket is kept as its grid index: both ends are rebuilt below with the same
+            // `i / steps` division, so they are bit-identical to the grid points tested above.
+            brackets.push(i);
         }
         if brackets.len() > want {
             return None;
         }
-        prev_x = x;
         prev_y = y;
     }
     if brackets.len() != want {
@@ -472,7 +492,9 @@ fn isolate_roots(beta: &[ExactNum], want: usize, steps: usize, p: usize) -> Opti
     }
     let one = ExactNum::from_u8(1, p);
     let mut roots = Vec::with_capacity(want);
-    for (lo, hi) in brackets {
+    for i in brackets {
+        let lo = ExactNum::from_u32((i - 1) as u32, p).div(&denom, p, rm);
+        let hi = ExactNum::from_u32(i as u32, p).div(&denom, p, rm);
         let root = polish_root(beta, lo, hi, p)?;
         if !root.is_positive() || root.compare(&one) != Some(-1) {
             return None;
@@ -497,9 +519,6 @@ fn jacobi_weight(
 ) -> Option<ExactNum> {
     let rm = RoundingMode::None;
     let m = beta_sq.len() + 1;
-    if m == 1 {
-        return Some(mu0.clone());
-    }
     let mut off = Vec::with_capacity(beta_sq.len());
     for b in beta_sq {
         if !b.is_positive() {
@@ -511,23 +530,27 @@ fn jacobi_weight(
         }
         off.push(s);
     }
-    let mut v_prev2 = ExactNum::from_u8(1, p);
+    // `v_0 = 1`. A 1×1 matrix (`m == 1`) has no off-diagonal and `Σ v² = 1`, so the weight
+    // below is `μ0 / 1 = μ0` exactly, with no copy of `μ0`.
     let mut sumsq = ExactNum::from_u8(1, p);
-    let mut v_prev = ExactNum::div_ref(lam, &off[0], p, rm);
-    if !finite(&v_prev) {
-        return None;
-    }
-    sumsq = sumsq.add(&v_prev.sqr(p, rm), p, rm);
-    for i in 2..m {
-        let numer =
-            ExactNum::mul_ref(lam, &v_prev, p, rm).sub(&v_prev2.mul(&off[i - 2], p, rm), p, rm);
-        let v = numer.div(&off[i - 1], p, rm);
-        if !finite(&v) {
+    if let Some(off0) = off.first() {
+        let mut v_prev2 = ExactNum::from_u8(1, p);
+        let mut v_prev = ExactNum::div_ref(lam, off0, p, rm);
+        if !finite(&v_prev) {
             return None;
         }
-        sumsq = sumsq.add(&v.sqr(p, rm), p, rm);
-        v_prev2 = v_prev;
-        v_prev = v;
+        sumsq = sumsq.add(&v_prev.sqr(p, rm), p, rm);
+        for i in 2..m {
+            let numer =
+                ExactNum::mul_ref(lam, &v_prev, p, rm).sub(&v_prev2.mul(&off[i - 2], p, rm), p, rm);
+            let v = numer.div(&off[i - 1], p, rm);
+            if !finite(&v) {
+                return None;
+            }
+            sumsq = sumsq.add(&v.sqr(p, rm), p, rm);
+            v_prev2 = v_prev;
+            v_prev = v;
+        }
     }
     if !finite(&sumsq) || !sumsq.is_positive() {
         return None;
@@ -698,10 +721,8 @@ where
     let wrk = work_p(p);
     let (nodes, w_gauss, w_kronrod) =
         kronrod_legendre_at(GK_GAUSS_ORDER, wrk, cc).ok_or(QuadratureError::NotConverged)?;
-    let mut aa = a.clone();
-    let mut bb = b.clone();
-    let _ = aa.set_precision(wrk, RoundingMode::None);
-    let _ = bb.set_precision(wrk, RoundingMode::None);
+    let aa = a.rounded_to(wrk, RoundingMode::None);
+    let bb = b.rounded_to(wrk, RoundingMode::None);
     let (k, g) = eval_panel(&mut f, [&aa, &bb], [&nodes, &w_gauss, &w_kronrod], wrk, cc)?;
     let err = ExactNum::sub_ref(&k, &g, wrk, RoundingMode::None).abs();
     if !finite(&k) || !finite(&g) || !finite(&err) {
@@ -736,8 +757,11 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
                 broke = true;
                 break;
             }
-            let base = if k == 0 { ExactNum::new(p) } else { cols[k - 1][i + 1].clone() };
-            let val = base.add(&inv, p, rm);
+            let val = if k == 0 {
+                ExactNum::new(p).add(&inv, p, rm)
+            } else {
+                ExactNum::add_ref(&cols[k - 1][i + 1], &inv, p, rm)
+            };
             if !finite(&val) {
                 broke = true;
                 break;
@@ -753,8 +777,7 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
     if order % 2 == 1 {
         order -= 1;
     }
-    let col = cols.get(order)?;
-    let value = col.last()?.clone();
+    let value = cols.into_iter().nth(order)?.pop()?;
     Some(WynnValue { value, order })
 }
 
@@ -894,10 +917,8 @@ where
     let wrk = work_p(p);
     let (nodes, w_gauss, w_kronrod) =
         kronrod_legendre_at(GK_GAUSS_ORDER, wrk, cc).ok_or(QuadratureError::NotConverged)?;
-    let mut aa = a.clone();
-    let mut bb = b.clone();
-    let _ = aa.set_precision(wrk, RoundingMode::None);
-    let _ = bb.set_precision(wrk, RoundingMode::None);
+    let aa = a.rounded_to(wrk, RoundingMode::None);
+    let bb = b.rounded_to(wrk, RoundingMode::None);
     let tol_work = tol_rel.rounded_to(wrk, RoundingMode::None);
     let (k0, g0) = eval_panel(&mut f, [&aa, &bb], [&nodes, &w_gauss, &w_kronrod], wrk, cc)?;
     let err0 = ExactNum::sub_ref(&k0, &g0, wrk, RoundingMode::None).abs();
@@ -916,8 +937,10 @@ where
         if !finite(&total_k) || !finite(&total_g) || !finite(&total_err) {
             return Err(QuadratureError::NotConverged);
         }
-        seq.push(total_k.clone());
-        let tol = abs_tolerance(&tol_work, &total_k, wrk);
+        // `seq` owns the sum; this pass reads it back through `seq.last()`.
+        seq.push(total_k);
+        let total_k = seq.last().ok_or(QuadratureError::NotConverged)?;
+        let tol = abs_tolerance(&tol_work, total_k, wrk);
         if leq(&total_err, &tol) {
             let result = gk_result(
                 total_k.clone(),
@@ -961,6 +984,7 @@ where
             }
         }
         if panels.len() >= max_subintervals {
+            let total_k = seq.pop().ok_or(QuadratureError::NotConverged)?;
             let result = gk_result(total_k, total_g, total_err, p, rm, wrk);
             if !finite(&result.abs_err_est) {
                 return Err(QuadratureError::NotConverged);
@@ -973,8 +997,10 @@ where
                 worst = i;
             }
         }
-        let left_a = panels[worst].a.clone();
-        let right_b = panels[worst].b.clone();
+        // The worst panel is replaced below (or the run ends with an error), so its ends are
+        // moved out rather than copied.
+        let left_a = core::mem::replace(&mut panels[worst].a, ExactNum::new(wrk));
+        let right_b = core::mem::replace(&mut panels[worst].b, ExactNum::new(wrk));
         let two = ExactNum::from_u8(2, wrk);
         let mid = ExactNum::add_ref(&left_a, &right_b, wrk, RoundingMode::None).div(
             &two,
@@ -1084,11 +1110,6 @@ where
     }
 }
 
-fn at_prec(mut x: ExactNum, p: usize) -> ExactNum {
-    let _ = x.set_precision(p, RoundingMode::None);
-    x
-}
-
 /// `x = end + sign * t/(1-t)` and `dx/dt = 1/(1-t)^2` for `t ∈ (0, 1)`.
 fn semi_infinite_sample<F>(
     f: &mut F,
@@ -1111,7 +1132,7 @@ where
     if !finite(&step) {
         return ExactNum::new(p);
     }
-    let end = at_prec(end.clone(), p);
+    let end = end.rounded_to(p, RoundingMode::None);
     let x = if positive { end.add(&step, p, rm) } else { end.sub(&step, p, rm) };
     let jac = one.div(&den.sqr(p, rm), p, rm);
     weighted_sample(f, x, jac, p, rm, cc)

@@ -283,12 +283,17 @@ fn run_compare_special(
             }
             test_zf_op!(true, n, atan, f, atan, p, rm, rnd, (n, p, rm, "atan"), cc);
 
-            let mut n_trig = n.clone();
-            let f_trig = if n.exponent().ok_or("none value")? > 128 {
-                n_trig.set_exponent(128); // large exponent causes very long computation.
-                conv_to_mpfr(p1, &n_trig, &mut cc)?
+            // A large exponent causes very long computation: those rows run at 2^128 instead (the same mantissa,
+            // scaled exactly). The others borrow n and f as they are.
+            let (n_big, f_big);
+            let (n_trig, f_trig): (&ExactNum, &Float) = if n.exponent().ok_or("none value")? > 128 {
+                let e = n.exponent().ok_or("none value")?;
+                let w = n.mantissa_max_bit_len().ok_or("none value")?;
+                n_big = n.ldexp_ref(128 - e, w, RoundingMode::None);
+                f_big = conv_to_mpfr(p1, &n_big, &mut cc)?;
+                (&n_big, &f_big)
             } else {
-                f.clone()
+                (n, &f)
             };
 
             test_zf_op!(

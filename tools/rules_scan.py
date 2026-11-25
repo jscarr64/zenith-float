@@ -1246,8 +1246,8 @@ def guarded(name, fn, *args):
 def unlisted_clone_sites():
     """every `.clone(` line (library + test dirs, as clone_count counts them) that has no tools/rules_allowlist.txt entry of
     its own (nor a tools/clone_allowlist.txt exception) -> [(rel, line, clones, key, code)]. A line is listed when its key (path:sha1 of the whitespace-collapsed line)
-    has an entry; one entry covers ONE line: when several lines share a listed key (same text), only the line nearest the
-    `path:LINE` the entry's reason names is listed, the others are not (Paul steer 2026-11-24 9:53 PM CT)."""
+    has an entry; one entry covers ONE line: when several lines share a listed key (same text), each entry for that key covers
+    the line nearest the `path:LINE` its reason names; lines beyond the number of entries are not listed (Paul steer 2026-11-24 9:53 PM CT)."""
     named = {}
     p = os.path.join(ROOT, "tools", "rules_allowlist.txt")
     if os.path.exists(p):
@@ -1256,7 +1256,7 @@ def unlisted_clone_sites():
             if l.strip() and not l.lstrip().startswith("#"):
                 k, _, reason = l.partition("\t")
                 m = re.match(r"\s*\S+:(\d+)\s", reason)
-                named[k.strip()] = int(m.group(1)) if m else 0
+                named.setdefault(k.strip(), []).append(int(m.group(1)) if m else 0)
     # a site excepted in tools/clone_allowlist.txt (constant caches, no_clone.scan) has its written entry there
     excepted = collections.Counter((h[0], h[1]) for h in no_clone.scan()["allowed"])
     by_key, out = collections.defaultdict(list), []
@@ -1269,8 +1269,12 @@ def unlisted_clone_sites():
             row = (rel, i, c, key, " ".join(l.split()))
             (by_key[key] if key in named else out).append(row)
     for key, rows in by_key.items():
-        keep = min(rows, key=lambda r: (abs(r[1] - named[key]), r[1]))
-        out += [r for r in rows if r is not keep]
+        # each entry for the key covers the not yet covered line nearest the line its reason names
+        left = list(rows)
+        for want in sorted(named[key]):
+            if left:
+                left.remove(min(left, key=lambda r: (abs(r[1] - want), r[1])))
+        out += left
     return sorted(out)
 
 

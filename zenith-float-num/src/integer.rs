@@ -439,15 +439,17 @@ impl ExactInt {
         if exp == 0 {
             return Self::one();
         }
-        let mut base = self.clone();
+        // `None` is the first base, `self`, read through the borrow; every square is owned.
+        let mut base: Option<Self> = None;
         let mut acc = Self::one();
         while exp > 0 {
+            let b = base.as_ref().unwrap_or(self);
             if exp & 1 == 1 {
-                acc = acc.mul(&base);
+                acc = acc.mul(b);
             }
             exp >>= 1;
             if exp > 0 {
-                base = base.mul(&base);
+                base = Some(b.mul(b));
             }
         }
         acc
@@ -544,12 +546,19 @@ impl ExactInt {
             return alloc::string::String::from("0");
         }
         let ten = Self::from_u64(10);
-        let mut n = if self.is_negative() { self.neg() } else { self.clone() };
+        // `None` is `self` itself: the first division reads it in place. The digits come from the
+        // remainder's magnitude (`low_word` reads the limbs), which `div_rem` computes from the
+        // magnitudes alone, so the sign of the running quotient does not matter.
+        let mut n: Option<Self> = None;
         let mut digits = alloc::vec::Vec::new();
-        while !n.is_zero() {
-            let (q, r) = n.div_rem(&ten).unwrap_or((Self::zero(), Self::zero()));
+        while !n.as_ref().unwrap_or(self).is_zero() {
+            let (q, r) = n
+                .as_ref()
+                .unwrap_or(self)
+                .div_rem(&ten)
+                .unwrap_or((Self::zero(), Self::zero()));
             digits.push(b'0' + (r.low_word() as u8));
-            n = q;
+            n = Some(q);
         }
         if self.is_negative() {
             digits.push(b'-');

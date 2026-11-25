@@ -3039,16 +3039,20 @@ fn taylor_step(
 
     let prec = bits.max(p);
     let unit = unit_p(prec);
-    let mut c_km1 = ExactNum::new(prec);
-    let mut c_k = y.clone();
-    let mut c_kp1 = yp.clone();
-    let mut hpow = h.clone();
+    // Taylor coefficients `c_0 = y`, `c_1 = y'`, the power `h^1 = h` and the derivative sum's
+    // start `y'` are the caller's values: a `None` slot reads them through the borrow
+    // (`seed(i)` is `c_i` for `i <= 1`), so none is copied. Every later value is owned.
+    let seed = |i: u32| if i == 0 { y } else { yp };
+    let mut c_km1: Option<ExactNum> = Some(ExactNum::new(prec));
+    let mut c_k: Option<ExactNum> = None;
+    let mut c_kp1: Option<ExactNum> = None;
+    let mut hpow: Option<ExactNum> = None;
     let mut sum = ExactNum::add_ref(&ExactNum::mul_ref(yp, h, prec, nr), y, prec, nr);
-    let mut dsum = yp.clone();
+    let mut dsum_acc: Option<ExactNum> = None;
     let mut peak_y = Exponent::MIN;
     let mut peak_d = Exponent::MIN;
     bump_peak(&mut peak_y, &sum);
-    bump_peak(&mut peak_d, &dsum);
+    bump_peak(&mut peak_d, yp);
     let mut tn = theta.clone();
     let mut k: u32 = 0;
     // A posteriori defect: Σ |residual_k| ρ^k of Aỹ''+Bỹ'+Cỹ, then /amin.
@@ -3124,9 +3128,19 @@ fn taylor_step(
             coef_k_owned = coef_k;
             (&coef_k_owned, coef_km1)
         };
-        let t_kp1 = ExactNum::mul_ref(&coef_kp1, &c_kp1, prec, nr);
-        let t_k = ExactNum::mul_ref(coef_k, &c_k, prec, nr);
-        let t_km1 = ExactNum::mul_ref(&coef_km1, &c_km1, prec, nr);
+        let t_kp1 = ExactNum::mul_ref(
+            &coef_kp1,
+            c_kp1.as_ref().unwrap_or_else(|| seed(k + 1)),
+            prec,
+            nr,
+        );
+        let t_k = ExactNum::mul_ref(coef_k, c_k.as_ref().unwrap_or_else(|| seed(k)), prec, nr);
+        let t_km1 = ExactNum::mul_ref(
+            &coef_km1,
+            c_km1.as_ref().unwrap_or_else(|| seed(k.saturating_sub(1))),
+            prec,
+            nr,
+        );
         let rhs = ExactNum::add_ref(&ExactNum::add_ref(&t_kp1, &t_k, prec, nr), &t_km1, prec, nr);
         let c_kp2 = ExactNum::div_ref(&rhs.neg_ref(), &left, prec, nr);
         if !finite(&c_kp2) {
@@ -3140,12 +3154,12 @@ fn taylor_step(
         );
         def = def.add(&rbound.mul(&rhok, 64, up), 64, up);
         rhok = rhok.mul(&rho, 64, up);
-        let h_prev = hpow.clone();
-        hpow = ExactNum::mul_ref(&hpow, h, prec, nr);
-        let term = ExactNum::mul_ref(&hpow, &c_kp2, prec, nr);
+        let hpow_next = ExactNum::mul_ref(hpow.as_ref().unwrap_or(h), h, prec, nr);
+        let term = ExactNum::mul_ref(&hpow_next, &c_kp2, prec, nr);
+        let h_prev = hpow.replace(hpow_next);
         let dterm = ExactNum::mul_ref(
             &ukp2,
-            &ExactNum::mul_ref(&h_prev, &c_kp2, prec, nr),
+            &ExactNum::mul_ref(h_prev.as_ref().unwrap_or(h), &c_kp2, prec, nr),
             prec,
             nr,
         );
@@ -3153,14 +3167,14 @@ fn taylor_step(
             return None;
         }
         sum = ExactNum::add_ref(&sum, &term, prec, nr);
-        dsum = ExactNum::add_ref(&dsum, &dterm, prec, nr);
+        let dsum = ExactNum::add_ref(dsum_acc.as_ref().unwrap_or(yp), &dterm, prec, nr);
         bump_peak(&mut peak_y, &term);
         bump_peak(&mut peak_y, &sum);
         bump_peak(&mut peak_d, &dterm);
         bump_peak(&mut peak_d, &dsum);
         c_km1 = c_k;
         c_k = c_kp1;
-        c_kp1 = c_kp2;
+        c_kp1 = Some(c_kp2);
         tn = tn.mul(&theta, 64, up);
         let n = (k as u64) + 2;
         let rem_y = ExactNum::mul_ref(&m_bound, &tn, 64, up)
@@ -3261,6 +3275,7 @@ fn taylor_step(
             }
             return Some((sum, dsum, rem_y, rem_d));
         }
+        dsum_acc = Some(dsum);
         k = k.checked_add(1)?;
     }
 }
@@ -3479,16 +3494,17 @@ fn fox_h_gauss(
     let m = bm.len();
     let pn = n + ap.len();
     let qn = m + bq.len();
-    let mut a: Vec<ExactNum> = Vec::new();
+    // The parameter rows are only read: `a` / `b` borrow the caller's values.
+    let mut a: Vec<&ExactNum> = Vec::new();
     let mut a_frac: Vec<(u64, u64)> = Vec::new();
     for (v, s) in an.iter().chain(ap.iter()) {
-        a.push(v.clone());
+        a.push(v);
         a_frac.push(as_pos_rational(s, p)?);
     }
-    let mut b: Vec<ExactNum> = Vec::new();
+    let mut b: Vec<&ExactNum> = Vec::new();
     let mut b_frac: Vec<(u64, u64)> = Vec::new();
     for (v, s) in bm.iter().chain(bq.iter()) {
-        b.push(v.clone());
+        b.push(v);
         b_frac.push(as_pos_rational(s, p)?);
     }
     let mut d: u64 = 1;

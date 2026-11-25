@@ -189,27 +189,36 @@ impl ExactNumNumber {
         let scale = two.div(&sqrt_pi, p, RoundingMode::None)?;
 
         let x2 = self.mul(self, p, RoundingMode::None)?;
-        let mut xpow = self.clone()?;
+        // x^{2n+1} and the partial sum both start at x itself: None stands for `self` (no copy of it).
+        let mut xpow: Option<Self> = None;
         let mut nfact = Self::from_word(1, p)?;
-        let mut sum = xpow.clone()?;
+        let mut sum: Option<Self> = None;
 
         // Terms grow until n ≈ x², so only stop once past that point.
         // The term count is that peak plus the tail bound, not a fixed cap (P9).
         let mut n: usize = 1;
         loop {
             nfact = nfact.mul(&from_usize_p(n, p)?, p, RoundingMode::None)?;
-            xpow = xpow.mul(&x2, p, RoundingMode::None)?;
+            let xp = xpow
+                .as_ref()
+                .unwrap_or(self)
+                .mul(&x2, p, RoundingMode::None)?;
             let two_n_1 = from_usize_p(2 * n + 1, p)?;
             let den = nfact.mul(&two_n_1, p, RoundingMode::None)?;
-            let mut t = xpow.div(&den, p, RoundingMode::None)?;
+            let mut t = xp.div(&den, p, RoundingMode::None)?;
             if n % 2 == 1 {
                 t.set_sign(Sign::Neg);
             }
-            sum = sum.add(&t, p, RoundingMode::None)?;
+            let sm = sum
+                .as_ref()
+                .unwrap_or(self)
+                .add(&t, p, RoundingMode::None)?;
             let past_peak = from_usize_p(n, p)?.cmp(&x2) > 0;
-            if t.is_zero() || (past_peak && t.exponent() + (p as i64) < sum.exponent()) {
-                return scale.mul(&sum, p, RoundingMode::None);
+            if t.is_zero() || (past_peak && t.exponent() + (p as i64) < sm.exponent()) {
+                return scale.mul(&sm, p, RoundingMode::None);
             }
+            xpow = Some(xp);
+            sum = Some(sm);
             n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
     }
@@ -811,7 +820,6 @@ impl ExactNumNumber {
         // ln Γ into a relative one.
         let pw = p + WORD_BIT_SIZE;
         let one = Self::from_word(1, pw)?;
-        let mut z = self.clone()?;
         let mut acc = Self::from_word(1, pw)?;
 
         // Raise the argument until the last Stirling term is below 2^-(p+8).
@@ -820,11 +828,11 @@ impl ExactNumNumber {
         // A caller-forced cap below the walk that e_min needs returns
         // PrecisionRetryExhausted at once (tests). The production path
         // passes stirling_shift_count(e_min), not a fixed 2^20 cap.
-        shift_up(&mut z, e_min, shift_max, pw, |z| {
+        let shifted = shift_up(self, e_min, shift_max, pw, |z| {
             acc = acc.mul(z, pw, RoundingMode::None)?;
-            *z = z.add(&one, pw, RoundingMode::None)?;
-            Ok(())
+            z.add(&one, pw, RoundingMode::None)
         })?;
+        let z = shifted.as_ref().unwrap_or(self);
 
         let lg = if terms == 64 {
             z.ln_gamma_stirling(pw, cc)?
@@ -881,25 +889,31 @@ impl ExactNumNumber {
         ln_two_pi.div_by_2(RoundingMode::None);
         s = s.add(&ln_two_pi, p, RoundingMode::None)?;
 
-        let mut zpow = self.clone()?; // z^{1} for k=1 term z^{2k-1}
-                                      // Cap or divergence without meeting the bound: never use the partial sum.
+        // z^{2k-1}: None stands for z^1 = `self` itself at k = 1 (no copy).
+        let mut zpow: Option<Self> = None;
+        // Cap or divergence without meeting the bound: never use the partial sum.
         let mut done = false;
         for (i, b) in bern.iter().enumerate() {
             let k = i + 1;
             let two_k = Self::from_word((2 * k) as Word, p)?;
             let two_k_m1 = Self::from_word((2 * k - 1) as Word, p)?;
-            let den =
-                two_k
-                    .mul(&two_k_m1, p, RoundingMode::None)?
-                    .mul(&zpow, p, RoundingMode::None)?;
+            let den = two_k.mul(&two_k_m1, p, RoundingMode::None)?.mul(
+                zpow.as_ref().unwrap_or(self),
+                p,
+                RoundingMode::None,
+            )?;
             let term = b.div(&den, p, RoundingMode::None)?;
             s = s.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
                 done = true;
                 break;
             }
-            zpow = zpow.mul(self, p, RoundingMode::None)?;
-            zpow = zpow.mul(self, p, RoundingMode::None)?;
+            zpow = Some(
+                zpow.as_ref()
+                    .unwrap_or(self)
+                    .mul(self, p, RoundingMode::None)?
+                    .mul(self, p, RoundingMode::None)?,
+            );
         }
         if !done {
             return Err(Error::PrecisionRetryExhausted);
@@ -1027,20 +1041,20 @@ impl ExactNumNumber {
             half_inv.set_exponent(half_inv.exponent() - 1);
             return ln_z.sub(&half_inv, p, RoundingMode::None);
         }
-        let mut z = self.clone()?;
-        z.set_inexact(false);
+        let mut z0 = self.clone()?;
+        z0.set_inexact(false);
         let mut acc = Self::from_word(0, pw)?;
         // Raise until the last asymptotic term (K = digamma_terms(p) Bernoulli numbers)
         // is below 2^-(p+8). More terms at higher p keep the shift count small.
         let terms = digamma_terms(p);
         // Bound at `pw`, the precision digamma_asymp checks its stop rule against.
         let e_min = asymp_min_exponent(pw, terms);
-        shift_up(&mut z, e_min, shift_max, pw, |z| {
+        let shifted = shift_up(&z0, e_min, shift_max, pw, |z| {
             let rec = one.div(z, pw, RoundingMode::None)?;
             acc = acc.sub(&rec, pw, RoundingMode::None)?;
-            *z = z.add(&one, pw, RoundingMode::None)?;
-            Ok(())
+            z.add(&one, pw, RoundingMode::None)
         })?;
+        let z = shifted.as_ref().unwrap_or(&z0);
         acc.add(&z.digamma_asymp(pw, terms, cc)?, p, RoundingMode::None)
     }
 
@@ -1390,9 +1404,10 @@ impl ExactNumNumber {
         let nx = x.with_sign(Sign::Neg)?;
         let exm = nx.exp(p, RoundingMode::None, cc)?;
         let pre = xs.mul(&exm, p, RoundingMode::None)?;
-        let mut poch = self.clone()?;
-        let mut term = Self::from_word(1, p)?.div(&poch, p, RoundingMode::None)?;
-        let mut sum = term.clone()?;
+        // s + k and the partial sum: None stands for s itself and for the first term (no copies).
+        let mut poch: Option<Self> = None;
+        let mut term = Self::from_word(1, p)?.div(self, p, RoundingMode::None)?;
+        let mut sum: Option<Self> = None;
         // All terms are positive and the ratio x/(s+k) falls below 1 once k > x − s,
         // so the relative stop is met after about max(0, x − s) + O(√((x+s)p)) terms;
         // while the terms still grow it cannot fire (sum ≤ k·term). Past the peak, a
@@ -1401,11 +1416,24 @@ impl ExactNumNumber {
         let mut prev_e = Exponent::MIN;
         loop {
             k = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
-            poch = poch.add(&one, p, RoundingMode::None)?;
-            term = term.mul(x, p, RoundingMode::None)?;
-            term = term.div(&poch, p, RoundingMode::None)?;
-            sum = sum.add(&term, p, RoundingMode::None)?;
-            if series_negligible(&term, &sum, p) {
+            let pk = poch
+                .as_ref()
+                .unwrap_or(self)
+                .add(&one, p, RoundingMode::None)?;
+            let next = term
+                .mul(x, p, RoundingMode::None)?
+                .div(&pk, p, RoundingMode::None)?;
+            let sm = sum
+                .as_ref()
+                .unwrap_or(&term)
+                .add(&next, p, RoundingMode::None)?;
+            term = next;
+            poch = Some(pk);
+            sum = Some(sm);
+            if sum
+                .as_ref()
+                .is_some_and(|sm| series_negligible(&term, sm, p))
+            {
                 break;
             }
             let te = term.exponent();
@@ -1419,7 +1447,7 @@ impl ExactNumNumber {
             }
             prev_e = te;
         }
-        pre.mul(&sum, p, RoundingMode::None)
+        pre.mul(sum.as_ref().unwrap_or(&term), p, RoundingMode::None)
     }
 
     /// Exponential integral `Ei(self)` (Cauchy PV for `self < 0`). `self = 0` is a pole.
@@ -1479,9 +1507,10 @@ impl ExactNumNumber {
     fn ei_series(&self, p: usize, cc: &mut Consts) -> Result<(Self, Exponent), Error> {
         let g = cc.euler_gamma_num(p, RoundingMode::None)?;
         let lnx = self.abs()?.ln(p, RoundingMode::None, cc)?;
-        let mut term = self.clone()?;
-        let mut sum = term.clone()?;
-        let mut top = max_exp(&[&g, &lnx, &sum]);
+        // x^n/n! and the partial sum both start at x: None stands for `self` (no copy of it).
+        let mut term: Option<Self> = None;
+        let mut sum: Option<Self> = None;
+        let mut top = max_exp(&[&g, &lnx, self]);
         // ZF-37: no term cap and a stop relative to the largest part. The terms x^n/(n·n!)
         // fall monotonically once n > |x| and reach 2^-p of the largest part after about
         // e|x| + p terms; the old absolute stop 2^-p with a cap of ~2p terms exhausted for
@@ -1491,19 +1520,29 @@ impl ExactNumNumber {
         loop {
             n = n.checked_add(1).ok_or(Error::MemoryAllocation)?;
             let nw = Self::from_word(n, p)?;
-            term = term.mul(self, p, RoundingMode::None)?;
-            term = term.div(&nw, p, RoundingMode::None)?;
-            let piece = term.div(&nw, p, RoundingMode::None)?;
-            sum = sum.add(&piece, p, RoundingMode::None)?;
+            let tn = term
+                .as_ref()
+                .unwrap_or(self)
+                .mul(self, p, RoundingMode::None)?
+                .div(&nw, p, RoundingMode::None)?;
+            let piece = tn.div(&nw, p, RoundingMode::None)?;
+            sum = Some(
+                sum.as_ref()
+                    .unwrap_or(self)
+                    .add(&piece, p, RoundingMode::None)?,
+            );
+            term = Some(tn);
             top = top.max(max_exp(&[&piece]));
             let past = nw.cmp(&ax) > 0;
             if piece.is_zero() || (past && piece.exponent().saturating_add(p as Exponent) < top) {
                 break;
             }
         }
-        let v = g
-            .add(&lnx, p, RoundingMode::None)?
-            .add(&sum, p, RoundingMode::None)?;
+        let v = g.add(&lnx, p, RoundingMode::None)?.add(
+            sum.as_ref().unwrap_or(self),
+            p,
+            RoundingMode::None,
+        )?;
         Ok((v, top))
     }
 
@@ -1512,7 +1551,7 @@ impl ExactNumNumber {
         let ex = self.exp(p, RoundingMode::None, cc)?;
         let pre = ex.div(self, p, RoundingMode::None)?;
         let mut term = Self::from_word(1, p)?;
-        let mut s = term.clone()?;
+        let mut s = Self::from_word(1, p)?;
         let mut prev_e = Exponent::MAX;
         // Cap or divergence without meeting the bound: never use the partial sum.
         let mut done = false;
@@ -1597,8 +1636,9 @@ impl ExactNumNumber {
 
     fn si_series(&self, p: usize) -> Result<Self, Error> {
         let x2 = self.mul(self, p, RoundingMode::None)?;
-        let mut t = self.clone()?;
-        let mut sum = t.clone()?;
+        // x^{2n+1}/(2n+1)! and the partial sum both start at x: None stands for `self` (no copy of it).
+        let mut t: Option<Self> = None;
+        let mut sum: Option<Self> = None;
         // Cap or divergence without meeting the bound: never use the partial sum.
         let mut n: usize = 1;
         loop {
@@ -1615,26 +1655,32 @@ impl ExactNumNumber {
                     .ok_or(Error::PrecisionRetryExhausted)?,
                 p,
             )?;
-            t = t.mul(&x2, p, RoundingMode::None)?;
-            t = t.div(&two_n, p, RoundingMode::None)?;
-            t = t.div(&two_n_1, p, RoundingMode::None)?;
-            let mut piece = t.div(&two_n_1, p, RoundingMode::None)?;
+            let tn = t
+                .as_ref()
+                .unwrap_or(self)
+                .mul(&x2, p, RoundingMode::None)?
+                .div(&two_n, p, RoundingMode::None)?
+                .div(&two_n_1, p, RoundingMode::None)?;
+            let mut piece = tn.div(&two_n_1, p, RoundingMode::None)?;
+            t = Some(tn);
             if n % 2 == 1 {
                 piece.set_sign(Sign::Neg);
             }
-            sum = sum.add(&piece, p, RoundingMode::None)?;
-            if series_negligible(&piece, &sum, p) {
-                break;
+            let sm = sum
+                .as_ref()
+                .unwrap_or(self)
+                .add(&piece, p, RoundingMode::None)?;
+            if series_negligible(&piece, &sm, p) {
+                return Ok(sm);
             }
+            sum = Some(sm);
             n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
-        Ok(sum)
     }
 
     fn si_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // π/2 − f(x) cos x − g(x) sin x
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let mut half_pi = pi.clone()?;
+        let mut half_pi = cc.pi_num(p, RoundingMode::None)?;
         half_pi.div_by_2(RoundingMode::None);
         // ZF-37: 0 < f < 1/x and 0 < g < 1/x² (DLMF 6.12(ii)), so for x ≥ 2^(p+4) the
         // correction is below 2^-(p+2) of π/2 and cos x, sin x (reduction of a huge x, e.g.
@@ -1751,43 +1797,52 @@ impl ExactNumNumber {
         let one = Self::from_word(1, p)?;
         let invx = one.div(self, p, RoundingMode::None)?;
         let invx2 = invx.mul(&invx, p, RoundingMode::None)?;
+        // The k = 0 terms are 1/x and 1/x². g_term None stands for invx2 itself, and the sums f, g are None until the
+        // first k > 0 term is added (they equal the k = 0 terms then): no copies.
         let mut f_term = invx;
-        let mut g_term = invx2.clone()?;
-        let mut f = f_term.clone()?;
-        let mut g = g_term.clone()?;
+        let mut g_term: Option<Self> = None;
+        let mut f: Option<Self> = None;
+        let mut g: Option<Self> = None;
         let mut prev_e = f_term.exponent();
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for k in 0..=(p + 8) {
             let a = Self::from_word((2 * k + 1) as Word, p)?;
             let b = Self::from_word((2 * k + 2) as Word, p)?;
             let c = Self::from_word((2 * k + 3) as Word, p)?;
-            f_term = f_term
+            let ft = f_term
                 .mul(&a, p, RoundingMode::None)?
                 .mul(&b, p, RoundingMode::None)?
                 .mul(&invx2, p, RoundingMode::None)?
                 .neg()?;
-            g_term = g_term
+            let gt = g_term
+                .as_ref()
+                .unwrap_or(&invx2)
                 .mul(&b, p, RoundingMode::None)?
                 .mul(&c, p, RoundingMode::None)?
                 .mul(&invx2, p, RoundingMode::None)?
                 .neg()?;
-            let e = f_term.exponent();
+            let e = ft.exponent();
             if e > prev_e {
                 break;
             }
             prev_e = e;
-            f = f.add(&f_term, p, RoundingMode::None)?;
-            g = g.add(&g_term, p, RoundingMode::None)?;
-            if f_term.is_zero() || e + (p as i64) < 0 {
-                done = true;
-                break;
+            let fs = f
+                .as_ref()
+                .unwrap_or(&f_term)
+                .add(&ft, p, RoundingMode::None)?;
+            let gs = g
+                .as_ref()
+                .unwrap_or(&invx2)
+                .add(&gt, p, RoundingMode::None)?;
+            if ft.is_zero() || e + (p as i64) < 0 {
+                return Ok((fs, gs));
             }
+            f = Some(fs);
+            g = Some(gs);
+            f_term = ft;
+            g_term = Some(gt);
         }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
-        }
-        Ok((f, g))
+        Err(Error::PrecisionRetryExhausted)
     }
 
     /// Asymptotic `e^{-|x|}` remainder is below `2^{-p}` when `|x| ≳ 0.7 p`.
@@ -1948,11 +2003,12 @@ impl ExactNumNumber {
         let v2 = v.mul(&v, p, RoundingMode::None)?;
         let mut f_term = Self::from_word(1, p)?;
         let mut g_term = v;
-        let mut f_sum = f_term.clone()?;
-        let mut g_sum = g_term.clone()?;
+        // The sums start at the n = 0 terms: f_sum is a fresh 1, g_sum is None (it equals g_term) until the first n > 0
+        // term is added, so g_term is never copied.
+        let mut f_sum = Self::from_word(1, p)?;
+        let mut g_sum: Option<Self> = None;
         let mut prev_e = f_term.exponent();
         // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
         for n in 0..=(p + 8) {
             let a = Self::from_word((4 * n + 1) as Word, p)?;
             let b = Self::from_word((4 * n + 3) as Word, p)?;
@@ -1962,7 +2018,7 @@ impl ExactNumNumber {
                 .mul(&b, p, RoundingMode::None)?
                 .mul(&v2, p, RoundingMode::None)?
                 .neg()?;
-            g_term = g_term
+            let gt = g_term
                 .mul(&b, p, RoundingMode::None)?
                 .mul(&c, p, RoundingMode::None)?
                 .mul(&v2, p, RoundingMode::None)?
@@ -1973,19 +2029,20 @@ impl ExactNumNumber {
             }
             prev_e = e;
             f_sum = f_sum.add(&f_term, p, RoundingMode::None)?;
-            g_sum = g_sum.add(&g_term, p, RoundingMode::None)?;
+            let gs = g_sum
+                .as_ref()
+                .unwrap_or(&g_term)
+                .add(&gt, p, RoundingMode::None)?;
+            g_term = gt;
             if f_term.is_zero() || e + (p as i64) < 0 {
-                done = true;
-                break;
+                return Ok((
+                    inv_pix.mul(&f_sum, p, RoundingMode::None)?,
+                    inv_pix.mul(&gs, p, RoundingMode::None)?,
+                ));
             }
+            g_sum = Some(gs);
         }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
-        }
-        Ok((
-            inv_pix.mul(&f_sum, p, RoundingMode::None)?,
-            inv_pix.mul(&g_sum, p, RoundingMode::None)?,
-        ))
+        Err(Error::PrecisionRetryExhausted)
     }
 
     fn fresnel_sc_series(&self, sine: bool, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -1994,13 +2051,14 @@ impl ExactNumNumber {
         let pi2 = pi.div(&two, p, RoundingMode::None)?;
         let x2 = self.mul(self, p, RoundingMode::None)?;
         let x4 = x2.mul(&x2, p, RoundingMode::None)?;
-        let mut pow_x = if sine { self.mul(&x2, p, RoundingMode::None)? } else { self.clone()? };
+        // x^{4n+1} or x^{4n+3}, and (π/2)^{2n} or (π/2)^{2n+1}: None stands for x itself and for π/2 itself (no copies).
+        let mut pow_x: Option<Self> =
+            if sine { Some(self.mul(&x2, p, RoundingMode::None)?) } else { None };
         let mut fact = Self::from_word(1, p)?;
-        let mut pi2_pow = if sine { pi2.clone()? } else { Self::from_word(1, p)? };
+        let mut pi2_pow: Option<Self> = if sine { None } else { Some(Self::from_word(1, p)?) };
         let mut sign_pos = true;
-        let mut sum = Self::from_word(1, p)?;
-        sum.set_sign(Sign::Pos);
-        let mut first = true;
+        // None until the first piece, which becomes the sum itself.
+        let mut sum: Option<Self> = None;
         // Cap or divergence without meeting the bound: never use the partial sum.
         let mut n: usize = 0;
         loop {
@@ -2012,21 +2070,31 @@ impl ExactNumNumber {
             .and_then(|v| Word::try_from(v).ok())
             .ok_or(Error::PrecisionRetryExhausted)?;
             let den = Self::from_word(den_i, p)?;
-            let mut piece = pi2_pow.mul(&pow_x, p, RoundingMode::None)?;
+            let mut piece = pi2_pow.as_ref().unwrap_or(&pi2).mul(
+                pow_x.as_ref().unwrap_or(self),
+                p,
+                RoundingMode::None,
+            )?;
             piece = piece.div(&fact, p, RoundingMode::None)?;
             piece = piece.div(&den, p, RoundingMode::None)?;
             if !sign_pos {
                 piece.set_sign(Sign::Neg);
             }
-            if first {
-                sum = piece.clone()?;
-                first = false;
-            } else {
-                sum = sum.add(&piece, p, RoundingMode::None)?;
+            let (sm, small) = match sum.take() {
+                None => {
+                    let small = series_negligible(&piece, &piece, p);
+                    (piece, small)
+                }
+                Some(s) => {
+                    let sm = s.add(&piece, p, RoundingMode::None)?;
+                    let small = series_negligible(&piece, &sm, p);
+                    (sm, small)
+                }
+            };
+            if small {
+                return Ok(sm);
             }
-            if series_negligible(&piece, &sum, p) {
-                break;
-            }
+            sum = Some(sm);
             let np1 = n + 1;
             if sine {
                 fact = fact
@@ -2053,14 +2121,22 @@ impl ExactNumNumber {
                         RoundingMode::None,
                     )?;
             }
-            pi2_pow = pi2_pow
-                .mul(&pi2, p, RoundingMode::None)?
-                .mul(&pi2, p, RoundingMode::None)?;
-            pow_x = pow_x.mul(&x4, p, RoundingMode::None)?;
+            pi2_pow = Some(
+                pi2_pow
+                    .as_ref()
+                    .unwrap_or(&pi2)
+                    .mul(&pi2, p, RoundingMode::None)?
+                    .mul(&pi2, p, RoundingMode::None)?,
+            );
+            pow_x = Some(
+                pow_x
+                    .as_ref()
+                    .unwrap_or(self)
+                    .mul(&x4, p, RoundingMode::None)?,
+            );
             sign_pos = !sign_pos;
             n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
-        Ok(sum)
     }
 
     /// Bessel function of the first kind `J_n(self)` for integer order `n`.
@@ -2571,7 +2647,8 @@ impl ExactNumNumber {
         let mut term = half
             .pow(nu, p, RoundingMode::None, cc)?
             .div(&g0, p, RoundingMode::None)?;
-        let mut sum = term.clone()?;
+        // None until the first k > 0 term is added: the sum is the k = 0 term itself (no copy).
+        let mut sum: Option<Self> = None;
         let mut peak = if term.is_zero() { Exponent::MIN } else { term.exponent() };
         let mut terms = 1usize;
         let hh = half.mul(&half, p, RoundingMode::None)?;
@@ -2587,23 +2664,27 @@ impl ExactNumNumber {
             let den = kk
                 .add(nu, p, RoundingMode::None)?
                 .mul(&kk, p, RoundingMode::None)?;
-            term = term
+            let mut tn = term
                 .mul(&hh, p, RoundingMode::None)?
                 .div(&den, p, RoundingMode::None)?;
             if alternating {
-                term = term.neg()?;
+                tn = tn.neg()?;
             }
-            sum = sum.add(&term, p, RoundingMode::None)?;
+            let sm = sum
+                .as_ref()
+                .unwrap_or(&term)
+                .add(&tn, p, RoundingMode::None)?;
+            term = tn;
             terms += 1;
             if !term.is_zero() {
                 peak = peak.max(term.exponent());
             }
-            if series_negligible(&term, &sum, p) {
-                break;
+            if series_negligible(&term, &sm, p) {
+                return Ok((sm, peak, terms));
             }
+            sum = Some(sm);
             k = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
-        Ok((sum, peak, terms))
     }
 
     /// Large-|x| Hankel expansion of `J_n` on `|self|`, then `J_n(-x)=(-1)^n J_n(x)`.
@@ -2712,11 +2793,23 @@ impl ExactNumNumber {
             pz = pz.mul(&eight_x, p, RoundingMode::None)?;
             let term = prod.div(&kf.mul(&pz, p, RoundingMode::None)?, p, RoundingMode::None)?;
             if k % 2 == 0 {
-                let signed = if (k / 2) % 2 == 1 { term.neg()? } else { term.clone()? };
-                psum = psum.add(&signed, p, RoundingMode::None)?;
+                let negated;
+                let signed = if (k / 2) % 2 == 1 {
+                    negated = term.neg()?;
+                    &negated
+                } else {
+                    &term
+                };
+                psum = psum.add(signed, p, RoundingMode::None)?;
             } else {
-                let signed = if ((k - 1) / 2) % 2 == 1 { term.neg()? } else { term.clone()? };
-                qsum = qsum.add(&signed, p, RoundingMode::None)?;
+                let negated;
+                let signed = if ((k - 1) / 2) % 2 == 1 {
+                    negated = term.neg()?;
+                    &negated
+                } else {
+                    &term
+                };
+                qsum = qsum.add(signed, p, RoundingMode::None)?;
             }
             let e = term.exponent();
             if term.is_zero() || e + (p as i64) < 0 {
@@ -2972,7 +3065,8 @@ impl ExactNumNumber {
         let mut fact = Self::from_word(1, p)?;
         let mut zk = Self::from_word(1, p)?;
         let mut psi = one.digamma_at(p, cc)?;
-        let mut sum = psi.clone()?;
+        // None until the first k > 0 term is added: the sum is ψ(1) itself, held in psi until then (no copy).
+        let mut sum: Option<Self> = None;
         // Cap or divergence without meeting the bound: never use the partial sum.
         let mut k: usize = 1;
         loop {
@@ -2980,19 +3074,25 @@ impl ExactNumNumber {
             fact = fact.mul(&Self::from_word(kw, p)?, p, RoundingMode::None)?;
             zk = zk.mul(&z, p, RoundingMode::None)?;
             // ψ(k+1) = ψ(k) + 1/k (a fresh digamma per term made K_n very slow).
-            psi = psi.add(
+            let psi_k = psi.add(
                 &Self::from_word(kw, p)?.reciprocal(p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
             )?;
-            let term = psi
+            let term = psi_k
                 .div(
                     &fact.mul(&fact, p, RoundingMode::None)?,
                     p,
                     RoundingMode::None,
                 )?
                 .mul(&zk, p, RoundingMode::None)?;
-            sum = sum.add(&term, p, RoundingMode::None)?;
+            // while sum is None, psi is still ψ(1), the sum's first part
+            sum = Some(
+                sum.as_ref()
+                    .unwrap_or(&psi)
+                    .add(&term, p, RoundingMode::None)?,
+            );
+            psi = psi_k;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
                 break;
             }
@@ -3001,7 +3101,7 @@ impl ExactNumNumber {
         half.ln(p, RoundingMode::None, cc)?
             .neg()?
             .mul(&i0, p, RoundingMode::None)?
-            .add(&sum, p, RoundingMode::None)
+            .add(sum.as_ref().unwrap_or(&psi), p, RoundingMode::None)
     }
 
     fn k1_from_wronskian(&self, k0: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -3635,8 +3735,7 @@ impl ExactNumNumber {
     /// that interval. The caller raises the precision and tries again.
     fn reduced_sin(&self, p: usize, cc: &mut Consts) -> Result<Option<(Self, Self, Self)>, Error> {
         let pi = cc.pi_num(p, RoundingMode::None)?;
-        let mut half = pi.clone()?;
-        half.div_by_2(RoundingMode::None);
+        let half = pi.div(&Self::from_word(2, WORD_BIT_SIZE)?, p, RoundingMode::None)?; // exact
         let q = self.div(&pi, p, RoundingMode::None)?;
         let k = q.round(0, RoundingMode::ToEven)?;
         if !k.is_int() {
@@ -4108,8 +4207,9 @@ impl ExactNumNumber {
         if n == 1 {
             return self.clone();
         }
-        let mut pm2 = Self::from_word(1, p)?;
-        let mut pm1 = self.clone()?;
+        // P_{k-1}, P_k: None stands for P_1 = x itself (no copy).
+        let mut pm2: Option<Self> = Some(Self::from_word(1, p)?);
+        let mut pm1: Option<Self> = None;
         let mut k = 1u32;
         while k < n {
             let kk = Self::from_word(k as Word, p)?;
@@ -4117,14 +4217,18 @@ impl ExactNumNumber {
             let two_k1 = Self::from_word((2 * k + 1) as Word, p)?;
             let pnext = two_k1
                 .mul(self, p, RoundingMode::None)?
-                .mul(&pm1, p, RoundingMode::None)?
-                .sub(&kk.mul(&pm2, p, RoundingMode::None)?, p, RoundingMode::None)?
+                .mul(pm1.as_ref().unwrap_or(self), p, RoundingMode::None)?
+                .sub(
+                    &kk.mul(pm2.as_ref().unwrap_or(self), p, RoundingMode::None)?,
+                    p,
+                    RoundingMode::None,
+                )?
                 .div(&kp1, p, RoundingMode::None)?;
             pm2 = pm1;
-            pm1 = pnext;
+            pm1 = Some(pnext);
             k += 1;
         }
-        Ok(pm1)
+        pm1.ok_or(Error::InvalidArgument) // n >= 2 ran the loop at least once
     }
 
     /// Associated \(P_n^m(\mathrm{self})\) with Condon–Shortley phase \((-1)^m\).
@@ -4808,11 +4912,13 @@ fn betainc_cf(
     p: usize,
 ) -> Result<ExactNumNumber, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
-    let tiny =
-        ExactNumNumber::from_word(1, p)?.ldexp(-(2 * p as Exponent), p, RoundingMode::None)?;
+    let make_tiny =
+        || ExactNumNumber::from_word(1, p)?.ldexp(-(2 * p as Exponent), p, RoundingMode::None);
+    let tiny = make_tiny()?;
+    // a fresh 2^(-2p) for each floor (exact, the same value as `tiny`): no copy of it
     let floor_tiny = |v: ExactNumNumber| -> Result<ExactNumNumber, Error> {
         if v.abs()?.cmp(&tiny) < 0 {
-            tiny.clone()
+            make_tiny()
         } else {
             Ok(v)
         }
@@ -4820,7 +4926,7 @@ fn betainc_cf(
     let apb = a.add(b, p, RoundingMode::None)?;
     let ap1 = a.add(&one, p, RoundingMode::None)?;
     let mut c = ExactNumNumber::from_word(1, p)?;
-    let mut d = floor_tiny(
+    let d0 = floor_tiny(
         one.sub(
             &apb.mul(x, p, RoundingMode::None)?
                 .div(&ap1, p, RoundingMode::None)?,
@@ -4828,8 +4934,9 @@ fn betainc_cf(
             RoundingMode::None,
         )?,
     )?;
-    d = one.div(&d, p, RoundingMode::None)?;
-    let mut h = d.clone()?;
+    // h starts at d; d is None (it equals h) until the first coefficient updates it: no copy.
+    let mut h = one.div(&d0, p, RoundingMode::None)?;
+    let mut d: Option<ExactNumNumber> = None;
     let mut m: usize = 1;
     loop {
         let mw = from_usize_p(m, p)?;
@@ -4861,8 +4968,8 @@ fn betainc_cf(
             .neg()?;
         let mut delta = ExactNumNumber::from_word(1, p)?;
         for coef in [even, odd] {
-            d = floor_tiny(one.add(
-                &coef.mul(&d, p, RoundingMode::None)?,
+            let dn = floor_tiny(one.add(
+                &coef.mul(d.as_ref().unwrap_or(&h), p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
             )?)?;
@@ -4871,8 +4978,9 @@ fn betainc_cf(
                 p,
                 RoundingMode::None,
             )?)?;
-            d = one.div(&d, p, RoundingMode::None)?;
-            delta = d.mul(&c, p, RoundingMode::None)?;
+            let dn = one.div(&dn, p, RoundingMode::None)?;
+            delta = dn.mul(&c, p, RoundingMode::None)?;
+            d = Some(dn);
             h = h.mul(&delta, p, RoundingMode::None)?;
         }
         // Stop one word short of p: rounding keeps |Δ−1| near 2^-p.
@@ -5084,31 +5192,35 @@ pub(crate) fn stirling_shift_count(e_min: Exponent) -> usize {
 /// ran all `shift_max` multiplications at full width and then failed). Otherwise it stops with the
 /// same error after `shift_max` steps, so a step that does not move `z` up cannot loop forever.
 /// An `Err` from `step` is returned as is.
+///
+/// `z0` is borrowed and `step` maps the current `z` to the next one, so the caller needs no owned copy of its
+/// argument: the result is `None` when no step was taken (`z` is still `z0`), else the shifted `z`.
 fn shift_up<S>(
-    z: &mut ExactNumNumber,
+    z0: &ExactNumNumber,
     e_min: Exponent,
     shift_max: usize,
     p: usize,
     mut step: S,
-) -> Result<(), Error>
+) -> Result<Option<ExactNumNumber>, Error>
 where
-    S: FnMut(&mut ExactNumNumber) -> Result<(), Error>,
+    S: FnMut(&ExactNumNumber) -> Result<ExactNumNumber, Error>,
 {
     let mut target = ExactNumNumber::from_word(1, p)?;
     target.set_exponent(e_min.min(EXPONENT_MAX));
-    let need = target.sub(z, p, RoundingMode::None)?;
+    let need = target.sub(z0, p, RoundingMode::None)?;
     if need.cmp(&from_usize_p(shift_max, p)?) > 0 {
         return Err(Error::PrecisionRetryExhausted);
     }
+    let mut z: Option<ExactNumNumber> = None;
     let mut left = shift_max;
-    while z.exponent() < e_min {
+    while z.as_ref().unwrap_or(z0).exponent() < e_min {
         if left == 0 {
             return Err(Error::PrecisionRetryExhausted);
         }
         left -= 1;
-        step(z)?;
+        z = Some(step(z.as_ref().unwrap_or(z0))?);
     }
-    Ok(())
+    Ok(z)
 }
 
 /// Smallest binary exponent `e` (so `z ≥ 2^(e-1)`) for which a 64-term Stirling-type tail
@@ -5191,7 +5303,7 @@ fn rgamma(x: &ExactNumNumber, p: usize, cc: &mut Consts) -> Result<ExactNumNumbe
 fn max_abs(vals: &[&ExactNumNumber]) -> Result<ExactNumNumber, Error> {
     let mut m = vals[0].abs()?;
     for v in &vals[1..] {
-        m = en_max(&m, &v.abs()?)?;
+        m = en_max_owned(m, v.abs()?);
     }
     Ok(m)
 }
@@ -5533,18 +5645,29 @@ fn tiny_spread(p: usize) -> Result<ExactNumNumber, Error> {
     ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) / 3 + 16), p, RoundingMode::None)
 }
 
-fn en_max(a: &ExactNumNumber, b: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
+/// The larger of `a` and `b` (`a` on a tie), borrowed.
+fn en_max<'a>(a: &'a ExactNumNumber, b: &'a ExactNumNumber) -> &'a ExactNumNumber {
     if a.cmp(b) >= 0 {
-        a.clone()
+        a
     } else {
-        b.clone()
+        b
+    }
+}
+
+/// The larger of `a` and `b` (`a` on a tie), moved out.
+fn en_max_owned(a: ExactNumNumber, b: ExactNumNumber) -> ExactNumNumber {
+    if a.cmp(&b) >= 0 {
+        a
+    } else {
+        b
     }
 }
 
 fn close_enough(dev: &ExactNumNumber, an: &ExactNumNumber, p: usize) -> Result<bool, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
-    let scale = en_max(&an.abs()?, &one)?;
-    let thresh = tiny_spread(p)?.mul(&scale, p, RoundingMode::None)?;
+    let a = an.abs()?;
+    let scale = en_max(&a, &one);
+    let thresh = tiny_spread(p)?.mul(scale, p, RoundingMode::None)?;
     Ok(dev.cmp(&thresh) < 0)
 }
 
@@ -5558,7 +5681,7 @@ fn max_dev3(
     let dx = an.sub(x, p, RoundingMode::None)?.abs()?;
     let dy = an.sub(y, p, RoundingMode::None)?.abs()?;
     let dz = an.sub(z, p, RoundingMode::None)?.abs()?;
-    en_max(&en_max(&dx, &dy)?, &dz)
+    Ok(en_max_owned(en_max_owned(dx, dy), dz))
 }
 
 fn nonnegative(x: &ExactNumNumber) -> bool {
@@ -5580,7 +5703,7 @@ fn carlson_rc(
     // and so Π — at about 340 bits for p = 512; the atan/atanh forms below do not cancel.)
     let rel = ExactNumNumber::from_word(1, p)?
         .ldexp(-((p as Exponent) + 8), p, RoundingMode::None)?
-        .mul(&en_max(x, y)?, p, RoundingMode::None)?;
+        .mul(en_max(x, y), p, RoundingMode::None)?;
     if x.sub(y, p, RoundingMode::None)?.abs()?.cmp(&rel) < 0 {
         return ExactNumNumber::from_word(1, p)?.div(
             &x.sqrt(p, RoundingMode::None)?,
@@ -5633,16 +5756,20 @@ fn carlson_rf(
     }
     let four = ExactNumNumber::from_word(4, p)?;
     let three = ExactNumNumber::from_word(3, p)?;
-    let mut x = x0.clone()?;
-    let mut y = y0.clone()?;
-    let mut z = z0.clone()?;
+    // The iterates start at the arguments: None stands for x0, y0, z0 themselves (no copies).
+    let mut x_s: Option<ExactNumNumber> = None;
+    let mut y_s: Option<ExactNumNumber> = None;
+    let mut z_s: Option<ExactNumNumber> = None;
     loop {
+        let x = x_s.as_ref().unwrap_or(x0);
+        let y = y_s.as_ref().unwrap_or(y0);
+        let z = z_s.as_ref().unwrap_or(z0);
         let an = x
-            .add(&y, p, RoundingMode::None)?
-            .add(&z, p, RoundingMode::None)?
+            .add(y, p, RoundingMode::None)?
+            .add(z, p, RoundingMode::None)?
             .div(&three, p, RoundingMode::None)?;
-        if close_enough(&max_dev3(&an, &x, &y, &z, p)?, &an, p)? {
-            return rf_series(&an, &x, &y, &z, p);
+        if close_enough(&max_dev3(&an, x, y, z, p)?, &an, p)? {
+            return rf_series(&an, x, y, z, p);
         }
         let sx = x.sqrt(p, RoundingMode::None)?;
         let sy = y.sqrt(p, RoundingMode::None)?;
@@ -5651,15 +5778,18 @@ fn carlson_rf(
             .mul(&sy, p, RoundingMode::None)?
             .add(&sy.mul(&sz, p, RoundingMode::None)?, p, RoundingMode::None)?
             .add(&sz.mul(&sx, p, RoundingMode::None)?, p, RoundingMode::None)?;
-        x = x
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
-        y = y
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
-        z = z
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
+        x_s = Some(
+            x.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
+        y_s = Some(
+            y.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
+        z_s = Some(
+            z.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
     }
 }
 
@@ -5751,22 +5881,22 @@ fn carlson_rd(
     let four = ExactNumNumber::from_word(4, p)?;
     let three = ExactNumNumber::from_word(3, p)?;
     let five = ExactNumNumber::from_word(5, p)?;
-    let mut x = x0.clone()?;
-    let mut y = y0.clone()?;
-    let mut z = z0.clone()?;
+    // The iterates start at the arguments: None stands for x0, y0, z0 themselves (no copies).
+    let mut x_s: Option<ExactNumNumber> = None;
+    let mut y_s: Option<ExactNumNumber> = None;
+    let mut z_s: Option<ExactNumNumber> = None;
     let mut sum = ExactNumNumber::from_word(0, p)?;
     let mut fac = ExactNumNumber::from_word(1, p)?;
     loop {
+        let x = x_s.as_ref().unwrap_or(x0);
+        let y = y_s.as_ref().unwrap_or(y0);
+        let z = z_s.as_ref().unwrap_or(z0);
         let an = x
-            .add(&y, p, RoundingMode::None)?
-            .add(
-                &three.mul(&z, p, RoundingMode::None)?,
-                p,
-                RoundingMode::None,
-            )?
+            .add(y, p, RoundingMode::None)?
+            .add(&three.mul(z, p, RoundingMode::None)?, p, RoundingMode::None)?
             .div(&five, p, RoundingMode::None)?;
-        if close_enough(&max_dev3(&an, &x, &y, &z, p)?, &an, p)? {
-            let series = rd_series(&an, &x, &y, &z, p)?;
+        if close_enough(&max_dev3(&an, x, y, z, p)?, &an, p)? {
+            let series = rd_series(&an, x, y, z, p)?;
             return three.mul(&sum, p, RoundingMode::None)?.add(
                 &fac.mul(&series, p, RoundingMode::None)?,
                 p,
@@ -5790,15 +5920,18 @@ fn carlson_rd(
             RoundingMode::None,
         )?;
         fac = fac.div(&four, p, RoundingMode::None)?;
-        x = x
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
-        y = y
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
-        z = z
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
+        x_s = Some(
+            x.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
+        y_s = Some(
+            y.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
+        z_s = Some(
+            z.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
     }
 }
 
@@ -5900,22 +6033,27 @@ fn carlson_rj(
     let three = ExactNumNumber::from_word(3, p)?;
     let four = ExactNumNumber::from_word(4, p)?;
     let five = ExactNumNumber::from_word(5, p)?;
-    let mut x = x0.clone()?;
-    let mut y = y0.clone()?;
-    let mut z = z0.clone()?;
-    let mut pv = p0.clone()?;
+    // The iterates start at the arguments: None stands for x0, y0, z0, p0 themselves (no copies).
+    let mut x_s: Option<ExactNumNumber> = None;
+    let mut y_s: Option<ExactNumNumber> = None;
+    let mut z_s: Option<ExactNumNumber> = None;
+    let mut pv_s: Option<ExactNumNumber> = None;
     let mut sum = ExactNumNumber::from_word(0, p)?;
     let mut fac = ExactNumNumber::from_word(1, p)?;
     loop {
+        let x = x_s.as_ref().unwrap_or(x0);
+        let y = y_s.as_ref().unwrap_or(y0);
+        let z = z_s.as_ref().unwrap_or(z0);
+        let pv = pv_s.as_ref().unwrap_or(p0);
         let an = x
-            .add(&y, p, RoundingMode::None)?
-            .add(&z, p, RoundingMode::None)?
-            .add(&two.mul(&pv, p, RoundingMode::None)?, p, RoundingMode::None)?
+            .add(y, p, RoundingMode::None)?
+            .add(z, p, RoundingMode::None)?
+            .add(&two.mul(pv, p, RoundingMode::None)?, p, RoundingMode::None)?
             .div(&five, p, RoundingMode::None)?;
-        let d4 = max_dev3(&an, &x, &y, &z, p)?;
-        let dp = an.sub(&pv, p, RoundingMode::None)?.abs()?;
-        if close_enough(&en_max(&d4, &dp)?, &an, p)? {
-            let series = rj_series(&an, &x, &y, &z, &pv, p)?;
+        let d4 = max_dev3(&an, x, y, z, p)?;
+        let dp = an.sub(pv, p, RoundingMode::None)?.abs()?;
+        if close_enough(en_max(&d4, &dp), &an, p)? {
+            let series = rj_series(&an, x, y, z, pv, p)?;
             return three.mul(&sum, p, RoundingMode::None)?.add(
                 &fac.mul(&series, p, RoundingMode::None)?,
                 p,
@@ -5953,18 +6091,22 @@ fn carlson_rj(
             RoundingMode::None,
         )?;
         fac = fac.div(&four, p, RoundingMode::None)?;
-        x = x
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
-        y = y
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
-        z = z
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
-        pv = pv
-            .add(&lam, p, RoundingMode::None)?
-            .div(&four, p, RoundingMode::None)?;
+        x_s = Some(
+            x.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
+        y_s = Some(
+            y.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
+        z_s = Some(
+            z.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
+        pv_s = Some(
+            pv.add(&lam, p, RoundingMode::None)?
+                .div(&four, p, RoundingMode::None)?,
+        );
     }
 }
 
@@ -8101,21 +8243,20 @@ mod tests {
     fn count_shift_up(z: Word, cap: usize, stuck: bool) -> (Result<(), crate::Error>, usize) {
         let p = 64;
         let mut steps = 0usize;
-        let mut z = match ExactNumNumber::from_word(z, p) {
+        let z = match ExactNumNumber::from_word(z, p) {
             Ok(z) => z,
             Err(e) => return (Err(e), 0),
         };
-        let r = shift_up(&mut z, 6, cap, p, |z| {
+        let r = shift_up(&z, 6, cap, p, |z| {
             steps += 1;
             if steps > 1000 {
                 return Err(crate::Error::InvalidArgument);
             }
-            if !stuck {
-                *z = z.add(&ExactNumNumber::from_word(1, p)?, p, RoundingMode::None)?;
-            }
-            Ok(())
+            // a stuck step returns z unchanged (z + 0)
+            let d = ExactNumNumber::from_word(if stuck { 0 } else { 1 }, p)?;
+            z.add(&d, p, RoundingMode::None)
         });
-        (r, steps)
+        (r.map(|_| ()), steps)
     }
 
     /// `shift_up` fails at once, with no steps, when 2^(e_min-1) - z is above the cap; runs at
@@ -8132,15 +8273,15 @@ mod tests {
         assert_eq!(count_shift_up(32, 0, false), (Ok(()), 0));
         assert_eq!(count_shift_up(40, 0, false), (Ok(()), 0));
         assert_eq!(count_shift_up(22, 10, true), (Err(px), 10));
-        let mut z = ExactNumNumber::from_word(1, 64)?;
-        let r = shift_up(&mut z, 6, 100, 64, |_| Err(crate::Error::MemoryAllocation));
-        assert_eq!(r, Err(crate::Error::MemoryAllocation));
+        let z = ExactNumNumber::from_word(1, 64)?;
+        let r = shift_up(&z, 6, 100, 64, |_| Err(crate::Error::MemoryAllocation));
+        assert_eq!(r.map(|_| ()), Err(crate::Error::MemoryAllocation));
         // A target past the exponent range fails without stepping.
-        let mut z = ExactNumNumber::from_word(1, 64)?;
-        let r = shift_up(&mut z, Exponent::MAX, usize::MAX, 64, |_| {
+        let z = ExactNumNumber::from_word(1, 64)?;
+        let r = shift_up(&z, Exponent::MAX, usize::MAX, 64, |_| {
             Err(crate::Error::InvalidArgument)
         });
-        assert_eq!(r, Err(px));
+        assert_eq!(r.map(|_| ()), Err(px));
         Ok(())
     }
 
