@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# Selftest for .githooks/pre-push (plan v2 C-HOOK). The hook must judge the PUSHED commit, never the pusher's working
+# tree: every scanner runs inside a clean --shared clone checked out at the pushed sha. Root cause of the 2026-11-25
+# 2:11 PM CT refusal of d41d938 (pushed from a detached LINKED worktree): git exports GIT_DIR=<that worktree's
+# gitdir> to hooks, so the #40 hook's `git -C "$t" checkout` acted on the pusher's repo and left the scratch clone
+# empty ("could not check out ... or it has no tools/no_suppress_scan.py"); and rules_scan ran from the pusher's
+# worktree, where its count checks read the working-tree files (rules_scan.py ROOT), so dirty files can fail (or
+# pass) a push of a commit that is clean on its own. The hook must unset GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE. A deliberate red-first commit (tests that fail, no fix yet) must push.
+# Real pushes to a local bare origin with core.hooksPath set; the scanners are stubs that fail on marker files, so
+# this tests the hook's wiring, not the scanners (they have their own selftests). Scratch under $ZF_SCRATCH, not /tmp.
+# PRE_PUSH_HOOK can point at another hook (the mutation runner, and the red run against #40's hook, use this).
+set -u
+here="$(cd "$(dirname "$0")" && pwd)"
+hook="${PRE_PUSH_HOOK:-$here/../.githooks/pre-push}"
+root="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-push-selftest"
+mkdir -p "$root" || exit 2
+work=$(mktemp -d "$root/run.XXXXXX") || exit 2
+trap 'rm -rf "$work"' EXIT
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+export ZF_SCRATCH="$work/scratch"
+pass=0; fail=0
+ok()  { pass=$((pass+1)); echo "ok   $1"; }
+bad() { fail=$((fail+1)); echo "FAIL $1"; }
+[ -f "$hook" ] || { echo "pre_push_selftest: $hook missing"; echo "pre_push_selftest: FAIL (0 ok, 1 failed)"; exit 1; }
+
+# fixture: origin bare + clone with the hook and two stub scanners
+fixture() {
+  local d="$work/$1"
+  git init -q --bare "$d/origin.git"; git init -q -b w "$d/r"; local r="$d/r"
+  git -C "$r" remote add origin "$d/origin.git"
+  mkdir -p "$r/.githooks" "$r/tools"
+  cp "$hook" "$r/.githooks/pre-push"; chmod +x "$r/.githooks/pre-push"
+  cat > "$r/tools/rules_scan.sh" <<'S'
+#!/usr/bin/env bash
+# stub: record where and how it ran; fail when the scanned tree has a VIOLATION file
+echo "rules_scan cwd=$(pwd) args=$*" >> "$STUBLOG"
+[ -e VIOLATION ] && { echo "stub rules_scan: VIOLATION"; exit 1; }
+exit 0
+S
+  cat > "$r/tools/no_suppress_scan.py" <<'S'
+import os, sys
+root = sys.argv[sys.argv.index("--root") + 1] if "--root" in sys.argv else "."
+open(os.environ["STUBLOG"], "a").write("no_suppress root=%s\n" % os.path.abspath(root))
+sys.exit(1 if os.path.exists(os.path.join(root, "SUPPRESS")) else 0)
+S
+  chmod +x "$r/tools/rules_scan.sh"
+  echo base > "$r/f.txt"; git -C "$r" add -A; git -C "$r" commit -q --no-verify -m base
+  git -C "$r" push -q origin w 2>/dev/null          # first push before the hook is enabled
+  git -C "$r" config core.hooksPath .githooks
+  echo "$r"
+}
+# fx NAME : build the fixture in this shell, so r and STUBLOG are set here (not in a $(...) subshell)
+fx() { r=$(fixture "$1"); export STUBLOG="$work/$1/stub.log"; : > "$STUBLOG"; }
+# push NAME WANT(0 ok / 1 refused) REPO [refspec]
+push() {
+  local name=$1 want=$2 r=$3 spec=${4:-w}
+  local out rc
+  out=$(cd "$r" && RATCHET_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)" git push origin "$spec" 2>&1); rc=$?
+  [ $rc -ne 0 ] && rc=1
+  if [ "$rc" = "$want" ]; then ok "$name"; else bad "$name (want $( [ $want = 0 ] && echo pushed || echo refused ), got $( [ $rc = 0 ] && echo pushed || echo refused ))"; printf '%s\n' "$out" | sed 's/^/     | /'; fi
+}
+c() { local r=$1; shift; git -C "$r" "$@"; }
+
+fx h1; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify
+push "clean commit, clean tree: pushed" 0 "$r"
+grep -q "rules_scan cwd=$r " "$STUBLOG" && bad "rules_scan ran in the pusher's worktree" || ok "rules_scan did not run in the pusher's worktree"
+grep -q "rules_scan cwd=$ZF_SCRATCH/" "$STUBLOG" && ok "rules_scan ran inside the scratch clone" || { bad "rules_scan ran inside the scratch clone"; sed 's/^/     | /' "$STUBLOG"; }
+grep -q "no_suppress root=$ZF_SCRATCH/" "$STUBLOG" && ok "no_suppress ran on the scratch clone" || bad "no_suppress ran on the scratch clone"
+
+fx h2; touch "$r/VIOLATION"; c "$r" add VIOLATION; c "$r" commit -qm v --no-verify
+push "commit carries a rules violation: refused" 1 "$r"
+
+fx h3; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify; touch "$r/VIOLATION"
+push "clean commit, violation only in the dirty tree (untracked): pushed  [2:11 PM root cause]" 0 "$r"
+
+fx h3b; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify; touch "$r/SUPPRESS"
+push "clean commit, suppression only in the dirty tree: pushed" 0 "$r"
+
+fx h3c; touch "$r/VIOLATION"; c "$r" add VIOLATION; c "$r" commit -qm v --no-verify; rm "$r/VIOLATION"
+push "violating commit, violation deleted in the dirty tree only: refused" 1 "$r"
+
+fx h4; touch "$r/SUPPRESS"; c "$r" add SUPPRESS; c "$r" commit -qm s --no-verify
+push "commit carries a suppression: refused" 1 "$r"
+
+fx h5; mkdir -p "$r/tests"; echo 'assert!(false) // red first' > "$r/tests/red.rs"; c "$r" add tests; c "$r" commit -qm "red: test first" --no-verify
+push "red-first commit (failing test, no fix yet) alone: pushed" 0 "$r"
+echo 'assert!(true)' > "$r/tests/red.rs"; c "$r" commit -qam "fix" --no-verify
+push "red-first then fix, range pushed: pushed" 0 "$r"
+
+fx h6; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify; old=$(c "$r" rev-parse HEAD)
+touch "$r/VIOLATION"; c "$r" add VIOLATION; c "$r" commit -qm v --no-verify
+push "push an older clean sha while HEAD violates: pushed" 0 "$r" "$old:refs/heads/w"
+push "then the violating HEAD: refused" 1 "$r" w
+
+fx h7; c "$r" push -q origin w:refs/heads/tmpb 2>/dev/null
+push "branch deletion: pushed" 0 "$r" ":refs/heads/tmpb"
+
+fx h8; c "$r" rm -q tools/no_suppress_scan.py; c "$r" commit -qm "no no_suppress" --no-verify
+push "tree without no_suppress_scan.py: pushed (scanner absent is reported)" 0 "$r"
+fx h9; c "$r" rm -q tools/rules_scan.sh; c "$r" commit -qm "no rules_scan" --no-verify
+push "tree without tools/rules_scan.sh: refused (fail closed)" 1 "$r"
+
+fx h10; echo a >> "$r/f.txt"; c "$r" commit -qam a --no-verify; c "$r" switch -q --detach
+push "detached HEAD push of HEAD:w: pushed" 0 "$r" "HEAD:refs/heads/w"
+
+# linked worktree (Paul's setup: worktree of a shared repo, detached): the clone must still check out the sha
+fx h11; c "$r" worktree add -q --detach "$work/h11-wt" HEAD 2>/dev/null
+echo a >> "$work/h11-wt/f.txt"; c "$work/h11-wt" commit -qam a --no-verify
+push "push from a detached linked worktree: pushed" 0 "$work/h11-wt" "HEAD:refs/heads/w"
+
+# scratch: nothing left behind, nothing in /tmp
+left=$(find "$ZF_SCRATCH" -mindepth 2 -maxdepth 2 2>/dev/null | wc -l)
+[ "$left" = 0 ] && ok "scratch clones removed after every push" || { bad "scratch left $left entries"; find "$ZF_SCRATCH" -maxdepth 2 | sed 's/^/     | /'; }
+if sed 's/#.*//' "$hook" | grep -q '/tmp'; then bad "hook uses /tmp"; else ok "hook does not use /tmp"; fi
+echo "pre_push_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
+[ $fail = 0 ]
