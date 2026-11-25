@@ -1,3 +1,8 @@
 #!/usr/bin/env bash
-# zenith-float pre-commit hook (scaffold: no check yet; the unpushed cap lands with its red test first).
-exit 0
+# zenith-float pre-commit hook: unpushed cap (Jeff 2026-11-25: push every small step; plan v2 C-AHEAD).
+# Refuses a commit when the current branch (or detached HEAD) already has 1 unpushed commit: push it first.
+# drift_check.py drops GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE itself before every git call.
+# Enable once per clone: git config core.hooksPath .githooks     Test: tools/drift_check_selftest.sh
+set -u
+top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "pre-commit: not in a git work tree" >&2; exit 2; }
+exec python3 -B "$top/tools/drift_check.py" --pre-commit --repo "$top"

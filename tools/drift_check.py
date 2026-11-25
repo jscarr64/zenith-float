@@ -10,6 +10,10 @@ Plan v2 C-DRIFT / C-AHEAD. FAIL (rc 1) when, in a checked work tree,
 remote-tracking ref (refs/remotes/*) that exists; otherwise (no upstream, an upstream that is gone, or an upstream
 that is another LOCAL branch) commits that are on no remote-tracking ref (`--not --remotes`). A detached HEAD is
 checked the same way unless it sits on a local branch tip (then that branch covers it).
+--pre-commit: refuse (rc 1) a new commit on the current branch or detached HEAD when MAX_AHEAD commits are already
+unpushed (the new one would exceed the cap); ages are not checked there. An unborn branch has 0. Used by
+.githooks/pre-commit. git gives a pre-commit hook no way to tell an amend apart, so `git commit --amend` of the one
+unpushed commit is refused too: push it, then amend is a new commit.
 Read-only: every git call uses --no-optional-locks and drops GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR.
 rc 0 ok, 1 drift, 2 usage or git error (fail closed).
 """
@@ -117,9 +121,23 @@ def head_state(repo):
         return True, sha
 
 
-def check_repo(repo, now, max_ahead, max_age, report):
+def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False):
     bad = 0
     detached, head = head_state(repo)
+    if pre_commit:
+        if detached:
+            n, _ = unpushed(repo, "HEAD", "")
+            what = "detached HEAD"
+        else:
+            ref = git(repo, "symbolic-ref", "-q", "HEAD").strip()
+            up = git(repo, "for-each-ref", "--format=%(upstream)", ref).strip() if head else ""
+            n, _ = unpushed(repo, ref, up) if head else (0, None)
+            what = ref[len("refs/heads/"):]
+        if n >= max_ahead:
+            report("FAIL %s %s: %d unpushed commit(s) already; push before committing again (cap %d)"
+                   % (repo, what, n, max_ahead))
+            return 1
+        return 0
     tips = set()
     for name, up, sha in branches(repo):
         tips.add(sha)
@@ -171,7 +189,7 @@ def main(argv=None):
     bad = 0
     try:
         for r in repos:
-            bad |= check_repo(r, now, a.max_ahead, max_age, report)
+            bad |= check_repo(r, now, a.max_ahead, max_age, report, a.pre_commit)
     except GitError as e:
         print("drift_check: %s" % e, file=sys.stderr)
         return 2
