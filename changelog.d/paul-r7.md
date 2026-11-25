@@ -61,3 +61,5 @@
   (`*_full_work` for the full-precision forms). One predicate, `RoundingMode::saturates_overflow`, serves every
   directional overflow site. The 60 held oracle rows and every NONE-GAP F-B skip are asserted directly; six grid
   digests re-pinned with the saturated cells in; seven MPFR golden streams regenerated.
+- Batch 12 (F-12, ZF-M27, POW-01): `pow(x, +-0) = 1` and `pow(+1, y) = 1` for any `x`, `y`, NaN included, and
+  `powi(NaN, 0) = 1` (IEEE 754). The 84 held grid cells are asserted and hashed; the exp/pow digests re-pinned.

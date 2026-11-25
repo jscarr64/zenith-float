@@ -911,6 +911,13 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::pow`].
     fn pow_word(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        // IEEE 754 pow (F-12, POW-01, ZF-M27): x^(+-0) = 1 for any x and (+1)^y = 1 for any y, NaN included; exact.
+        let zero_exp = matches!(&n.inner, Flavor::Value(v2) if v2.is_zero());
+        let plus_one = matches!(&self.inner, Flavor::Value(v1)
+            if v1.is_positive() && v1.abs_cmp(&crate::common::consts::ONE) == 0);
+        if zero_exp || plus_one {
+            return Self::from_u8(1, p);
+        }
         match &self.inner {
             Flavor::Value(v1) => {
                 match &n.inner {
@@ -1002,6 +1009,8 @@ impl ExactNum {
                     INF_POS
                 }
             }
+            // x^0 = 1 for any x, NaN included (F-12 widened, POW-01, ZF-M27).
+            Flavor::NaN(_) if n == 0 => Self::from_u8(1, p),
             Flavor::NaN(err) => Self::nan(*err),
         }
     }
@@ -5980,7 +5989,13 @@ mod tests {
         // F-26 (ZF-M27, held): log base 1 of 1/2 is ruled -Inf; the library gives +Inf today, so it is not asserted.
         assert!(ONE.log(&ONE, rand_p(), rm, &mut cc).is_nan());
 
-        // M27-F12 (held): pow(1, NaN) is ruled 1 (IEEE 754, POW-01); the library gives NaN today, not asserted.
+        // M27-F12 (IEEE 754 pow, POW-01): pow(+1, y) = 1 and pow(x, +-0) = 1 for any x and y, NaN included.
+        assert!(ONE.pow(&NAN, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
+        assert!(
+            NAN.pow(&ExactNum::new(DEFAULT_P), rand_p(), rm, &mut cc)
+                .compare(&ONE)
+                == Some(0)
+        );
         assert!(NAN.pow(&ONE, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_POS.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
         assert!(NAN.pow(&INF_POS, rand_p(), rm, &mut cc).is_nan());
@@ -5989,7 +6004,8 @@ mod tests {
         assert!(NAN.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
 
         assert!(NAN.powi(2, rand_p(), rm).is_nan());
-        // M27-F12 (held): powi(NaN, 0) is ruled 1 (F-12 widened); the library gives NaN today, so it is not asserted.
+        // M27-F12 widened: powi(NaN, 0) = 1.
+        assert!(NAN.powi(0, rand_p(), rm).compare(&ONE) == Some(0));
         assert!(INF_POS.powi(2, rand_p(), rm).is_inf_pos());
         assert!(INF_POS.powi(3, rand_p(), rm).is_inf_pos());
         assert!(INF_NEG.powi(4, rand_p(), rm).is_inf_pos());
@@ -8318,9 +8334,11 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        // F-12 (POW-01, ZF-M27): held cells, counted per hasher (h: every mode but ToOdd, h_odd: ToOdd)
-        let mut held_f12 = 0usize;
-        let mut held_f12_odd = 0usize;
+        // F-12 (POW-01, ZF-M27): x^0 = 1 for a NaN x, asserted and counted per hasher (h: every mode but ToOdd,
+        // h_odd: ToOdd)
+        let mut f12_one = 0usize;
+        let mut f12_one_odd = 0usize;
+        let one = ExactNum::from_u8(1, 64);
         let exps = || {
             [
                 ExactNum::from_u8(3, 64),
@@ -8334,10 +8352,10 @@ mod grid_digest_tests {
         for i in (0..11).chain(21..23) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
-                    let (hh, held) = if rm == RoundingMode::ToOdd {
-                        (&mut h_odd, &mut held_f12_odd)
+                    let (hh, ones) = if rm == RoundingMode::ToOdd {
+                        (&mut h_odd, &mut f12_one_odd)
                     } else {
-                        (&mut h, &mut held_f12)
+                        (&mut h, &mut f12_one)
                     };
                     dd(
                         &mut *hh,
@@ -8369,40 +8387,40 @@ mod grid_digest_tests {
                     for e in exps() {
                         let r = operand(i).pow(&e, p, rm, &mut cc);
                         // F-12 (ZF-M27): pow(x, +-0) = 1 for any x, including NaN (P20, POW-01,
-                        // answers-group1.md:390). Today pow(NaN, +0) is NaN, known-wrong, so it is held.
-                        let f12 = operand(i).is_nan() && e.is_zero() && r.is_nan();
-                        dd_held(
-                            &mut *hh,
-                            &mut *held,
-                            f12,
-                            DigestCell {
-                                op: "pow",
-                                args: &[&operand(i), &e],
-                                ints: &[],
-                                p,
-                                rm,
-                                r: &r,
-                            },
-                        )?;
+                        // answers-group1.md:390), exact.
+                        if operand(i).is_nan() && e.is_zero() {
+                            if r.compare(&one) != Some(0) || r.inexact() {
+                                return Err(format!(
+                                    "F-12: pow(NaN, 0) p={p} {rm:?} gives {r}, ruled 1"
+                                )
+                                .into());
+                            }
+                            *ones += 1;
+                        }
+                        dd(&mut *hh, "pow", &[&operand(i), &e], &[], p, rm, &r)?;
                         count += 1;
                     }
                     for n in [0usize, 1, 2, 3, 7, 12] {
                         let r = operand(i).powi(n, p, rm);
                         // F-12 widened (ZF-M27): powi(x, 0) = x^0 = 1 for any x, including NaN (POW-01; the
-                        // Inf and 0 arms already give 1). Today powi(NaN, 0) is NaN, known-wrong, so it is held.
-                        let f12 = operand(i).is_nan() && n == 0 && r.is_nan();
-                        dd_held(
+                        // Inf and 0 arms give 1 too), exact.
+                        if operand(i).is_nan() && n == 0 {
+                            if r.compare(&one) != Some(0) || r.inexact() {
+                                return Err(format!(
+                                    "F-12: powi(NaN, 0) p={p} {rm:?} gives {r}, ruled 1"
+                                )
+                                .into());
+                            }
+                            *ones += 1;
+                        }
+                        dd(
                             &mut *hh,
-                            &mut *held,
-                            f12,
-                            DigestCell {
-                                op: "powi",
-                                args: &[&operand(i)],
-                                ints: &[i128::try_from(n)?],
-                                p,
-                                rm,
-                                r: &r,
-                            },
+                            "powi",
+                            &[&operand(i)],
+                            &[i128::try_from(n)?],
+                            p,
+                            rm,
+                            &r,
                         )?;
                         count += 1;
                     }
@@ -8412,18 +8430,21 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 13 * 3 * RMS.len() * 13);
         // F-12 (POW-01, ZF-M27): pow(NaN, +0) and powi(NaN, 0) for both NaN operands, p in {53, 128, 200}, all
-        // seven modes, are NaN where the ruled value is 1; they are not hashed (72 six-mode cells in h, 12 ToOdd
-        // cells in h_odd)
-        assert_eq!(held_f12, 72);
-        assert_eq!(held_f12_odd, 12);
+        // seven modes, are exactly 1 and hashed (72 six-mode cells in h, 12 ToOdd cells in h_odd)
+        assert_eq!(f12_one, 72);
+        assert_eq!(f12_one_odd, 12);
         println!("exp pow grid digest = {}", h.finish());
         println!("exp_pow_grid_digest ToOdd digest = {}", h_odd.finish());
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168); that oracle passed
         // NaN in -> NaN out, so the 12 ToOdd F-12 cells were in it.
         // Re-pinned (F9d-19): was 5_249_983_578_669_938_622, with the 12 ToOdd F-12 pow/powi(NaN, 0) NaN cells in.
-        assert_eq!(h_odd.finish(), 5_999_117_382_857_039_356);
+        // Re-pinned (ZF-M27 F-12): was 5_999_117_382_857_039_356, without the 12 ToOdd cells; they are hashed as 1
+        // (with them skipped the new code reproduces the old pin, so nothing else moved).
+        assert_eq!(h_odd.finish(), 4_484_934_862_017_359_161);
         // Re-pinned (F9d-19): was 2_398_075_299_501_098_093, with the 72 F-12 pow/powi(NaN, 0) NaN cells in.
-        assert_eq!(h.finish(), 6_643_330_963_557_222_099);
+        // Re-pinned (ZF-M27 F-12): was 6_643_330_963_557_222_099, without the 72 cells; they are hashed as 1 (with
+        // them skipped the new code reproduces the old pin).
+        assert_eq!(h.finish(), 8_327_612_704_695_740_037);
         Ok(())
     }
 
