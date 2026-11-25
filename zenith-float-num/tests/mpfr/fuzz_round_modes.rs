@@ -370,12 +370,11 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::err
     let f1 = conv_to_mpfr(p, &n1, &mut cc)?;
     let f2 = conv_to_mpfr(p, &n2, &mut cc)?;
     let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, RoundingMode::ToEven)?;
-    // the value MPFR reports for this product (an outside oracle, independent of zenith)
-    let want = -4.13765094e9_f64;
-    assert!(
-        ((f3.to_f64() - want) / want).abs() < 1e-8,
-        "MPFR product {f3}"
-    );
+    // the value MPFR reports for this product (an outside oracle, independent of zenith): -4.13765094e9 to 1e-8
+    // relative, i.e. within +-41 of -4137650940 (integer bounds, no hardware float)
+    let lo = Float::with_val(64, -4_137_650_981_i64);
+    let hi = Float::with_val(64, -4_137_650_899_i64);
+    assert!(lo <= f3 && f3 <= hi, "MPFR product {f3}");
     for rm in ALL_MODES {
         let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, rm)?;
         let n3 = zenith_binop(&n1, &n2, BinOp::Mul, p, rm);

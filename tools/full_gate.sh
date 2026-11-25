@@ -56,7 +56,7 @@ fi
 # Jeff's logging rule (2026-10-23): every step is logged via poplog (~/pop-logs/bin/poplog.sh, else the vendored
 # scripts/poplog.sh): header (cmd, repo, SHA, rustc, CARGO_TARGET_DIR), per-step start/end/duration/rc/test counts,
 # 5-min heartbeats, RUNNING.tsv row, PASS/FAIL footer. A test step reporting zero tests FAILs. Exit is nonzero on FAIL.
-TEST_STEPS=" build-debug build-release features-random-serde oracle-fast oracle-deep mpfr "
+TEST_STEPS=" build-debug build-release features-random-serde oracle mpfr "
 run() {
   name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"
   rm -f "$(_pl_out)"  # the last step left it a symlink to its log; log_step_start truncates it
@@ -120,8 +120,9 @@ run build-nostd "cargo build --no-default-features && cargo build -p zenith-floa
 # Jeff 2026-11-24 9:06 AM CT: prepublish skips its random,serde rerun only after checking this step passed rc=0 on the same
 # SHA (evidence written here by scripts/gate_serde_evidence.sh; tools/test_prepublish_serde_dedupe.sh).
 run features-random-serde "bash scripts/gate_serde_evidence.sh run '$T/$tag-features-random-serde.evidence' tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
-run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
-run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
+# Every oracle row runs every time (round 7, Paul 11:05 PM CT 2026-11-24: no tier gate), so one step runs them all;
+# the old oracle-fast / oracle-deep pair ran the same rows twice once the ORACLE_TIER gate was gone.
+run oracle "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
 # MPFR comparison suite (r6 item 6): replays the committed golden streams (tests/mpfr/golden, SHA256SUMS-checked);
 # one tier only, every run count and the 100032-bit tests (the MPFR_TIER switch is gone).
 run mpfr "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $TT"

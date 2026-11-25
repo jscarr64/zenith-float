@@ -15,3 +15,9 @@
   back with the value for its verdict); rational gcd borrows num/den (abs_ref); poly div_rem and the trig identity
   path use rounded_to / try_rounded_to (their documented clone + set_precision equivalents); complex_elliptic's
   stall check keeps the remaining distance by move (from the divisor via into_parts).
+- Batch 3 (Paul 12:32 AM CT): tools/full_gate.sh has one `oracle` step (the ORACLE_TIER `oracle-deep` duplicate is
+  gone; selftests updated). Gate selftests that were red at HEAD are green: time_limits.tsv re-pinned (the two
+  removed mantissa timing tests out, the rem_pi row wait in), the rem_pi test waits through `test_time::wait_row`
+  and covers all 7 modes, tests/mpfr/mp.rs drops its f64 conversions (fuzz_round_modes checks the MPFR product
+  with integer bounds), `ci_no_intrinsics.sh` also catches suffixed float literals (`1.5_f64`), and the
+  rules-enforcement fixtures carry the unlisted-clone baseline.

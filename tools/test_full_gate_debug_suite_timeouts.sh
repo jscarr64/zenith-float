@@ -54,10 +54,9 @@ unset MPFR_STEP_TIMEOUT || true
 # Jeff 2026-11-24 12:58 AM CT: "Go: features-random-serde and prepublish get the same 60 min limit as build-debug".
 [[ "$(timeout_for features-random-serde)" == 90m ]] || bad "features-random-serde default timeout is $(timeout_for features-random-serde), expected 90m (Jeff 2026-11-24 9:27 AM CT)"
 [[ "$(timeout_for build-release)" == 20m ]] || bad "build-release default timeout is $(timeout_for build-release), expected 20m"
-[[ "$(timeout_for oracle-fast)" == 20m ]] || bad "oracle-fast default timeout is $(timeout_for oracle-fast), expected 20m"
+[[ "$(timeout_for oracle)" == 20m ]] || bad "oracle default timeout is $(timeout_for oracle), expected 20m"
 [[ "$(timeout_for mpfr)" == 40m ]] || bad "mpfr default timeout is $(timeout_for mpfr), expected 40m"
 
-[[ "$(timeout_for oracle-deep)" == 20m ]] || bad "oracle-deep default timeout is $(timeout_for oracle-deep), expected 20m"
 [[ "$(timeout_for prepublish)" == 90m ]] || bad "prepublish default timeout is $(timeout_for prepublish), expected 90m (Jeff 2026-11-24 9:27 AM CT)"
 [[ "$(timeout_for clippy-x86_64)" == 20m ]] || bad "clippy-x86_64 default timeout is $(timeout_for clippy-x86_64), expected 20m"
 

@@ -26,8 +26,11 @@ stub() { mkdir -p "$1"; printf '#!/bin/sh\nexit %s\n' "$3" > "$1/$2"; chmod +x "
 CASES=(
   "unsafe-scan|grep|zenith-float-num/src/lib.rs|pub fn planted() { unsafe { core::hint::unreachable_unchecked() } }"
   "no-intrinsics|git|zenith-float-num/src/lib.rs|pub fn planted(x: f64) -> f64 { x }"
+  "no-intrinsics|git|zenith-float-num/src/lib.rs|pub const PLANTED: u8 = 1.5_f64 as u8;"
 )
+ci=0
 for c in "${CASES[@]}"; do
+  ci=$((ci + 1))
   IFS='|' read -r step tool pfile pline <<< "$c"
   cmd="$(step_cmd "$step")"
   for rc in 127 2; do
@@ -37,7 +40,7 @@ for c in "${CASES[@]}"; do
     fi
   done
   (cd "$root" && bash -c "$cmd") >/dev/null 2>&1 || fail "$step fails on the clean tree"
-  copy="$t/copy-$step"
+  copy="$t/copy-$ci-$step"
   mkdir -p "$copy" && git archive HEAD | tar -x -C "$copy"
   cp -r tools scripts "$copy/" 2>/dev/null || true
   (cd "$copy" && git init -q && git add -A >/dev/null)

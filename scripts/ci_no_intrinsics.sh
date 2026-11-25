@@ -23,6 +23,7 @@ git grep -nE \
   -e 'is_x86_feature_detected' \
   -e '\bf32\b' \
   -e '\bf64\b' \
+  -e '[0-9_]f(32|64)\b' \
   -- '*.rs' || status=$?
 if [[ "$status" -ge 2 ]]; then
   echo "error: git grep failed with status $status" >&2

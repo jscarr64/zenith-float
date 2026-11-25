@@ -143,7 +143,9 @@ mod tests {
             .ldexp(-4, p, RoundingMode::ToEven)
             .mul(&m, p, RoundingMode::ToEven);
         for rm in [
+            RoundingMode::None,
             RoundingMode::ToEven,
+            RoundingMode::ToOdd,
             RoundingMode::Up,
             RoundingMode::Down,
             RoundingMode::ToZero,
@@ -155,9 +157,10 @@ mod tests {
                 let r = Consts::new().map(|mut cc| ExactNum::rem_pi(&x, p, rm, &mut cc));
                 let _sent = tx.send((r, x));
             });
-            let (r, back) = rx
-                .recv_timeout(std::time::Duration::from_secs(60))
-                .map_err(|_| format!("rem_pi {rm:?}: no result in 60 s (Ziv loop does not end)"))?;
+            let (r, back) = crate::test_time::wait_row(&rx, std::time::Duration::from_secs(60))
+                .map_err(|w| {
+                    format!("rem_pi {rm:?}: no result in 60 s, {w:?} (Ziv loop does not end)")
+                })?;
             x = back;
             let r = r.map_err(|e| format!("{e:?}"))?;
             if r != x || r.inexact() {

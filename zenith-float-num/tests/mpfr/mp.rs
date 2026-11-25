@@ -797,43 +797,6 @@ impl Float {
     pub fn cos(self) -> Float {
         self.unary("cos")
     }
-    /// Nearest `f64` (round to nearest even); out-of-range values saturate to +-inf / +-0.
-    pub fn to_f64(&self) -> f64 {
-        match self.kind {
-            Kind::Nan => f64::NAN,
-            Kind::Inf => {
-                if self.neg {
-                    f64::NEG_INFINITY
-                } else {
-                    f64::INFINITY
-                }
-            }
-            Kind::Zero => {
-                if self.neg {
-                    -0.0
-                } else {
-                    0.0
-                }
-            }
-            Kind::Reg => {
-                let r = round_mag(
-                    &self.m,
-                    self.exp - i64::from(self.prec),
-                    false,
-                    53,
-                    Rnd::Nearest,
-                    self.neg,
-                );
-                let mant = r.m.limbs()[0] as f64;
-                let v = mant * 2f64.powi(r.e2.clamp(-1100, 1100) as i32);
-                if self.neg {
-                    -v
-                } else {
-                    v
-                }
-            }
-        }
-    }
     /// MPFR-style binary digits `[-]1.xxxxe<decimal exponent>`, all `prec` digits; `0`/`-0`, `@NaN@`, `[-]@Inf@`.
     pub fn to_string_radix(&self, radix: i32, digits: Option<usize>) -> String {
         assert!(
@@ -1189,24 +1152,6 @@ impl Assign for usize {
 impl Assign for isize {
     fn assign_to(self, f: &mut Float, r: Rnd) -> i32 {
         (self as i64).assign_to(f, r)
-    }
-}
-impl Assign for f64 {
-    fn assign_to(self, f: &mut Float, r: Rnd) -> i32 {
-        if self.is_nan() {
-            *f = Float::singular(f.prec, Kind::Nan, false);
-            return 0;
-        }
-        if self.is_infinite() {
-            *f = Float::singular(f.prec, Kind::Inf, self < 0.0);
-            return 0;
-        }
-        let bits = self.to_bits();
-        let neg = bits >> 63 == 1;
-        let be = ((bits >> 52) & 0x7ff) as i64;
-        let frac = bits & ((1u64 << 52) - 1);
-        let (m, e) = if be == 0 { (frac, -1074) } else { (frac | (1u64 << 52), be - 1075) };
-        f.set_exact(neg, &Big::from_u64(m), e, false, r)
     }
 }
 /// An unsigned integer given by borrowed little-endian 64-bit words (`mpz_import` of an `ExactNum`'s raw words).

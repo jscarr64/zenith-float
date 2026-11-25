@@ -61,7 +61,7 @@ done
 g="$t/rs"; mkdir -p "$g/tools" "$g/zenith-float-num/src"
 cp "$root"/tools/rules_scan.py "$root"/tools/rules_scan.sh "$root"/tools/rules_scan_selftest.sh "$root"/tools/no_clone.py "$g/tools/"
 : > "$g/tools/rules_allowlist.txt"
-for b in clone_count helper_copy_count exception_count test_panic_count neg_via_mul_count; do echo 0 > "$g/tools/${b}_baseline.txt"; done
+for b in clone_count helper_copy_count exception_count test_panic_count neg_via_mul_count unlisted_clone; do echo 0 > "$g/tools/${b}_baseline.txt"; done
 printf 'fn a() {}\n' > "$g/zenith-float-num/src/x.rs"
 ( cd "$g" && git init -q . && git config user.email a@b && git config user.name t && git add -A && git commit -qm base ) || bad "fixture repo"
 gb=$(git -C "$g" rev-parse HEAD)
@@ -84,7 +84,7 @@ if [ -x "$hk" ]; then
   h="$t/hk"; mkdir -p "$h/tools" "$h/zenith-float-num/src" "$h/.githooks" "$t/bin"
   cp "$root"/tools/rules_scan.py "$root"/tools/rules_scan.sh "$root"/tools/no_clone.py "$h/tools/"; cp "$hk" "$h/.githooks/"
   : > "$h/tools/rules_allowlist.txt"
-  for b in clone_count helper_copy_count exception_count test_panic_count neg_via_mul_count; do echo 0 > "$h/tools/${b}_baseline.txt"; done
+  for b in clone_count helper_copy_count exception_count test_panic_count neg_via_mul_count unlisted_clone; do echo 0 > "$h/tools/${b}_baseline.txt"; done
   printf 'fn a() {}\n' > "$h/zenith-float-num/src/x.rs"
   printf '#!/usr/bin/env bash\necho "$*" >> "%s/cargo.args"\n[ -n "${STUB_CARGO_FAIL:-}" ] && [[ "$*" == "$STUB_CARGO_FAIL"* ]] && exit 1\nexit 0\n' "$t" > "$t/bin/cargo"; chmod +x "$t/bin/cargo"
   hc() { (cd "$h" && PATH="$t/bin:$PATH" git commit -qm "$1") > "$t/hk.out" 2>&1; }

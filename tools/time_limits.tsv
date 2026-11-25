@@ -22,14 +22,13 @@ zenith-float-num/src/complex_special.rs	secs	5	1
 zenith-float-num/src/complex_special.rs	secs	60	3
 zenith-float-num/src/complex_special.rs	secs	600	3
 zenith-float-num/src/integer.rs	within_ms	200	1
-zenith-float-num/src/mantissa/div.rs	ratio	20	1
-zenith-float-num/src/mantissa/mul.rs	ratio	20	1
 zenith-float-num/src/modular.rs	secs	2	1
 zenith-float-num/src/ode.rs	ode_max_ms	10000	1
 zenith-float-num/src/ode.rs	ode_max_ms	90000	1
 zenith-float-num/src/ode.rs	within_ms	2000	2
 zenith-float-num/src/ode.rs	within_ms	5000	1
 zenith-float-num/src/ops/special.rs	secs	60	1
+zenith-float-num/src/ops/util.rs	secs	60	1
 zenith-float-num/tests/c2f1_log_mpmath.rs	secs	60	1
 zenith-float-num/tests/oracle.rs	secs	2	1
 zenith-float-num/tests/r9_overflow_golds.rs	secs	30	1
