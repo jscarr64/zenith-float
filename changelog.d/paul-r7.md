@@ -53,3 +53,5 @@
   receiver, so the signature change would add more copies than it removes.
 - Batch 9: radix_roundtrip's negative mirror is built as `from_i32(-k, p)` (its `[clone] TODO` keep is gone).
   Clones 182 -> 181.
+- Batch 10 (Paul 3:36 AM CT): the 8 public-API equal-to-input keeps (ExactInt add x2 / gcd x2, number and ExactNum
+  rem, poly primitive_monic x2) state their no-other-way reason: the by-value signature was probed and adds copies.
