@@ -28,9 +28,7 @@ impl ExactNumNumber {
                 self.abs_cmp(&two_pi) < 0
             });
         if identity {
-            let mut x = self.clone()?;
-            x.set_precision(p, rm)?;
-            return Ok(x);
+            return self.try_rounded_to(p, rm);
         }
         let add_p = (3 - TRIG_EXP_THRES) as usize;
         let mut p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);

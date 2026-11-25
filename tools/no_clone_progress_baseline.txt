@@ -5,12 +5,13 @@
 # Lowered 2026-11-24 22:40 CT (Paul 10:00 PM, item 3 batch 3): measured counts after special.rs, gauss_kronrod.rs, ode.rs, heun_fox.rs, integer.rs, modular.rs, ext.rs and the mp.rs derive fix: clone() 407->320, total 425->338.
 # Lowered 2026-11-24 23:10 CT (Paul 10:00 PM, item 3 batch 4, unlisted clone sites 0): clone() 320->291, total 338->309.
 # Lowered 2026-11-25 00:12 CT (Paul 11:05 PM round 7, batch 1) to the measured working-tree counts: clone() 291->204, total 309->222.
-clone()	204
+# Lowered 2026-11-25 00:50 CT (Paul 11:05 PM round 7, batch 2): clone() 204->196, total 222->214.
+clone()	196
 to_vec()	4
 cloned()	4
 Clone::clone	0
 clone_from	0
 impl Clone	1
 derive(Clone)	9
-total	222
+total	214
 helper_copies	317

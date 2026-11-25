@@ -384,9 +384,9 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
         ran += 1;
         let expect = expect_of(row.get("expect").unwrap_or(&serde_json::Value::Null));
         let (tx, rx) = mpsc::channel();
-        let row_for_thread = row.clone();
+        // The row is moved into its thread (nothing below reads it), so a hung row abandoned there takes it along.
         thread::spawn(move || {
-            let result = catch_unwind(AssertUnwindSafe(|| eval_row(&row_for_thread)));
+            let result = catch_unwind(AssertUnwindSafe(|| eval_row(&row)));
             let _ = tx.send(result);
         });
         let outcome = match test_time::wait_row(&rx, CASE_BUDGET) {

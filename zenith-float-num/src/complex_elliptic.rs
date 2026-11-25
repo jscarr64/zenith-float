@@ -965,19 +965,22 @@ fn rj_u2_segment(
                 return nan_pair(Error::InvalidArgument);
             }
         }
-        prev_abs = Some(rem_abs.clone());
         let rho = rj_u2_rho(&u, &lam, aa, bb, cc_p, p, cc);
         let half_rho = rho.ldexp_ref(-1, p, rm());
         let h = if rho.is_zero() || rho.is_negative() || rem_abs.is_zero() {
             return nan_pair(Error::InvalidArgument);
         } else if matches!(rem_abs.compare(&half_rho), Some(c) if c <= 0) {
+            // The next panel's stall check reads this remaining distance.
+            prev_abs = Some(rem_abs);
             rem
         } else {
-            rem.mul(&ExactComplex::from_real(half_rho, p), p, rm()).div(
-                &ExactComplex::from_real(rem_abs, p),
-                p,
-                rm(),
-            )
+            let d = ExactComplex::from_real(rem_abs, p);
+            let h = rem
+                .mul(&ExactComplex::from_real(half_rho, p), p, rm())
+                .div(&d, p, rm());
+            // The next panel's stall check reads this remaining distance, taken back out of the divisor.
+            prev_abs = Some(d.into_parts().0);
+            h
         };
         acc = acc.add(
             &rj_u2_panel(&u, &h, [&lam, &two_sl], [aa, bb], cc_p, p, cc),
@@ -1022,7 +1025,6 @@ fn rj_line_integral(
                 return nan_pair(Error::InvalidArgument);
             }
         }
-        prev_abs = Some(rem_abs.clone());
         // Size the panel from the start `a`. ρ at the mid of the remaining
         // stretch can be large while the panel would pass through a nearby
         // singularity (t ≈ −y when y ≈ −1). |h| ≤ ρ(a)/2 keeps the
@@ -1032,13 +1034,17 @@ fn rj_line_integral(
         let h = if rho.is_zero() || rho.is_negative() || rem_abs.is_zero() {
             return nan_pair(Error::InvalidArgument);
         } else if matches!(rem_abs.compare(&half_rho), Some(c) if c <= 0) {
+            // The next panel's stall check reads this remaining distance.
+            prev_abs = Some(rem_abs);
             rem
         } else {
-            rem.mul(&ExactComplex::from_real(half_rho, p), p, rm()).div(
-                &ExactComplex::from_real(rem_abs, p),
-                p,
-                rm(),
-            )
+            let d = ExactComplex::from_real(rem_abs, p);
+            let h = rem
+                .mul(&ExactComplex::from_real(half_rho, p), p, rm())
+                .div(&d, p, rm());
+            // The next panel's stall check reads this remaining distance, taken back out of the divisor.
+            prev_abs = Some(d.into_parts().0);
+            h
         };
         acc = acc.add(&rj_panel(a, &h, [x, y, z], pv, p, cc), p, rm());
         a_slot = Some(ExactComplex::add_ref(a, &h, p, rm()));

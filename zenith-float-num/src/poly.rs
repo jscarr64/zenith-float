@@ -183,10 +183,7 @@ impl ExactNumPoly {
         if lc_g.is_zero() {
             return None;
         }
-        let mut r = self.coeffs.clone();
-        for c in &mut r {
-            let _ = c.set_precision(p, rm);
-        }
+        let mut r: Vec<ExactNum> = self.coeffs.iter().map(|c| c.rounded_to(p, rm)).collect();
         while r.last().is_some_and(|c| c.is_zero()) {
             r.pop();
         }

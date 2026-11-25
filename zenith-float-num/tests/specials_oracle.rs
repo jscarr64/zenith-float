@@ -739,15 +739,16 @@ fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
             .map_or(Duration::from_secs(2), Duration::from_secs);
         let expect = expect_of(row.get("expect").unwrap_or(&serde_json::Value::Null));
         let (tx, rx) = mpsc::channel();
-        let row_for_thread = row.clone();
+        // The row is moved into its thread and handed back with a finished value (verdict reads it); a hung
+        // row abandoned there takes it along.
         thread::spawn(move || {
-            let result = catch_unwind(AssertUnwindSafe(|| eval_row(&row_for_thread)));
-            let _ = tx.send(result);
+            let result = catch_unwind(AssertUnwindSafe(|| eval_row(&row)));
+            let _ = tx.send(result.map(|r| r.map(|got| (got, row))));
         });
         // Release step: the row fails at `budget`. Debug: not a limit; the hang watchdog is budget x 10
         // (test_time::DEBUG_WATCHDOG_FACTOR, the factor this file used for debug rows).
         let outcome = match test_time::wait_row(&rx, budget) {
-            Ok(Ok(Ok(got))) => match verdict(&got, &expect, &row) {
+            Ok(Ok(Ok((got, row)))) => match verdict(&got, &expect, &row) {
                 Ok(()) => None,
                 Err(why) => Some(format!("{name}:{line_no} {id}: {why}")),
             },

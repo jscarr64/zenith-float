@@ -44,9 +44,11 @@ fn is_int(x: &ExactNum) -> bool {
     x.is_int()
 }
 
-fn gcd_int(mut a: ExactNum, mut b: ExactNum) -> ExactNum {
-    a = a.abs();
-    b = b.abs();
+/// `gcd(|a|, |b|)` of two borrowed integers: the loop's two owned values start as `|a|` and `|b|`, written
+/// straight from the borrows by `abs_ref`.
+fn gcd_int(a: &ExactNum, b: &ExactNum) -> ExactNum {
+    let mut a = a.abs_ref();
+    let mut b = b.abs_ref();
     while !b.is_zero() {
         let r = a.rem(&b);
         a = b;
@@ -71,7 +73,7 @@ fn reduce(mut num: ExactNum, mut den: ExactNum) -> ExactRational {
         den = den.neg();
     }
     if is_int(&num) && is_int(&den) {
-        let g = gcd_int(num.clone(), den.clone());
+        let g = gcd_int(&num, &den);
         if !g.is_zero() && g.compare(&rat_one()) != Some(0) {
             let p = work_p(&[&num, &den, &g]);
             num = num.div(&g, p, RoundingMode::ToEven);
