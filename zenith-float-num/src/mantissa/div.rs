@@ -350,6 +350,8 @@ impl Mantissa {
     // general case division
     /// Integer `m1 / m2` and remainder. Used by radix scaling (`conv_mpn_exp`).
     pub(crate) fn div_unbalanced(m1: &[Word], m2: &[Word]) -> Result<(WordBuf, WordBuf), Error> {
+        #[cfg(test)]
+        DIVISOR_WORDS.with(|c| c.set(c.get() + m2.len()));
         if m1.len() < m2.len() {
             let mut q = WordBuf::new(1)?;
             q[0] = 0;
@@ -402,6 +404,13 @@ impl Mantissa {
             Ok((buf1, r))
         }
     }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    /// Sum of the divisor lengths (words) handed to `div_unbalanced` by this thread: what the division algorithms
+    /// work on (unit tests count it instead of timing them).
+    static DIVISOR_WORDS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
@@ -531,8 +540,10 @@ mod tests {
     }
 
     /// Second half of the r2nd/zeta root cause: dividing by a 1-word value padded to 1025 words
-    /// ran the dense 1025-word division; it must cost a small fraction of a dense division.
-    #[cfg(feature = "std")]
+    /// ran the dense 1025-word division. Counted, not timed (r6: the wall-clock version had the
+    /// same flaky shape as the multiplication one): the padded divisor reaches the division
+    /// algorithms as 1 word, the dense one as 1025; the quotients themselves are checked by
+    /// `zero_low_divisor_words_give_the_same_quotient`.
     #[test]
     fn padded_short_divisor_skips_its_zero_words() -> Result<(), crate::Error> {
         use crate::defs::RoundingMode as R;
@@ -541,21 +552,14 @@ mod tests {
         let mut padded = vec![0; 1024];
         padded.push(0x8000_0000_3ade_68b1);
         let padded = mant(&padded)?;
-        let time = |d: &Mantissa| -> Result<u128, crate::Error> {
+        let words = |d: &Mantissa| -> Result<usize, crate::Error> {
             let mut ix = false;
+            DIVISOR_WORDS.with(|c| c.set(0));
             a.div(d, 65600, R::None, true, &mut ix)?;
-            let t0 = std::time::Instant::now();
-            for _ in 0..8 {
-                a.div(d, 65600, R::None, true, &mut ix)?;
-            }
-            Ok(t0.elapsed().as_nanos() / 8)
+            Ok(DIVISOR_WORDS.with(core::cell::Cell::get))
         };
-        let td = time(&dense)?;
-        let tp = time(&padded)?;
-        assert!(
-            crate::test_time::limit_holds(tp.saturating_mul(20) < td),
-            "padded 1-word divisor {tp} ns vs dense divisor {td} ns"
-        );
+        assert_eq!(words(&dense)?, 1025, "dense 1025-word divisor");
+        assert_eq!(words(&padded)?, 1, "padded 1-word divisor");
         Ok(())
     }
 }

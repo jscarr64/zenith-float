@@ -35,6 +35,8 @@ impl Mantissa {
         if !(m1.len() <= m2.len()) {
             return Err(Error::InvalidArgument);
         }
+        #[cfg(test)]
+        SLICE_WORDS.with(|c| c.set(c.get() + m1.len() * m2.len()));
 
         if m1.len() <= 32 || m2.len() <= 32 {
             Self::mul_basic(m1, m2, m3);
@@ -111,6 +113,13 @@ impl Mantissa {
 }
 
 #[cfg(test)]
+std::thread_local! {
+    /// Sum of `len(m1) * len(m2)` over every `mul_slices` call made by this thread: the size of the word products
+    /// handed to the multiplication algorithms (unit tests count it instead of timing them).
+    static SLICE_WORDS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 mod tests {
 
     use super::*;
@@ -172,21 +181,6 @@ mod tests {
         }
     }
 
-    fn time_ns(
-        iters: u32,
-        warmup: u32,
-        mut body: impl FnMut() -> Result<(), String>,
-    ) -> Result<u128, String> {
-        for _ in 0..warmup {
-            body()?;
-        }
-        let t0 = std::time::Instant::now();
-        for _ in 0..iters {
-            body()?;
-        }
-        Ok(t0.elapsed().as_nanos() / u128::from(iters.max(1)))
-    }
-
     /// A short value held at a wide precision has zero low words (exact small integers at the
     /// working precision of a binary-splitting tree, `ops::zeta_ui`); its product must be the same
     /// as the schoolbook product of the full slices, for every algorithm range and padding.
@@ -219,8 +213,9 @@ mod tests {
 
     /// Root cause of the debug-build `zf_riemann_zeta_matches_flint_golds` time (r2nd/zeta): the
     /// zero low words of short operands were multiplied as if dense, so a 1-word x 1-word product
-    /// at 65568 bits cost a dense 1025 x 1025-word Toom-3. It must cost a small fraction of one.
-    #[cfg(feature = "std")]
+    /// at 65568 bits cost a dense 1025 x 1025-word Toom-3. Counted, not timed (r6: the wall-clock
+    /// version was flaky): the padded product hands 1 x 1 words to the algorithms, the dense one at
+    /// least 1025 x 1025, and the padded product is right.
     #[test]
     fn padded_short_operands_skip_their_zero_words() -> Result<(), String> {
         let limbs = 1025;
@@ -234,17 +229,23 @@ mod tests {
         pb.fill(0);
         pa[limbs - 1] = 0x8000_0000_075b_cd15;
         pb[limbs - 1] = 0x8000_0000_3ade_68b1;
-        let mut mc = WordBuf::new(2 * limbs)?;
-        let dense = time_ns(12, 2, || {
-            Mantissa::mul_unbalanced(&da, &db, &mut mc).map_err(|e| format!("{e:?}"))
-        })?;
-        let padded = time_ns(12, 2, || {
-            Mantissa::mul_unbalanced(&pa, &pb, &mut mc).map_err(|e| format!("{e:?}"))
-        })?;
+        let words = |a: &[Word], b: &[Word]| -> Result<(usize, WordBuf), String> {
+            let mut mc = WordBuf::new(2 * limbs)?;
+            SLICE_WORDS.with(|c| c.set(0));
+            Mantissa::mul_unbalanced(a, b, &mut mc).map_err(|e| format!("{e:?}"))?;
+            Ok((SLICE_WORDS.with(core::cell::Cell::get), mc))
+        };
+        let (dense, _) = words(&da, &db)?;
+        let (padded, got) = words(&pa, &pb)?;
+        // Toom-3 recurses through mul_slices, so the dense count includes its sub-products: at least 1025 x 1025.
         assert!(
-            crate::test_time::limit_holds(padded.saturating_mul(20) < dense),
-            "padded 1-word operands cost {padded} ns vs {dense} ns for a dense 1025-word product"
+            dense >= limbs * limbs,
+            "dense 1025-word product counted {dense}"
         );
+        assert_eq!(padded, 1, "padded 1-word operands");
+        let mut want = WordBuf::new(2 * limbs)?;
+        Mantissa::mul_basic(&pa, &pb, &mut want);
+        assert!(got[..] == want[..], "padded product");
         Ok(())
     }
 }
