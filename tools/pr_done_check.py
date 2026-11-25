@@ -11,7 +11,7 @@ to PRs merged or closed on or after that date. The date compared is the UTC date
 gives them in UTC), so a PR merged 2026-11-24 9 PM CST (03:00Z on 11-25) counts as 2026-11-25.
 --limit N (default 1000) is the most PRs read per repo; a list that reaches N may be truncated, so it fails (rc 2).
 Read-only: only `gh pr list` and `gh api` GET calls.
-rc 0 ok, 1 not done, 2 usage or gh error of any kind (fails closed). GH=<path> selects the gh binary.
+rc 0 ok, 1 not done, 2 usage or gh error of any kind, a list entry that is not an object included (fails closed). GH=<path> selects the gh binary.
 """
 import argparse
 import datetime
@@ -63,6 +63,8 @@ def check(repo, since, limit, report):
                       % (repo, len(prs), limit))
     bad = 0
     for pr in prs:
+        if not isinstance(pr, dict):
+            raise GhError("gh pr list -R %s: entry %r is not a JSON object" % (repo, pr))
         if pr.get("isCrossRepository"):
             continue
         n, state, base = pr["number"], pr["state"], pr["baseRefName"]
