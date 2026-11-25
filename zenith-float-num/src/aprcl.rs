@@ -31,7 +31,7 @@ fn rem_u64(a: &ExactInt, m: u64) -> u64 {
 }
 
 fn bit_set(k: &ExactInt, i: usize) -> bool {
-    k.shr_towards_zero(i).low_word() & 1 == 1
+    k.magnitude_bit(i)
 }
 
 fn is_prime_u64(n: u64) -> bool {
@@ -1134,7 +1134,7 @@ fn check_pk(j: &UnityZp<'_>, u: &ExactInt, v: u64) -> i64 {
 fn check_21(q: u64, n: &ExactInt) -> i64 {
     let ndec = n.sub(&one());
     let qpow = n.sub(&ExactInt::from_u64(q));
-    let exp = ndec.shr_towards_zero(1);
+    let exp = ndec.shr_towards_zero_ref(1);
     let Some(qpow) = mod_pow(&qpow, &exp, n) else {
         return -1;
     };
@@ -1248,7 +1248,7 @@ fn additional_test(n: &ExactInt, p: u64) -> u8 {
                     result = 2;
                 } else {
                     let ndec = n.sub(&one());
-                    let exp = ndec.shr_towards_zero(1);
+                    let exp = ndec.shr_towards_zero_ref(1);
                     match mod_pow(&ExactInt::from_u64(q), &exp, n) {
                         Some(qpow) if qpow == ndec => result = 1,
                         _ => result = 2,
@@ -1301,7 +1301,7 @@ fn is_prime_jacobi(n: &ExactInt) -> Status {
     }
     let conf = Config::new(n);
     let ndec = n.sub(&one());
-    let ndecdiv = ndec.shr_towards_zero(1);
+    let ndecdiv = ndec.shr_towards_zero_ref(1);
     let mut result = Status::Probabprime;
     let mut lambdas = vec![0i8; conf.rs.len()];
     let nmod4 = rem_u64(n, 4);

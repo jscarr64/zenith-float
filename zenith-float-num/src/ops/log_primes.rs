@@ -1450,7 +1450,7 @@ fn floor_log2_ratio(q: &ExactInt, p: &ExactInt) -> u32 {
         .min(1_000_000) as u32;
     while lo < hi {
         let mid = lo + (hi - lo).div_ceil(2);
-        if p.shl(mid as usize).soft_cmp(q) != Ordering::Greater {
+        if p.shl_ref(mid as usize).soft_cmp(q) != Ordering::Greater {
             lo = mid;
         } else {
             hi = mid - 1;

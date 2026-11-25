@@ -16,6 +16,7 @@ use crate::defs::Sign;
 use crate::integer::ExactInt;
 use crate::num::ExactNumNumber;
 use crate::WORD_BIT_SIZE;
+use alloc::borrow::Cow;
 
 /// Minimum destination precision at which [`exp_arf_bb`] is used, after
 /// FLINT 3.6 `arb_exp_arf` (`prec >= 10000` and not the tiny-argument
@@ -198,7 +199,8 @@ pub(crate) fn exp_arf_bb(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber,
 
     while !t.is_zero() {
         let r = if bits < wp { bits } else { wp };
-        let u = if wp > r { t.shr_towards_zero((wp - r) as usize) } else { t.clone() };
+        // When wp <= r the chunk u is all of t (borrowed, no copy).
+        let u = t.shr_towards_zero_ref(if wp > r { (wp - r) as usize } else { 0 });
 
         if !u.is_zero() {
             let umag = (u.bit_length() as i64) - r;
@@ -221,8 +223,11 @@ pub(crate) fn exp_arf_bb(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber,
 
         // Remove the used bits: t -= u << (wp - r)
         if !u.is_zero() {
-            let used = if wp > r { u.shl((wp - r) as usize) } else { u };
-            t = t.sub(&used);
+            t = match u {
+                Cow::Owned(u) => t.sub(&u.shl((wp - r) as usize)),
+                // u was all of t
+                Cow::Borrowed(_) => ExactInt::zero(),
+            };
         }
         bits = bits.saturating_mul(2);
         if bits > wp && t.is_zero() {

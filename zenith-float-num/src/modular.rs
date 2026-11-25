@@ -1,6 +1,7 @@
 //! Modular exponentiation, inverses, Miller–Rabin, and Pollard–Brent on [`ExactInt`].
 
 use crate::ExactInt;
+use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
@@ -16,11 +17,13 @@ pub(crate) fn two() -> ExactInt {
     ExactInt::from_u64(2)
 }
 
-pub(crate) fn abs_int(a: &ExactInt) -> ExactInt {
+/// `|a|`: `a` itself (borrowed) when it is not negative, its negation otherwise. An owned value is
+/// [`ExactInt::into_abs`].
+pub(crate) fn abs_int(a: &ExactInt) -> Cow<'_, ExactInt> {
     if a.is_negative() {
-        a.neg()
+        Cow::Owned(a.neg())
     } else {
-        a.clone()
+        Cow::Borrowed(a)
     }
 }
 
@@ -86,15 +89,17 @@ pub fn mod_pow(base: &ExactInt, exp: &ExactInt, modulus: &ExactInt) -> Option<Ex
     Some(acc)
 }
 
-fn egcd(a: &ExactInt, b: &ExactInt) -> (ExactInt, ExactInt, ExactInt) {
+/// Bezout coefficients `(x, y)` with `a x + b y = 1` when `gcd(a, b) = 1`, `None` otherwise. Only the
+/// coefficients are built: the gcd itself is only tested, so neither input is copied.
+fn bezout_if_coprime(a: &ExactInt, b: &ExactInt) -> Option<(ExactInt, ExactInt)> {
     if b.is_zero() {
-        return (a.clone(), ExactInt::one(), ExactInt::zero());
+        return a.is_one().then(|| (ExactInt::one(), ExactInt::zero()));
     }
     let (q, r) = a.div_rem(b).unwrap_or((ExactInt::zero(), ExactInt::zero()));
-    let (g, x, y) = egcd(b, &r);
+    let (x, y) = bezout_if_coprime(b, &r)?;
     // x1 = y, y1 = x - q y
     let y1 = x.sub(&q.mul(&y));
-    (g, y, y1)
+    Some((y, y1))
 }
 
 /// Modular inverse of `a` modulo `modulus`. `None` if not invertible.
@@ -107,10 +112,7 @@ pub fn mod_inv(a: &ExactInt, modulus: &ExactInt) -> Option<ExactInt> {
     if aa.is_zero() {
         return None;
     }
-    let (g, x, _) = egcd(&aa, &m);
-    if !g.is_one() {
-        return None;
-    }
+    let (x, _) = bezout_if_coprime(&aa, &m)?;
     rem_nonneg(&x, &m)
 }
 
@@ -123,7 +125,7 @@ pub fn miller_rabin(n: &ExactInt, witnesses: &[ExactInt]) -> bool {
     if n.soft_cmp(&two()) == Ordering::Less {
         return false;
     }
-    if n == two() || n == ExactInt::from_u64(3) {
+    if *n == two() || *n == ExactInt::from_u64(3) {
         return true;
     }
     if is_even(&n) {
@@ -208,7 +210,7 @@ fn brent_once(n: &ExactInt, c: &ExactInt) -> Option<ExactInt> {
                 if step == 0 {
                     ys = y_prev;
                 }
-                let diff = abs_int(&x.sub(&y));
+                let diff = x.sub(&y).into_abs();
                 q = mul_mod(&q, &diff, n)?;
             }
             g = q.gcd(n);
@@ -219,7 +221,8 @@ fn brent_once(n: &ExactInt, c: &ExactInt) -> Option<ExactInt> {
     if g == *n {
         loop {
             ys = pollard_f(&ys, c, n)?;
-            g = abs_int(&x.sub(&ys)).gcd(n);
+            // gcd reads magnitudes only: no |.| needed
+            g = x.sub(&ys).gcd(n);
             if !g.is_one() {
                 break;
             }
@@ -331,7 +334,7 @@ pub fn is_prime(n: &ExactInt) -> bool {
         return false;
     }
     if let Some(d) = crate::primality::trial_prime_factor(&n) {
-        return n == d;
+        return *n == d;
     }
     if n.soft_cmp(&ExactInt::from_u128(MR13_BOUND)) == Ordering::Less {
         let wits: Vec<ExactInt> = SMALL_PRIMES

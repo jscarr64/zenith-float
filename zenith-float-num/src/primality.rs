@@ -39,7 +39,7 @@ pub(crate) fn bpsw(n: &ExactInt) -> bool {
     if n.soft_cmp(&two()) == Ordering::Less {
         return false;
     }
-    if n == two() {
+    if *n == two() {
         return true;
     }
     if is_even(&n) {
@@ -97,7 +97,8 @@ fn selfridge_params(n: &ExactInt) -> Option<(ExactInt, ExactInt, ExactInt)> {
         let dd = ExactInt::from_i64(if sign < 0 { -dmag } else { dmag });
         let j = jacobi(&dd, n);
         if j == 0 {
-            let g = abs_int(&dd).gcd(n);
+            // gcd reads magnitudes only: no |.| needed
+            let g = dd.gcd(n);
             if g.is_one() || g == *n {
                 // |D| = n, try the next D
             } else {
@@ -213,7 +214,7 @@ pub(crate) fn lucas_uv(
 }
 
 fn bit_set(k: &ExactInt, i: usize) -> bool {
-    k.shr_towards_zero(i).low_word() & 1 == 1
+    k.magnitude_bit(i)
 }
 
 struct MPt {
@@ -278,7 +279,7 @@ fn mont_mul(p: &MPt, k: &ExactInt, a24: &ExactInt, n: &ExactInt) -> Option<MPt> 
 }
 
 fn as_factor(g: ExactInt, n: &ExactInt) -> Option<ExactInt> {
-    let g = abs_int(&g);
+    let g = g.into_abs();
     if g.is_one() || g == *n || g.is_zero() {
         None
     } else {

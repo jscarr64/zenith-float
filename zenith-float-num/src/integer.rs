@@ -11,6 +11,7 @@ use crate::defs::Word;
 use crate::defs::DEFAULT_P;
 use crate::defs::WORD_BIT_SIZE;
 use crate::ExactNum;
+use alloc::borrow::Cow;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
@@ -251,6 +252,12 @@ impl ExactInt {
         self.add(&rhs.neg())
     }
 
+    /// `|self|`, in place.
+    pub(crate) fn into_abs(mut self) -> Self {
+        self.sign = Sign::Pos;
+        self
+    }
+
     /// `-self`.
     pub fn neg(&self) -> Self {
         if self.is_zero() {
@@ -470,11 +477,24 @@ impl ExactInt {
         Self::from_limbs(sign, words.to_vec())
     }
 
-    /// `self << bits`.
-    pub(crate) fn shl(&self, bits: usize) -> Self {
+    /// `self << bits`. A zero value or shift is `self` itself, moved.
+    pub(crate) fn shl(self, bits: usize) -> Self {
         if self.is_zero() || bits == 0 {
-            return self.clone();
+            return self;
         }
+        self.shl_core(bits)
+    }
+
+    /// `self << bits` of a borrowed value: `self` itself (borrowed) for a zero value or shift.
+    pub(crate) fn shl_ref(&self, bits: usize) -> Cow<'_, Self> {
+        if self.is_zero() || bits == 0 {
+            return Cow::Borrowed(self);
+        }
+        Cow::Owned(self.shl_core(bits))
+    }
+
+    /// `self << bits` for a non-zero value and shift.
+    fn shl_core(&self, bits: usize) -> Self {
         let woff = bits / WORD_BIT_SIZE;
         let boff = bits % WORD_BIT_SIZE;
         let mut out = vec![0; self.limbs.len() + woff + 1];
@@ -613,11 +633,33 @@ impl ExactInt {
         &self.limbs
     }
 
-    /// `self >> bits`, truncated toward zero.
-    pub fn shr_towards_zero(&self, bits: usize) -> Self {
+    /// `self >> bits`, truncated toward zero. A zero value or shift is `self` itself, moved.
+    pub fn shr_towards_zero(self, bits: usize) -> Self {
         if bits == 0 || self.is_zero() {
-            return self.clone();
+            return self;
         }
+        self.shr_core(bits)
+    }
+
+    /// `self >> bits`, truncated toward zero, of a borrowed value: `self` itself (borrowed) for a zero value or
+    /// shift.
+    pub fn shr_towards_zero_ref(&self, bits: usize) -> Cow<'_, Self> {
+        if bits == 0 || self.is_zero() {
+            return Cow::Borrowed(self);
+        }
+        Cow::Owned(self.shr_core(bits))
+    }
+
+    /// Bit `i` of `|self|`.
+    pub(crate) fn magnitude_bit(&self, i: usize) -> bool {
+        let w = i / WORD_BIT_SIZE;
+        self.limbs
+            .get(w)
+            .is_some_and(|x| (x >> (i % WORD_BIT_SIZE)) & 1 == 1)
+    }
+
+    /// `self >> bits`, truncated toward zero, for a non-zero value and shift.
+    fn shr_core(&self, bits: usize) -> Self {
         let w = bits / WORD_BIT_SIZE;
         let b = bits % WORD_BIT_SIZE;
         if w >= self.limbs.len() {
@@ -713,7 +755,7 @@ mod tests {
     #[test]
     fn shl_shr_roundtrip() {
         let a = ExactInt::from_u64(0x1234_5678_9abc_def0);
-        let s = a.shl(70).mul(&ExactInt::from_u64(3));
+        let s = a.shl_ref(70).mul(&ExactInt::from_u64(3));
         let back = s.shr_towards_zero(70);
         assert_eq!(back, a.mul(&ExactInt::from_u64(3)));
         assert!(ExactInt::from_u64(7).shr_towards_zero(3).is_zero());
@@ -721,7 +763,11 @@ mod tests {
             ExactInt::from_i64(-32).shr_towards_zero(2),
             ExactInt::from_i64(-8)
         );
-        assert_eq!(a.shl(0), a);
+        // a zero shift borrows its input (no copy); bits read the magnitude
+        assert!(matches!(a.shl_ref(0), Cow::Borrowed(_)));
+        assert!(matches!(a.shr_towards_zero_ref(0), Cow::Borrowed(_)));
+        assert!(a.magnitude_bit(4) && !a.magnitude_bit(0) && !a.magnitude_bit(10_000));
+        assert!(ExactInt::from_i64(-32).magnitude_bit(5));
         assert!(a.shr_towards_zero(10_000).is_zero());
     }
 

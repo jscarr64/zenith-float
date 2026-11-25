@@ -37,3 +37,9 @@
   commit of the range. Four owned sites no longer copy (catalog hypergeometric denominator, catalog_aws `u0`, two
   tests). The other 129 rounding-helper uses each read a borrowed source: 66 inputs, 34 `&self` kernels, 12
   goldens rounded per mode, 10 caches, 7 helper equivalence tests.
+- Batch 6 (Paul 12:32 AM CT item 1, equal-to-input shortcuts): `ExactInt::shl` / `shr_towards_zero` take `self` by
+  value (a zero value or shift returns it, moved); `shl_ref` / `shr_towards_zero_ref` return a `Cow` that borrows
+  the input on those shortcuts; bit tests read `magnitude_bit` instead of shifting. modular's `abs_int` returns a
+  `Cow` (borrowed when non-negative), owned values use `into_abs`, `gcd` callers drop the `|.|` (gcd reads
+  magnitudes), and `egcd` is `bezout_if_coprime` (only mod_inv's coefficients are built; the gcd is only tested).
+  exp_bb's last chunk borrows t. Clones 196 -> 191.

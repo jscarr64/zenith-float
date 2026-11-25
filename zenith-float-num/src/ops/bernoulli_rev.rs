@@ -559,7 +559,8 @@ pub(super) fn exact_even_bernoulli_rev_range(
             if new_prec < wp && new_max <= max_power {
                 let shift_bits = wp - new_prec;
                 for j in (3..=new_max).step_by(2) {
-                    powers[j] = powers[j].shr_towards_zero(shift_bits);
+                    let pj = core::mem::replace(&mut powers[j], ExactInt::zero());
+                    powers[j] = pj.shr_towards_zero(shift_bits);
                 }
                 pow_error = pow_error.shr_towards_zero(shift_bits).add(&ExactInt::one());
                 let _ = two_pi_squared.set_precision(new_prec, RoundingMode::ToEven);
