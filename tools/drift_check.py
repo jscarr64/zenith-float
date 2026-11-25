@@ -1,10 +1,108 @@
 #!/usr/bin/env python3
 """drift_check: no work piles up unpushed (Jeff 2026-11-25: "We should be able to push and merge as we go").
 
-Scaffold: the command line only (every option is declared, none does anything yet). Each check lands as a red selftest commit, then the commit that makes it pass.
+Plan v2 C-DRIFT / C-AHEAD. FAIL (rc 1) when, in a checked work tree,
+  * a local branch, or a detached HEAD, is more than MAX_AHEAD (default 1) commits ahead of what is pushed.
+"Ahead of what is pushed" = commits on the branch that are not on its upstream, when the upstream is a
+remote-tracking ref (refs/remotes/*) that exists; otherwise (no upstream, an upstream that is gone, or an upstream
+that is another LOCAL branch) commits that are on no remote-tracking ref (`--not --remotes`). A detached HEAD is
+checked the same way unless it sits on a local branch tip (then that branch covers it).
+Read-only: every git call uses --no-optional-locks and drops GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR.
+rc 0 ok, 1 drift, 2 usage or git error (fail closed).
 """
 import argparse
+import os
+import subprocess
 import sys
+import time
+
+
+class GitError(Exception):
+    pass
+
+
+def git(repo, *args):
+    p = subprocess.run(["git", "--no-optional-locks", "-C", repo] + list(args),
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_env())
+    if p.returncode != 0:
+        raise GitError("git %s: %s" % (" ".join(args), p.stderr.decode(errors="replace").strip()))
+    return p.stdout.decode(errors="replace")
+
+
+def _env():
+    e = dict(os.environ)
+    for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"):
+        e.pop(k, None)  # hooks export these; -C <repo> must win
+    return e
+
+
+def is_work_tree(path):
+    try:
+        return git(path, "rev-parse", "--is-inside-work-tree").strip() == "true" and \
+            os.path.realpath(git(path, "rev-parse", "--show-toplevel").strip()) == os.path.realpath(path)
+    except GitError:
+        return False
+
+
+def _ref_exists(repo, ref):
+    try:
+        git(repo, "rev-parse", "--verify", "--quiet", ref + "^{commit}")
+        return True
+    except GitError:
+        return False
+
+
+def unpushed(repo, ref, upstream):
+    """(count, oldest committer time or None) of commits on ref that are not pushed."""
+    if upstream.startswith("refs/remotes/") and _ref_exists(repo, upstream):
+        spec = ["%s..%s" % (upstream, ref)]
+    else:
+        spec = [ref, "--not", "--remotes"]
+    out = git(repo, "log", "--format=%ct", *spec).split()
+    if not out:
+        return 0, None
+    return len(out), min(int(t) for t in out)
+
+
+def branches(repo):
+    rows = []
+    for line in git(repo, "for-each-ref", "--format=%(refname)%00%(upstream)%00%(objectname)", "refs/heads").splitlines():
+        if line:
+            name, up, sha = line.split("\0")
+            rows.append((name, up, sha))
+    return rows
+
+
+def head_state(repo):
+    """(detached?, head sha or None)."""
+    try:
+        sha = git(repo, "rev-parse", "--verify", "--quiet", "HEAD").strip()
+    except GitError:
+        return False, None  # unborn branch
+    try:
+        git(repo, "symbolic-ref", "-q", "HEAD")
+        return False, sha
+    except GitError:
+        return True, sha
+
+
+def check_repo(repo, now, max_ahead, report):
+    bad = 0
+    detached, head = head_state(repo)
+    tips = set()
+    for name, up, sha in branches(repo):
+        tips.add(sha)
+        n, oldest = unpushed(repo, name, up)
+        short = name[len("refs/heads/"):]
+        if n > max_ahead:
+            report("FAIL %s %s: %d commits ahead of what is pushed (max %d)" % (repo, short, n, max_ahead)); bad = 1
+    if detached and head not in tips:
+        n, oldest = unpushed(repo, "HEAD", "")
+        if n > max_ahead:
+            report("FAIL %s detached HEAD: %d commits not on any remote ref (max %d)" % (repo, n, max_ahead)); bad = 1
+    if not bad:
+        report("ok   %s" % repo)
+    return bad
 
 
 def main(argv=None):
@@ -15,12 +113,31 @@ def main(argv=None):
     ap.add_argument("--max-age-min", type=float, default=30)
     ap.add_argument("--now", type=float, default=None, help="epoch seconds (tests)")
     ap.add_argument("--pre-commit", action="store_true")
-    ap.add_argument("--all", action="store_true")
-    ap.add_argument("--include", action="append", default=[])
-    ap.add_argument("--include-file", action="append", default=[])
+    ap.add_argument("--all", action="store_true", help="check every scanned work tree and branch (full sweep)")
+    ap.add_argument("--include", action="append", default=[], help="a work tree always checked (repeatable)")
+    ap.add_argument("--include-file", action="append", default=[], help="file of work trees always checked")
     ap.add_argument("--active-window-min", type=float, default=1440)
-    ap.parse_args(argv)
-    return 0
+    a = ap.parse_args(argv)
+    now = time.time() if a.now is None else a.now
+    report = lambda s: print("drift_check: " + s)
+    repos = []
+    for r in a.repo:
+        if not is_work_tree(r):
+            print("drift_check: %s is not the top of a git work tree" % r, file=sys.stderr)
+            return 2
+        repos.append(r)
+    if not repos:
+        print("drift_check: give --repo", file=sys.stderr)
+        return 2
+    bad = 0
+    try:
+        for r in repos:
+            bad |= check_repo(r, now, a.max_ahead, report)
+    except GitError as e:
+        print("drift_check: %s" % e, file=sys.stderr)
+        return 2
+    print("drift_check: %s (%d repo(s), max %d ahead)" % ("FAIL" if bad else "ok", len(repos), a.max_ahead))
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
