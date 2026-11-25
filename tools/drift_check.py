@@ -30,9 +30,11 @@ Active mode (Jeff 2026-11-25 3:55 PM CT: "limit the check to active work trees")
   --all checks every scanned tree and every branch (the full sweep). --repo and --include trees are always checked
   in full.
 Read-only: every git call uses --no-optional-locks and drops GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR.
+--max-age-min and --active-window-min must be finite and >= 0 (nan, inf or a negative value is a usage error).
 rc 0 ok, 1 drift, 2 usage or git error (fail closed).
 """
 import argparse
+import math
 import os
 import subprocess
 import sys
@@ -226,6 +228,12 @@ def main(argv=None):
     now = time.time() if a.now is None else a.now
     max_age = a.max_age_min * 60
     window = a.active_window_min * 60
+    if not math.isfinite(a.max_age_min) or a.max_age_min < 0:
+        print("drift_check: --max-age-min must be a finite number >= 0", file=sys.stderr)
+        return 2
+    if not math.isfinite(a.active_window_min):
+        print("drift_check: --active-window-min must be a finite number", file=sys.stderr)
+        return 2
     if window < 0:
         print("drift_check: --active-window-min must be >= 0", file=sys.stderr)
         return 2
