@@ -183,7 +183,9 @@ pub(crate) fn exp_arf_bb(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber,
         if mag > 200 {
             return Err(Error::ExponentOverflow(x.sign()));
         }
-        return ExactNumNumber::from_word(1, p);
+        let mut one = ExactNumNumber::from_word(1, p)?;
+        one.set_inexact(true);
+        return Ok(one);
     }
 
     let q = if mag + ARGRED_BITS > 0 { mag + ARGRED_BITS } else { 0 };
@@ -252,12 +254,45 @@ pub(crate) fn exp_arf_bb(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber,
     }
 
     z.set_precision(p, RoundingMode::None)?;
+    // exp(x) for a nonzero x is never a dyadic number; the sum above can still land exactly on a rounding
+    // midpoint (one Taylor term for a tiny x: 1 + x), which the caller must not round as an exact tie.
+    z.set_inexact(true);
     Ok(z)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{exp_taylor_bound, rec_fac_bound_2exp_si};
+
+    /// `exp(2^-p) = 1 + 2^-p + 2^(-2p-1) + ...` lies just above the midpoint `1 + 2^-p` of `1` and `1 + 2^(1-p)`.
+    /// Its one-term bit-burst sum is exactly that midpoint, so the result must be flagged inexact or the caller
+    /// rounds the "exact tie" to even (`1`). Gold: `1 + 2^(1-p)` to nearest / up, `1` down (python-flint `arb`
+    /// Ziv loop, tools/mpfr_golden/gen.py `exp 10048 N +1p-10048`; the MPFR test is retry_budget
+    /// `exp_just_above_a_tie_at_100032_bits`). p = 10048 is the first word width on the bit-burst path.
+    #[test]
+    fn exp_of_a_tiny_power_of_two_is_not_taken_for_an_exact_tie() -> Result<(), String> {
+        use crate::{Consts, ExactNum, Exponent, RoundingMode};
+        let p = 10048usize;
+        let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
+        let x = ExactNum::from_u8(1, p).ldexp(-(p as Exponent), p, RoundingMode::ToEven);
+        let one = ExactNum::from_u8(1, p);
+        let above = ExactNum::from_u8(1, p).add(
+            &ExactNum::from_u8(1, p).ldexp(1 - p as Exponent, p, RoundingMode::ToEven),
+            p,
+            RoundingMode::ToEven,
+        );
+        for (rm, want) in [
+            (RoundingMode::ToEven, &above),
+            (RoundingMode::Up, &above),
+            (RoundingMode::Down, &one),
+        ] {
+            let got = x.exp(p, rm, &mut cc);
+            if got != *want {
+                return Err(format!("exp(2^-{p}) {rm:?}: got {got:?}"));
+            }
+        }
+        Ok(())
+    }
 
     /// Golds: floor(log2(1/n!)) = floor(-lgamma(n+1)/ln 2) from FLINT (python-flint 0.9.0, `arb(n+1).lgamma()`,
     /// 256 bits), cross-checked with mpmath 1.3.0 `loggamma` (pinned oracle venv); script and output:
