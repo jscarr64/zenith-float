@@ -5,7 +5,7 @@
 #      bound layer's scanner is zenith-float-bound/tools/bound_layer_scan.* and says it is NOT the library scan.
 #   2. the gate's no-clone-progress step fails on any rise (tools/no_clone.sh --progress); a planted clone fails it.
 #   3. rules-scan, no-clone-progress, fmt lead the gate (then target-dir, clippy); a planted clone or a crash fails rules-scan.
-#   4. the committed pre-commit hook stops a planted clone, a count rise, a crash, red fmt and red clippy.
+#   4. the committed pre-commit hook stops a planted clone, a count rise, a crash, red fmt, red clippy and a held marker.
 #   5. .github/workflows/rules-scan.yml runs the library rules and no_suppress_scan on every push; its commands fail a
 #      planted clone.
 #   6. CONTRIBUTING.md's per-commit checklist runs the library scan and says a 'clean' claim cites its log at that commit.
@@ -55,7 +55,7 @@ rs=$(step rules-scan)
 grep -q 'test_rules_enforcement.sh' "$root/tools/full_gate.sh" || bad "tools/full_gate.sh does not run tools/test_rules_enforcement.sh"
 # Spence R1 on 0a1cb6c: the zero-suppression scan and the pre-push hook's selftest run in the gate's unsafe-scan step.
 us=$(step unsafe-scan)
-for x in tools/no_suppress_selftest.sh tools/no_suppress_scan.sh tools/pre_push_selftest.sh tools/no_tmp_selftest.sh tools/no_tmp_scan.sh tools/no_debug_assert_selftest.sh tools/no_debug_assert_scan.sh; do
+for x in tools/no_suppress_selftest.sh tools/no_suppress_scan.sh tools/pre_push_selftest.sh tools/no_tmp_selftest.sh tools/no_tmp_scan.sh tools/no_debug_assert_selftest.sh tools/no_debug_assert_scan.sh tools/no_held_selftest.sh tools/no_held_scan.sh; do
   [[ $us == *"$x"* ]] || bad "the gate's unsafe-scan step does not run $x"
 done
 g="$t/rs"; mkdir -p "$g/tools" "$g/zenith-float-num/src"
@@ -82,7 +82,7 @@ grep -q '^rules_scan: checks: clone=ok helper-copy=ok exceptions=ok test-panic=o
 hk="$root/.githooks/pre-commit"
 if [ -x "$hk" ]; then
   h="$t/hk"; mkdir -p "$h/tools" "$h/zenith-float-num/src" "$h/.githooks" "$t/bin"
-  cp "$root"/tools/rules_scan.py "$root"/tools/rules_scan.sh "$root"/tools/no_clone.py "$h/tools/"; cp "$hk" "$h/.githooks/"
+  cp "$root"/tools/rules_scan.py "$root"/tools/rules_scan.sh "$root"/tools/no_clone.py "$root"/tools/no_held_scan.py "$root"/tools/no_held_scan.sh "$h/tools/"; cp "$hk" "$h/.githooks/"
   : > "$h/tools/rules_allowlist.txt"
   for b in clone_count helper_copy_count exception_count test_panic_count neg_via_mul_count unlisted_clone; do echo 0 > "$h/tools/${b}_baseline.txt"; done
   printf 'fn a() {}\n' > "$h/zenith-float-num/src/x.rs"
@@ -105,6 +105,11 @@ if [ -x "$hk" ]; then
   grep -q 'FAIL check test-panic CRASHED' "$t/hk.out" || bad "hook did not name the crash: $(tail -5 "$t/hk.out")"
   STUB_CARGO_FAIL=fmt hc fmtred && bad "hook let a red cargo fmt through"
   STUB_CARGO_FAIL=clippy hc clippyred && bad "hook let a red clippy through"
+  # the marker is assembled at run time so this file does not itself carry one (tools/no_held_scan.sh scans it)
+  printf '// M27-F12 (%s): pow(1, NaN)\n' "HE""LD" >> "$h/zenith-float-num/src/x.rs"; (cd "$h" && git add -A)
+  hc heldred && bad "hook let a held marker through"
+  grep -q 'zenith-float-num/src/x.rs:[0-9]* \[held\]' "$t/hk.out" || bad "hook did not report the held marker: $(tail -5 "$t/hk.out")"
+  printf 'fn a() {}\nfn b() -> u32 { 1 }\n// edit\n' > "$h/zenith-float-num/src/x.rs"; (cd "$h" && git add -A)
   hc green || bad "hook refused a clean edit: $(tail -5 "$t/hk.out")"
 else
   bad "no executable .githooks/pre-commit"

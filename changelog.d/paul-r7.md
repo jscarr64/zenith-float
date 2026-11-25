@@ -93,3 +93,6 @@
 - Batch 21 (F-12 leftovers, ZF-M27): `powsi(NaN, 0)` is 1 (was NaN), like `powi`; the F-12 cases are asserted, and no
   test keeps a known-wrong list or skips `None` any more (pow specials, complex erf on the imaginary axis, digamma of
   large negatives). The complex grid oracle script is `scripts/oracle_complex_mul_div_grid.py`.
+- Batch 22 (ZF-M27 item 3): `tools/no_held_scan.sh` fails on any held marker or counter, None-gap mode list, known-wrong
+  list, "today it returns" expectation, ignored or xfail test, or mode `continue` left in the tree (HOLD files
+  excepted). It runs in the pre-commit hook and in the full gate, with its selftest.
