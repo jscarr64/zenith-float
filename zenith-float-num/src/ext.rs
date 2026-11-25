@@ -1098,6 +1098,27 @@ impl ExactNum {
                             let z = Self::new(p);
                             return if ge_one { z.neg() } else { z };
                         }
+                        // Signed poles of ln(x) / ln(b) (ZF-M27, P20 POLE-01 / POLE-04, MPFR): F-27 ln(+-0) = -Inf,
+                        // so log_b(+-0) is +Inf for 0 < b < 1 and -Inf for b >= 1; F-26 ln(1) = +0, so log_1(x) is
+                        // -Inf for 0 < x < 1 and +Inf for x > 1 (log_1(1) = 0 / 0 keeps the kernel's NaN). A negative
+                        // base or operand has no real log.
+                        let one = &crate::common::consts::ONE;
+                        if v1.is_zero() {
+                            return if v2.is_negative() {
+                                NAN
+                            } else if v2.abs_cmp(one) < 0 {
+                                INF_POS
+                            } else {
+                                INF_NEG
+                            };
+                        }
+                        if v2.is_positive() && v2.abs_cmp(one) == 0 && v1.is_positive() {
+                            match v1.abs_cmp(one) {
+                                0 => {}
+                                c if c < 0 => return INF_NEG,
+                                _ => return INF_POS,
+                            }
+                        }
                         Self::result_to_ext(
                             ExactNumNumber::exact_bits(p, rm, |q, r| v1.log(v2, q, r, cc)).map(
                                 |mut r| {
@@ -5986,7 +6007,18 @@ mod tests {
         assert!(INF_NEG.log(&INF_POS, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_NEG.log(&INF_NEG, rand_p(), rm, &mut cc).is_nan());
         assert!(TWO.log(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
-        // F-26 (ZF-M27, held): log base 1 of 1/2 is ruled -Inf; the library gives +Inf today, so it is not asserted.
+        // F-26 (ZF-M27, POLE-01): log base 1 of 1/2 is the signed pole -Inf.
+        assert!(half.log(&ONE, rand_p(), rm, &mut cc).is_inf_neg());
+        // F-27 (ZF-M27, POLE-04): log of +-0 is -Inf over ln b: +Inf for 0 < b < 1, -Inf for b >= 1.
+        assert!(ExactNum::new(DEFAULT_P)
+            .log(&half, rand_p(), rm, &mut cc)
+            .is_inf_pos());
+        assert!(ExactNum::new(DEFAULT_P)
+            .log(&ONE, rand_p(), rm, &mut cc)
+            .is_inf_neg());
+        assert!(ExactNum::new(DEFAULT_P)
+            .log(&TWO, rand_p(), rm, &mut cc)
+            .is_inf_neg());
         assert!(ONE.log(&ONE, rand_p(), rm, &mut cc).is_nan());
 
         // M27-F12 (IEEE 754 pow, POW-01): pow(+1, y) = 1 and pow(x, +-0) = 1 for any x and y, NaN included.
@@ -9025,8 +9057,8 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         let mut held_f20 = 0usize;
-        let mut held_f26 = 0usize;
-        let mut held_f27 = 0usize;
+        let mut f26_poles = 0usize;
+        let mut f27_poles = 0usize;
         let mut held_logb = 0usize;
         for i in (0..11).chain(21..23) {
             for p in [64usize, 200] {
@@ -9080,25 +9112,31 @@ mod grid_digest_tests {
                         let r = operand(i).log(&operand(b), p, rm, &mut cc);
                         // F-20 (N-5): log(x, x) = 1 is exact, but ToEven at p = 64 flags it inexact.
                         let f20 = i == b && r.inexact();
-                        // F-26: logb(x, 1) for 0 < x < 1 is +Inf; the signed pole gives -Inf (P20, POLE-01, MPFR).
-                        // Operand 2 is 1. logb(1, 1) -> NaN is right and stays hashed.
+                        // F-26 (P20, POLE-01, MPFR): logb(x, 1) for finite 0 < x < 1 is the signed pole -Inf.
+                        // Operand 2 is 1; logb(1, 1) -> NaN stays as it is.
+                        // F-27 (P20 POLE-04, ln(+-0) = -Inf read as ln(x) / ln(b)): logb(+-0, b) is +Inf for
+                        // 0 < b < 1 and -Inf for b >= 1 (MPFR, mpmath).
                         let x = operand(i);
-                        let f26 = b == 2
-                            && r.is_inf()
-                            && r.is_positive()
-                            && !x.is_inf()
-                            && x.is_positive()
-                            && x < operand(2);
-                        // F-27: logb(+-0, b) is NaN; the pole rule (P20 POLE-04, ln(+-0) = -Inf, read as
-                        // ln(x) / ln(b) as for F-26) gives +Inf for 0 < b < 1 and -Inf for b = 1 (MPFR, mpmath).
-                        let f27 = x.is_zero() && r.is_nan();
+                        let base = operand(b);
+                        let f26 =
+                            b == 2 && !x.is_inf() && x.is_positive() && !x.is_zero() && x < base;
+                        let f27 = x.is_zero() && base.is_positive() && !base.is_zero();
+                        if f26 || f27 {
+                            let neg = f26 || base >= operand(2);
+                            if !(r.is_inf() && r.is_negative() == neg) {
+                                return Err(format!(
+                                    "F-26/27: logb({x}, {base}) p={p} {rm:?} gives {r}"
+                                )
+                                .into());
+                            }
+                        }
                         held_f20 += usize::from(f20);
-                        held_f26 += usize::from(f26);
-                        held_f27 += usize::from(f27);
+                        f26_poles += usize::from(f26);
+                        f27_poles += usize::from(f27);
                         dd_held(
                             &mut h,
                             &mut held_logb,
-                            f20 || f26 || f27,
+                            f20,
                             DigestCell {
                                 op: "logb",
                                 args: &[&operand(i), &operand(b)],
@@ -9117,13 +9155,13 @@ mod grid_digest_tests {
         // F-20 (N-5, ZF-M27): logb(third(64), third(64)) and logb(third(320), third(320)) at p = 64 ToEven (exactly 1,
         // flagged inexact) are not hashed
         assert_eq!(held_f20, 2);
-        // F-26 (ZF-M27): logb(x, 1) = +Inf for x in {third(64), third(320), operand 21}, p = 64 and 200, ToEven and
-        // Down (the modes this loop runs), not hashed
-        assert_eq!(held_f26, 12);
-        // F-27 (ZF-M27): logb(x, b) = NaN for x = +0 and -0, b in {1, third(64), third(320)}, p = 64 and 200, ToEven
-        // and Down, not hashed. logb(1, 1) -> NaN stays hashed.
-        assert_eq!(held_f27, 24);
-        assert_eq!(held_logb, held_f20 + held_f26 + held_f27);
+        // F-26 (ZF-M27): logb(x, 1) = -Inf for x in {third(64), third(320), operand 21}, p = 64 and 200, ToEven and
+        // Down (the modes this loop runs), asserted and hashed
+        assert_eq!(f26_poles, 12);
+        // F-27 (ZF-M27): logb(+-0, b) for b in {1, third(64), third(320)}, p = 64 and 200, ToEven and Down: -Inf for
+        // b = 1, +Inf for b < 1, asserted and hashed
+        assert_eq!(f27_poles, 24);
+        assert_eq!(held_logb, held_f20);
         println!("ziv entry points digest = {}", h.finish());
         // Re-recorded: the old value (2_735_357_469_467_868_262) pinned a wrong `log1p` result for the positive
         // subnormal operand 21 with `Down` (the argument itself instead of the argument minus one grid unit);
@@ -9134,7 +9172,9 @@ mod grid_digest_tests {
         // Re-pinned (F9d-7): was 15_733_382_221_161_312_340, with the 2 F-20 logb(x, x) cells in.
         // Re-pinned (F9d-14): was 7_247_571_894_832_860_161, with the 12 F-26 logb(x, 1) = +Inf cells in.
         // Re-pinned (F9d-16): was 16_270_962_408_906_483_201, with the 24 F-27 logb(+-0, b) = NaN cells in.
-        assert_eq!(h.finish(), 14_118_851_892_563_545_474);
+        // Re-pinned (ZF-M27 F-26/F-27): was 14_118_851_892_563_545_474, without the 36 pole cells; they are hashed
+        // as -Inf / +Inf (with them skipped the new code reproduces the old pin, r7-tools/f26/skipcheck.log).
+        assert_eq!(h.finish(), 14_161_510_883_704_499_533);
         Ok(())
     }
 

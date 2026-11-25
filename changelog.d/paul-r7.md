@@ -63,3 +63,5 @@
   digests re-pinned with the saturated cells in; seven MPFR golden streams regenerated.
 - Batch 12 (F-12, ZF-M27, POW-01): `pow(x, +-0) = 1` and `pow(+1, y) = 1` for any `x`, `y`, NaN included, and
   `powi(NaN, 0) = 1` (IEEE 754). The 84 held grid cells are asserted and hashed; the exp/pow digests re-pinned.
+- Batch 13 (F-26/F-27, ZF-M27): `log(x, base)` gives the signed poles of `ln x / ln b`: `log_b(+-0)` is +Inf for
+  `0 < b < 1` and -Inf for `b >= 1`; `log_1(x)` is -Inf for `0 < x < 1`, +Inf for `x > 1`.
