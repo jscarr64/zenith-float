@@ -262,5 +262,30 @@ grep -q "FAIL $ra " <<<"$out" && grep -q "FAIL $rb " <<<"$out" && ok "active: --
 expect "active: bad window value"                            2 run --scan "$work/obo" --active-window-min -1
 e="$work/act-empty"; mkdir -p "$e"; git init -q -b w "$e/r"; echo x > "$e/r/u.txt"; touch -d "@$((NOW-1801))" "$e/r/u.txt"
 expect "active: empty repo (no HEAD commit) counts as active, old dirty file fails" 1 run --scan "$e"
+# ---- round 2 (Cassie R2-B1): every unreadable scan entry fails closed; the scan dir itself is checked ----
+# a scan child that cannot be read (mode 000) and holds 2 unpushed commits: rc 2 and named, never skipped (R2-B1a)
+s="$work/scan-perm"; mkdir -p "$s"; c=$(fresh sp); commit_at "$c" 60 p1; commit_at "$c" 50 p2; mv "$c" "$s/locked"; chmod 000 "$s/locked"
+out=$(run --all --scan "$s" 2>&1); rc=$?; chmod 755 "$s/locked"
+[ $rc = 2 ] && grep -q "$s/locked" <<<"$out" && ok "scan: unreadable child (mode 000) with 2 unpushed: rc 2, named" || { bad "scan: unreadable child (mode 000) (want rc=2 and named, got rc=$rc)"; show "$out"; }
+# an unreadable --scan DIR: rc 2 with a message, no traceback (R2-B1b)
+s="$work/scan-perm-dir"; mkdir -p "$s/x"; chmod 000 "$s"
+out=$(run --all --scan "$s" 2>&1); rc=$?; chmod 755 "$s"
+[ $rc = 2 ] && ! grep -q Traceback <<<"$out" && grep -q "$s" <<<"$out" && ok "scan: unreadable --scan dir: rc 2, named, no traceback" || { bad "scan: unreadable --scan dir (want rc=2 without a traceback, got rc=$rc)"; show "$out"; }
+# the scan DIR itself is checked: --scan of a repo with 2 unpushed commits fails (Cassie Y16)
+r=$(fresh sself); commit_at "$r" 60 q1; commit_at "$r" 50 q2
+expect "scan: DIR itself is a repo with 2 unpushed"          1 run --scan "$r"
+# --include-file that cannot be read: rc 2 (Cassie Y05)
+expect "active: --include-file missing"                      2 run --scan "$work/emptydir" --include-file "$work/no-such-include.txt"
+# activity that cannot be parsed (HEAD commit time not a number, via a git stub) counts as active: checked, ok (Cassie Y01)
+realgit=$(command -v git); mkdir -p "$work/gitstub"
+cat > "$work/gitstub/git" <<STUB
+#!/usr/bin/env bash
+case " \$* " in *" log -1 --format=%ct HEAD "*) [ -n "\${STUB_CT_BAD:-}" ] && { echo not-a-number; exit 0; };; esac
+exec "$realgit" "\$@"
+STUB
+chmod +x "$work/gitstub/git"
+r=$(stale yct 172800); git -C "$r" push -q -f origin w 2>/dev/null
+out=$(STUB_CT_BAD=1 PATH="$work/gitstub:$PATH" python3 -B "$dc" --now "$NOW" --scan "$work/yct" 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "ok   $r" <<<"$out" && ! grep -q "skip $r" <<<"$out" && ok "active: HEAD time not a number: activity unknown, checked, ok (rc=0)" || { bad "active: HEAD time not a number (want rc=0 and checked, got rc=$rc)"; show "$out"; }
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
