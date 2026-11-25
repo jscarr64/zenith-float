@@ -9,9 +9,8 @@ non-zero later term decides a sticky/tie. K = 0: normal range. K = -1: c0 * 2^EX
 |c0| >= 1). K <= -2: overflow. K >= 1: below 2^(EXPONENT_MIN-1): judged only with ZF_SUBNORMAL_MODEL=1, else TINY.
 Expected per mode at p (None: toward zero at rp(p,64)). Overflow: +-Inf for nearest/away, +-MAX for toward-zero side
 (the 12:15 PM CT ruling). ToOdd is nearest with ties to odd (`RoundingMode::ToOdd`), so it overflows to +-Inf.
-Exact rationals only (no mpmath needed). Usage: gen_grid_held_cells.py DUMP OUT_TSV (dump: ZF_DIGEST_DUMP of a run that hashes every cell)
-       ZF_SUBNORMAL_MODEL=1 gen_grid_held_cells.py DUMP OUT_TSV (also judge the subnormal range);
-       gen_grid_held_cells.py --emit-rust CLASSES_TSV DUMP OUT_DIR
+Exact rationals only (no mpmath needed). Usage: oracle_complex_mul_div_grid.py DUMP OUT_TSV (dump: ZF_DIGEST_DUMP of the test)
+       ZF_SUBNORMAL_MODEL=1 oracle_complex_mul_div_grid.py DUMP OUT_TSV (also judge the subnormal range)
 """
 import sys, re, collections
 from fractions import Fraction as Fr
@@ -178,74 +177,5 @@ def main():
             fo.write(f"complex_mul_div_grid_digest:{ln}\t{p}\t{rm}\t{[k, part]}\t{cls}\t{mag}\t{t[9][:160]}\t{e[:2] if e[0]!='V' else ('V', float(e[1]) if e[2]==0 else f'{float(e[1])}*2^EMAX', e[3])}\n")
     for kk, v in sorted(cnt.items()): print(kk, v)
 
-def any_model_wrong(line):
-    """Diagnostic only (it no longer decides the held list). A subnormal-range (K >= 1) cell: is the library part
-    outside the interval that 0 and the P-bit values of magnitude >= 2^(EXPONENT_MIN - 1) allow? A directed result
-    must lie between the true value v and the nearest such value on the rounding side (Down: max S <= v .. v;
-    Up: v .. min S >= v; ToZero/None and FromZero by the sign of v). True for 1158 cells on the fold-pr1-186b dump.
-    The old premise, that a cell inside that interval may be right under some grid and so stays hashed, is
-    withdrawn: the grid is ruled (P20 / UFL-01, no subnormals), and the other 60 WRONG-value cells also overshoot
-    the gradual-grid value by one grid unit 2^(EXPONENT_MIN - p) (at p = 64 and 128 that grid is the storage grid),
-    so they are wrong under every grid that has standing. emit_rust holds every K >= 1 WRONG-value cell."""
-    t = line.split('\t'); p = int(t[1]); rm = t[2]; k, part = eval(t[3])
-    a = [dec(x.rsplit('|', 1)[0]) for x in t[4:8]]; L = dec(t[9])
-    A, B, C, D = (P(x[1], x[2]) for x in a)
-    if k == 0:
-        K, cs, ex = poly_series(add(mul(A, C), mul(B, D), -1) if part == 0 else add(mul(A, D), mul(B, C)))
-    else:
-        den = add(mul(C, C), mul(D, D))
-        num = add(mul(A, C), mul(B, D)) if part == 0 else add(mul(B, C), mul(A, D), -1)
-        K, cs, ex = series_div(num, den)
-    c0 = cs[0]; d = tail_sign(cs, ex)
-    assert K >= 1 and c0 != 0 and d is not None
-    vc, vd = (c0, d) if K == 1 else (Fr(0), 1 if c0 > 0 else -1)      # v = vc*t + vd*eps
-    Lt = Fr(0) if L[0] == 'V' and L[1] == 0 else (L[1] if L[0] == 'V' and L[2] == 1 else None)
-    if Lt is None: return True
-    P_ = rp(p) if rm == 'None' else p
-    mode = 'ToZero' if rm == 'None' else rm
-    half = Fr(1, 2)
-    def s_down(x, dd):
-        if abs(x) >= half: return rnd(x, dd, P_, 'Down')[0]
-        return Fr(0) if (x > 0 or (x == 0 and dd >= 0)) else -half
-    lo, hi = s_down(vc, vd), -s_down(-vc, -vd)
-    neg = vc < 0 or (vc == 0 and vd < 0)
-    if mode == 'ToZero': mode = 'Up' if neg else 'Down'
-    if mode == 'FromZero': mode = 'Down' if neg else 'Up'
-    le_v = Lt < vc or (Lt == vc and vd > 0); ge_v = Lt > vc or (Lt == vc and vd < 0)
-    if mode == 'Down': return not (lo <= Lt and le_v)
-    if mode == 'Up': return not (ge_v and Lt <= hi)
-    return False   # nearest: not judged model-independently
-
-
-def emit_rust(classes_tsv, dump, out_dir):
-    """Write the F-25 held-cell lists (1-based cell numbers of complex_mul_div_grid_digest) for `include!`.
-    classes_tsv: output of a ZF_SUBNORMAL_MODEL=1 run on `dump`. Normal range: every WRONG-value cell with K = 0.
-    Subnormal range: every WRONG-value cell with K >= 1 (judged on the gradual grid 2^(EXPONENT_MIN - p); each is
-    also wrong under P20 / UFL-01). any_model_wrong only splits the count for the log."""
-    lines = open(dump).read().splitlines()
-    normal, sub, dep = [], [], []
-    for l in list(open(classes_tsv))[1:]:
-        t = l.split('\t')
-        if t[4] != 'WRONG-value':
-            continue
-        n = int(t[0].split(':')[1])
-        if t[5] == 'K=0': normal.append(n)
-        else:
-            sub.append(n)
-            if not any_model_wrong(lines[n - 1]): dep.append(n)
-    for name, xs, what in (('f25_normal', normal, 'true value in the normal range (K = 0)'),
-                           ('f25_subnormal', sub, 'true value below 2^(EXPONENT_MIN - 1) (K >= 1), wrong on the '
-                            'gradual grid 2^(EXPONENT_MIN - p) and under P20 / UFL-01')):
-        s = ("// Generated by scripts/gen_grid_held_cells.py --emit-rust; do not edit. F-25 cells of\n"
-             "// complex_mul_div_grid_digest whose library part is not the correctly rounded value (exact rational\n"
-             f"// oracle), {what}. Each number is the cell's 1-based position in the digest loop. {len(xs)} cells.\n[\n")
-        for k in range(0, len(xs), 12):
-            s += "    " + ", ".join(str(x) for x in sorted(xs)[k:k + 12]) + ",\n"
-        open(f"{out_dir}/{name}.in", 'w').write(s + "]\n")
-        print(name, len(xs))
-    print('of f25_subnormal: outside the any-grid interval', len(sub) - len(dep), '; inside it but one gradual grid unit off'
-          ' (held since F9d-15):', len(dep), ' '.join(str(x) for x in sorted(dep)))
-
 if __name__ == '__main__':
-    if len(sys.argv) == 5 and sys.argv[1] == '--emit-rust': emit_rust(sys.argv[2], sys.argv[3], sys.argv[4])
-    else: main()
+    main()

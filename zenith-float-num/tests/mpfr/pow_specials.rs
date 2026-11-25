@@ -1,7 +1,5 @@
 //! W6: `pow` with an infinite operand, and `powi`/`powsi` of a signed zero, against MPFR (`mpfr_pow`, `mpfr_pow_ui`,
-//! `mpfr_pow_si`, which follow IEEE 754 / C99 Annex F). Results zenith-float still gets wrong are listed in
-//! `KNOWN_WRONG`: the test fails if one of them starts to agree (remove it from the list with its fix) or if any
-//! other case disagrees.
+//! `mpfr_pow_si`, which follow IEEE 754 / C99 Annex F). Every case must agree with MPFR.
 
 use crate::mpfr::common::{assert_exact_eq, mpfr_reference_with};
 use crate::mpfr::mp::Float;
@@ -16,9 +14,6 @@ type Res = Result<(), Box<dyn std::error::Error>>;
 
 const P: usize = 64;
 const RM: RoundingMode = RoundingMode::ToEven;
-
-/// Results that differ from MPFR today; each fix removes its entries.
-const KNOWN_WRONG: &[&str] = &[];
 
 /// A base or exponent: `(label, zenith value, MPFR value)`.
 fn val(label: &str, sig: u64, exp2: i32, neg: bool) -> (String, ExactNum, Float) {
@@ -133,10 +128,10 @@ fn pow_inf_and_signed_zero_powers_match_mpfr() -> Res {
         }
     }
     assert!(c.checked >= 62, "too few cases: {}", c.checked);
-    let known: BTreeSet<String> = KNOWN_WRONG.iter().map(|s| s.to_string()).collect();
-    assert_eq!(
-        c.wrong, known,
-        "cases that differ from MPFR (left) vs KNOWN_WRONG (right)"
+    assert!(
+        c.wrong.is_empty(),
+        "cases that differ from MPFR: {:?}",
+        c.wrong
     );
     Ok(())
 }
@@ -144,9 +139,6 @@ fn pow_inf_and_signed_zero_powers_match_mpfr() -> Res {
 /// A NaN operand gives NaN where no constant case applies: `pow(2, NaN)`, `pow(NaN, 1)`, `powi(NaN, 2)`,
 /// `powsi(NaN, 2)`. The constant cases are 1, not NaN: `pow(1, y) = 1` for any y including NaN (IEEE 754), and
 /// `pow(x, +-0) = 1` for any x including NaN (P20 POW-01, F-12, widened to `powi(NaN, 0)` and `powsi(NaN, 0)`).
-/// zenith-float still returns NaN for `pow(1, NaN)`, `pow(NaN, +0)`, `pow(NaN, -0)`, `powi(NaN, 0)` and
-/// `powsi(NaN, 0)`; that is known-wrong (this test used to pin it as "not a bug"), so those five are held, not
-/// asserted either way, until ZF-M27 (M27-F12) fixes them red-first.
 #[test]
 fn pow_with_a_nan_operand_is_nan() -> Res {
     let mut cc = Consts::new()?;
@@ -156,6 +148,18 @@ fn pow_with_a_nan_operand_is_nan() -> Res {
     assert!(NAN.pow(&one, P, RM, &mut cc).is_nan(), "pow(NaN, 1)");
     assert!(NAN.powi(2, P, RM).is_nan(), "powi(NaN, 2)");
     assert!(NAN.powsi(2, P, RM).is_nan(), "powsi(NaN, 2)");
-    // M27-F12 (held): pow(1, NaN), pow(NaN, +-0), powi(NaN, 0) and powsi(NaN, 0) are ruled 1; NaN today.
+    let pz = ExactNum::from_word(0, P);
+    let nz = ExactNum::from_word(0, P).neg();
+    let ones = [
+        ("pow(1, NaN)", one.pow(&NAN, P, RM, &mut cc)),
+        ("pow(NaN, +0)", NAN.pow(&pz, P, RM, &mut cc)),
+        ("pow(NaN, -0)", NAN.pow(&nz, P, RM, &mut cc)),
+        ("powi(NaN, 0)", NAN.powi(0, P, RM)),
+        ("powsi(NaN, 0)", NAN.powsi(0, P, RM)),
+    ];
+    let fone = Float::with_val(P as u32, 1);
+    for (what, got) in &ones {
+        assert_exact_eq(got, &fone, P, what, &mut cc)?;
+    }
     Ok(())
 }

@@ -753,9 +753,6 @@ fn zf_76_c_erf_imaginary_axis_real_part_exact() -> Result<(), String> {
                     let rs = if reneg { "-0" } else { "0" };
                     let z = parse_complex(&format!("{rs},{ys}")).must("z")?;
                     for rm in MODES {
-                        if rm == RoundingMode::None {
-                            continue;
-                        }
                         let w = z.erf(p, rm, &mut cc);
                         let txt = if yneg { format!("-{val}") } else { val.to_string() };
                         let want = ExactNum::parse(&txt, Radix::Dec, p, rm, &mut cc);
@@ -961,9 +958,6 @@ fn zf_64_digamma_large_negative_reduces_exactly() -> Result<(), String> {
         for (x, want) in refs {
             let x = parse_real(x).must("x")?;
             for rm in MODES {
-                if rm == RoundingMode::None {
-                    continue;
-                }
                 let got = x.digamma(p, rm, &mut cc);
                 let w = ExactNum::parse(want, Radix::Dec, p, rm, &mut cc);
                 assert_eq!(
@@ -5477,7 +5471,7 @@ fn zf_kelvin_domain_inventory() -> Result<(), String> {
 
 /// In-domain Kelvin at x = 2^100 is past the exponent range (DLMF 10.67 leading
 /// term). ber/bei overflow with the sign of the leading trigonometric factor;
-/// ker/kei underflow with that sign. Today's single 10.61 evaluation returns
+/// ker/kei underflow with that sign. The single 10.61 evaluation used before gave
 /// NaN(InvalidArgument) for ber/bei and +0 for ker/kei.
 #[test]
 fn zf_kelvin_in_domain_large_x_exp_range() -> Result<(), String> {

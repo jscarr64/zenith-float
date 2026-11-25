@@ -195,21 +195,13 @@ impl Run {
     }
 }
 
-/// What a sweep skips: `(significand, exponent, negative, p)` of the operand and precision.
-type Skip = fn(u64, i64, bool, usize) -> bool;
-
-/// The operands, signs and precisions of a unary sweep, whether the inexact flag is compared, what is skipped.
+/// The operands, signs and precisions of a unary sweep, and whether the inexact flag is compared.
 struct Sweep<'a> {
     operands: &'a [(u64, i64)],
     signs: &'a [bool],
     precisions: &'a [usize],
     modes: &'a [RoundingMode],
     flags: bool,
-    skip: Skip,
-}
-
-fn no_skip(_: u64, _: i64, _: bool, _: usize) -> bool {
-    false
 }
 
 fn unary(
@@ -224,7 +216,6 @@ fn unary(
         precisions,
         modes,
         flags,
-        skip,
     } = sweep;
     let mut run = Run::new(flags)?;
     for &(m, k) in operands {
@@ -232,9 +223,6 @@ fn unary(
             let x = zf(m, k, neg);
             let tx = Term::new(m, k, neg);
             for &p in precisions {
-                if skip(m, k, neg, p) {
-                    continue;
-                }
                 for &rm in modes {
                     let got = zf_fn(&x, p, rm);
                     let info = format!("{what}({m:#x} 2^{k}, neg {neg})");
@@ -256,7 +244,6 @@ fn sqrt_over_the_whole_range() -> Res {
             signs: &[false],
             precisions: &PRECISIONS,
             flags: true,
-            skip: no_skip,
             modes: &MODES,
         },
         |x, p, rm| x.sqrt(p, rm),
@@ -273,7 +260,6 @@ fn cbrt_over_the_whole_range() -> Res {
             signs: &[false, true],
             precisions: &PRECISIONS,
             flags: true,
-            skip: no_skip,
             modes: &MODES,
         },
         |x, p, rm| x.cbrt(p, rm),
@@ -296,7 +282,6 @@ fn reciprocal_over_the_whole_range() -> Res {
             signs: &[false, true],
             precisions: &RECIPROCAL_PRECISIONS,
             flags: true,
-            skip: no_skip,
             // F-B (ZF-M27, M27-OVF): reciprocal overflows at the top of the range; None saturates to +-MAX, checked in every mode
             modes: &MODES,
         },
@@ -323,7 +308,6 @@ fn exact_roots_and_reciprocals_at_the_ends() -> Res {
             signs: &[false],
             precisions: &[1, 2, 24, 53, 64, 128],
             flags: true,
-            skip: no_skip,
             modes: &MODES,
         },
         |x, p, rm| x.sqrt(p, rm),
@@ -341,7 +325,6 @@ fn exact_roots_and_reciprocals_at_the_ends() -> Res {
             signs: &[false, true],
             precisions: &[1, 2, 24, 53, 64, 128],
             flags: true,
-            skip: no_skip,
             modes: &MODES,
         },
         |x, p, rm| x.cbrt(p, rm),
@@ -360,7 +343,6 @@ fn nth_root_over_the_whole_range() -> Res {
                 signs: &[false],
                 precisions: &[1, 3, 24, 64, 65, 128],
                 flags: true,
-                skip: no_skip,
                 modes: &MODES,
             },
             |x, p, rm| x.nth_root(n, p, rm),
@@ -383,7 +365,6 @@ fn nth_root_over_the_whole_range() -> Res {
             signs: &[false],
             precisions: &[1, 2, 24, 64, 128],
             flags: true,
-            skip: no_skip,
             modes: &MODES,
         },
         |x, p, rm| x.nth_root(5, p, rm),
@@ -404,7 +385,6 @@ fn nth_root_exact_result_is_not_inexact() -> Res {
             signs: &[false],
             precisions: &[24, 64, 65, 128, 200],
             flags: true,
-            skip: no_skip,
             modes: &MODES,
         },
         |x, p, rm| x.nth_root(7, p, rm),
@@ -417,16 +397,12 @@ fn binary(
     operands: &[(u64, i64)],
     precisions: &[usize],
     modes: &[RoundingMode],
-    skip_pair: fn((u64, i64), (u64, i64)) -> bool,
     zf_fn: impl Fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
     reference: impl Fn(&Term, &Term, u32, RoundingMode) -> Result<Want, Box<dyn std::error::Error>>,
 ) -> Res {
     let mut run = Run::new(true)?;
     for &(m1, k1) in operands {
         for &(m2, k2) in operands {
-            if skip_pair((m1, k1), (m2, k2)) {
-                continue;
-            }
             for (n1, n2) in [(false, false), (true, false), (false, true), (true, true)] {
                 let (a, b) = (zf(m1, k1, n1), zf(m2, k2, n2));
                 let (ta, tb) = (Term::new(m1, k1, n1), Term::new(m2, k2, n2));
@@ -445,10 +421,6 @@ fn binary(
     Ok(())
 }
 
-fn no_pair_skipped(_: (u64, i64), _: (u64, i64)) -> bool {
-    false
-}
-
 #[test]
 fn hypot_over_the_whole_range() -> Res {
     binary(
@@ -457,7 +429,6 @@ fn hypot_over_the_whole_range() -> Res {
         &PRECISIONS,
         // F-B (ZF-M27, M27-OVF): hypot of huge operands overflows; None saturates to +-MAX, checked in every mode
         &MODES,
-        no_pair_skipped,
         |a, b, p, rm, _| a.hypot(b, p, rm),
         sh::ref_hypot,
     )
@@ -474,7 +445,6 @@ fn atan2_over_the_whole_range() -> Res {
         &binary_operands(),
         &[1, 3, 24, 64, 128],
         &MODES,
-        no_pair_skipped,
         |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
         sh::ref_atan2,
     )
@@ -607,7 +577,6 @@ fn primitives_at_20000_bits() -> Res {
             signs: &[false],
             precisions: &[20_000],
             flags: true,
-            skip: no_skip,
             modes: &MODES,
         },
         |x, p, rm| x.sqrt(p, rm),
@@ -620,7 +589,6 @@ fn primitives_at_20000_bits() -> Res {
             signs: &[true],
             precisions: &[20_000],
             flags: true,
-            skip: no_skip,
             // F-B (ZF-M27, M27-OVF): reciprocal of a tiny operand overflows; None saturates to +-MAX, checked in every mode
             modes: &MODES,
         },
@@ -634,7 +602,6 @@ fn primitives_at_20000_bits() -> Res {
             signs: &[false],
             precisions: &[20_000],
             flags: true,
-            skip: no_skip,
             modes: &MODES,
         },
         |x, p, rm| x.cbrt(p, rm),
@@ -674,7 +641,6 @@ fn nth_root_with_a_composite_n() -> Res {
                 signs,
                 precisions: &[1, 2, 3, 5, 24, 53, 64, 65, 128, 200],
                 flags: true,
-                skip: no_skip,
                 modes: &MODES,
             },
             |x, p, rm| x.nth_root(n, p, rm),
@@ -699,7 +665,6 @@ fn nth_root_with_a_composite_n() -> Res {
                 signs: &[false],
                 precisions: &[1, 2, 24, 64, 128],
                 flags: true,
-                skip: no_skip,
                 modes: &MODES,
             },
             |x, p, rm| x.nth_root(n, p, rm),
@@ -757,7 +722,6 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
             signs: &[true],
             precisions: &[24, 64, 128, 129, 192, 200, 256, 512],
             flags: true,
-            skip: no_skip,
             // F-B (ZF-M27, M27-OVF): reciprocal of a tiny operand overflows; None saturates to +-MAX, checked in every mode
             modes: &MODES,
         },
@@ -843,7 +807,6 @@ fn atan2_at_the_scales_users_reach() -> Res {
         &grid(&[1, 0xdead_beef_1234_5677], &[K, -K, 9_966, -9_966, 0]),
         &[24, 64, 128, 256],
         &MODES,
-        no_pair_skipped,
         |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
         sh::ref_atan2,
     )
@@ -951,7 +914,6 @@ fn log_sweep(
             signs: &[false],
             precisions: &PRECISIONS,
             flags: true,
-            skip: no_skip,
             modes: &MODES,
         },
         |x, p, rm| zf_fn(x, p, rm, &mut cc.borrow_mut()),

@@ -702,7 +702,7 @@ printf 'fn a(x: &S) { let y = x.clone(); let z = x.clone(); }\n' > zenith-float-
 scan --count-only >/dev/null && fail "2 clones over baseline 0 passed strict --count-only"
 out="$(scan --count-only --no-rise HEAD)" || fail "no rise vs HEAD (2 == 2) failed --no-rise: $out"
 echo "$out" | grep -q "clone count 2 is ABOVE the baseline 0 but does not rise vs HEAD (2)" || fail "no-rise pass not explained: $out"
-echo "$out" | grep -q "^rules_scan: checks: clone=held " || fail "held count not marked held: $out"
+echo "$out" | grep -q "^rules_scan: checks: clone=no-rise " || fail "no-rise count not marked no-rise: $out"
 echo "$out" | grep -q "NOT clean, NOT at baseline" || fail "--no-rise pass over baseline claimed clean: $out"
 echo "$out" | grep -q "all count baselines hold" && fail "--no-rise over baseline printed 'all count baselines hold': $out"
 printf 'fn a(x: &S) { let y = x.clone(); let z = x.clone(); let w = x.clone(); }\n' > zenith-float-num/src/x.rs

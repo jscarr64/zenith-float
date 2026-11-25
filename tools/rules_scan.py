@@ -339,7 +339,7 @@ def count_check(update=False):
 COUNTS = {}
 NO_RISE = None
 NO_RISE_REV = None
-HELD = []  # labels over baseline that passed only because they do not rise (--no-rise)
+NO_RISE_PASSED = []  # labels over baseline that passed only because they do not rise (--no-rise)
 
 
 def above_baseline(label, what, cur, base, key, extra=""):
@@ -348,7 +348,7 @@ def above_baseline(label, what, cur, base, key, extra=""):
         prev = NO_RISE[key]
         if cur <= prev:
             print("rules_scan: %s %s %d is ABOVE the baseline %d but does not rise vs %s (%d)%s" % (label, what, cur, base, NO_RISE_REV, prev, extra))
-            HELD.append(label)
+            NO_RISE_PASSED.append(label)
             return 0
         print("rules_scan: %s %s %d is ABOVE the baseline %d and RISES vs %s (%d)%s" % (label, what, cur, base, NO_RISE_REV, prev, extra))
         return 1
@@ -1365,16 +1365,16 @@ COUNT_CHECKS = (("clone", count_check), ("helper-copy", helper_count_check), ("e
 def both_count_checks(update=False):
     rc, status = 0, []
     for name, fn in COUNT_CHECKS:
-        held = len(HELD)
+        before = len(NO_RISE_PASSED)
         r, st = guarded(name, fn, update)
-        if st == "ok" and len(HELD) > held:
-            st = "held"
+        if st == "ok" and len(NO_RISE_PASSED) > before:
+            st = "no-rise"
         rc = max(rc, r)
         status.append("%s=%s" % (name, st))
     print("rules_scan: checks: " + " ".join(status))
-    if rc == 0 and HELD:
+    if rc == 0 and NO_RISE_PASSED:
         print("rules_scan: no count rises vs %s, but %d count(s) are still ABOVE baseline (%s): NOT clean, NOT at baseline"
-              % (NO_RISE_REV, len(HELD), ", ".join(HELD)))
+              % (NO_RISE_REV, len(NO_RISE_PASSED), ", ".join(NO_RISE_PASSED)))
     elif rc == 0:
         print("rules_scan: all count baselines hold")
     return rc

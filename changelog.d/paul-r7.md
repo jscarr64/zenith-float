@@ -90,3 +90,6 @@
   (an exact result was flagged inexact when it had bits below `p`). Every MPFR suite now runs all modes, `None`
   included (the None-gap mode arrays and the KNOWN GAP list are gone); the Jacobi harness checks overflow brackets
   (+-MAX inexact on the toward-zero side) and the subnormal midpoint through `ldexp`.
+- Batch 21 (F-12 leftovers, ZF-M27): `powsi(NaN, 0)` is 1 (was NaN), like `powi`; the F-12 cases are asserted, and no
+  test keeps a known-wrong list or skips `None` any more (pow specials, complex erf on the imaginary axis, digamma of
+  large negatives). The complex grid oracle script is `scripts/oracle_complex_mul_div_grid.py`.

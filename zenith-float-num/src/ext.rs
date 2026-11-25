@@ -1050,6 +1050,8 @@ impl ExactNum {
                     INF_POS
                 }
             }
+            // x^0 = 1 for any x, NaN included (F-12 widened, POW-01, ZF-M27).
+            Flavor::NaN(_) if n == 0 => Self::from_u8(1, p),
             Flavor::NaN(err) => Self::nan(*err),
         }
     }
@@ -7914,7 +7916,7 @@ mod grid_digest_tests {
     ///
     /// Every cell is hashed (ToOdd in its own digest). Each finite part is the exact value rounded once at `(p, rm)`,
     /// on the gradual subnormal grid, with a toward-zero overflow at +-MAX: checked against the exact rational oracle
-    /// `scripts/gen_grid_held_cells.py` (both subnormal models, every mode) on the dump of this test.
+    /// `scripts/oracle_complex_mul_div_grid.py` (both subnormal models, every mode) on the dump of this test.
     #[test]
     fn complex_mul_div_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         use crate::ExactComplex;
