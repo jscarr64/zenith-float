@@ -47,3 +47,7 @@
   sign, exponent, precision and flags, no payload to copy) in conv's two integer roundings, `rem(0, d)` and
   bernoulli_rev; aprcl's `nth_root`, complex_special's `add_ui_c` and complex_hypergeom's `z_on_lower_cut` return a
   `Cow` that borrows the input on their equal-to-input shortcuts. Clones 191 -> 183.
+- Batch 8 (item 1, part 3): complex `elliptic_e_word` takes its caller's working copy by value, so `E(z | 1) = z`
+  returns it as is. Clones 183 -> 182. The other equal-to-input shortcuts (ExactInt `add` x2 / `gcd` x2, number
+  and ExactNum `rem`, poly `primitive_monic` x2) stay: a by-value probe broke ~45 callers that still need the
+  receiver, so the signature change would add more copies than it removes.

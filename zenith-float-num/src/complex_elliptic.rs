@@ -1662,20 +1662,21 @@ impl ExactComplex {
         Self::per_op(inputs, this.elliptic_e_word(&m_c, p, rm, cc))
     }
 
-    /// Implementation of [`Self::elliptic_e`] on operands without inexact history.
-    fn elliptic_e_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+    /// Implementation of [`Self::elliptic_e`] on operands without inexact history. Takes the caller's working
+    /// copy by value, so `E(z | 1) = z` returns it as is.
+    fn elliptic_e_word(self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || m.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }
         let dest = round_p(p);
-        if is_c_zero(self) {
+        if is_c_zero(&self) {
             return ExactComplex::zero(dest);
         }
         if is_c_zero(m) {
             return self.asin(dest, rm, cc);
         }
         if is_c_one(m, dest) {
-            return self.clone();
+            return self;
         }
         ziv_complex(dest, rm, |pw| self.elliptic_e_at(m, pw, dest, cc))
     }

@@ -7,14 +7,15 @@
 # Lowered 2026-11-25 00:12 CT (Paul 11:05 PM round 7, batch 1) to the measured working-tree counts: clone() 291->204, total 309->222.
 # Lowered 2026-11-25 00:50 CT (Paul 11:05 PM round 7, batch 2): clone() 204->196, total 222->214.
 # Re-measured 2026-11-25 02:30 CT (Paul 12:32 AM round 7 item 2, no clones by another name): helper_copies now also counts the rounding helpers (rounded_to, try_rounded_to, try_rounded_exact, try_rounded_checked, finish_ref; a helper's delegation inside its own definition is not counted again): 317 -> 443 is the same tree measured wider, not new copies; 4 owned sites were moved to set_precision / a fresh value in this batch.
-# Lowered 2026-11-25 03:05 CT (Paul 12:32 AM round 7 item 1, batch 6: modular abs_int/egcd, Integer shl/shr by value, exp_bb chunk): clone() 196->191, total 214->209.
-# Lowered 2026-11-25 03:35 CT (round 7 item 1, batch 7: zero_like for the zero shortcuts, Cow for aprcl nth_root, add_ui_c, z_on_lower_cut): clone() 191->183, total 209->201.
-clone()	183
+# Lowered 2026-11-25 02:49 CT (Paul 12:32 AM round 7 item 1, batch 6, c7381ef: modular abs_int/egcd, Integer shl/shr by value, exp_bb chunk): clone() 196->191, total 214->209.
+# Lowered 2026-11-25 03:00 CT (round 7 item 1, batch 7, 8138e75: zero_like for the zero shortcuts, Cow for aprcl nth_root, add_ui_c, z_on_lower_cut): clone() 191->183, total 209->201.
+# Lowered 2026-11-25 03:03 CT (round 7 item 1, batch 8: elliptic_e_word takes its working copy by value): clone() 183->182, total 201->200.
+clone()	182
 to_vec()	4
 cloned()	4
 Clone::clone	0
 clone_from	0
 impl Clone	1
 derive(Clone)	9
-total	201
+total	200
 helper_copies	443
