@@ -74,3 +74,6 @@
 - Batch 16 (F-28/F-29, ZF-M27): Jacobi functions at u = +-0 (0 <= m <= 1): am, sn, sc and sd are the zero of the
   sign of u, and ns, cs and ds are the pole +-Inf by the sign of u, in every mode (were +0 and NaN). The jacobi
   digest is re-pinned with the 160 cells in.
+- Batch 17 (F-21/F-22, ZF-M27): Jacobi functions of a tiny `u` (|u| < 2^-(2 len + 4 words)) are their leading term
+  (u, 1 or 1/u) rounded with the side of the first nonzero series term (DLMF 22.10), or exact where the series is the
+  term itself: directed modes no longer give NaN(PrecisionRetryExhausted), and dn/nd are flagged inexact.

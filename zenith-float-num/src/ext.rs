@@ -8794,9 +8794,8 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         let mut held = 0usize;
-        let mut held_f21 = 0usize;
+        let mut f21 = 0usize;
         let mut held_tzud = 0usize;
-        let mut held_f22 = 0usize;
         let mut f28 = 0usize;
         let mut f29 = 0usize;
         let mut held_f30 = 0usize;
@@ -8818,23 +8817,45 @@ mod grid_digest_tests {
                         for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                             let m = ms();
                             let r = f(&operand(i), &m[mi], p, rm, &mut cc);
-                            // F-21 (N-6): at the tiny operand 21, Down gives NaN(PrecisionRetryExhausted), not a value.
-                            let f21 = rm == RoundingMode::Down
-                                && r.err() == Some(Error::PrecisionRetryExhausted);
+                            // F-21/F-22 (ZF-M27): at the tiny operand 21 (u = 3 * 2^(EXPONENT_MIN - 19) > 0) every function
+                            // is its leading term L (u, 1 or 1/u) moved by a relative u^2 term (DLMF 22.10), far below
+                            // the last bit: L itself to nearest, flagged inexact, and in Down L when the value lies above
+                            // L, the next value below L when it lies below. Exact where the series is L (am, dn, nd at
+                            // m = 0; cd, dc at m = 1). ns, cs and ds (L = 1/u) overflow: +Inf / +MAX by the mode.
+                            if i == 21 && mi <= 3 {
+                                let name = JNAMES[fi];
+                                assert!(!r.is_nan(), "F-21 {name}(u21 | m{mi}) {rm:?} is NaN");
+                                let exact = matches!(
+                                    (name, mi),
+                                    ("am" | "dn" | "nd", 0) | ("cd" | "dc", 1)
+                                );
+                                let above = matches!(name, "ns" | "nc" | "nd" | "sc" | "dc")
+                                    || (name == "sd" && mi == 1)
+                                    || (name == "ds" && mi != 1);
+                                if !matches!(name, "ns" | "cs" | "ds") {
+                                    let lead = if matches!(name, "am" | "sn" | "sc" | "sd") {
+                                        operand(i)
+                                    } else {
+                                        ExactNum::from_u8(1, 64)
+                                    };
+                                    let d =
+                                        ExactNum::sub_ref(&r, &lead, 4096, RoundingMode::ToEven);
+                                    let at_lead = exact || rm == RoundingMode::ToEven || above;
+                                    assert!(
+                                        r.inexact() != exact && d.is_zero() == at_lead && (at_lead || d.is_negative()),
+                                        "F-21/F-22 {name}(u21 | m{mi}) {rm:?}: inexact {}, r - L zero {}",
+                                        r.inexact(),
+                                        d.is_zero()
+                                    );
+                                }
+                                f21 += 1;
+                            }
                             // M27-TZ/UD (finding id pending): ns, cs and ds of the tiny nonzero u overflow upward; Down
                             // gives +Inf where the ruling is +MAX. u = 0 is a pole whose ruled value is +-Inf by the
                             // sign of u; today's NaN there is held (F-28 below).
                             let u = operand(i);
-                            let tzud = !f21
-                                && !u.is_zero()
-                                && !u.is_inf()
-                                && !u.is_nan()
-                                && tz_overflow(rm, &r);
-                            // F-22 rider (N-7, dn/nd exact flag): at u21 and m = 1/2, 3/8, dn and nd are 1 flagged exact in
-                            // ToEven (the value is not exactly 1), and Down dn is 1 where the value is below 1.
-                            let f22 = (JNAMES[fi] == "dn" || JNAMES[fi] == "nd")
-                                && i == 21
-                                && (mi == 2 || mi == 3);
+                            let tzud =
+                                !u.is_zero() && !u.is_inf() && !u.is_nan() && tz_overflow(rm, &r);
                             // F-28 (ZF-M27): u = +-0 is a simple real pole of ns, cs and ds for 0 <= m <= 1 (sn has a
                             // simple zero there): the value is +-Inf by the sign of u (P20, DOM-07, POLE-01), in every
                             // mode. m = 3 (mi = 4) is out of range: NaN.
@@ -8866,14 +8887,12 @@ mod grid_digest_tests {
                             // Operand 3 is u = -7; mi = 2, 3 are m = 1/2, 3/8, the only m in (0, 1) on this grid,
                             // and |u| = 7 > 2K(m) there. m = 0, 1 take their own closed forms; m = 3 stays hashed.
                             let f30 = JNAMES[fi] == "am" && i == 3 && (mi == 2 || mi == 3);
-                            held_f21 += usize::from(f21 && !f22);
                             held_tzud += usize::from(tzud);
-                            held_f22 += usize::from(f22);
                             held_f30 += usize::from(f30);
                             dd_held(
                                 &mut h,
                                 &mut held,
-                                f21 || tzud || f22 || f30,
+                                tzud || f30,
                                 DigestCell {
                                     op: JNAMES[fi],
                                     args: &[&operand(i), &m[mi]],
@@ -8890,15 +8909,12 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 13 * 7 * 5 * 2 * 2);
-        // F-21 (N-6, ZF-M27): the Down NaN(PrecisionRetryExhausted) cells at operand 21 are not hashed.
-        // Counted apart from the F-22 cells: since ZF-60 the 8 Down dn/nd cells at m = 1/2, 3/8 refuse
-        // (they returned 1, a wrong value: dn = 1 - m u^2/2 + ... < 1), and stay held under F-22.
-        assert_eq!(held_f21, 62);
+        // F-21/F-22 (ZF-M27): every cell at operand 21 with m in [0, 1] (13 functions x 4 m x 2 p x 2 modes) is asserted
+        // above and hashed (the 62 Down NaN(PrecisionRetryExhausted) F-21 cells and the 16 dn/nd F-22 cells included).
+        assert_eq!(f21, 13 * 4 * 2 * 2);
         // M27-TZ/UD: the 24 Down +overflow cells now give +MAX (Tier 1 ZF-59 wrappers map overflow by mode) and are
         // hashed again; none is held.
         assert_eq!(held_tzud, 0);
-        // F-22 rider (N-7, ZF-M27): dn and nd at u21, m = 1/2 and 3/8, both modes, are not hashed
-        assert_eq!(held_f22, 16);
         // F-28 (ZF-M27): ns, cs and ds at u = +-0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are the signed
         // pole +-Inf (asserted above) and hashed
         assert_eq!(f28, 96);
@@ -8908,7 +8924,7 @@ mod grid_digest_tests {
         // F-30 (ZF-M27): am at u = -7, m in {1/2, 3/8}, p in {64, 128}, both modes, is am(u|m) + 2π (the 4K period
         // reduction drops the 2π·n); they are not hashed
         assert_eq!(held_f30, 8);
-        assert_eq!(held, held_f21 + held_tzud + held_f22 + held_f30);
+        assert_eq!(held, held_tzud + held_f30);
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
@@ -8930,7 +8946,9 @@ mod grid_digest_tests {
         // Re-pinned (ZF-M27 F-28/F-29): was 2_202_397_902_195_068_300, without the 96 F-28 and 64 F-29 cells. Cell dump
         // diff (r7 b16): exactly those 160 cells are added (ns/cs/ds(+-0|m) = +-Inf, am/sn/sc/sd(-0|m) = -0); no other
         // cell moved.
-        assert_eq!(h.finish(), 16_757_744_097_035_462_767);
+        // Re-pinned (ZF-M27 F-21/F-22): was 16_757_744_097_035_462_767, without the 62 F-21 and 16 F-22 cells. Cell dump
+        // diff (r7 b17): exactly those 78 cells are added (the tiny-u closed form); no other cell moved.
+        assert_eq!(h.finish(), 11_970_546_452_111_491_119);
         Ok(())
     }
 

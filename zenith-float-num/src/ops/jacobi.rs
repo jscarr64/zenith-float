@@ -40,7 +40,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |am, _sn, _cn, _dn, _px| Ok(am))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Am, |am, _sn, _cn, _dn, _px| {
+            Ok(am)
+        })
     }
 
     /// \(\operatorname{sn}(u|m)=\sin\operatorname{am}(u|m)\).
@@ -51,7 +53,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, _px| Ok(sn))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Sn, |_am, sn, _cn, _dn, _px| {
+            Ok(sn)
+        })
     }
 
     /// \(\operatorname{cn}(u|m)=\cos\operatorname{am}(u|m)\).
@@ -62,7 +66,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, _px| Ok(cn))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Cn, |_am, _sn, cn, _dn, _px| {
+            Ok(cn)
+        })
     }
 
     /// \(\operatorname{dn}(u|m)=\sqrt{1-m\,\operatorname{sn}^2(u|m)}\).
@@ -73,7 +79,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, _px| Ok(dn))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Dn, |_am, _sn, _cn, dn, _px| {
+            Ok(dn)
+        })
     }
 
     /// \(\operatorname{cd}(u|m)=\operatorname{cn}(u|m)/\operatorname{dn}(u|m)\).
@@ -87,7 +95,9 @@ impl ExactNumNumber {
         if let Some(one) = jacobi_ratio_m_one(m, p)? {
             return Ok(one);
         }
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(&cn, &dn, px))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Cd, |_am, _sn, cn, dn, px| {
+            div_nz(&cn, &dn, px)
+        })
     }
 
     /// \(\operatorname{ns}(u|m)=1/\operatorname{sn}(u|m)\).
@@ -98,7 +108,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, px| rec_nz(&sn, px))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Ns, |_am, sn, _cn, _dn, px| {
+            rec_nz(&sn, px)
+        })
     }
 
     /// \(\operatorname{nc}(u|m)=1/\operatorname{cn}(u|m)\).
@@ -109,7 +121,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, px| rec_nz(&cn, px))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Nc, |_am, _sn, cn, _dn, px| {
+            rec_nz(&cn, px)
+        })
     }
 
     /// \(\operatorname{nd}(u|m)=1/\operatorname{dn}(u|m)\).
@@ -120,7 +134,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, px| rec_nz(&dn, px))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Nd, |_am, _sn, _cn, dn, px| {
+            rec_nz(&dn, px)
+        })
     }
 
     /// \(\operatorname{sc}(u|m)=\operatorname{sn}/\operatorname{cn}\).
@@ -131,7 +147,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(&sn, &cn, px))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Sc, |_am, sn, cn, _dn, px| {
+            div_nz(&sn, &cn, px)
+        })
     }
 
     /// \(\operatorname{sd}(u|m)=\operatorname{sn}/\operatorname{dn}\).
@@ -142,7 +160,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(&sn, &dn, px))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Sd, |_am, sn, _cn, dn, px| {
+            div_nz(&sn, &dn, px)
+        })
     }
 
     /// \(\operatorname{cs}(u|m)=\operatorname{cn}/\operatorname{sn}\).
@@ -153,7 +173,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(&cn, &sn, px))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Cs, |_am, sn, cn, _dn, px| {
+            div_nz(&cn, &sn, px)
+        })
     }
 
     /// \(\operatorname{ds}(u|m)=\operatorname{dn}/\operatorname{sn}\).
@@ -164,7 +186,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(&dn, &sn, px))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Ds, |_am, sn, _cn, dn, px| {
+            div_nz(&dn, &sn, px)
+        })
     }
 
     /// \(\operatorname{dc}(u|m)=\operatorname{dn}/\operatorname{cn}\).
@@ -178,7 +202,9 @@ impl ExactNumNumber {
         if let Some(one) = jacobi_ratio_m_one(m, p)? {
             return Ok(one);
         }
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(&dn, &cn, px))
+        self.jacobi_ziv(m, p, rm, cc, JacobiKind::Dc, |_am, _sn, cn, dn, px| {
+            div_nz(&dn, &cn, px)
+        })
     }
 
     fn jacobi_ziv<F>(
@@ -187,6 +213,7 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
         cc: &mut Consts,
+        kind: JacobiKind,
         pick: F,
     ) -> Result<Self, Error>
     where
@@ -196,6 +223,9 @@ impl ExactNumNumber {
         Self::p_assertion(p)?;
         jacobi_m_in_unit(m, p)?;
         if let Some(r) = self.jacobi_m1_far(m, p, rm, cc, &pick)? {
+            return Ok(r);
+        }
+        if let Some(r) = self.jacobi_tiny(m, p, rm, kind)? {
             return Ok(r);
         }
         let mut p_inc = WORD_BIT_SIZE;
@@ -234,6 +264,75 @@ impl ExactNumNumber {
                 bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
             }
         }
+    }
+
+    /// `u` so small that `u^2` lies far below the last bit of every candidate result (F-21/F-22, ZF-M27). Each
+    /// function is its leading term `L` (u, 1 or 1/u) times `1 + c2 u^2 + c4 u^4 + ...` (DLMF 22.10), so the result is
+    /// `L` rounded with a one-unit correction on the side of the first nonzero term, or `L` itself where the series
+    /// is `L`. The Ziv loop cannot decide a directed rounding here: every working value is `L` exactly.
+    /// `None` when `u` is zero or not that small.
+    fn jacobi_tiny(
+        &self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        kind: JacobiKind,
+    ) -> Result<Option<Self>, Error> {
+        if self.is_zero() {
+            return Ok(None);
+        }
+        let len = p.max(self.mantissa_max_bit_len());
+        // |u| < 2^-(2 len + 4 words): |c u^2| < 2^-(4 len + 8 words), far below the tail of 1/u (2^-(p + len) at least)
+        // and below the correction `add_correction_at` places (one word under `len`).
+        let bound =
+            Exponent::try_from(2 * len + 4 * WORD_BIT_SIZE).map_err(|_| Error::InvalidArgument)?;
+        if self.exponent() >= -bound {
+            return Ok(None);
+        }
+        // The leading term and the side of the first nonzero series term (`None`: the series is the term itself).
+        let (lead, up) = match kind.lead() {
+            JacobiLead::U => match kind.above(m)? {
+                // am(u|0) = u: the regular m = 0 path returns u itself, exactly.
+                None => return Ok(None),
+                Some(up) => {
+                    return self.jacobi_tiny_round(
+                        self.add_correction_at(len, !up)?,
+                        true,
+                        m,
+                        p,
+                        rm,
+                    )
+                }
+            },
+            JacobiLead::One => (Self::from_word(1, len)?, kind.above(m)?),
+            JacobiLead::InvU => {
+                let pq = round_p(len + self.mantissa_max_bit_len()) + 2 * WORD_BIT_SIZE;
+                let q = Self::from_word(1, pq)?.div(self, pq, RoundingMode::ToZero)?;
+                // A truncated 1/u: its tail dwarfs the u^2 term, so the value lies above |q|.
+                let up = if q.op_inexact() { Some(true) } else { kind.above(m)? };
+                (q, up)
+            }
+        };
+        let r = match up {
+            None => lead,
+            Some(up) => lead.add_correction_at(len, !up)?,
+        };
+        self.jacobi_tiny_round(r, up.is_some(), m, p, rm)
+    }
+
+    /// `r` (the closed form of [`Self::jacobi_tiny`]) rounded to `p` with `rm`; inexact when a correction was added.
+    fn jacobi_tiny_round(
+        &self,
+        mut r: Self,
+        corrected: bool,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Option<Self>, Error> {
+        r.set_inexact(false);
+        r.set_precision(p, rm)?;
+        r.set_inexact(r.inexact() || corrected || self.inexact() || m.inexact());
+        Ok(Some(r))
     }
 
     /// am, sn, cn, dn at `p` working bits and the number of bits `g` certified for all four
@@ -432,6 +531,76 @@ impl ExactNumNumber {
             .round(0, RoundingMode::ToEven)?;
         r.set_precision(p, RoundingMode::Work)?;
         Ok(Some((r, if n.is_zero() { None } else { Some(n) })))
+    }
+}
+
+/// Which Jacobi function a Ziv evaluation picks, for the tiny-`u` closed form ([`ExactNumNumber::jacobi_tiny`]).
+#[derive(Clone, Copy)]
+enum JacobiKind {
+    Am,
+    Sn,
+    Cn,
+    Dn,
+    Cd,
+    Ns,
+    Nc,
+    Nd,
+    Sc,
+    Sd,
+    Cs,
+    Ds,
+    Dc,
+}
+
+/// The leading term of a Jacobi function at `u -> 0`.
+enum JacobiLead {
+    U,
+    One,
+    InvU,
+}
+
+impl JacobiKind {
+    fn lead(self) -> JacobiLead {
+        match self {
+            JacobiKind::Am | JacobiKind::Sn | JacobiKind::Sc | JacobiKind::Sd => JacobiLead::U,
+            JacobiKind::Ns | JacobiKind::Cs | JacobiKind::Ds => JacobiLead::InvU,
+            JacobiKind::Cn
+            | JacobiKind::Dn
+            | JacobiKind::Cd
+            | JacobiKind::Nc
+            | JacobiKind::Nd
+            | JacobiKind::Dc => JacobiLead::One,
+        }
+    }
+
+    /// For `0 <= m <= 1` and a tiny nonzero `u`: whether the value lies above the leading term in magnitude
+    /// (`Some(true)`), below it (`Some(false)`), or equals it (`None`). The first nonzero coefficient of the
+    /// series in `u^2` relative to the leading term (DLMF 22.10.1-22.10.6; sympy, r7-tools/jac/oracle-notes.txt):
+    /// am -m/6, sn -(1+m)/6, cn -1/2, dn -m/2, cd -(1-m)/2, ns (1+m)/6, nc 1/2, nd m/2, sc (2-m)/6,
+    /// sd (2m-1)/6 (m = 1/2: -u^4/40), cs -(2-m)/6, ds (1-2m)/6 (m = 1/2: +u^4/40), dc (1-m)/2.
+    fn above(self, m: &ExactNumNumber) -> Result<Option<bool>, Error> {
+        let one = ExactNumNumber::from_word(1, WORD_BIT_SIZE)?;
+        let m0 = m.is_zero();
+        let m1 = m.cmp(&one) == 0;
+        let mut half = one;
+        half.set_exponent(0);
+        let vs_half = m.cmp(&half);
+        Ok(match self {
+            JacobiKind::Am | JacobiKind::Dn if m0 => None,
+            JacobiKind::Nd if m0 => None,
+            JacobiKind::Cd | JacobiKind::Dc if m1 => None,
+            JacobiKind::Am
+            | JacobiKind::Sn
+            | JacobiKind::Cn
+            | JacobiKind::Dn
+            | JacobiKind::Cd
+            | JacobiKind::Cs => Some(false),
+            JacobiKind::Ns | JacobiKind::Nc | JacobiKind::Nd | JacobiKind::Sc | JacobiKind::Dc => {
+                Some(true)
+            }
+            JacobiKind::Sd => Some(vs_half > 0),
+            JacobiKind::Ds => Some(vs_half <= 0),
+        })
     }
 }
 
