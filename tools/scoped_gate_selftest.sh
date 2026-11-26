@@ -8,6 +8,9 @@
 # poprun is stubbed here; fixtures live under $ZF_SCRATCH (default $HOME/.cache/zenith-float), never /tmp.
 # SCOPED_GATE points at another copy (the mutation runner uses this).
 set -u
+# the GATE_JOB / POPLOG_AGENT defaults are under test: a caller's values (an outer poprun, a gate run with
+# GATE_JOB set) must not leak in
+unset GATE_JOB POPLOG_AGENT
 here="$(cd "$(dirname "$0")" && pwd)"
 sg="${SCOPED_GATE:-$here/scoped_gate.sh}"
 root="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/scoped-gate-selftest"
