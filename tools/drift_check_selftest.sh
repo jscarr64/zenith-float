@@ -392,8 +392,8 @@ out=$(run --all --scan "$t/tracked" 2>&1); rc=$?
 [ $rc = 1 ] && grep -q "FAIL $t/tracked: dirty work" <<<"$out" && ok "git status: without --exclude the same dirty work FAILs (rc 1)" || { bad "git status: no --exclude (want rc=1, got rc=$rc)"; show "$out"; }
 if command -v strace >/dev/null; then
   for k in untracked tracked; do
-    strace -f -qq -e trace=%file,%desc -o "$t/trace.$k" python3 -B "$dc" --now "$NOW" --all --scan "$t/$k" --exclude MathWorks >/dev/null 2>&1; rc=$?
-    hits=$(grep -v 'execve(' "$t/trace.$k" | grep -F "MathWorks")
+    strace -f -qq -e trace=%file -o "$t/trace.$k" python3 -B "$dc" --now "$NOW" --all --scan "$t/$k" --exclude MathWorks >/dev/null 2>&1; rc=$?
+    hits=$(grep -v 'execve(' "$t/trace.$k" | grep -F "MathWorks")  # path syscalls only: pipe data naming it is fine
     [ $rc = 0 ] && [ -z "$hits" ] && ok "git status: strace shows no syscall on MathWorks inside a $k repo" || { bad "git status: syscalls on MathWorks inside a $k repo (rc=$rc)"; show "$hits"; }
   done
 else
