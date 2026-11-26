@@ -62,7 +62,8 @@ check "bad tree in the 2nd root is not hidden by a clean 1st root" 1 re:"FAIL $w
 out=$(sweep "$work/r1" "$work/hm/*" 2>&1); rc=$?
 k=$(grep -c '^drift_check: FAIL ' <<<"$out")
 [ $rc = 1 ] && [ "$k" = 2 ] && grep -q "2 FAIL line(s)" <<<"$out" && ok "summary counts the FAIL lines over all roots (2)" || { bad "summary FAIL count (rc=$rc, $k FAIL lines)"; show "$out"; }
-check "a glob matching nothing beside a real root is ignored" 0 -- "$work/no-such-*" "$work/r1/clean"
+# a mistyped glob must not silently drop its root (Cassie round-3 N4; this case was rc 0 "ignored" until round 3)
+check "a glob matching nothing beside a real root fails loudly: rc 2" 2 re:"no-such-\\* matches no directory" -- "$work/no-such-*" "$work/r1/clean"
 check "only a glob matching nothing: no roots, rc 2" 2 -- "$work/no-such-*"
 check "a literal root that is missing: rc 2" 2 -- "$work/no-such-root" "$work/r1/clean"
 check "a literal root that is a file: rc 2" 2 -- "$work/hm/afile"
@@ -96,5 +97,9 @@ tree "$work/c/MathWorks" unpushed; tree "$work/c/ok"
 check "a child folder named MathWorks under a root is excluded" 0 re:"excluded $work/c/MathWorks" nore:"FAIL $work/c/MathWorks" re:"ok   $work/c/ok" -- "$work/c"
 tree "$work/c2/skipme" unpushed; tree "$work/c2/keep"
 check "--exclude NAME also excludes a child folder" 0 re:"excluded $work/c2/skipme" -- --exclude skipme "$work/c2"
+# ---- round 3 (Cassie N4): every glob must match at least one directory ----
+mkdir -p "$work/fo"; echo f > "$work/fo/onlyfile"
+check "a glob that matches only files beside a real root: rc 2" 2 re:'matches no directory' -- "$work/fo/*" "$work/r1/clean"
+check "a typo glob after a drifted root still fails rc 2, not 1" 2 re:'matches no directory' -- "$work/r1" "$work/r1-typo*"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
