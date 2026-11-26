@@ -66,6 +66,14 @@ for p in "${pats[@]+"${pats[@]}"}"; do
     *) [ -d "$p" ] || { echo "rule_checks_daily: root $p is not a directory" >&2; exit 2; }; roots+=("$p");;
   esac
 done
+# the same dir named twice (a literal and a glob, ./, a symlink) is swept once, first spelling kept (Cassie r4 N2).
+# readlink -f is safe here: excluded() has already followed every root's symlinks by name, clear of MathWorks
+declare -A seen=(); uniq=()
+for r in "${roots[@]+"${roots[@]}"}"; do
+  k=$(readlink -f -- "$r"); [ -n "${seen[$k]+x}" ] && continue
+  seen[$k]=1; uniq+=("$r")
+done
+roots=("${uniq[@]+"${uniq[@]}"}")
 [ ${#roots[@]} -gt 0 ] || { echo "rule_checks_daily: no roots to sweep" >&2; exit 2; }
 args=(); for r in "${roots[@]}"; do args+=(--scan "$r"); done
 for x in "${excl[@]}"; do args+=(--exclude "$x"); done   # scanned children too, not only roots
