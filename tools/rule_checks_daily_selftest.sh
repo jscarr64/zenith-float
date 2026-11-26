@@ -91,5 +91,10 @@ out=$(bash "$daily" --exclude 2>&1); rc=$?
 [ $rc = 2 ] && grep -q -- '--exclude needs a NAME' <<<"$out" && ok "--exclude with no NAME: rc 2, says so (W10)" || { bad "--exclude with no NAME (want rc=2, got rc=$rc)"; show "$out"; }
 out=$(DRIFT_CHECK="$work/no-such-drift_check.py" bash "$daily" "$work/r1/clean" 2>&1); rc=$?
 [ $rc = 2 ] && grep -q 'drift_check not found' <<<"$out" && ok "drift_check missing: rc 2, says so (W12)" || { bad "drift_check missing message (rc=$rc)"; show "$out"; }
+# ---- round 3 (Jeff's MathWorks rule, Cassie N3): MathWorks is excluded as a scanned CHILD too, not only as a root ----
+tree "$work/c/MathWorks" unpushed; tree "$work/c/ok"
+check "a child folder named MathWorks under a root is excluded" 0 re:"excluded $work/c/MathWorks" nore:"FAIL $work/c/MathWorks" re:"ok   $work/c/ok" -- "$work/c"
+tree "$work/c2/skipme" unpushed; tree "$work/c2/keep"
+check "--exclude NAME also excludes a child folder" 0 re:"excluded $work/c2/skipme" -- --exclude skipme "$work/c2"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

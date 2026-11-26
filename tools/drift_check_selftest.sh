@@ -318,5 +318,21 @@ r=$(stale w05 172800); git -C "$r" push -q origin w 2>/dev/null; touch -d "@$((N
 echo a > "$r/u1.txt"; echo b > "$r/u2.txt"; touch -d "@$((NOW-60))" "$r/u1.txt"; touch -d "@$((NOW-1801))" "$r/u2.txt"
 out=$(run --scan "$work/w05" --active-window-min 5 2>&1); rc=$?
 [ $rc = 1 ] && ! grep -q "skip $r" <<<"$out" && ok "active: dirty 60 s and 1801 s in an idle tree, 5 min window: checked, FAIL (W05)" || { bad "active: dirty 60 s + 1801 s, 5 min window (want rc=1, not skipped, got rc=$rc)"; show "$out"; }
+# ---- round 3 (Jeff's MathWorks rule, Cassie N3): --exclude NAME leaves out scanned entries with that path component ----
+s="$work/xs"; mkdir -p "$s"; m=$(fresh xmw); commit_at "$m" 60 m1; commit_at "$m" 50 m2; mv "$m" "$s/MathWorks"; k=$(fresh xok); mv "$k" "$s/ok"
+expect "exclude: control, a MathWorks child is scanned without --exclude" 1 run --all --scan "$s"
+out=$(run --all --scan "$s" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $s/MathWorks" <<<"$out" && ! grep -q "FAIL $s/MathWorks" <<<"$out" && grep -q "ok   $s/ok" <<<"$out" && ok "exclude: a MathWorks child is left out and named, the other child checked (rc=0)" || { bad "exclude: MathWorks child (want rc=0 and excluded, got rc=$rc)"; show "$out"; }
+t="$work/xt"; mkdir -p "$t/MathWorks"; m=$(fresh xmw2); commit_at "$m" 60 m1; commit_at "$m" 50 m2; mv "$m" "$t/MathWorks/r"; mkdir -p "$work/xl"; ln -s "$t/MathWorks/r" "$work/xl/link"
+out=$(run --all --scan "$work/xl" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $work/xl/link" <<<"$out" && ok "exclude: a child that is a symlink into MathWorks is left out (rc=0)" || { bad "exclude: symlink child (want rc=0, got rc=$rc)"; show "$out"; }
+out=$(run --all --scan "$t/MathWorks/r" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $t/MathWorks/r" <<<"$out" && ! grep -q FAIL <<<"$out" && ok "exclude: a scan DIR inside MathWorks is left out itself (rc=0)" || { bad "exclude: scan DIR inside MathWorks (want rc=0, got rc=$rc)"; show "$out"; }
+u="$work/xu"; mkdir -p "$u"; m=$(fresh xmo); commit_at "$m" 60 m1; commit_at "$m" 50 m2; mv "$m" "$u/MathWorksOld"
+expect "exclude: a name that only contains MathWorks is still checked" 1 run --all --scan "$u" --exclude MathWorks
+v="$work/xv"; mkdir -p "$v"; m=$(fresh xa); commit_at "$m" 60 m1; commit_at "$m" 50 m2; mv "$m" "$v/a"; m=$(fresh xb); commit_at "$m" 60 m1; commit_at "$m" 50 m2; mv "$m" "$v/b"
+out=$(run --all --scan "$v" --exclude a --exclude b 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $v/a" <<<"$out" && grep -q "excluded $v/b" <<<"$out" && ok "exclude: repeatable (rc=0)" || { bad "exclude: repeatable (want rc=0, got rc=$rc)"; show "$out"; }
+expect "exclude: --repo is never excluded"                   1 run --repo "$t/MathWorks/r" --exclude MathWorks
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
