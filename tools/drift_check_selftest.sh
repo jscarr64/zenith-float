@@ -416,5 +416,16 @@ if command -v strace >/dev/null; then
   hits=$(grep -v 'execve(' "$work/gs/trace.active" | grep -F "MathWorks")
   [ $rc = 0 ] && [ -z "$hits" ] && ok "git status: active mode (no --all) shows no syscall on MathWorks inside repos" || { bad "git status: active mode syscalls on MathWorks (rc=$rc)"; show "$hits"; }
 fi
+# ---- round 5 B1 (Cassie; Jeff decision D3): ANY entry named MathWorks (folder, file or symlink) is excluded and never
+# lstat'ed by git status, the same as tracked_excluded treats a tracked file named MathWorks ----
+t="$work/r5b1"; mkdir -p "$t"; m=$(fresh r5f); echo f > "$m/MathWorks"; mkdir -p "$m/d"; ln -s "$work/r5b1" "$m/d/MathWorks"
+touch -h -d "@$((NOW-172800))" "$m/MathWorks" "$m/d/MathWorks"; mv "$m" "$t/r"
+out=$(run --all --scan "$t/r" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "ok   $t/r" <<<"$out" && ok "B1 r5: an untracked 2-day-old FILE and a symlink named MathWorks are not dirty work (rc 0)" || { bad "B1 r5: file/symlink named MathWorks (want rc=0, got rc=$rc)"; show "$out"; }
+if command -v strace >/dev/null; then
+  strace -f -qq -e trace=%file -o "$t/trace" python3 -B "$dc" --now "$NOW" --all --scan "$t/r" --exclude MathWorks >/dev/null 2>&1; rc=$?
+  hits=$(grep -v 'execve(' "$t/trace" | grep -F "MathWorks")
+  [ $rc = 0 ] && [ -z "$hits" ] && ok "B1 r5: strace shows no syscall on a file or symlink named MathWorks" || { bad "B1 r5: syscalls on a file/symlink named MathWorks (rc=$rc)"; show "$hits"; }
+fi
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
