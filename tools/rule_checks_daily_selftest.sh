@@ -101,5 +101,7 @@ check "--exclude NAME also excludes a child folder" 0 re:"excluded $work/c2/skip
 mkdir -p "$work/fo"; echo f > "$work/fo/onlyfile"
 check "a glob that matches only files beside a real root: rc 2" 2 re:'matches no directory' -- "$work/fo/*" "$work/r1/clean"
 check "a typo glob after a drifted root still fails rc 2, not 1" 2 re:'matches no directory' -- "$work/r1" "$work/r1-typo*"
+# the sweep's own root exclusion resolves symlinks (drift_check --exclude would also hide it, so check the sweep's own line)
+check "a lone root symlinked into MathWorks: the sweep excludes it, no roots, rc 2" 2 re:"^rule_checks_daily: excluded $work/lnk/mwlink" -- "$work/lnk/mwlink"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
