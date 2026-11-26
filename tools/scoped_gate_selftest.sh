@@ -81,5 +81,8 @@ out=$(REPO="$here/.." bash "$sg" --dry-run rules 2>&1); rc=$?
   && ok "--dry-run on this repo: rules-scan and rule-checks resolve from tools/full_gate.sh" || { bad "--dry-run on this repo (rc=$rc)"; show "$out"; }
 r=$(mkrepo r8); sed -i 's/^run rule-checks .*/run rule-checks ""/' "$r/tools/full_gate.sh"; go "$r" rules
 [ $rc = 2 ] && [ -z "$calls" ] && ok "a borrowed step with an empty command: rc 2, nothing run" || { bad "empty borrowed command (rc=$rc)"; show "$out"; }
+# ---- round 3 (Cassie W22): a borrowed step runs under pipefail, so a failure inside a pipeline fails it ----
+r=$(RC_CMD="false | true" mkrepo r9); go "$r" rules
+[ $rc = 1 ] && grep -q 'FAIL.*rule-checks' <<<"$out" && ok "a borrowed step 'false | true' fails under pipefail: rc 1 (W22)" || { bad "pipefail (want rc=1, got rc=$rc)"; show "$out"; }
 echo "scoped_gate_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

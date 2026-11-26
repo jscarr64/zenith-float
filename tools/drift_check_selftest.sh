@@ -313,5 +313,10 @@ out=$(run --scan "$work/dx30" 2>&1); rc=$?
 [ $rc = 0 ] && grep -q "ok   $r" <<<"$out" && ! grep -q "skip $r" <<<"$out" && ok "active: dirty exactly 30 min in a tree idle 2 days: inside the window, checked (A06)" || { bad "active: dirty exactly 30 min, default window (rc=$rc)"; show "$out"; }
 out=$(run --all --scan "$work/no-such-dir" 2>&1); rc=$?
 [ $rc = 2 ] && grep -q "no-such-dir is not a directory" <<<"$out" && ok "scan: a missing dir is named as not a directory (X05)" || { bad "scan: missing dir message (rc=$rc)"; show "$out"; }
+# ---- round 3 (Cassie W05): dirty files of two ages in an idle tree with a small window: the fresh one makes it active ----
+r=$(stale w05 172800); git -C "$r" push -q origin w 2>/dev/null; touch -d "@$((NOW-172800))" "$r/.git/index" "$r/.git/logs/HEAD"
+echo a > "$r/u1.txt"; echo b > "$r/u2.txt"; touch -d "@$((NOW-60))" "$r/u1.txt"; touch -d "@$((NOW-1801))" "$r/u2.txt"
+out=$(run --scan "$work/w05" --active-window-min 5 2>&1); rc=$?
+[ $rc = 1 ] && ! grep -q "skip $r" <<<"$out" && ok "active: dirty 60 s and 1801 s in an idle tree, 5 min window: checked, FAIL (W05)" || { bad "active: dirty 60 s + 1801 s, 5 min window (want rc=1, not skipped, got rc=$rc)"; show "$out"; }
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

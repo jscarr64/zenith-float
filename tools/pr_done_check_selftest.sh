@@ -32,6 +32,8 @@ case "$1 $2" in
     [ -f "$MOCK/garbage-list" ] && { echo "not json"; exit 0; }
     [ -f "$MOCK/object-list" ] && { echo '{"number":1}'; exit 0; }
     [ -f "$MOCK/scalar-list" ] && { echo '[1]'; exit 0; }
+    [ -f "$MOCK/listentry-list" ] && { echo '[[1]]'; exit 0; }
+    [ -f "$MOCK/null-list" ] && { echo '[null]'; exit 0; }
     st=all; lim=30; prev=""; for a in "$@"; do [ "$prev" = "--state" ] && st="$a"; [ "$prev" = "--limit" ] && lim="$a"; prev="$a"; done
     # like gh: --state filters, --limit caps the rows (gh's own default is 30)
     python3 -c 'import json,sys; st=sys.argv[2].upper(); d=json.load(open(sys.argv[1])); print(json.dumps([p for p in d if st=="ALL" or p["state"]==st][:int(sys.argv[3])]))' "$f" "$st" "$lim"; exit 0;;
@@ -137,5 +139,8 @@ scenario "list entry that is not an object fails closed (R2-B3a)" 2 '[]' flag:sc
 scenario "mergedAt that is a number fails closed (TypeError, Cassie Y07)" 2 "[$(pr 30 MERGED f/w wwww 5)]" branch:f/w=wwww
 EXTRA="--since 2026-11-01" scenario "landed PR with no merge/close date under --since: branch still checked (Cassie Y08)" 1 "[$(pr 31 MERGED f/y yyyy)]" branch:f/y=yyyy re:'#31.*branch-not-deleted'
 scenario "JSON object instead of a list: says so (G03)" 2 '[]' flag:object-list re:'not a JSON list'
+# ---- round 3 (Cassie W07): a list or null entry is not an object either ----
+scenario "list entry that is a list ([[1]]) fails closed (W07)" 2 '[]' flag:listentry-list re:'is not a JSON object'
+scenario "list entry that is null ([null]) fails closed (W07)"   2 '[]' flag:null-list re:'is not a JSON object'
 echo "pr_done_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

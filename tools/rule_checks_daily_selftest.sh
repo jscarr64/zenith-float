@@ -86,5 +86,10 @@ check "an unknown option: rc 2" 2 -- --bogus "$work/r1"
 DRIFT_CHECK="$work/no-such-drift_check.py" sweep "$work/r1/clean" >/dev/null 2>&1; rc=$?
 [ $rc = 2 ] && ok "drift_check missing: rc 2" || bad "drift_check missing (want rc=2, got rc=$rc)"
 check "every root excluded: says no roots (rc 2)" 2 re:'no roots to sweep' -- "$work/x/MathWorks"
+# ---- round 3 (Cassie W10, W12) ----
+out=$(bash "$daily" --exclude 2>&1); rc=$?
+[ $rc = 2 ] && grep -q -- '--exclude needs a NAME' <<<"$out" && ok "--exclude with no NAME: rc 2, says so (W10)" || { bad "--exclude with no NAME (want rc=2, got rc=$rc)"; show "$out"; }
+out=$(DRIFT_CHECK="$work/no-such-drift_check.py" bash "$daily" "$work/r1/clean" 2>&1); rc=$?
+[ $rc = 2 ] && grep -q 'drift_check not found' <<<"$out" && ok "drift_check missing: rc 2, says so (W12)" || { bad "drift_check missing message (rc=$rc)"; show "$out"; }
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
