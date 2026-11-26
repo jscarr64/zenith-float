@@ -31,7 +31,9 @@ gives rc 2; a child without `.git` (a plain dir, a bare repo) is skipped. An unr
 of a repository is reported once.
 
 Options: `drift_check.py --repo DIR | --scan DIR [--all] [--include DIR] [--include-file FILE]
-[--active-window-min 1440] [--max-ahead 1] [--max-age-min 30] [--pre-commit] [--now EPOCH]`;
+[--active-window-min 1440] [--max-ahead 1] [--max-age-min 30] [--exclude NAME] [--pre-commit] [--now EPOCH]`;
+`--exclude NAME` (repeatable) leaves out, and names as `excluded`, every `--scan` entry (DIR or child) with a path
+component NAME, as given or after resolving symlinks; `--repo` / `--include` trees are never excluded.
 `pr_done_check.py --repo OWNER/NAME [--since YYYY-MM-DD] [--limit 1000]` (GH=<gh binary>; GET calls only).
 `--max-age-min` and `--active-window-min` must be finite and >= 0 (`nan`, `inf` or a negative value gives rc 2).
 `--include-file` entries are paths as written, resolved against the current directory: use absolute paths.
@@ -67,9 +69,10 @@ fixture, so update that test in the same merge.
 
 `tools/drift_check_selftest.sh`, `tools/pr_done_check_selftest.sh` (mock gh that honours `--state` and `--limit`),
 `tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), `tools/rule_checks_daily_selftest.sh`,
-`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (143 mutants, including Cassie's
-16 round-1 and 12 round-2 rows; every one must be killed). Each behavior landed as one red commit, then one fix
-commit. full_gate.sh runs all six as step `rule-checks`.
+`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (175 mutants, including Cassie's
+16 round-1, 12 round-2 and 25 round-3 rows; every one must be killed). Each behavior landed as one red commit, then
+one fix commit. Test-only commits (56878368, 50229306, bf438dca, b3b7a524) add cases for code that was already right;
+their red proof is the mutant each one kills, all in the sweep. full_gate.sh runs all six as step `rule-checks`.
 
 ## Scoped gate (in the repo)
 
@@ -90,9 +93,11 @@ full_gate evidence: it covers 2 of full_gate's 25 run steps (no Rust builds or t
 so once a day `tools/rule_checks_daily.sh` runs `drift_check.py --all` (every tree and every branch, nothing skipped)
 over every root and FAILs (rc 1) on any drift; rc 2 on no roots, a bad root or a git error.
 - Roots are dirs or quoted globs of dirs: on Pop `/mnt/hub/{paul,rusty,spence,vera}-work` and
-  `/mnt/hub/home-moved/*`. Non-dir matches are ignored.
+  `/mnt/hub/home-moved/*`. Non-dir matches are ignored, but a glob that matches no directory at all is an error
+  (rc 2), so a mistyped root cannot silently drop out of the sweep.
 - Any root with a `MathWorks` path component, as given or after resolving symlinks, is left out (named
-  `excluded`). Trees elsewhere whose git data lives in MathWorks are still read (read-only), like in the 15-minute run.
+  `excluded`). The same names go to `drift_check --exclude`, so a scanned child folder named `MathWorks` is left out
+  too. Trees elsewhere whose git data lives in MathWorks are still read (read-only), like in the 15-minute run.
 - The summary line counts the FAIL (finding) and ERROR lines, roots and exclusions.
 
 ## 15-minute scheduler on Pop
