@@ -156,6 +156,38 @@ Z34|tools/scoped_gate.sh|1|"rules-scan|@full_gate" ==> "rules-scan|echo skipped"
 Z35|tools/scoped_gate.sh|1|cd "$repo" || ==> cd "$here" ||
 Z36|tools/scoped_gate.sh|1|--step "${names[$i]}" ==> --step main
 Z37|tools/scoped_gate.sh|1|[ -n "$c" ] || ==> true ||
+W01|tools/drift_check.py|1|os.lstat(os.path.join(c, ".git")) ==> os.listdir(os.path.join(c, ".git"))
+W02|tools/drift_check.py|1|except (FileNotFoundError, NotADirectoryError): ==> except FileNotFoundError:
+W03|tools/drift_check.py|1|except (FileNotFoundError, NotADirectoryError): ==> except NotADirectoryError:
+W04|tools/drift_check.py|1|if oldest is not None and now - oldest > max_age: ==> if oldest is not None and now - oldest > max_age + 60:
+W05|tools/drift_check.py|1|oldest, newest = dirty_span(repo) ==> newest, oldest = dirty_span(repo)
+W06|tools/drift_check.py|1|if not math.isfinite(a.active_window_min): ==> if math.isinf(a.active_window_min):
+W07|tools/pr_done_check.py|1|if not isinstance(pr, dict): ==> if isinstance(pr, (int, float, str)):
+W10|tools/rule_checks_daily.sh|1|[ $# -ge 2 ] || ==> true ||
+W11|tools/rule_checks_daily.sh|1|unknown option $1" >&2; exit 2;; ==> unknown option $1" >&2; shift;;
+W12|tools/rule_checks_daily.sh|1|[ -f "$dc" ] || ==> true ||
+W13|tools/rule_checks_daily.sh|1|*) v=ERROR; rc=2;; ==> *) v=ERROR; rc=0;;
+W14|tools/rule_checks_daily.sh|1|compgen -G "$p" | sort) ==> compgen -G "$p" | sort | head -1)
+W15|tools/rule_checks_daily.sh|1|ms=("$p");; ==> ms=();;
+W16|tools/rule_checks_daily.sh|1|real=$(readlink -f -- "$1" 2>/dev/null || echo "$1") ==> real="$1"
+W17|tools/rule_checks_daily.sh|1|case $rc in 0) v=PASS;; ==> case $rc in 0) v=PASS; rc=1;;
+W20|tools/scoped_gate.sh|1|[ $# = 1 ] || usage ==> true || usage
+W21|tools/scoped_gate.sh|1|unknown scope '$scope'" >&2; usage;; ==> unknown scope '$scope'" >&2; exit 0;;
+W22|tools/scoped_gate.sh|1|bash -o pipefail -c "${cmds[$i]}" ==> bash -c "${cmds[$i]}"
+W23|tools/scoped_gate.sh|1|if [ $rc = 0 ]; then echo ==> if true; then echo
+W24|tools/scoped_gate.sh|1| "gate-tool-checks|tools/test_gate_tool_checks.sh" ==>  
+W25|tools/scoped_gate.sh|1|agent="${POPLOG_AGENT:-spence}" ==> agent=spence
+W26|tools/scoped_gate.sh|1|repo="${REPO:-$here/..}" ==> repo="$here/.."
+W27|tools/scoped_gate.sh|1|[ "$k" = 1 ] || ==> [ "$k" != 0 ] ||
+W28|tools/scoped_gate.sh|1|"full-gate-poplog|tools/test_full_gate_poplog.sh" ==> "full-gate-poplog|true"
+W29|tools/scoped_gate.sh|1|"full-gate-syntax|bash -n tools/full_gate.sh" ==> "full-gate-syntax|true"
+V10|tools/drift_check.py|1|if excluded(c, a.exclude): ==> if False:
+V11|tools/drift_check.py|1|for p in (path, os.path.realpath(path)): ==> for p in (path,):
+V12|tools/drift_check.py|1|if any(n in p.split(os.sep) for n in names): ==> if any(n in p for n in names):
+V13|tools/drift_check.py|1|"--exclude", action="append", default=[] ==> "--exclude", action="append", default=["MathWorks"]
+V14|tools/rule_checks_daily.sh|1|for x in "${excl[@]}"; do args+=(--exclude "$x"); done ==> :
+V15|tools/rule_checks_daily.sh|1|[ $nd -gt 0 ] || ==> true ||
+V16|tools/rule_checks_daily.sh|1|[ -d "$m" ] && nd=$((nd+1)) ==> nd=$((nd+1))
 T
 }
 one() {  # id file occ old new
