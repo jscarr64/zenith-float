@@ -52,6 +52,7 @@ for p in "${pats[@]+"${pats[@]}"}"; do
   [ $e = 3 ] && { echo "rule_checks_daily: root $p is a symlink loop" >&2; exit 2; }
   if [ $e = 0 ]; then echo "rule_checks_daily: excluded $p"; nex=$((nex+1)); continue; fi
   case "$p" in
+    *[\*\?\[]*/*) echo "rule_checks_daily: root glob $p: wildcards are allowed in the last component only" >&2; exit 2;;
     *[\*\?\[]*) mapfile -t ms < <(compgen -G "$p" | sort)
                 nd=0
                 for m in "${ms[@]+"${ms[@]}"}"; do
