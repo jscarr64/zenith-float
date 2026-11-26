@@ -40,8 +40,10 @@ Nothing named NAME, and nothing under it, is ever stat'ed, listed or read (Cassi
   is touched, and a symlink's `readlink` string is spliced in and checked the same way (no `realpath`, no stat of
   a target). `..` and absolute targets are walked as the kernel would. More than 40 hops is a symlink loop:
   `--scan DIR is a symlink loop` or `ERROR CHILD is a symlink loop`, rc 2.
-- `git status` in a checked repo gets `-- ':(exclude,glob)**/NAME/**'` per NAME, so git prunes untracked or
-  ignored NAME folders unread (checked with strace). Pathspec cannot stop git lstat'ing files the index TRACKS
+- `git status` in a checked repo gets `-- ':(exclude,glob)**/NAME' ':(exclude,glob)**/NAME/**'` per NAME, so git
+  prunes any untracked or ignored entry named NAME (folder, file or symlink; Jeff decision D3) unread (checked with
+  strace). Correction: commit 68e4650e said "no behaviour change", but dropping `**/NAME` made git lstat a FILE or
+  symlink named NAME and count it as dirty work (Cassie r5 B1); 0829abcc restores it. Pathspec cannot stop git lstat'ing files the index TRACKS
   under NAME, so a repo whose `git ls-files` (index only) lists such a file skips its dirty-work check, said as
   `skip dirty check REPO: it tracks files under NAME`; its branch checks still run (they read `.git` only).
 `pr_done_check.py --repo OWNER/NAME [--since YYYY-MM-DD] [--limit 1000]` (GH=<gh binary>; GET calls only).
@@ -79,13 +81,15 @@ fixture, so update that test in the same merge.
 
 `tools/drift_check_selftest.sh`, `tools/pr_done_check_selftest.sh` (mock gh that honours `--state` and `--limit`),
 `tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), `tools/rule_checks_daily_selftest.sh`,
-`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (231 mutants, including Cassie's
-16 round-1, 12 round-2, 25 round-3 and 20 round-4 rows; every one must be killed; a row's `\n` is a newline, and a
+`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (256 mutants, including Cassie's
+16 round-1, 12 round-2, 25 round-3, 20 round-4 and 25 round-5 rows; every one must be killed; a row's `\n` is a newline, and a
 mutant that hangs is killed after 15 min). Cassie's round-4 X18 (`--exclude "$x"` -> `--exclude="$x"`) is
-equivalent, not a row: argparse reads both forms the same. Rows whose code was rewritten in round 4 were adapted to
+equivalent, not a row: argparse reads both forms the same. Her round-5 Q12 (`**/NAME/**` -> `**/NAME/*`) is
+equivalent too: beside `**/NAME`, strace shows the same pruning either way. Her Q10 is adapted to the restored
+pathspec (drop the `**/NAME` form), and R4N17/R4N18 to the two-form spec line. Rows whose code was rewritten in round 4 were adapted to
 the new code with the same intent (D25, N03, Z13-Z15, W05, W15, W16, V10-V12, V16, and Cassie's X01, X04-X08,
 X10, X15, X16, X20). Each behavior landed as one red commit, then one fix commit. Test-only commits (56878368,
-50229306, bf438dca, b3b7a524, 89d7a4ec and the round-4 walk/git-status cases) add cases for code that was already
+50229306, bf438dca, b3b7a524, 89d7a4ec, 88dbde40 and the round-5 B2 cases) add cases for code that was already
 right; their red proof is the mutant each one kills, all in the sweep. full_gate.sh runs all six as step `rule-checks`.
 
 ## Scoped gate (in the repo)
@@ -110,7 +114,9 @@ over every root and FAILs (rc 1) on any drift; rc 2 on no roots, a bad root or a
   `/mnt/hub/home-moved/*`. Non-dir matches are ignored, but a glob that matches no directory at all is an error
   (rc 2), so a mistyped root cannot silently drop out of the sweep. Wildcards are allowed in the last component
   only (rc 2 otherwise): expanding `x/*/mw` would stat `x/MathWorks/mw` before any name check.
-- The same dir given twice (a literal and a glob, `./`, a symlink) is swept once, first spelling kept.
+- The same dir given twice (a literal and a glob, `./`, a symlink) is swept once, first spelling kept. A root nested
+  inside another root is still listed as its own root; drift_check checks each repo once, so findings are not
+  doubled.
 - Any root with a `MathWorks` path component, as written or after following its symlinks by name (the same
   lexical walk as drift_check: `[ -L ]` and `readlink`, never `readlink -f` or a stat of a target), is left out
   (named `excluded`). The pattern itself is judged before it is expanded, and each glob match before `[ -d ]`. A
