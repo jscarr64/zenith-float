@@ -155,11 +155,11 @@ def activity(repo, now, window, max_age):
 
 
 def excluded(path, names):
-    """True when PATH, as given or with symlinks resolved, has a path component in NAMES."""
-    for p in (path, os.path.realpath(path)):
-        if any(n in p.split(os.sep) for n in names):
-            return True
-    return False
+    """True when PATH, as given or with symlinks resolved, has a path component in NAMES.
+    The name as given is checked first, so an excluded path is decided without touching it (Cassie r4 B1)."""
+    if any(n in path.split(os.sep) for n in names):
+        return True
+    return any(n in os.path.realpath(path).split(os.sep) for n in names)
 
 
 def head_state(repo):
@@ -268,6 +268,9 @@ def main(argv=None):
         repos.append((r, None))
     unreadable = []
     for d in a.scan:
+        if excluded(d, a.exclude):  # before any isdir/listdir/stat on it (Cassie r4 B1)
+            report("excluded %s (--exclude)" % d)
+            continue
         if not os.path.isdir(d):
             print("drift_check: %s is not a directory" % d, file=sys.stderr)
             return 2
