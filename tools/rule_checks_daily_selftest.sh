@@ -126,5 +126,10 @@ fi
 mkdir -p "$work/lp"; ln -s l "$work/lp/l"
 check "a root that is a symlink loop: rc 2, 'is a symlink loop'" 2 re:"root $work/lp/l is a symlink loop" -- "$work/lp/l"
 check "a glob match that is a symlink loop: rc 2, 'is a symlink loop'" 2 re:"root $work/lp/l is a symlink loop" -- "$work/lp/*"
+# ---- round 4 N2 (Cassie): overlapping roots (the same dir by a literal, a glob, ./ or a symlink) are swept once ----
+ln -s "$work/hm/a-work" "$work/alias"
+out=$(sweep "$work/hm/a-work" "$work/hm/*" "$work/hm/./b-work" "$work/alias" 2>&1); rc=$?
+k=$(grep -c "^drift_check: FAIL $work/hm/a-work/t1 " <<<"$out")
+[ $rc = 1 ] && [ "$k" = 1 ] && grep -q "sweeping 2 root(s) with drift_check --all: $work/hm/a-work $work/hm/b-work\$" <<<"$out" && grep -q "1 FAIL line(s), 0 ERROR line(s), 2 root(s), 0 excluded" <<<"$out" && ok "N2: overlapping roots are swept once (2 roots, 1 FAIL)" || { bad "N2: overlapping roots (rc=$rc, $k FAIL lines for t1)"; show "$out"; }
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
