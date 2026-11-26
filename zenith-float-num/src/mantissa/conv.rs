@@ -4,6 +4,7 @@
 
 use crate::common::buf::WordBuf;
 use crate::common::int::SliceWithSign;
+#[cfg(test)]
 use crate::common::util::shift_slice_right;
 use crate::mantissa::Mantissa;
 use crate::{Error, Word, WORD_BIT_SIZE};
@@ -22,6 +23,7 @@ impl Mantissa {
     /// `l` is the number of decimal digits in the input ceiled to a power of 10.
     /// `p` is the current depth of `tenpowers` for the given `input`.
     /// `most_significant` true if `self` contains the most significant part (ignores leading zeroes if ture).
+    #[cfg(test)]
     pub(crate) fn conv_to_dec(
         &mut self,
         l: usize,

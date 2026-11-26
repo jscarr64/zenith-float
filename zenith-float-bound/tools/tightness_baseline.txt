@@ -1,0 +1,4 @@
+# tightness ratchet (S12): PROVISIONAL. Rows are the observed maximum of rad / R_ref per (OP, PREC) in units of 1/65536 (q16), rows: OP PREC MAX_Q16.
+# The tau and lambda factors, R_ref and the truth source are decision D2 (Rusty); until D2 is decided every value here is an observed baseline, not a threshold.
+# EMPTY: no op produces a ball radius yet (L0b is not built), so no tightness set exists and nothing has been observed. A new (OP, PREC) cell must be recorded
+# with `tools/tightness_report.py update RESULTS` in the same commit as the set that produces it; a row may only go down (CODEOWNERS-protected like the other baselines).

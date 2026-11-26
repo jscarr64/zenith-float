@@ -3,11 +3,14 @@
 use alloc::vec::Vec;
 
 use crate::common::util::bump_prec_retry;
+use crate::common::util::prec_retry_exhausted;
+use crate::common::util::reduction_width;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
+use crate::defs::EXPONENT_MIN;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::WORD_BIT_SIZE;
@@ -27,9 +30,6 @@ fn jacobi_ratio_m_one(m: &ExactNumNumber, p: usize) -> Result<Option<ExactNumNum
         Ok(None)
     }
 }
-
-/// AGM / descending Landen steps for `am`, `sn`, `cn`, `dn`.
-pub const JACOBI_AGM_MAX: u32 = 128;
 
 impl ExactNumNumber {
     /// Jacobi amplitude \(\operatorname{am}(u|m)\). Parameter \(m=k^2\in[0,1]\).
@@ -195,29 +195,57 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
         jacobi_m_in_unit(m, p)?;
+        if let Some(r) = self.jacobi_m1_far(m, p, rm, cc, &pick)? {
+            return Ok(r);
+        }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
             .max(self.mantissa_max_bit_len())
             .max(m.mantissa_max_bit_len())
             + p_inc;
+        let mut first_lost: Option<usize> = None;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE * 2;
-            let (am, sn, cn, dn) = self.jacobi_sncndn_at(m, p_x, cc)?;
-            let mut ret = pick(am, sn, cn, dn, p_x)?;
-            if ret.try_set_precision(p, rm, p_wrk)? {
-                ret.set_inexact(ret.inexact() | self.inexact() | m.inexact());
-                return Ok(ret);
+            let (am, sn, cn, dn, good) = self.jacobi_sncndn_at(m, p_x, cc)?;
+            // `good` bounds the relative error of am, sn, cn and dn (2^-good each); a quotient of
+            // two of them, rounded once more, has at least good - 2 bits.
+            // (Whole words: the roundability check works on word boundaries.)
+            let acc = good.saturating_sub(4).min(p_wrk) / WORD_BIT_SIZE * WORD_BIT_SIZE;
+            if acc > p {
+                let mut ret = pick(am, sn, cn, dn, p_x)?;
+                if ret.try_set_precision(p, rm, acc)? {
+                    ret.set_inexact(ret.inexact() | self.inexact() | m.inexact());
+                    return Ok(ret);
+                }
             }
-            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            // Bits lost to cancellation (cn or dn near a zero, asin near ±1 in the Landen
+            // recurrence) are restored at once. The retry budget is measured past the loss seen at
+            // the first evaluation (fixed), so a bound that does not improve still ends.
+            let lost = p_wrk.saturating_sub(acc);
+            let allow = *first_lost.get_or_insert(lost);
+            if good > 0 && lost > WORD_BIT_SIZE {
+                if prec_retry_exhausted(p_wrk + lost, p.saturating_add(allow)) {
+                    return Err(Error::PrecisionRetryExhausted);
+                }
+                p_wrk = round_p(p_wrk + lost);
+            } else if prec_retry_exhausted(p_wrk, p.saturating_add(allow)) {
+                return Err(Error::PrecisionRetryExhausted);
+            } else {
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            }
         }
     }
 
+    /// am, sn, cn, dn at `p` working bits and the number of bits `g` certified for all four
+    /// (each has relative error below `2^-g`).
     fn jacobi_sncndn_at(
         &self,
         m: &Self,
         p: usize,
         cc: &mut Consts,
-    ) -> Result<(Self, Self, Self, Self), Error> {
+    ) -> Result<(Self, Self, Self, Self, usize), Error> {
+        // Correctly rounded building blocks (sin, cos, tanh, ...) at p bits: a few ulps.
+        let direct = p.saturating_sub(8);
         let zero = Self::new2(p, Sign::Pos, false)?;
         let one = Self::from_word(1, p)?;
         if self.is_zero() {
@@ -227,6 +255,7 @@ impl ExactNumNumber {
                 Self::new2(p, Sign::Pos, false)?,
                 Self::from_word(1, p)?,
                 one,
+                p,
             ));
         }
         if m.is_zero() {
@@ -237,7 +266,7 @@ impl ExactNumNumber {
             am.set_precision(p, RoundingMode::None)?;
             let sn = self.sin(p, RoundingMode::None, cc)?;
             let cn = self.cos(p, RoundingMode::None, cc)?;
-            return Ok((am, sn, cn, one));
+            return Ok((am, sn, cn, one, direct));
         }
         if m.cmp(&one) == 0 {
             let sn = self.tanh(p, RoundingMode::None, cc)?;
@@ -247,33 +276,164 @@ impl ExactNumNumber {
             let dn = one.div(&ch, p, RoundingMode::None)?;
             let sh = self.sinh(p, RoundingMode::None, cc)?;
             let am = sh.atan(p, RoundingMode::None, cc)?;
-            return Ok((am, sn, cn, dn));
+            return Ok((am, sn, cn, dn, direct));
         }
-        let u = self.jacobi_reduce_period(m, p, cc)?;
-        jacobi_agm(&u, m, p, cc)
+        let reduced = self.jacobi_reduce_period(m, p, cc)?;
+        let u = match &reduced {
+            Some((r, _)) => r,
+            None => self,
+        };
+        let JacobiAgm {
+            mut am,
+            sn,
+            cn,
+            dn,
+            am_err: err,
+        } = jacobi_agm(u, reduced.is_some(), m, p, cc)?;
+        // |u| < 2^-p: am ≈ sn ≈ u, cn ≈ dn ≈ 1, nothing cancels and every value is good to the
+        // working precision (the bound below would be formed near the exponent floor).
+        if reduced.is_none() && self.exponent() < -(p as Exponent) {
+            return Ok((am, sn, cn, dn, direct));
+        }
+        // Absolute error bound of am (None: the recurrence could not bound it at p bits).
+        let Some(mut err) = err else {
+            return Ok((am, sn, cn, dn, 0));
+        };
+        if let Some((_, Some(n))) = reduced {
+            // am(u + 4nK) = am(u) + 2nπ; sn, cn, dn have period 4K.
+            let pe = round_p(
+                p + usize::try_from(n.exponent().max(0)).map_err(|_| Error::InvalidArgument)?
+                    + WORD_BIT_SIZE,
+            );
+            let mut two_pi = cc.pi_num(pe, RoundingMode::None)?;
+            two_pi.set_exponent(two_pi.exponent() + 1);
+            let off = n.mul(&two_pi, pe, RoundingMode::None)?;
+            // |off - 2nπ| ≤ 2 ulp(off) at pe bits.
+            err = err.add(
+                &bound_pow2(off.exponent() + 2 - pe as Exponent)?,
+                BOUND_P,
+                RoundingMode::Up,
+            )?;
+            am = am.add(&off, p, RoundingMode::None)?;
+            err = err.add(&bound_ulp(&am, p)?, BOUND_P, RoundingMode::Up)?;
+        }
+        let g = [
+            rel_bits(&err, &am)?,
+            rel_bits(&err, &sn)?,
+            rel_bits(&err, &cn)?,
+            rel_bits(&err, &dn)?,
+        ]
+        .into_iter()
+        .min()
+        .unwrap_or(0)
+        .min(direct);
+        Ok((am, sn, cn, dn, g))
     }
 
-    fn jacobi_reduce_period(&self, m: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+    /// `m = 1` with `cosh u` above the range: `sech u = 2e^{-|u|}` is below every subnormal,
+    /// so `cn = dn` underflow, `sn = tanh u = ±(1 - tiny)` and `am = gd u = ±(π/2 - tiny)`.
+    /// The four values are formed with `cn = dn` at the least normal (any quotient by them
+    /// overflows, as the true one does) and the picked result is rounded once: an underflowed
+    /// pick goes to zero or the least subnormal by the mode, an overflowed one is returned as
+    /// `ExponentOverflow` for the caller to map by the mode. `None` when the regular path applies.
+    fn jacobi_m1_far<F>(
+        &self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+        pick: &F,
+    ) -> Result<Option<Self>, Error>
+    where
+        F: Fn(Self, Self, Self, Self, usize) -> Result<Self, Error>,
+    {
+        if self.is_zero() || m.cmp(&Self::from_word(1, WORD_BIT_SIZE)?) != 0 {
+            return Ok(None);
+        }
+        match self.cosh(WORD_BIT_SIZE, RoundingMode::None, cc) {
+            Err(Error::ExponentOverflow(_)) => {}
+            Ok(_) => return Ok(None),
+            Err(e) => return Err(e),
+        }
+        let sign = if self.is_negative() { Sign::Neg } else { Sign::Pos };
+        let p_x = round_p(p + 2 * WORD_BIT_SIZE);
+        let mut am = cc.pi_num(p_x, RoundingMode::None)?;
+        am.set_exponent(am.exponent() - 1);
+        am.set_sign(sign);
+        let one = Self::from_word(1, p_x)?;
+        let mut eps = Self::from_word(1, p_x)?;
+        // 2^-(p+64): below every ulp at p, yet visible to the p_x-bit quotients 1/sn, sn/dn.
+        eps.set_exponent(1 - (p + WORD_BIT_SIZE) as Exponent);
+        let mut sn = one.sub(&eps, p_x, RoundingMode::None)?;
+        sn.set_sign(sign);
+        let mut tiny = Self::from_word(1, p_x)?;
+        tiny.set_exponent(EXPONENT_MIN);
+        let mut cn = Self::from_word(1, p_x)?;
+        cn.set_exponent(EXPONENT_MIN);
+        let mut r = pick(am, sn, cn, tiny, p_x)?;
+        if !r.is_zero() && r.exponent() <= EXPONENT_MIN + 2 {
+            let neg = r.is_negative();
+            r = Self::from_word(1, p)?;
+            r.set_sign(if neg { Sign::Neg } else { Sign::Pos });
+            r.set_exponent(EXPONENT_MIN);
+            r.subnormalize(2 * EXPONENT_MIN, rm);
+        } else {
+            r.set_precision(p, rm)?;
+        }
+        r.set_inexact(true);
+        Ok(Some(r))
+    }
+
+    /// `u` reduced into `[-2K, 2K]` and the number of whole periods `n` removed
+    /// (`u = r + 4nK`; `n` is `None` when it rounds to zero). `None` when `|u| ≤ 2K` already, so
+    /// the caller uses `u` itself. K is computed with `exponent(u)` extra
+    /// bits, as the trig reduction does for π, so the reduced argument keeps all `p` bits.
+    fn jacobi_reduce_period(
+        &self,
+        m: &Self,
+        p: usize,
+        cc: &mut Consts,
+    ) -> Result<Option<(Self, Option<Self>)>, Error> {
         // \(K(m)\ge\pi/2\), so \(2K\ge\pi\). Skip \(K\) (and a nested Ziv) when \(\lvert u\rvert<\pi\).
         let pi = cc.pi_num(p, RoundingMode::None)?;
         if self.abs()?.cmp(&pi) < 0 {
-            return self.clone();
+            return Ok(None);
         }
-        let k = m.elliptic_k_at(p, cc)?;
-        let two = Self::from_word(2, p)?;
-        let four = Self::from_word(4, p)?;
-        let two_k = two.mul(&k, p, RoundingMode::None)?;
-        if self.abs()?.cmp(&two_k) <= 0 {
-            return self.clone();
+        // K carries exponent(u) extra bits (checked, never capped: `MemoryAllocation` past what
+        // the machine holds).
+        let pk = round_p(reduction_width(p + WORD_BIT_SIZE, self.exponent())?);
+        let k = m.elliptic_k_at(pk, cc)?;
+        // |u| ≤ 2K as |u|/2 ≤ K (the exponent shift is exact; |u| ≥ π here).
+        let mut half_u = self.abs()?;
+        half_u.set_exponent(half_u.exponent() - 1);
+        if half_u.cmp(&k) <= 0 {
+            return Ok(None);
         }
-        let four_k = four.mul(&k, p, RoundingMode::None)?;
+        let mut four_k = k;
+        four_k.set_exponent(four_k.exponent() + 2);
+        // x > 2K as 2x > 4K (exact exponent shift, undone after the compare).
+        let above_two_k = |x: &mut Self| -> bool {
+            if x.is_zero() {
+                return false;
+            }
+            x.set_exponent(x.exponent() + 1);
+            let above = x.cmp(&four_k) > 0;
+            x.set_exponent(x.exponent() - 1);
+            above
+        };
         let mut r = self.rem(&four_k)?;
-        if r.cmp(&two_k) > 0 {
-            r = r.sub(&four_k, p, RoundingMode::None)?;
-        } else if r.is_negative() && r.abs()?.cmp(&two_k) > 0 {
-            r = r.add(&four_k, p, RoundingMode::None)?;
+        if above_two_k(&mut r) {
+            r = r.sub(&four_k, pk, RoundingMode::None)?;
+        } else if r.is_negative() && above_two_k(&mut r.abs()?) {
+            r = r.add(&four_k, pk, RoundingMode::None)?;
         }
-        Ok(r)
+        // n = (u - r) / 4K is an integer up to the rounding error of r at pk bits.
+        let n = self
+            .sub(&r, pk, RoundingMode::None)?
+            .div(&four_k, pk, RoundingMode::None)?
+            .round(0, RoundingMode::ToEven)?;
+        r.set_precision(p, RoundingMode::None)?;
+        Ok(Some((r, if n.is_zero() { None } else { Some(n) })))
     }
 }
 
@@ -325,22 +485,70 @@ fn clamp_unit(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Error> {
     Ok(y)
 }
 
+/// Precision of the running error bounds (rounded up, so they stay upper bounds).
+const BOUND_P: usize = WORD_BIT_SIZE;
+
+/// `2^e` at [`BOUND_P`] bits.
+fn bound_pow2(e: Exponent) -> Result<ExactNumNumber, Error> {
+    let mut x = ExactNumNumber::from_word(1, BOUND_P)?;
+    x.set_exponent(e.saturating_add(1));
+    Ok(x)
+}
+
+/// An upper bound of one ulp of `x` at `p` bits (`2^(exponent(x) - p)`; `2^-p` for zero).
+fn bound_ulp(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Error> {
+    let e = if x.is_zero() { 0 } else { x.exponent() };
+    bound_pow2(e - p as Exponent)
+}
+
+/// `|x|` rounded up to [`BOUND_P`] bits.
+fn bound_abs(x: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
+    let mut a = x.abs()?;
+    a.set_precision(BOUND_P, RoundingMode::Up)?;
+    Ok(a)
+}
+
+/// Bits certified by an absolute error bound `err` on a value `x`: `g` with `err/|x| < 2^-g`
+/// (0 when `x` is zero or the bound reaches `|x|`).
+fn rel_bits(err: &ExactNumNumber, x: &ExactNumNumber) -> Result<usize, Error> {
+    if x.is_zero() {
+        return Ok(0);
+    }
+    if err.is_zero() {
+        return Ok(usize::MAX);
+    }
+    let mut ax = x.abs()?;
+    ax.set_precision(BOUND_P, RoundingMode::Down)?;
+    let r = err.div(&ax, BOUND_P, RoundingMode::Up)?;
+    Ok(usize::try_from(-r.exponent()).unwrap_or(0))
+}
+
+/// The result of [`jacobi_agm`]: am, sn, cn, dn and the absolute error bound of am
+/// (`None` when it cannot be bounded at the working precision).
+struct JacobiAgm {
+    am: ExactNumNumber,
+    sn: ExactNumNumber,
+    cn: ExactNumNumber,
+    dn: ExactNumNumber,
+    am_err: Option<ExactNumNumber>,
+}
+
+/// am, sn, cn, dn by the AGM and the descending Landen recurrence (DLMF 22.20(ii)), with an
+/// absolute error bound of am carried through the recurrence (`None` when it cannot be bounded
+/// at `p` bits). A first-order bound: every working operation is within 2 ulp; the error of
+/// `phi_n` reaches `phi_{n-1} = (phi_n + asin t_n)/2` through `t_n = c_n sin phi_n / a_n`,
+/// amplified by `1/sqrt(1 - t_n^2)`. sn, cn inherit the absolute bound of am; dn is formed as
+/// `sqrt(cn^2 + m' sn^2)` (both terms non-negative), so its relative error is that of cn or sn.
 fn jacobi_agm(
     u: &ExactNumNumber,
+    reduced: bool,
     m: &ExactNumNumber,
     p: usize,
     cc: &mut Consts,
-) -> Result<
-    (
-        ExactNumNumber,
-        ExactNumNumber,
-        ExactNumNumber,
-        ExactNumNumber,
-    ),
-    Error,
-> {
+) -> Result<JacobiAgm, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
     let two = ExactNumNumber::from_word(2, p)?;
+    // m' = 1 - m: exact for m ≥ 1/2 (Sterbenz; p covers m's bits), one rounding otherwise.
     let om = one.sub(m, p, RoundingMode::None)?;
     if om.is_negative() {
         return Err(Error::InvalidArgument);
@@ -348,10 +556,10 @@ fn jacobi_agm(
     let mut b = om.sqrt(p, RoundingMode::None)?;
     let mut aa = Vec::new();
     let mut cc_seq = Vec::new();
-    aa.push(one.clone()?);
+    aa.push(ExactNumNumber::from_word(1, p)?);
     cc_seq.push(m.sqrt(p, RoundingMode::None)?);
     let mut n = 0u32;
-    while n < JACOBI_AGM_MAX {
+    loop {
         if agm_small(&cc_seq[n as usize], &aa[n as usize], p)? {
             break;
         }
@@ -365,13 +573,14 @@ fn jacobi_agm(
         let a_next = ai
             .add(&b, p, RoundingMode::None)?
             .div(&two, p, RoundingMode::None)?;
+        // Quadratic AGM: a stall is a |c| that does not shrink.
+        if !cc_seq[n as usize].is_zero() && c_next.abs()?.cmp(&cc_seq[n as usize].abs()?) >= 0 {
+            return Err(Error::PrecisionRetryExhausted);
+        }
         b = t;
         aa.push(a_next);
         cc_seq.push(c_next);
-        n += 1;
-    }
-    if n == JACOBI_AGM_MAX && !agm_small(&cc_seq[n as usize], &aa[n as usize], p)? {
-        return Err(Error::InvalidArgument);
+        n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
     }
     let last = aa.len() - 1;
     let shift = Exponent::try_from(last).map_err(|_| Error::InvalidArgument)?;
@@ -379,30 +588,97 @@ fn jacobi_agm(
     let mut phi = twon
         .mul(&aa[last], p, RoundingMode::None)?
         .mul(u, p, RoundingMode::None)?;
+    let wp = p as Exponent;
+    let up = RoundingMode::Up;
+    let steps = ExactNumNumber::from_word(4 * last as crate::defs::Word + 8, BOUND_P)?;
+    let eps = bound_pow2(-wp)?;
+    let steps_eps = steps.mul(&eps, BOUND_P, up)?;
+    let bone = ExactNumNumber::from_word(1, BOUND_P)?;
+    // phi_N = 2^N a_N u: a_N after N AGM steps (≤ (4N+8) ulp relative); a reduced argument
+    // also carries an absolute error ≤ 2^(4-p) (the period removed at extra bits), scaled by 2^N a_N.
+    // An unreduced u is the exact input.
+    let mut err = bound_abs(&phi)?.mul(&steps_eps, BOUND_P, up)?;
+    if reduced {
+        err = err.add(
+            &bound_abs(&twon)?
+                .mul(&bound_abs(&aa[last])?, BOUND_P, up)?
+                .mul(&bound_pow2(4 - wp)?, BOUND_P, up)?,
+            BOUND_P,
+            up,
+        )?;
+    }
+    let mut bounded = true;
     let mut idx = last;
     while idx > 0 {
         let sphi = phi.sin(p, RoundingMode::None, cc)?;
-        let t = clamp_unit(
-            &cc_seq[idx]
-                .mul(&sphi, p, RoundingMode::None)?
-                .div(&aa[idx], p, RoundingMode::None)?,
-            p,
-        )?;
+        let ca = cc_seq[idx].div(&aa[idx], p, RoundingMode::None)?;
+        let t_raw = ca.mul(&sphi, p, RoundingMode::None)?;
+        let t = clamp_unit(&t_raw, p)?;
         let asint = t.asin(p, RoundingMode::None, cc)?;
+        if bounded {
+            // |cos phi_true| ≤ |cos phi_n| + err.
+            let c = phi.cos(BOUND_P, up, cc)?;
+            let cphi = bound_abs(&c)?
+                .add(&bound_ulp(&c, BOUND_P - 1)?, BOUND_P, up)?
+                .add(&err, BOUND_P, up)?;
+            let dt = bound_abs(&ca)?
+                .mul(&cphi, BOUND_P, up)?
+                .mul(&err, BOUND_P, up)?
+                .add(
+                    // c_n carries an absolute error ≤ (4N+8) ulp of a_n (c = (a - b)/2 cancels):
+                    // relative to |sin phi_n|, not to |t|.
+                    &bound_abs(&t)?
+                        .add(&bound_abs(&sphi)?, BOUND_P, up)?
+                        .mul(&steps_eps, BOUND_P, up)?,
+                    BOUND_P,
+                    up,
+                )?;
+            // sqrt(1 - t^2) ≥ sqrt(1 - |t_true|) with |t_true| ≤ |t_raw| + dt.
+            // 1 - |t_raw| from the full-width t_raw (a 64-bit |t_raw| would round to 1).
+            let gap = bone.sub(&t_raw.abs()?, BOUND_P, RoundingMode::Down)?.sub(
+                &dt,
+                BOUND_P,
+                RoundingMode::Down,
+            )?;
+            if gap.is_zero() || gap.is_negative() {
+                bounded = false;
+            } else {
+                let den = gap.sqrt(BOUND_P, RoundingMode::Down)?;
+                let da = dt
+                    .div(&den, BOUND_P, up)?
+                    .add(&bound_ulp(&asint, p - 1)?, BOUND_P, up)?;
+                err = err.add(&da, BOUND_P, up)?;
+                err.div_by_2(up);
+            }
+        }
         phi = asint
             .add(&phi, p, RoundingMode::None)?
             .div(&two, p, RoundingMode::None)?;
+        if bounded {
+            err = err.add(&bound_ulp(&phi, p - 1)?, BOUND_P, up)?;
+        }
         idx -= 1;
     }
     let sn = phi.sin(p, RoundingMode::None, cc)?;
     let cn = phi.cos(p, RoundingMode::None, cc)?;
-    let msn2 = m.mul(&sn.mul(&sn, p, RoundingMode::None)?, p, RoundingMode::None)?;
-    let dnarg = one.sub(&msn2, p, RoundingMode::None)?;
-    if dnarg.is_negative() {
-        return Err(Error::InvalidArgument);
-    }
-    let dn = dnarg.sqrt(p, RoundingMode::None)?;
-    Ok((phi, sn, cn, dn))
+    // dn = sqrt(cn^2 + m' sn^2) (DLMF 22.6.1), no cancellation near the zeros of cn and dn.
+    let dn = cn
+        .mul(&cn, p, RoundingMode::None)?
+        .add(
+            &om.mul(&sn.mul(&sn, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?
+        .sqrt(p, RoundingMode::None)?;
+    // The final roundings of sin, cos, dn (relative, a few ulp) are inside the caller's `p - 8`.
+    let err = if bounded { Some(err) } else { None };
+    Ok(JacobiAgm {
+        am: phi,
+        sn,
+        cn,
+        dn,
+        am_err: err,
+    })
 }
 
 #[cfg(test)]

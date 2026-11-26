@@ -1,0 +1,17 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 8fff0d2..0b4c6f0 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -245,10 +245,10 @@ pub fn constant_ball(cc: &mut Consts, c: &Constant, prec: Precision) -> BoundRes
+         });
+     }
+     let down = cc
+-        .get_exact_prec(c.zf_id(), prec, RoundingMode::Down)
++        .get_exact_prec(c.zf_id(), prec.checked_sub(1).map_or(prec, |q| q.max(1)), RoundingMode::Down)
+         .map_err(constant_error)?;
+     let up = cc
+-        .get_exact_prec(c.zf_id(), prec, RoundingMode::Up)
++        .get_exact_prec(c.zf_id(), prec.checked_sub(1).map_or(prec, |q| q.max(1)), RoundingMode::Up)
+         .map_err(constant_error)?;
+     let not_one_ulp = BoundError::Resource {
+         op: OP,

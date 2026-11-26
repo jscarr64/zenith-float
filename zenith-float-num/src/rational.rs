@@ -200,7 +200,25 @@ impl ExactRational {
         if self.is_nan() {
             return Self::new(NAN, rat_one());
         }
-        Self::new(self.quot().round(0, RoundingMode::FromZero), rat_one())
+        // Exact integer division |num| = q·den + r; round up when 2r ≥ den (ties away from zero).
+        let p = work_p(&[&self.num, &self.den]);
+        // |num| at p bits (exact): copysign with +1, a borrowing op.
+        let a = self.num.copysign(&rat_one(), p, RoundingMode::None);
+        let r = a.rem(&self.den);
+        let mut q = ExactNum::div_ref(
+            &ExactNum::sub_ref(&a, &r, p, RoundingMode::None),
+            &self.den,
+            p,
+            RoundingMode::None,
+        );
+        let two_r = ExactNum::add_ref(&r, &r, p, RoundingMode::None);
+        if matches!(two_r.compare(&self.den), Some(c) if c >= 0) {
+            q = ExactNum::add_ref(&q, &rat_one(), p, RoundingMode::None);
+        }
+        if self.num.is_negative() {
+            q = q.neg();
+        }
+        Self::new(q, rat_one())
     }
 
     /// Build `num/den` from limb integers.
@@ -261,7 +279,7 @@ impl ExactRational {
         };
         let mut r = Self::from_ints(n, d);
         if neg {
-            r = Self::new(r.num.neg(), r.den.clone());
+            r = Self::new(r.num.neg(), r.den);
         }
         Some(r)
     }

@@ -270,6 +270,7 @@ fn modf_rounding_modes_and_precisions() -> Result<(), Error> {
     let mut up_expected =
         ExactNum::pow2(-1, 128)?.add(&ExactNum::pow2(-64, 128)?, 128, RoundingMode::ToEven);
     up_expected.set_precision(64, RoundingMode::ToEven)?;
+    // MODE-SUBSET mode-specific: frac of 0.5+2^-100 is 0.5 in the down modes; Up/FromZero below, None after them
     for rm in [
         RoundingMode::ToEven,
         RoundingMode::ToOdd,
@@ -280,6 +281,7 @@ fn modf_rounding_modes_and_precisions() -> Result<(), Error> {
         assert_zero_sign(&int_part, false, "modf(0.5+2^-100) int down modes");
         assert_eq_num(&frac_part, &half, "modf(0.5+2^-100) frac down modes");
     }
+    // MODE-SUBSET mode-specific: the up modes give 0.5+2^-64; the down modes above, None below
     for rm in [RoundingMode::Up, RoundingMode::FromZero] {
         let (int_part, frac_part) = x.modf(p, rm)?;
         assert_zero_sign(&int_part, false, "modf(0.5+2^-100) int up modes");

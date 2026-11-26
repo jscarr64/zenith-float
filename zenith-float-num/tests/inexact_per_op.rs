@@ -16,7 +16,10 @@ fn with_exp(mut x: ExactNum, e: zenith_float_num::Exponent) -> ExactNum {
     x
 }
 
-const MODES: [RoundingMode; 6] = [
+/// All 7 modes. `None` is toward zero at the storage precision rp(p, 64) (FIXLIST ZF-M27), so an operation whose
+/// exact result needs more than rp(p, 64) bits is inexact under it too.
+const MODES: [RoundingMode; 7] = [
+    RoundingMode::None,
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
     RoundingMode::Up,

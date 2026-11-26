@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 0ce786b..9a21520 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -55,7 +55,7 @@ impl Mag {
+             return None;
+         }
+         if self.is_infinity() {
+-            return Some(Ordering::Greater);
++            return Some(Ordering::Less);
+         }
+         if x.is_zero() {
+             return Some(if self.is_zero() {

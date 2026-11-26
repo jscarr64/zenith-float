@@ -46,13 +46,11 @@ pub const GK_GAUSS_ORDER: usize = 7;
 pub const GK_KRONROD_ORDER: usize = 2 * GK_GAUSS_ORDER + 1;
 
 /// Largest `max_subintervals` accepted by [`integrate_adaptive_gk`].
+/// Historical public constant; the caller's `max_subintervals` is no longer refused at this value.
 pub const GK_SUBINTERVAL_MAX: usize = 32;
 
 /// Destination precision below this cannot host a guarded (7, 15) rule.
 const GK_MIN_PREC: usize = 32;
-
-/// Newton corrections after the sign-change bracket is bisected.
-const GK_NEWTON_MAX: usize = 32;
 
 /// Bisection steps used to separate a characteristic-polynomial root.
 const GK_BISECT_STEPS: usize = 48;
@@ -81,6 +79,16 @@ impl core::fmt::Display for QuadratureError {
 #[cfg(feature = "std")]
 impl std::error::Error for QuadratureError {}
 
+/// Tolerance and panel budget of [`integrate_adaptive_gk`] and its `_estimate` / `_infinite` forms
+/// (zenith-float 2.0: grouped so no public function takes more than 7 arguments).
+#[derive(Clone, Copy, Debug)]
+pub struct GkOptions<'a> {
+    /// Relative tolerance (finite, non-negative); see [`integrate_adaptive_gk_estimate`].
+    pub tol_rel: &'a ExactNum,
+    /// Most panels kept at once (at least 1).
+    pub max_subintervals: usize,
+}
+
 /// One (7, 15) panel, or the value accepted by [`integrate_adaptive_gk`].
 #[derive(Debug)]
 pub struct GkResult {
@@ -97,8 +105,9 @@ pub struct GkResult {
     /// at least the sum of the local `|K − G|` on the panels that produced
     /// that value. One unit in the last place of the rounded estimate is
     /// added, and the estimate is rounded away from zero. It can be larger than
-    /// `|K − G|`, and it can be larger than the tolerance that stopped the
-    /// iteration. Callers that want `|K − G|` itself should subtract
+    /// `|K − G|`. [`integrate_adaptive_gk`] returns `Ok` only when this whole bound,
+    /// that ulp included, meets the tolerance. An extrapolated value whose bound misses it is
+    /// available only from [`integrate_adaptive_gk_estimate`] (ZF-51). Callers that want `|K − G|` itself should subtract
     /// `estimate_kronrod` and `estimate_gauss`.
     ///
     /// Accuracy: enclosure
@@ -143,6 +152,13 @@ struct WynnValue {
 /// then round the nodes where the sums are formed, so `K` and `G` share the
 /// error and `|K − G|` collapses under the true remainder. Two guard words
 /// keep that remainder visible.
+/// A precision these rules accept: the whole public range `GK_MIN_PREC..=MAX_PRECISION`, with no
+/// margin taken off the top. The working widths above it (a few words wider) are checked where they
+/// are allocated (`MemoryAllocation` / `None`), not refused here.
+fn gk_prec_ok(p: usize) -> bool {
+    (GK_MIN_PREC..=crate::defs::MAX_PRECISION).contains(&p)
+}
+
 fn work_p(p: usize) -> usize {
     let stored = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
     stored.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
@@ -274,8 +290,8 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
                 let j = n as i32 - (m as i32 - k as i32) - 1;
                 let sj = s_at(&s, j + 1)?;
                 let sj1 = s_at(&s, j + 2)?;
-                let bk = sj.mul(&b[k + n], p, rm);
-                let bl = sj1.mul(&b[m - k - 1], p, rm);
+                let bk = ExactNum::mul_ref(sj, &b[k + n], p, rm);
+                let bl = ExactNum::mul_ref(sj1, &b[m - k - 1], p, rm);
                 let piece = bk.sub(&bl, p, rm);
                 if !finite(&piece) {
                     return None;
@@ -289,10 +305,10 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
         if 2 * k != m {
             let num = s_at(&s, j + 1)?;
             let den = s_at(&s, j + 2)?;
-            if den.is_zero() || !finite(&den) || !finite(&num) {
+            if den.is_zero() || !finite(den) || !finite(num) {
                 return None;
             }
-            let beta = num.div(&den, p, rm);
+            let beta = ExactNum::div_ref(num, den, p, rm);
             if !finite(&beta) {
                 return None;
             }
@@ -308,11 +324,11 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
     }
 }
 
-fn s_at(s: &[ExactNum], idx: i32) -> Option<ExactNum> {
+fn s_at(s: &[ExactNum], idx: i32) -> Option<&ExactNum> {
     if idx < 0 {
         return None;
     }
-    s.get(idx as usize).cloned()
+    s.get(idx as usize)
 }
 
 fn s_set(s: &mut [ExactNum], idx: i32, value: ExactNum) -> Option<()> {
@@ -380,7 +396,8 @@ fn polish_root(
     }
     let mut x = lo.add(&hi, p, rm).div(&two, p, rm);
     let guard = tiny(p, 8);
-    for _ in 0..GK_NEWTON_MAX {
+    let mut prev: Option<ExactNum> = None;
+    loop {
         let (y, d) = char_poly(&x, beta, p)?;
         if d.is_zero() {
             break;
@@ -389,14 +406,22 @@ fn polish_root(
         if !finite(&step) {
             break;
         }
+        let sa = step.abs_ref();
         let next = ExactNum::sub_ref(&x, &step, p, rm);
         if !finite(&next) {
             break;
         }
         x = next;
-        if leq(&step.abs(), &guard) {
+        if leq(&sa, &guard) {
             break;
         }
+        if let Some(ref pr) = prev {
+            // Stall when the step does not shrink.
+            if leq(pr, &sa) {
+                break;
+            }
+        }
+        prev = Some(sa);
     }
     if finite(&x) {
         Some(x)
@@ -534,7 +559,7 @@ fn kronrod_legendre_at(
     p: usize,
     _cc: &mut Consts,
 ) -> Option<(Vec<ExactNum>, Vec<ExactNum>, Vec<ExactNum>)> {
-    if n != GK_GAUSS_ORDER || p < GK_MIN_PREC {
+    if n != GK_GAUSS_ORDER || !gk_prec_ok(p) {
         return None;
     }
     let beta = laurie_legendre_beta(n, p)?;
@@ -590,7 +615,7 @@ pub fn kronrod_pair(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<(Vec<ExactNum>, Vec<ExactNum>, Vec<ExactNum>)> {
-    if n_gauss != GK_GAUSS_ORDER || p < GK_MIN_PREC {
+    if n_gauss != GK_GAUSS_ORDER || !gk_prec_ok(p) {
         return None;
     }
     let (nodes, w_gauss, w_kronrod) = kronrod_legendre_at(n_gauss, work_p(p), cc)?;
@@ -602,11 +627,8 @@ pub fn kronrod_pair(
 
 fn eval_panel<F>(
     f: &mut F,
-    a: &ExactNum,
-    b: &ExactNum,
-    nodes: &[ExactNum],
-    w_gauss: &[ExactNum],
-    w_kronrod: &[ExactNum],
+    [a, b]: [&ExactNum; 2],
+    [nodes, w_gauss, w_kronrod]: [&[ExactNum]; 3],
     p: usize,
     cc: &mut Consts,
 ) -> Result<(ExactNum, ExactNum), QuadratureError>
@@ -670,7 +692,7 @@ pub fn gauss_kronrod_interval<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if p < GK_MIN_PREC || !interval_ok(a, b) {
+    if !gk_prec_ok(p) || !interval_ok(a, b) {
         return Err(QuadratureError::InvalidArgument);
     }
     let wrk = work_p(p);
@@ -680,7 +702,7 @@ where
     let mut bb = b.clone();
     let _ = aa.set_precision(wrk, RoundingMode::None);
     let _ = bb.set_precision(wrk, RoundingMode::None);
-    let (k, g) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
+    let (k, g) = eval_panel(&mut f, [&aa, &bb], [&nodes, &w_gauss, &w_kronrod], wrk, cc)?;
     let err = ExactNum::sub_ref(&k, &g, wrk, RoundingMode::None).abs();
     if !finite(&k) || !finite(&g) || !finite(&err) {
         return Err(QuadratureError::NotConverged);
@@ -750,7 +772,7 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
 /// The table is built two words above the destination width and rounded to
 /// `p` with `rm`.
 pub fn wynn_epsilon(seq: &[ExactNum], p: usize, rm: RoundingMode) -> Option<ExactNum> {
-    if p < GK_MIN_PREC {
+    if !gk_prec_ok(p) {
         return None;
     }
     let wrk = work_p(p);
@@ -759,8 +781,7 @@ pub fn wynn_epsilon(seq: &[ExactNum], p: usize, rm: RoundingMode) -> Option<Exac
         if !finite(s) {
             return None;
         }
-        let mut y = s.clone();
-        let _ = y.set_precision(wrk, RoundingMode::None);
+        let y = s.rounded_to(wrk, RoundingMode::None);
         lifted.push(y);
     }
     let value = wynn_table(&lifted, wrk)?.value;
@@ -803,7 +824,8 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
     (k, g, e)
 }
 
-/// Adaptive (7, 15) integration of `f` on `[a, b]`, with Wynn ε.
+/// Adaptive (7, 15) integration of `f` on `[a, b]`, with Wynn ε, reporting whether
+/// the tolerance was met.
 ///
 /// The panel with the largest `|K − G|` is bisected until the sum of those
 /// estimates meets the tolerance, or until two successive even-order ε
@@ -817,11 +839,11 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 ///
 /// # Arguments
 ///
-/// * `tol_rel` — relative tolerance. The absolute stop is
+/// * `opts.tol_rel` ([`GkOptions`]) — relative tolerance. The absolute stop is
 ///   `max(tol_rel * max(1, |estimate|), 2^(1−p))`, where `2^(1−p)` is the
 ///   unit in the last place of a `p`-bit significand. `tol_rel = 0` asks
 ///   for that floor only.
-/// * `max_subintervals` — panel cap, from 1 through [`GK_SUBINTERVAL_MAX`].
+/// * `opts.max_subintervals` ([`GkOptions`]) — caller panel budget (at least 1).
 ///   Each panel evaluates `f` at [`GK_KRONROD_ORDER`] (15) nodes. A call
 ///   performs at most `15 * (2 * max_subintervals − 1)` evaluations, because
 ///   each bisection discards one panel and samples two new ones.
@@ -834,26 +856,35 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 ///
 /// [`QuadratureError::InvalidArgument`] if endpoints are non-finite or not
 /// `a < b`, `tol_rel` is non-finite or negative, `p < 32`,
-/// `max_subintervals` is outside `1..=GK_SUBINTERVAL_MAX`, or any integrand
+/// `max_subintervals` is 0, or any integrand
 /// sample is non-finite.
-/// [`QuadratureError::NotConverged`] if the budget is spent or a panel can
-/// no longer be bisected at the working precision.
-pub fn integrate_adaptive_gk<F>(
+/// [`QuadratureError::NotConverged`] if a panel can no longer be bisected at
+/// the working precision, or a non-finite estimate.
+///
+/// # Returns
+///
+/// `(result, tolerance_met)`. `tolerance_met` holds only when the reported
+/// error bound `abs_err_est`, including the one-ulp allowance for rounding the
+/// estimate to `p`, meets the absolute tolerance. A Wynn ε acceptance, or a spent
+/// panel budget, returns the best estimate with its honest bound and `false`
+/// (QUADPACK's `ier != 0`, ZF-51). [`integrate_adaptive_gk`] keeps only `true`.
+pub fn integrate_adaptive_gk_estimate<F>(
     mut f: F,
     a: &ExactNum,
     b: &ExactNum,
-    tol_rel: &ExactNum,
-    max_subintervals: usize,
+    GkOptions {
+        tol_rel,
+        max_subintervals,
+    }: GkOptions<'_>,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
-) -> Result<GkResult, QuadratureError>
+) -> Result<(GkResult, bool), QuadratureError>
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if p < GK_MIN_PREC
+    if !gk_prec_ok(p)
         || max_subintervals == 0
-        || max_subintervals > GK_SUBINTERVAL_MAX
         || !interval_ok(a, b)
         || !finite(tol_rel)
         || tol_rel.is_negative()
@@ -867,9 +898,8 @@ where
     let mut bb = b.clone();
     let _ = aa.set_precision(wrk, RoundingMode::None);
     let _ = bb.set_precision(wrk, RoundingMode::None);
-    let mut tol_work = tol_rel.clone();
-    let _ = tol_work.set_precision(wrk, RoundingMode::None);
-    let (k0, g0) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
+    let tol_work = tol_rel.rounded_to(wrk, RoundingMode::None);
+    let (k0, g0) = eval_panel(&mut f, [&aa, &bb], [&nodes, &w_gauss, &w_kronrod], wrk, cc)?;
     let err0 = ExactNum::sub_ref(&k0, &g0, wrk, RoundingMode::None).abs();
     let mut panels = vec![Panel {
         a: aa,
@@ -889,11 +919,23 @@ where
         seq.push(total_k.clone());
         let tol = abs_tolerance(&tol_work, &total_k, wrk);
         if leq(&total_err, &tol) {
-            let result = gk_result(total_k, total_g, total_err, p, rm, wrk);
+            let result = gk_result(
+                total_k.clone(),
+                total_g.clone(),
+                total_err.clone(),
+                p,
+                rm,
+                wrk,
+            );
             if !finite(&result.abs_err_est) {
                 return Err(QuadratureError::NotConverged);
             }
-            return Ok(result);
+            // The reported bound includes the final rounding ulp; the tolerance is met only
+            // when that whole bound meets it (ZF-51). Otherwise keep refining: Σ|K−G| can
+            // still shrink, and the panel budget ends the run with `false`.
+            if leq(&result.abs_err_est, &tol) {
+                return Ok((result, true));
+            }
         }
         if seq.len() >= 3 {
             if let Some(ex) = wynn_table(&seq, wrk) {
@@ -907,7 +949,11 @@ where
                             if !finite(&result.abs_err_est) {
                                 return Err(QuadratureError::NotConverged);
                             }
-                            return Ok(result);
+                            // QUADPACK ier: the extrapolated value is returned, but the
+                            // tolerance is met only if its whole reported bound, final
+                            // rounding ulp included, meets it (ZF-51).
+                            let met = leq(&result.abs_err_est, &tol);
+                            return Ok((result, met));
                         }
                     }
                     prev_eps = Some(ex.value);
@@ -915,7 +961,11 @@ where
             }
         }
         if panels.len() >= max_subintervals {
-            return Err(QuadratureError::NotConverged);
+            let result = gk_result(total_k, total_g, total_err, p, rm, wrk);
+            if !finite(&result.abs_err_est) {
+                return Err(QuadratureError::NotConverged);
+            }
+            return Ok((result, false));
         }
         let mut worst = 0usize;
         for i in 1..panels.len() {
@@ -934,9 +984,19 @@ where
         if mid.compare(&left_a) != Some(1) || mid.compare(&right_b) != Some(-1) {
             return Err(QuadratureError::NotConverged);
         }
-        let (k1, g1) = eval_panel(&mut f, &left_a, &mid, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
+        let (k1, g1) = eval_panel(
+            &mut f,
+            [&left_a, &mid],
+            [&nodes, &w_gauss, &w_kronrod],
+            wrk,
+            cc,
+        )?;
         let (k2, g2) = eval_panel(
-            &mut f, &mid, &right_b, &nodes, &w_gauss, &w_kronrod, wrk, cc,
+            &mut f,
+            [&mid, &right_b],
+            [&nodes, &w_gauss, &w_kronrod],
+            wrk,
+            cc,
         )?;
         let e1 = ExactNum::sub_ref(&k1, &g1, wrk, RoundingMode::None).abs();
         let e2 = ExactNum::sub_ref(&k2, &g2, wrk, RoundingMode::None).abs();
@@ -954,6 +1014,42 @@ where
             gauss: g2,
             err: e2,
         });
+    }
+}
+
+/// [`integrate_adaptive_gk_estimate`], keeping only results whose reported
+/// `abs_err_est` meets the requested tolerance. Otherwise
+/// [`QuadratureError::NotConverged`]. Use the `_estimate` form to read the best
+/// estimate and its bound when the tolerance is missed (QUADPACK's `ier != 0`).
+pub fn integrate_adaptive_gk<F>(
+    f: F,
+    a: &ExactNum,
+    b: &ExactNum,
+    GkOptions {
+        tol_rel,
+        max_subintervals,
+    }: GkOptions<'_>,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Result<GkResult, QuadratureError>
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    match integrate_adaptive_gk_estimate(
+        f,
+        a,
+        b,
+        GkOptions {
+            tol_rel,
+            max_subintervals,
+        },
+        p,
+        rm,
+        cc,
+    )? {
+        (r, true) => Ok(r),
+        (_, false) => Err(QuadratureError::NotConverged),
     }
 }
 
@@ -1063,15 +1159,51 @@ where
 /// the endpoints are out of order, or the finite rule rejects the tolerance,
 /// precision, or a non-finite sample.
 pub fn integrate_adaptive_gk_infinite<F>(
-    mut f: F,
+    f: F,
     a: &ExactNum,
     b: &ExactNum,
-    tol_rel: &ExactNum,
-    max_subintervals: usize,
+    GkOptions {
+        tol_rel,
+        max_subintervals,
+    }: GkOptions<'_>,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Result<GkResult, QuadratureError>
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    match integrate_adaptive_gk_infinite_estimate(
+        f,
+        a,
+        b,
+        GkOptions {
+            tol_rel,
+            max_subintervals,
+        },
+        p,
+        rm,
+        cc,
+    )? {
+        (r, true) => Ok(r),
+        (_, false) => Err(QuadratureError::NotConverged),
+    }
+}
+
+/// [`integrate_adaptive_gk_infinite`] returning `(result, tolerance_met)` like
+/// [`integrate_adaptive_gk_estimate`] (ZF-51).
+pub fn integrate_adaptive_gk_infinite_estimate<F>(
+    mut f: F,
+    a: &ExactNum,
+    b: &ExactNum,
+    GkOptions {
+        tol_rel,
+        max_subintervals,
+    }: GkOptions<'_>,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Result<(GkResult, bool), QuadratureError>
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
@@ -1085,38 +1217,44 @@ where
     let zero = ExactNum::new(p);
     let one = ExactNum::from_u8(1, p);
     if a_neg && b_pos {
-        return integrate_adaptive_gk(
+        return integrate_adaptive_gk_estimate(
             |t, wp, wrm, cc| whole_line_sample(&mut f, t, wp, wrm, cc),
             &ExactNum::from_i8(-1, p),
             &one,
-            tol_rel,
-            max_subintervals,
+            GkOptions {
+                tol_rel,
+                max_subintervals,
+            },
             p,
             rm,
             cc,
         );
     }
     if b_pos && finite(a) {
-        let end = a.clone();
-        return integrate_adaptive_gk(
-            |t, wp, wrm, cc| semi_infinite_sample(&mut f, &end, true, t, wp, wrm, cc),
+        let end = a;
+        return integrate_adaptive_gk_estimate(
+            |t, wp, wrm, cc| semi_infinite_sample(&mut f, end, true, t, wp, wrm, cc),
             &zero,
             &one,
-            tol_rel,
-            max_subintervals,
+            GkOptions {
+                tol_rel,
+                max_subintervals,
+            },
             p,
             rm,
             cc,
         );
     }
     if a_neg && finite(b) {
-        let end = b.clone();
-        return integrate_adaptive_gk(
-            |t, wp, wrm, cc| semi_infinite_sample(&mut f, &end, false, t, wp, wrm, cc),
+        let end = b;
+        return integrate_adaptive_gk_estimate(
+            |t, wp, wrm, cc| semi_infinite_sample(&mut f, end, false, t, wp, wrm, cc),
             &zero,
             &one,
-            tol_rel,
-            max_subintervals,
+            GkOptions {
+                tol_rel,
+                max_subintervals,
+            },
             p,
             rm,
             cc,
@@ -1264,8 +1402,10 @@ mod tests {
             |x, p, rm, _cc| x.reciprocal(p, rm).sqrt(p, rm),
             &a,
             &b,
-            &tol,
-            1,
+            GkOptions {
+                tol_rel: &tol,
+                max_subintervals: 1,
+            },
             p,
             rm,
             &mut cc,
@@ -1276,6 +1416,7 @@ mod tests {
 
     #[test]
     fn gk_infinite_exp_and_gaussian_cover_the_truth() -> Result<(), Box<dyn std::error::Error>> {
+        // ZF-51: values and bounds from the _estimate form; Ok-only-when-met is the strict form.
         let mut cc = Consts::new()?;
         for (p, rm) in [
             (53usize, RoundingMode::ToEven),
@@ -1288,16 +1429,19 @@ mod tests {
             let one = ExactNum::from_u8(1, p);
             let pos = ExactNum::parse("inf", crate::Radix::Dec, p, rm, &mut cc);
             let neg = ExactNum::parse("-inf", crate::Radix::Dec, p, rm, &mut cc);
-            let exp_tail = integrate_adaptive_gk_infinite(
+            let exp_tail = integrate_adaptive_gk_infinite_estimate(
                 |x, p, rm, cc| x.neg_via_mul().exp(p, rm, cc),
                 &zero,
                 &pos,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
-            )?;
+            )?
+            .0;
             let want_one = ExactNum::from_u8(1, p);
             let gap = ExactNum::sub_ref(
                 &exp_tail.estimate_kronrod,
@@ -1313,16 +1457,19 @@ mod tests {
                 exp_tail.abs_err_est
             );
             assert!(gap.compare(&tol) != Some(1), "p={p} exp estimate {gap}");
-            let alg = integrate_adaptive_gk_infinite(
+            let alg = integrate_adaptive_gk_infinite_estimate(
                 |x, p, rm, _cc| x.sqr(p, rm).reciprocal(p, rm),
                 &one,
                 &pos,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
-            )?;
+            )?
+            .0;
             let gap =
                 ExactNum::sub_ref(&alg.estimate_kronrod, &want_one, 2 * p, RoundingMode::None)
                     .abs();
@@ -1331,19 +1478,22 @@ mod tests {
                 "p={p} invsq gap {gap} est {}",
                 alg.estimate_kronrod
             );
-            let gauss = integrate_adaptive_gk_infinite(
+            let gauss = integrate_adaptive_gk_infinite_estimate(
                 |x, p, rm, cc| {
                     let y = x.sqr(p, rm);
                     y.neg().exp(p, rm, cc)
                 },
                 &neg,
                 &pos,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
-            )?;
+            )?
+            .0;
             let pi = cc.pi(p, rm).sqrt(p, rm);
             let gap =
                 ExactNum::sub_ref(&gauss.estimate_kronrod, &pi, 2 * p, RoundingMode::None).abs();
@@ -1372,6 +1522,37 @@ mod tests {
         }
         assert!(nodes[n / 2].is_zero());
         assert_eq!(w_gauss.len(), n);
+        Ok(())
+    }
+
+    #[test]
+    fn gk_subintervals_beyond_old_32_cap() -> Result<(), Box<dyn std::error::Error>> {
+        let (p, rm) = gold_p();
+        let mut cc = Consts::new()?;
+        let a = ExactNum::from_i8(-1, p);
+        let b = ExactNum::from_u8(1, p);
+        let tol = ExactNum::from_u8(1, p).ldexp(-(p as crate::Exponent / 4), p, rm);
+        let (got, met) = integrate_adaptive_gk_estimate(
+            |x, p, rm, _cc| x.sqr(p, rm),
+            &a,
+            &b,
+            GkOptions {
+                tol_rel: &tol,
+                max_subintervals: GK_SUBINTERVAL_MAX + 1,
+            },
+            p,
+            rm,
+            &mut cc,
+        )?;
+        assert!(met);
+        let want = ExactNum::from_u8(2, p).div(&ExactNum::from_u8(3, p), p, rm);
+        assert!(
+            got.estimate_kronrod.compare(&want) == Some(0) || {
+                let d = ExactNum::sub_ref(&got.estimate_kronrod, &want, 2 * p, RoundingMode::None)
+                    .abs();
+                d.compare(&got.abs_err_est) != Some(1)
+            }
+        );
         Ok(())
     }
 }

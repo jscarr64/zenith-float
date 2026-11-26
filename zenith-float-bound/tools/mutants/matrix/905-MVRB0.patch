@@ -1,0 +1,18 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -421,12 +421,13 @@
+         let a = self.as_array().as_slice();
+         let v = x.as_array().as_slice();
+         let mut out = reserve(OP, m)?;
++        let z = Mag::zero();
+         for i in 0..m {
+             let row = row_of(OP, a, i, k)?;
+             let terms = row
+                 .iter()
+                 .zip(v)
+-                .map(|(p, q)| (p.mid(), p.rad(), q.mid(), q.rad()));
++                .map(|(p, q)| (p.mid(), p.rad(), q.mid(), &z));
+             out.push(product_entry(OP, terms, k, prec)?);
+         }
+         Ok(BallVec::from_balls(out))

@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 0ce786b..c3256e9 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -74,7 +74,7 @@ impl Mag {
+         };
+         let (xm, sticky, xe) = x.top_u64_mantissa_and_sticky()?;
+         let tail = if sticky {
+-            Ordering::Less
++            Ordering::Equal
+         } else {
+             Ordering::Equal
+         };

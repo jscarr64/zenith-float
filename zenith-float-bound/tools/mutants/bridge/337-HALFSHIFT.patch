@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 8fff0d2..8e4a2f5 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -259,7 +259,7 @@ pub fn constant_ball(cc: &mut Consts, c: &Constant, prec: Precision) -> BoundRes
+     if ulp.inexact() || !ulp.is_positive() || ulp.is_zero() {
+         return Err(not_one_ulp);
+     }
+-    let half = ulp.ldexp(-1, prec, RoundingMode::Up);
++    let half = ulp.ldexp(-2, prec, RoundingMode::Up);
+     if half.inexact() || !half.is_positive() {
+         return Err(not_one_ulp);
+     }

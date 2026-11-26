@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..d273088 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -87,7 +87,7 @@ impl Mag {
+         match mant.checked_add(1) {
+             Some(m) => Mag::from_canonical(exp, m),
+             None => match exp.checked_add(1) {
+-                Some(e) => Mag::from_canonical(e, TOP),
++                Some(_e) => Mag::from_canonical(exp, TOP),
+                 None => Mag::infinity(),
+             },
+         }

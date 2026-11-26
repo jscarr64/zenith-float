@@ -1,0 +1,13 @@
+diff --git a/src/error.rs b/src/error.rs
+index 587ab51..d53e9f1 100644
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -117,7 +117,7 @@ impl BoundError {
+             BoundError::Resource { .. } => "resource limit reached",
+             BoundError::NotPositiveDefinite { .. } => "matrix not positive definite",
+             BoundError::Singular { .. } => "matrix singular",
+-            BoundError::NotConverged { .. } => "iteration did not converge",
++            BoundError::NotConverged { .. } => "matrix singular",
+             BoundError::DimensionMismatch { .. } => "dimensions do not match",
+             BoundError::NotSymmetric { .. } => "matrix not symmetric",
+         }

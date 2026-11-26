@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 1f8372d..3325c84 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -390,7 +390,7 @@ impl Ball {
+     pub fn ne(&self, other: &Ball) -> Tri {
+         match self.eq(other) {
+             Tri::True => Tri::False,
+-            Tri::False => Tri::True,
++            Tri::False => Tri::Unknown,
+             Tri::Unknown => Tri::Unknown,
+         }
+     }

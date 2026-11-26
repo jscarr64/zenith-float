@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..53e0c10 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -327,7 +327,7 @@ impl Ball {
+                 finish(OP, am, r, prec, false)
+             }
+             Some(Ordering::Less) | None => {
+-                let u = Mag::from_exact_num(m).add_up(r);
++                let u = Mag::zero().add_up(r);
+                 endpoint_ball(OP, u, prec)
+             }
+         }

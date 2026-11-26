@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 5995d15..18d397f 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -452,7 +452,7 @@ fn mag_mul_2exp_up(r: &Mag, k: i64) -> Mag {
+     // which has lz = 0 too. Infinity is kept as the outward-safe answer should that ever change.
+     match shifted {
+         Ok(m) => m,
+-        Err(_) => Mag::infinity(),
++        Err(_) => Mag::zero(),
+     }
+ }
+ 

@@ -5,6 +5,7 @@ use crate::defs::{Error, Sign, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
+use crate::Exponent;
 use crate::RoundingMode;
 
 impl ExactNumNumber {
@@ -54,6 +55,17 @@ impl ExactNumNumber {
             };
 
             let one = Self::from_word(1, p_x)?;
+
+            // ZF-37: e^x < 2^-(p+1) is below half an ulp of the result's binade (-1, -1/2), so the
+            // value -1 + e^x rounds like "just above -1"; (e^x - 1)·x/ln(e^x) cannot decide it at
+            // any width (e.g. x = -4.7e10: e^x = 2^-6.8e10).
+            if self.is_negative() && !e.is_zero() && e.exponent() < -(p as Exponent) {
+                let mut m1 = Self::from_word(1, p)?;
+                m1.set_sign(Sign::Neg);
+                let mut r = Self::round_offset(&m1, Sign::Pos, p, rm)?;
+                r.set_inexact(true);
+                return Ok(r);
+            }
 
             if e.is_zero() {
                 // e^x is below every p_x-bit number: the true value is just above -1.

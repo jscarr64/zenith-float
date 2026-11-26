@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 11b06b8..8dcdf1e 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -17,7 +17,7 @@ use crate::precision::{Precision, MAX_PRECISION, MIN_PRECISION};
+ /// Operands whose exponents differ by at most this are subtracted exactly; wider gaps are decided by exponents first
+ /// (16.S2.3). Any value of at least 66 is correct (the wide-gap cutoffs need `|small| < 2^(e - 65)`); it only trades
+ /// exact-subtraction cost for case analysis.
+-const EXACT_GAP: i64 = 128;
++const EXACT_GAP: i64 = 0;
+ 
+ /// The normalized `Mag` mantissa of a power of two: `Mag(TOP, k)` is `2^(k-1)`.
+ const TOP: u64 = 0x8000_0000_0000_0000;

@@ -1,0 +1,13 @@
+diff --git a/src/mag/add.rs b/src/mag/add.rs
+index 8bcd057..010505e 100644
+--- a/src/mag/add.rs
++++ b/src/mag/add.rs
+@@ -46,7 +46,7 @@ fn add_checked(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64) -> Option<Mag>
+         // cannot fail) and nonzero because `mb` is.
+         Ok(gap) if gap < 64 => {
+             let sum = NonZeroU128::from(mb).checked_add(u128::from(ma.get()) << gap)?;
+-            norm(sum, i128::from(eb).checked_sub(64)?, false, true)
++            norm(sum, i128::from(eb).checked_sub(63)?, false, true)
+         }
+         // gap >= 64: the smaller operand is below one unit of the larger one's last place.
+         _ => Some(successor(ea, ma)),

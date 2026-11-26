@@ -1,0 +1,4 @@
+# Slice LA1 golden checksums (sha256sum format), checked by tools/goldens_regen.sh. Every *.txt in this directory must be listed.
+# Exact golds: Cassie (owns the zb LA exact golds, 2026-10-24).
+22d4a147f90faf5db6d187f19b78aac6da7195f85f9f882ccb39ce761e7b0937  la_cholesky.txt
+11303a8bf5bd5b260c22290f0bcff2f03a51c0eda2ef0dd5832a1deb6a435b70  la_logdet.txt

@@ -1,0 +1,13 @@
+diff --git a/src/mag/sqrt.rs b/src/mag/sqrt.rs
+index 6f35fb4..310e66f 100644
+--- a/src/mag/sqrt.rs
++++ b/src/mag/sqrt.rs
+@@ -39,7 +39,7 @@ impl Mag {
+ 
+ fn sqrt(mag: &Mag, up: bool) -> Mag {
+     if mag.is_infinity() {
+-        return loose(up);
++        return if up { Mag::zero() } else { loose(up) };
+     }
+     match mag.nonzero() {
+         Some((exp, mant)) => settle(sqrt_checked(exp, mant, up), up),

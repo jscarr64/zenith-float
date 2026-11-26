@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -350,7 +350,7 @@
+                 .map(|b| round_out(OP, b, prec))
+                 .collect::<BoundResult<Vec<Ball>>>()?;
+         Ok(BallQr {
+-            q: into_mat(m, p, q)?,
++            q: into_mat(m, m, q)?,
+             r: into_mat(p, p, r)?,
+         })
+     }

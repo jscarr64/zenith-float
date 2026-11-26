@@ -1,0 +1,11 @@
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -131,7 +131,7 @@
+             return Some(Ordering::Less);
+         }
+         let me = self.exp()?;
+-        if me <= EXPONENT_MAX {
++        if me < EXPONENT_MAX {
+             return Some(Ordering::Less);
+         }
+         if me >= EXPONENT_MAX.checked_add(2)? {

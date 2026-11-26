@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -206,7 +206,7 @@
+                 return Err(domain(op));
+             } else {
+                 (
+-                    w_bound(op, branch, hi, &Side::Below, prec, &mut cc)?,
++                    num(-1),
+                     num(-1),
+                 )
+             }

@@ -1,0 +1,2 @@
+- zenith-float-num (tests): `tests/mpfr/all_modes_jacobi_airy.rs` returns an `Err` instead of calling `panic!` when a bracket is not strict (the test-panic count goes back to the baseline 3; only-down rule). The clone baseline drops 480 -> 479 and the clone+helper baseline 801 -> 800 to match the code (`rules_scan.sh --update-baseline`).
+- Cargo.lock: rustix 1.1.4 -> 1.1.6 for RUSTSEC-2026-0486 (unsound xattr functions with a zero-length buffer; `cargo update -p rustix`, no waiver). The duplicate windows-sys 0.61.2 lock entry goes away with it.

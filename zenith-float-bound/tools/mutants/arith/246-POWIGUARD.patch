@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index f86eb99..1724aaf 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -20,7 +20,7 @@ use crate::precision::{Precision, MAX_PRECISION, MIN_PRECISION};
+ /// Every Ball midpoint rounds to nearest, ties to even (CONTRACT 15.1, O19).
+ const MID_RM: RoundingMode = RoundingMode::ToEven;
+ /// Extra bits `powi` carries through its squaring chain before the one final rounding to `prec` (16.S1.6).
+-const POWI_GUARD_BITS: Precision = 64;
++const POWI_GUARD_BITS: Precision = 0;
+ /// Guard bits for the hypot endpoint magnitudes `|m| ± r`.
+ const HYPOT_GUARD_BITS: Precision = 64;
+ /// `Mag` mantissa of one half: `0.1b * 2^0`.

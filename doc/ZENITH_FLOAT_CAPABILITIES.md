@@ -41,12 +41,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 
 `no_std` is supported when a global allocator is available (`default-features = false`). Formatting traits require `std`.
 
-`no_std` is **built and tested** (1.0.5). `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features --target thumbv7em-none-eabihf`. It then runs the `nostd-tests` harness, a `#![no_std]` crate (core + alloc only) with 77 mpmath reference cases, in two ways:
-
-- as a `#![no_std]`/`#![no_main]` binary on x86_64 Linux that links only libc;
-- bare-metal on `thumbv7em-none-eabihf` (Cortex-M4F, 32-bit limbs) under `qemu-system-arm -machine mps2-an386` with semihosting.
-
-Both pass 77/77. There is no separate `alloc` feature: `alloc` is always required.
+`no_std` is **built and tested**. zenith-float 2.0 is **64-bit only** (P6/P8; Jeff 2026-11-10 "Yes 64 bit only please"): every crate root has `compile_error!` for a target whose pointer width is not 64. `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features` for `x86_64-unknown-none` and `aarch64-unknown-none`, then runs the `nostd-tests` harness, a `#![no_std]` crate (core + alloc only) with 77 mpmath reference cases, as a `#![no_std]`/`#![no_main]` binary on x86_64 Linux that links only libc. It passes 77/77. The former 32-bit runs (bare-metal `thumbv7em-none-eabihf` under QEMU, i686, wasm32) were dropped. There is no separate `alloc` feature: `alloc` is always required.
 
 ---
 
@@ -54,30 +49,23 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 
 | Item | Value |
 | --- | --- |
-| `Word` | `u64` on 64-bit targets; `u32` on 32-bit |
-| `WORD_BIT_SIZE` | 64 or 32 accordingly |
-| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` (2 on 64-bit, 4 on 32-bit) — mantissas of ≤ 128 bits live on the stack |
-| `EXPONENT_MAX` | `i32::MAX` on every target |
-| `EXPONENT_MIN` | `i32::MIN` on every target |
+| `Word` | `u64` (64-bit targets only) |
+| `WORD_BIT_SIZE` | 64 |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` (2) — mantissas of ≤ 128 bits live on the stack |
+| `EXPONENT_MAX` | `2^62 − 1` on every target |
+| `EXPONENT_MIN` | `−(2^62 − 1)` on every target |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |
 | `MAX_PREC_RETRY` | `256` — extra word-sized retry steps beyond `p` for correct-rounding loops |
-| `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |
-| `EIGEN_ITER_MAX` | `64` — QR sweeps per eigenvalue in `eigen_decomp`; then `None` |
 | `FFT_MAX_POINTS` | `65536` — default max length of `fft` / `ifft` (was `4096`); longer → `None`; per call: `fft_with_max_points` / `ifft_with_max_points` |
 | `POLY_COMPANION_CLOSED_DEG` | `2` — `ExactNumPoly::roots_real` closed-form companion eigenvalues; higher degree → `None` |
-| `CHEBYSHEV_MAX_DEGREE` | `256` — max coefficient count for `chebyshev_coeffs`; larger `n` → `None` |
 | `ORTHOPOLY_N_MAX` | `256` — max degree for Hermite / Laguerre / Chebyshev T,U / Gegenbauer / Jacobi \(P_n^{(\alpha,\beta)}\); larger `n` → `NaN` |
-| `JACOBI_AGM_MAX` | `128` — AGM / Landen steps for `jacobi_am` / `sn` / `cn` / `dn` / `cd` |
-| `QUADRATURE_MAX_NODES` | `64` — max Gauss nodes; larger `n` → `None` |
-| `TANH_SINH_LEVELS_MAX` | `8` — max tanh–sinh step halvings after `h = 2π/(p ln 2)` |
 | `ROOT_MAX_ITER` | `256` — cap on bisection / Newton / Brent / Illinois steps |
 | `ROOT_DEFAULT_TOL` | `−256` — default absolute tolerance exponent (`2^{ROOT_DEFAULT_TOL}`) |
-| `ODE_MAX_STEPS` | `65536` — accepted-step cap for RK4 / RK45 / Euler |
-| `ODE_MIN_STEP` | `−256` — minimum RK45 step exponent (`h_min = 2^{ODE_MIN_STEP}`) |
+| `ode_min_step(p)` | `2^{-p}` — minimum representable RK45 step at the working precision |
 | `DSP_MAX_POINTS` | `16384` — default max real length for `dct`/`idct`/`dst`/`idst` and windows (was `2048`; `2N`-point FFT sized by this cap); per call: `*_with_max_points` |
 | `IEEE_SIMD_LANE_WIDTH` | `4` — `u32` lanes per integer SIMD vector; binary64 uses 2 `u64` lanes |
-| `BINARY_INLINE_LEN` | `16` — stack record: flags, version, `n_sig`, inexact, `i32` exponent BE, two `u32` limbs BE |
-| `BINARY_INLINE_MANT_BITS` | `64` — max mantissa bits for [`ExactNum::to_inline_bytes`]; wider → `MemoryAllocation` |
+| `BINARY_INLINE_LEN` | `16` — stack record: flags, version, `n_sig`, inexact, `i32` exponent BE, two `u32` limbs BE; `\|exponent\| ≥ 2^31` uses the wide-exponent records `0x0C`/`0x0D` (inline, top 40 mantissa bits) and `0x12`/`0x13` (heap, 8-byte exponent) |
+| `BINARY_INLINE_MANT_BITS` | `64` — max mantissa bits for [`ExactNum::to_inline_bytes`]; wider (or `|exponent| ≥ 2^31` with more than `BINARY_INLINE_WIDE_MANT_BITS` = 40 significant bits) → `InvalidArgument` (format limit); `to_bytes` encodes every finite value |
 | `BINARY_FORMAT_VERSION` | `1` — first version byte of every record |
 | `BINARY_MAX_U32` | `65536` — max `u32` limbs in a heap record |
 | `BINARY_MAX_ELEMS` | `1048576` — max array elements in `from_bytes` |
@@ -245,7 +233,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Scorer / Kelvin / Struve / Anger–Weber | `scorer_gi`, `kelvin_ber`, `struve_h(x,ν)`, … | SoftFloat catalog; Kelvin via complex \(J,K\); Anger integer order = Bessel \(J\) |
 | Clausen / Barnes \(G\) / ζ / polygamma | `clausen_cl2`, `barnes_g`, `riemann_zeta`, `hurwitz_zeta`, `polygamma` | \(\mathrm{Cl}_2\) and \(\mathrm{Cl}_3\) by the Bernoulli series on \((-\pi,\pi]\); \(\zeta(0)=-1/2\), \(\zeta(-1)=-1/12\), and integer \(s\ge 2\); the pole \(s=1\), integers \(s\le -2\), and non-integers are `NaN(InvalidArgument)`; \(\psi^{(0)}=\) digamma |
 | Inverse Jacobi / \(pFq\) / Lambert \(W\) / \(\mathrm{Li}_n\) | `jacobi_arcsn`, `hypergeom_1f1`, `lambert_w0`, `polylog` | `arcsn=F`; series \(pFq\); \(W_0\) on \([-1/e,\infty)\); \(\mathrm{Li}_n\) for \(\lvert x\rvert\le 1\) |
-| Meijer \(G\) / Fox \(H\) / Heun | `meijer_g`, `fox_h`, `heun_g`, `heun_c` | Residue \(G\) (DLMF 16.17); coincident poles use the hypercomb limit (two shifts must agree). Fox \(H\) via \(G\) or Gauss lift of positive rational \(A,B\). Local Heun DLMF 31.3 and confluent DLMF 31.12.1: series in the disk, Taylor continuation elsewhere on the real component that contains 0. A singular point on that segment is `NaN(InvalidArgument)`. Not `expr!` leaves. |
+| Meijer \(G\) / Fox \(H\) / Heun | `meijer_g`, `fox_h`, `heun_g`, `heun_c` | Residue \(G\) (DLMF 16.17); coincident poles use the hypercomb limit (two shifts must agree). Fox \(H\) via \(G\), a Gauss lift of exact fractions that fit in memory, or the Mellin–Barnes residue series at the exact scales (no slack identification). Local Heun DLMF 31.3 and confluent DLMF 31.12.1: series in the disk, Taylor continuation elsewhere on the real component that contains 0 (correctly rounded: ball enclosure, Ziv). A singular point on that segment is `NaN(InvalidArgument)`. Not `expr!` leaves. |
 | `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\); \(E\) for \(m\le 1\) |
 | `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete. The first argument is \(x=\sin\varphi\), **not** the amplitude \(\varphi\). \(\lvert x\rvert\le 1\); a larger value, including an angle past \(\pi/2\), is `NaN(InvalidArgument)`. \(\varphi\in[-\pi/2,\pi/2]\) is recovered as \(\operatorname{elliptic\_f}(\sin\varphi, m)=F(\varphi\mid m)\). The function is odd in \(x\). The second argument is the parameter \(m=k^2\), **not** the modulus \(k\). For the angle, use `elliptic_f_phi` / `elliptic_e_phi`. |
 | `elliptic_f_phi` / `elliptic_e_phi` / `elliptic_pi_phi` | `elliptic_f_phi(phi, m)` | Amplitude \(\varphi\), **not** \(\sin\varphi\). `elliptic_f`, `elliptic_e`, and `elliptic_pi` still take \(\sin\varphi\). Any real \(\varphi=r+k\pi\) with \(\lvert r\rvert\le\pi/2\), reduced in extended precision, then \(F(\varphi\mid m)=F(r\mid m)+2k\,K(m)\) (the same shift for \(E\) and \(\Pi\)). Odd in \(\varphi\). \(\varphi=\pm\pi/2\) is \(\pm K\), \(\pm E\), \(\pm\Pi\). \(m>1\) is `NaN(InvalidArgument)` when the integrand is not real on the path. \(n=1\) is `NaN(InvalidArgument)` at the poles \(\sin^2 t=1\). An infinity argument is `NaN(InvalidArgument)`. |
@@ -270,8 +258,8 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `lu_decomp`, `qr_decomp`, `svd_decomp`, `eigen_decomp`, `fft`/`ifft`; `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
 | Integer SIMD (IEEE) | ✅ | `u32`/`u64` lanes; SSE2/NEON; `IEEE_SIMD_LANE_WIDTH=4`; add/sub/mul/div/sqrt/fma bit-identical to scalar kernel; 1000-element `Ieee64Array` gold; not an FPU |
 | `lu_decomp` / `qr_decomp` | ✅ | Partial-pivot LU; modified Gram–Schmidt QR; singular or failed workspace reserve → `None`; rank-deficient QR → zero \(R_{kk}\) |
-| `svd_decomp` | ✅ | Golub–Reinsch; \((U,\Sigma,V^T)\); \(\sigma\) descending; `SVD_ITER_MAX=64` sweeps/value → `None`; empty/NaN/Inf → `None` |
-| `eigen_decomp` | ✅ | Symmetric QR; \((\Lambda,V)\) with \(\lambda\) descending; `EIGEN_ITER_MAX=64`; non-symmetric / empty / non-finite → `None` |
+| `svd_decomp` | ✅ | Golub–Reinsch; \((U,\Sigma,V^T)\); \(\sigma\) descending; sweeps until the off-diagonals stop shrinking; empty/NaN/Inf → `None` |
+| `eigen_decomp` | ✅ | Symmetric QR; \((\Lambda,V)\) with \(\lambda\) descending; sweeps until the off-diagonals stop shrinking; non-symmetric / empty / non-finite → `None` |
 | `fft` / `ifft` | ✅ | Radix-2 Cooley–Tukey; `(1,n)`/`(n,1)` real or `(2,n)` complex; unnormalized DFT; `ifft` divides by `n`; `FFT_MAX_POINTS=65536` (per call: `fft_with_max_points`) |
 | `ExactRational` | ✅ | `num/den` reduced; `den>0`; `from_i64` / `new`; add/sub/mul/div; `to_exact_num`; `1/3+1/6=1/2`; `2/4=1/2`; `(-3)/(-4)=3/4`; 256-bit `1/3` |
 | `ExactInt` | ✅ | Little-endian `Word` limbs; `from_i64`/`u64`/`i128`/`u128`; add/sub/mul; `div_rem`; `gcd`; `pow`; `20!`; `2^100`; `gcd(48,18)=6` |

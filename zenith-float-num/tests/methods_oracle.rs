@@ -15,8 +15,9 @@
 use std::ops::Neg;
 use zenith_float_num::{
     euler, gauss_hermite, gauss_kronrod_interval, gauss_laguerre, gauss_legendre,
-    integrate_adaptive_gk, integrate_adaptive_gk_infinite, rk4, rk45_adaptive, tanh_sinh,
-    wynn_epsilon, Ball, Consts, ExactNum, QuadratureError, Radix, RoundingMode,
+    integrate_adaptive_gk, integrate_adaptive_gk_estimate, integrate_adaptive_gk_infinite_estimate,
+    rk4, rk45_adaptive, tanh_sinh, wynn_epsilon, Ball, Consts, ExactNum, GkOptions, OdeSpan,
+    OdeTol, QuadratureError, Radix, RoundingMode,
 };
 
 /// `|x|` for an operand that stays borrowed: fresh `±1` times `x` at `x`'s own precision.
@@ -166,8 +167,10 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
             |x, p, rm, cc| sample(integ, x, p, rm, cc),
             &a,
             &b,
-            &tol,
-            panels,
+            GkOptions {
+                tol_rel: &tol,
+                max_subintervals: panels,
+            },
             p,
             rm,
             &mut cc,
@@ -185,17 +188,39 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
             let b = parse_at(row["b"].as_str().unwrap_or("1"), p, rm, &mut cc);
             let tol = parse_at(row["tol"].as_str().unwrap_or("1e-6"), p, rm, &mut cc);
             let panels = row.get("panels").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
-            let got = integrate_adaptive_gk(
+            // ZF-51: the value and its bound come from the _estimate form; the strict
+            // form returns Ok only when that bound meets the tolerance.
+            let (got, met) = integrate_adaptive_gk_estimate(
                 |x, p, rm, cc| sample(integ, x, p, rm, cc),
                 &a,
                 &b,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
             )
             .map_err(|e| format!("{e:?}"))?;
+            let strict = integrate_adaptive_gk(
+                |x, p, rm, cc| sample(integ, x, p, rm, cc),
+                &a,
+                &b,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
+                p,
+                rm,
+                &mut cc,
+            );
+            if strict.is_ok() != met {
+                return Err(format!(
+                    "strict Ok={} but tolerance_met={met}",
+                    strict.is_ok()
+                ));
+            }
             (got.estimate_kronrod, got.abs_err_est)
         }
         "gk_infinite" => {
@@ -203,12 +228,14 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
             let b = parse_at(row["b"].as_str().unwrap_or("inf"), p, rm, &mut cc);
             let tol = parse_at(row["tol"].as_str().unwrap_or("1e-6"), p, rm, &mut cc);
             let panels = row.get("panels").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
-            let got = integrate_adaptive_gk_infinite(
+            let (got, _met) = integrate_adaptive_gk_infinite_estimate(
                 |x, p, rm, cc| sample(integ, x, p, rm, cc),
                 &a,
                 &b,
-                &tol,
-                panels,
+                GkOptions {
+                    tol_rel: &tol,
+                    max_subintervals: panels,
+                },
                 p,
                 rm,
                 &mut cc,
@@ -352,38 +379,46 @@ fn run_ode(row: &serde_json::Value) -> Result<(), String> {
                 p,
                 rm,
             )
+            .ok_or_else(|| "solver returned None".to_string())?
         }
         "rk4" => {
             let steps = row.get("steps").and_then(|v| v.as_u64()).unwrap_or(40) as usize;
             rk4(
                 |t, y, p, rm, cc| ode_rhs(problem, t, y, p, rm, cc),
-                &t0,
-                &y0,
-                &t1,
+                OdeSpan {
+                    t0: &t0,
+                    y0: &y0,
+                    t1: &t1,
+                },
                 steps,
                 p,
                 rm,
                 &mut cc,
             )
+            .ok_or_else(|| "solver returned None".to_string())?
         }
         "rk45" => {
             let atol = parse_at(row["atol"].as_str().unwrap_or("1e-8"), p, rm, &mut cc);
             let rtol = parse_at(row["rtol"].as_str().unwrap_or("1e-6"), p, rm, &mut cc);
             rk45_adaptive(
                 |t, y, p, rm, cc| ode_rhs(problem, t, y, p, rm, cc),
-                &t0,
-                &y0,
-                &t1,
-                &atol,
-                &rtol,
+                OdeSpan {
+                    t0: &t0,
+                    y0: &y0,
+                    t1: &t1,
+                },
+                OdeTol {
+                    atol: &atol,
+                    rtol: &rtol,
+                },
                 p,
                 rm,
                 &mut cc,
             )
+            .map_err(|e| format!("solver: {e}"))?
         }
         other => return Err(format!("unknown ode {other}")),
-    }
-    .ok_or("solver returned None")?;
+    };
     let last = ys.1.get(ys.1.len().saturating_sub(1)).ok_or("empty y")?;
     let err = if let Some(tol) = row.get("tol").and_then(|v| v.as_str()) {
         parse_at(tol, stored(p).max(64), RoundingMode::Up, &mut cc)

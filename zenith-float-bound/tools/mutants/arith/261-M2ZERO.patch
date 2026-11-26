@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 1f8372d..88e1c90 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -428,7 +428,7 @@ fn gaps(a: &Ball, b: &Ball) -> Option<(Ordering, Ordering)> {
+ /// positive `Mag` on underflow (CONTRACT 15.1, 3.2, 3.3).
+ fn mag_mul_2exp_up(r: &Mag, k: i64) -> Mag {
+     if r.is_zero() {
+-        return Mag::zero();
++        return Mag::infinity();
+     }
+     let (Some(mant), Some(e)) = (r.mant(), r.exp()) else {
+         return Mag::infinity();

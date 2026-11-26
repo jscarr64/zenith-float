@@ -142,20 +142,21 @@ fn pow_inf_and_signed_zero_powers_match_mpfr() -> Res {
     Ok(())
 }
 
-/// zenith-float's documented NaN-operand rule (ext.rs): an operation with a NaN operand returns NaN, whatever
-/// IEEE 754 says for `pow(1, NaN)` and `pow(NaN, 0)` (both 1 there). Not a bug; this pins the rule.
+/// A NaN operand gives NaN where no constant case applies: `pow(2, NaN)`, `pow(NaN, 1)`, `powi(NaN, 2)`,
+/// `powsi(NaN, 2)`. The constant cases are 1, not NaN: `pow(1, y) = 1` for any y including NaN (IEEE 754), and
+/// `pow(x, +-0) = 1` for any x including NaN (P20 POW-01, F-12, widened to `powi(NaN, 0)` and `powsi(NaN, 0)`).
+/// zenith-float still returns NaN for `pow(1, NaN)`, `pow(NaN, +0)`, `pow(NaN, -0)`, `powi(NaN, 0)` and
+/// `powsi(NaN, 0)`; that is known-wrong (this test used to pin it as "not a bug"), so those five are held, not
+/// asserted either way, until ZF-M27 (M27-F12) fixes them red-first.
 #[test]
 fn pow_with_a_nan_operand_is_nan() -> Res {
     let mut cc = Consts::new()?;
     let one = ExactNum::from_word(1, P);
-    let zero = ExactNum::from_word(0, P);
-    assert!(one.pow(&NAN, P, RM, &mut cc).is_nan(), "pow(1, NaN)");
-    assert!(NAN.pow(&zero, P, RM, &mut cc).is_nan(), "pow(NaN, 0)");
-    assert!(
-        NAN.pow(&zero.neg(), P, RM, &mut cc).is_nan(),
-        "pow(NaN, -0)"
-    );
-    assert!(NAN.powi(0, P, RM).is_nan(), "powi(NaN, 0)");
-    assert!(NAN.powsi(0, P, RM).is_nan(), "powsi(NaN, 0)");
+    let two = ExactNum::from_word(2, P);
+    assert!(two.pow(&NAN, P, RM, &mut cc).is_nan(), "pow(2, NaN)");
+    assert!(NAN.pow(&one, P, RM, &mut cc).is_nan(), "pow(NaN, 1)");
+    assert!(NAN.powi(2, P, RM).is_nan(), "powi(NaN, 2)");
+    assert!(NAN.powsi(2, P, RM).is_nan(), "powsi(NaN, 2)");
+    // M27-F12 (held): pow(1, NaN), pow(NaN, +-0), powi(NaN, 0) and powsi(NaN, 0) are ruled 1; NaN today.
     Ok(())
 }

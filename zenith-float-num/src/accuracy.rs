@@ -24,6 +24,8 @@ pub enum Accuracy {
     /// `Ball` radii and `GkResult::abs_err_est` are enclosures. The
     /// Gauss–Kronrod field is a conservative error estimate, validated against oracles.
     Enclosure,
+    /// Correctly rounded outside the disk of singularities; unspecified inside the disk.
+    CorrectlyRoundedOutsideDisk,
     /// Returns in time, stays in the documented domain, and has the right sign
     /// and at least two correct decimal digits. Not a rounding promise.
     Unspecified,
@@ -39,6 +41,9 @@ impl Accuracy {
                 format!("Accuracy: working-precision, {lost_bits} bits")
             }
             Accuracy::Enclosure => String::from("Accuracy: enclosure"),
+            Accuracy::CorrectlyRoundedOutsideDisk => String::from(
+                "Accuracy: correctly-rounded outside the disk; unspecified inside the disk",
+            ),
             Accuracy::Unspecified => String::from("Accuracy: unspecified"),
         }
     }
@@ -206,8 +211,8 @@ pub const ACCURACY: &[(&str, Accuracy)] = &[
         "ExactNum::hermite_he",
         Accuracy::WorkingPrecision { lost_bits: 32 },
     ),
-    ("ExactNum::heun_c", Accuracy::Unspecified),
-    ("ExactNum::heun_g", Accuracy::Unspecified),
+    ("ExactNum::heun_c", Accuracy::CorrectlyRoundedOutsideDisk),
+    ("ExactNum::heun_g", Accuracy::CorrectlyRoundedOutsideDisk),
     ("ExactNum::hurwitz_zeta", Accuracy::Unspecified),
     ("ExactNum::hypergeom_0f1", Accuracy::Unspecified),
     ("ExactNum::hypergeom_1f1", Accuracy::Unspecified),
@@ -235,20 +240,20 @@ pub const ACCURACY: &[(&str, Accuracy)] = &[
     ("ExactNum::jacobi_sc", Accuracy::CorrectlyRounded),
     ("ExactNum::jacobi_sd", Accuracy::CorrectlyRounded),
     ("ExactNum::jacobi_sn", Accuracy::CorrectlyRounded),
-    ("ExactNum::kelvin_bei", Accuracy::Unspecified),
-    ("ExactNum::kelvin_bei_nu", Accuracy::Unspecified),
-    ("ExactNum::kelvin_ber", Accuracy::Unspecified),
-    ("ExactNum::kelvin_ber_nu", Accuracy::Unspecified),
-    ("ExactNum::kelvin_kei", Accuracy::Unspecified),
-    ("ExactNum::kelvin_kei_nu", Accuracy::Unspecified),
-    ("ExactNum::kelvin_ker", Accuracy::Unspecified),
-    ("ExactNum::kelvin_ker_nu", Accuracy::Unspecified),
+    ("ExactNum::kelvin_bei", Accuracy::CorrectlyRounded),
+    ("ExactNum::kelvin_bei_nu", Accuracy::CorrectlyRounded),
+    ("ExactNum::kelvin_ber", Accuracy::CorrectlyRounded),
+    ("ExactNum::kelvin_ber_nu", Accuracy::CorrectlyRounded),
+    ("ExactNum::kelvin_kei", Accuracy::CorrectlyRounded),
+    ("ExactNum::kelvin_kei_nu", Accuracy::CorrectlyRounded),
+    ("ExactNum::kelvin_ker", Accuracy::CorrectlyRounded),
+    ("ExactNum::kelvin_ker_nu", Accuracy::CorrectlyRounded),
     (
         "ExactNum::laguerre",
         Accuracy::WorkingPrecision { lost_bits: 32 },
     ),
-    ("ExactNum::lambert_w0", Accuracy::Unspecified),
-    ("ExactNum::lambert_wm1", Accuracy::Unspecified),
+    ("ExactNum::lambert_w0", Accuracy::CorrectlyRounded),
+    ("ExactNum::lambert_wm1", Accuracy::CorrectlyRounded),
     ("ExactNum::ldexp", Accuracy::CorrectlyRounded),
     (
         "ExactNum::legendre_p",
@@ -279,8 +284,8 @@ pub const ACCURACY: &[(&str, Accuracy)] = &[
     ("ExactNum::riemann_zeta", Accuracy::Unspecified),
     ("ExactNum::round", Accuracy::CorrectlyRounded),
     ("ExactNum::scalb", Accuracy::CorrectlyRounded),
-    ("ExactNum::scorer_gi", Accuracy::Unspecified),
-    ("ExactNum::scorer_hi", Accuracy::Unspecified),
+    ("ExactNum::scorer_gi", Accuracy::CorrectlyRounded),
+    ("ExactNum::scorer_hi", Accuracy::CorrectlyRounded),
     ("ExactNum::set_precision", Accuracy::CorrectlyRounded),
     ("ExactNum::si", Accuracy::CorrectlyRounded),
     ("ExactNum::sin", Accuracy::CorrectlyRounded),

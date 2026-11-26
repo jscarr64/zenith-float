@@ -14,7 +14,7 @@ A finite `ExactNum` or `ExactComplex` value is determined by:
 
 There is no platform-dependent numeric path. Arithmetic is software integer limbs. Hardware binary interchange types are not used. Software `Ieee32` / `Ieee64` are also integer-bit kernels (`from_bits` / `to_bits`); they are not the hardware FPU.
 
-The same inputs at the same commit produce the same limbs on every host that can build the crate. Cross-width (`WORD_BIT_SIZE = 32` vs `64`) and hex-limb CI (`scripts/ci_hex_arm.sh`, `ci_hex_wasm.sh`, `ci_hex_32bit.sh`) lock `to_bytes()` hex in `golds/hex/reference.txt`.
+The same inputs at the same commit produce the same limbs on every host that can build the crate. Hex-limb CI (`scripts/ci_hex_arm.sh`, aarch64) locks `to_bytes()` hex in `golds/hex/reference.txt`. 2.0 is 64-bit only; the former 32-bit and wasm32 runs (`ci_hex_32bit.sh`, `ci_hex_wasm.sh`) were dropped.
 
 ## How to replay
 

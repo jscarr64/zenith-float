@@ -105,12 +105,13 @@ CURRENT_OP = [""]
 def round_real(x, p: int, rm: str) -> dict:
     import mpmath as mp
 
-    mp.mp.dps = max(80, g.round_p(p) // 2 + 40)
+    # Do not lower working precision before the final rounding: a residue
+    # many bits past dest ulp still directs Up/FromZero (see round_mpf).
     if x == 0:
         return g.zero("-" if mp.sign(x) < 0 else "+", g.round_p(p))
     # Round 2: every real special function rounds at exactly p bits.
     sig = p if p >= 2 else None
-    return g.round_mpf(mp.mpf(x), p, rm, sig=sig)
+    return g.round_mpf(x, p, rm, sig=sig)
 
 
 def nan() -> dict:
@@ -248,6 +249,17 @@ def call_mp(op: str, args: list, extra: dict):
     if op == "hurwitz_zeta":
         return mp.hurwitz(a[0], a[1])
     if op == "barnes_g":
+        # G(1)=G(2)=1 and G(n)=∏_{k=1}^{n-2} k! for integers n≥3 (G(4)=2).
+        # mp.barnesg leaves a residual that shrinks with precision; at high
+        # dps the fixed packer would Up-sticky G(1) and G(2) to 1+ulp.
+        z = a[0]
+        zr = z.real if hasattr(z, "real") else z
+        if zr == int(zr) and zr >= 1:
+            n = int(zr)
+            gval = mp.mpf(1)
+            for k in range(2, n):
+                gval *= mp.factorial(k - 1)
+            return gval
         return mp.barnesg(a[0])
     if op == "anger_j":
         return mp.angerj(a[1], a[0])
@@ -336,7 +348,13 @@ def call_complex(op: str, a: list):
     if name == "bi":
         return mp.airybi(z(0))
     if name == "bessel_j":
-        return mp.besselj(z(2), z(0))
+        # J_ν(z) is real when z and ν are real and either z≥0 or ν is an
+        # integer. The complex mpmath path at dest p+2048 bits left a ghost
+        # imag (~2^{-2401} at p=256) on J_1(-20000) and J_{-3}(-20000).
+        zz, nu = z(0), z(2)
+        if zz.imag == 0 and nu.imag == 0 and (zz.real >= 0 or nu.real == int(nu.real)):
+            return mp.mpc(mp.besselj(nu.real, zz.real), 0)
+        return mp.besselj(nu, zz)
     if name == "bessel_y":
         return mp.bessely(z(2), z(0))
     if name == "bessel_i":
@@ -355,7 +373,8 @@ def pack(value, p: int, rm: str) -> dict:
         return nan()
     if isinstance(value, tuple) and value[0] == "c":
         return value[1]
-    mp.mp.dps = max(80, g.round_p(p) // 2 + 40)
+    # Keep the incoming precision; pack used to drop dps here and hide a
+    # directed-mode residue (be63db9 elliptic_e_phi p=512 Up/FromZero).
     if isinstance(value, mp.mpc) or (hasattr(value, "imag") and value.imag != 0):
         w = mp.mpc(value)
         return {"k": "c", "re": round_real(w.real, p, rm), "im": round_real(w.imag, p, rm)}
@@ -443,27 +462,18 @@ def eval_phi(op: str, raw_args: list[str], p: int, rm: str) -> dict:
     if identity:
         tok = raw_args[1] if op == "elliptic_pi_phi" else raw_args[0]
         return g.finalize(g.parse_dec(tok), p, "ToEven")
-    half = mpf_arg(HALF_PI, p)
-    one = mp.mpf(1)
+    # HALF_PI parsed at p bits is the rational fl_p(pi/2), never pi/2 itself, so
+    # it gets no K/E/Pi-complete shortcut: the integral is taken at that rational
+    # (ZF-33). At p=256 fl(pi/2) is below pi/2, so F(.|1) and Pi(1; .|m) are finite.
+    # At p=512 fl(pi/2) is above pi/2: F(.|1) is +inf and E(.|1) is slightly
+    # above 1 (Up/FromZero round to 1+ulp).
     sign = -1 if phi < 0 else 1
-    if phi == half or phi == -half:
-        if op == "elliptic_f_phi":
-            if m > 1:
-                return nan()
-            if m == 1:
-                return g.inf("-" if sign < 0 else "+")
-            val = sign * mp.ellipk(m)
-        elif op == "elliptic_e_phi":
-            if m > 1:
-                return nan()
-            val = sign * mp.ellipe(m)
-        else:
-            # Π(n|m) in this crate is InvalidArgument for n >= 1 or m >= 1,
-            # including the pole mpmath reports as +inf.
-            if m >= 1 or n >= 1:
-                return nan()
-            val = sign * mp.ellippi(n, mp.pi / 2, m)
-        return pack(val, p, rm)
+    # Near an odd multiple of pi/2, 1 - sin^2 and 1 - m sin^2 cancel: about
+    # 2*log2(1/|cos phi|) bits go (squared), and Pi(1; .) adds 1/cos^2 again.
+    # Widen mpmath by that loss so the packed value is not cancellation noise.
+    c = abs(mp.cos(phi))
+    if c != 0 and c < mp.mpf(2) ** -32:
+        mp.mp.prec += 4 * int(-mp.log(c, 2)) + 128
     k = round_half_even(phi / mp.pi)
     if op == "elliptic_f_phi":
         if m == 1 and k != 0:
@@ -686,7 +696,7 @@ def phi_cases() -> list[dict]:
     # real only while the path stays inside |sin t| < 1/√m.
     f_rows = [
         (["0.5", "0.5"], "F(0.5|0.5); phi inside (0, pi/2)"),
-        ([HALF_PI, "0.5"], "F(pi/2|0.5) = K(0.5)"),
+        ([HALF_PI, "0.5"], "F(fl(pi/2)|0.5): the rounded amplitude, not K(0.5)"),
         (["2", "0.5"], "F(2|0.5); phi past pi/2"),
         ([THREE_PI_OVER_4, "0.5"], "F(3pi/4|0.5) = 2K - F(pi/4)"),
         (["5", "0.3"], "F(5|0.3)"),
@@ -703,16 +713,16 @@ def phi_cases() -> list[dict]:
         (["0.2", "1.5"], "m > 1, small phi, real"),
         (["1", "1.5"], "m > 1, path not real"),
         (["2", "1"], "F(2|1) = +inf"),
-        ([HALF_PI, "1"], "F(pi/2|1) = +inf, same as K(1)"),
+        ([HALF_PI, "1"], "F(fl(pi/2)|1): finite where fl(pi/2) < pi/2, +inf past it"),
         ([HALF_PI, "1.5"], "F(pi/2|m>1) is not real"),
-        ([neg_half, "0.5"], "F(-pi/2|0.5) = -K(0.5)"),
+        ([neg_half, "0.5"], "F(-fl(pi/2)|0.5) = -F(fl(pi/2)|0.5)"),
         (["inf", "0.5"], "infinity is InvalidArgument"),
     ]
     for args, note in f_rows:
         add("elliptic_f_phi", args, note)
     e_rows = [
         (["0.5", "0.5"], "E(0.5|0.5)"),
-        ([HALF_PI, "0.5"], "E(pi/2|0.5) = E(0.5)"),
+        ([HALF_PI, "0.5"], "E(fl(pi/2)|0.5): the rounded amplitude, not E(0.5)"),
         (["2", "0.5"], "E(2|0.5)"),
         ([THREE_PI_OVER_4, "0.5"], "E(3pi/4|0.5)"),
         (["5", "0.3"], "E(5|0.3)"),
@@ -726,9 +736,9 @@ def phi_cases() -> list[dict]:
         (["0.2", "1.5"], "m > 1, small phi, real"),
         (["1", "1.5"], "m > 1, path not real"),
         (["2", "1"], "E(2|1) stays real"),
-        ([HALF_PI, "1"], "E(pi/2|1) = 1"),
+        ([HALF_PI, "1"], "E(fl(pi/2)|1) = sin(fl(pi/2)) below pi/2"),
         ([HALF_PI, "1.5"], "E(pi/2|m>1) is not real"),
-        ([neg_half, "0.5"], "E(-pi/2|0.5) = -E(0.5)"),
+        ([neg_half, "0.5"], "E(-fl(pi/2)|0.5) = -E(fl(pi/2)|0.5)"),
         (["inf", "0.5"], "infinity is InvalidArgument"),
     ]
     for args, note in e_rows:
@@ -737,7 +747,7 @@ def phi_cases() -> list[dict]:
     # (the complete integral rejects n >= 1; mpmath's +inf is not used).
     p_rows = [
         (["0.2", "0.4", "0.3"], "Pi(0.2; 0.4|0.3)"),
-        (["0.2", HALF_PI, "0.3"], "Pi(0.2; pi/2|0.3) = Pi(0.2|0.3)"),
+        (["0.2", HALF_PI, "0.3"], "Pi(0.2; fl(pi/2)|0.3): the rounded amplitude, not Pi(0.2|0.3)"),
         (["0.2", "2", "0.3"], "Pi past pi/2"),
         (["0.2", "-0.4", "0.3"], "odd in phi"),
         (["0.2", "0", "0.5"], "Pi(n; 0|m) = 0"),
@@ -745,7 +755,7 @@ def phi_cases() -> list[dict]:
         (["-0.5", "2", "0.5"], "negative n, phi past pi/2"),
         (["2", "0.3", "0.5"], "n > 1, path still real"),
         (["1", "0.4", "0.3"], "n = 1 inside (0, pi/2), real"),
-        (["1", HALF_PI, "0.3"], "n = 1 at pi/2 is the pole"),
+        (["1", HALF_PI, "0.3"], "n = 1 at fl(pi/2): finite below pi/2, the pole is at pi/2 itself"),
         (["2", "1", "0.5"], "n > 1, path reaches 1/sqrt(n)"),
         (["0.2", "100", "0.5"], "large phi"),
         (["0.3", "0.5", "-0.25"], "negative m"),
@@ -753,7 +763,7 @@ def phi_cases() -> list[dict]:
         (["0.2", "1.2", M_NEAR_ONE], "m = 1-2^{-30}, phi past pi/2"),
         (["0.2", "0.2", "1.5"], "m > 1, small phi, real"),
         (["0.2", "1", "1.5"], "m > 1, path not real"),
-        (["0.2", neg_half, "0.3"], "Pi(n; -pi/2|m) = -Pi(n|m)"),
+        (["0.2", neg_half, "0.3"], "Pi(n; -fl(pi/2)|m) = -Pi(n; fl(pi/2)|m)"),
         (["0.2", "inf", "0.5"], "infinity is InvalidArgument"),
     ]
     for args, note in p_rows:
@@ -790,7 +800,7 @@ def shortcut_cases() -> list[dict]:
         add(op, ["0", "0"], "shortcut phi=0 and m=0")
     # n = 0 is F. phi = 0 is 0. n = 0 and m = 0 is the amplitude.
     add("elliptic_pi_phi", ["0", "0.7", "0.4"], "shortcut n=0: Pi equals F")
-    add("elliptic_pi_phi", ["0", HALF_PI, "0.25"], "shortcut n=0 and phi=pi/2: Pi equals K")
+    add("elliptic_pi_phi", ["0", HALF_PI, "0.25"], "shortcut n=0 at phi=fl(pi/2): Pi equals F(fl(pi/2)|m)")
     add("elliptic_pi_phi", ["0", "0.8", "0"], "shortcut n=0 and m=0: Pi equals the input rounded once")
     add("elliptic_pi_phi", ["0", "0", "0.3"], "shortcut phi=0")
     # Sine form. m = 0 is one arcsin. n = 0 is F. x = 0 is 0.
@@ -1030,11 +1040,11 @@ def main() -> None:
     if abs(integral - printed) > mp.mpf("1e-20"):
         raise SystemExit(f"cubic integral is not 0.90960424263889577391: {integral}")
     half_inf = eval_row("elliptic_f_phi", [HALF_PI, "1"], 256, "ToEven", {})
-    if half_inf.get("k") != "inf" or half_inf.get("s") != "+":
-        raise SystemExit(f"F(pi/2|1) golden is not +inf: {half_inf}")
+    if half_inf.get("k") != "f":
+        raise SystemExit(f"F(fl256(pi/2)|1) golden is not finite: {half_inf}")
     pole = eval_row("elliptic_pi_phi", ["1", HALF_PI, "0.3"], 256, "ToEven", {})
-    if pole.get("k") != "nan":
-        raise SystemExit(f"Pi(1; pi/2|0.3) golden is not nan: {pole}")
+    if pole.get("k") != "f":
+        raise SystemExit(f"Pi(1; fl256(pi/2)|0.3) golden is not finite: {pole}")
     cases = base_cases() + fixture_rows() + phi_cases() + shortcut_cases()
     files = expand(cases)
     OUT.mkdir(parents=True, exist_ok=True)

@@ -34,19 +34,19 @@ License: MIT OR Apache-2.0.
 
 ## 3. Numeric model
 
-A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of words, and an **`Exponent` (`i32`)**. Precision is a bit count, always rounded **up to the word size**.
+A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of words, and an **`Exponent` (`i64`, range ±(2^62 − 1))**. Precision is a bit count, always rounded **up to the word size**.
 
 | Item | Value |
 | --- | --- |
-| `Word` | `u64` except on 32-bit targets, where it is `u32` |
+| `Word` | `u64` (2.0 is 64-bit only; 32-bit targets were dropped) |
 | `WORD_BIT_SIZE` | 64 or 32 accordingly |
 | `WORD_MAX` | `Word::MAX` |
 | `WORD_BASE` | `WORD_MAX + 1` as a double-width integer |
 | `WORD_SIGNIFICANT_BIT` | high bit of a word |
-| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE`: 2 with a 64-bit `Word`, 4 with a 32-bit `Word`; small mantissas stored inline |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE`: 2; small mantissas stored inline |
 | `EXPONENT_BIT_SIZE` | 32 |
-| `EXPONENT_MAX` | `i32::MAX` on every target (2.0.0; was `i32::MAX / 4` on 32-bit) |
-| `EXPONENT_MIN` | `i32::MIN` on every target (2.0.0; was `i32::MIN / 4` on 32-bit) |
+| `EXPONENT_MAX` | `2^62 − 1` on every target (2.0.0) |
+| `EXPONENT_MIN` | `−(2^62 − 1)` on every target (2.0.0) |
 | Default operator precision | 128 bits (`ToEven`) for `+ − × ÷` on `ExactNum` (internal default; not a public constant) |
 | `MAX_PREC_RETRY` | `256` — extra-precision budget for correct-rounding retries (`try_set_precision`, `ziv_round`, transcendentals) |
 
@@ -121,7 +121,7 @@ From `zenith_float` / `zenith_float_num`:
 - Word/exponent constants listed in §3
 - `MAX_PREC_RETRY`, `INLINE_WORDS`
 - `NAN`, `INF_POS`, `INF_NEG`
-- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `FFT_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`, `BINARY_INLINE_LEN`, `BINARY_INLINE_MANT_BITS`, `BINARY_FORMAT_VERSION`, `BINARY_MAX_U32`, `BINARY_MAX_ELEMS`, `CSV_MAX_ROWS`, `CSV_MAX_COLS`, `PROPTEST_CASES`
+- `POLY_COMPANION_CLOSED_DEG`, `ORTHOPOLY_N_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `DSP_MAX_POINTS`, `FFT_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`, `BINARY_INLINE_LEN`, `BINARY_INLINE_MANT_BITS`, `BINARY_FORMAT_VERSION`, `BINARY_MAX_U32`, `BINARY_MAX_ELEMS`, `CSV_MAX_ROWS`, `CSV_MAX_COLS`, `PROPTEST_CASES`
 - Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`, `RandomDist`
 
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
@@ -138,16 +138,16 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | --- | --- |
 | `Ieee32` / `Ieee64` | add/sub/mul/div/sqrt/`mul_add`, classify, `next_up`/`next_down`/`next_after`, `frexp`, `from_i32`, `to_exact` / `from_exact` |
 | `Ieee32Array` / `Ieee64Array` | Row-major dense bits (1-D is shape `(1, n)`); elementwise `+ − × ÷` (matching shape), scalar broadcast, `sum`, `dot`, `sqrt`, `fma`, software `matmul`; add/sub/mul/div/sqrt/fma use integer SIMD (`u32`/`u64` lanes, SSE2/NEON) and are **bit-identical** to the scalar integer kernel; specials via widen-to-`ExactNum` (named methods; `cc` is an argument, not a global) |
-| `ExactNumArray` | Row-major `ExactNum` at a stored default `p`. Named elementwise methods match the scalar (`int`/`floor`/…, roots, logs, circular/hyperbolic, §15 specials). Methods that take `p`/`rm`/`cc` on `ExactNum` take the same arguments here — including `Consts` when the `expr!` leaf needs a cache. Software `matmul`. `lu_decomp(p, rm)` → `(L, U, P)` or `None` if singular or a workspace reserve fails. `qr_decomp(p, rm)` → `(Q, R)` or `None` on failed reserve; rank-deficient → zero \(R_{kk}\). `svd_decomp(p, rm)` → `(U, Σ, V^T)` (thin, \(\sigma\) descending) or `None` if empty, non-finite, failed reserve, or not converged in `SVD_ITER_MAX` sweeps per value. `eigen_decomp(p, rm)` → `(Λ, V)` for real symmetric \(A\) (\(\lambda\) descending) or `None` if non-square, non-symmetric, empty, non-finite, or not converged in `EIGEN_ITER_MAX` sweeps per value. `fft`/`ifft(p, rm, cc)` — radix-2 Cooley–Tukey; `(1,n)` or `(n,1)` real, `(2,n)` complex; unnormalized forward; `ifft` divides by `n`; `n` a power of two ≤ `FFT_MAX_POINTS` (65,536), or ≤ `max_points` with `fft_with_max_points` / `ifft_with_max_points`. `random_fill(shape, dist, p, rm, cc)` (`random` feature / tests) samples `RandomDist::Uniform` / `Normal` / `Exponential`. |
+| `ExactNumArray` | Row-major `ExactNum` at a stored default `p`. Named elementwise methods match the scalar (`int`/`floor`/…, roots, logs, circular/hyperbolic, §15 specials). Methods that take `p`/`rm`/`cc` on `ExactNum` take the same arguments here — including `Consts` when the `expr!` leaf needs a cache. Software `matmul`. `lu_decomp(p, rm)` → `(L, U, P)` or `None` if singular or a workspace reserve fails. `qr_decomp(p, rm)` → `(Q, R)` or `None` on failed reserve; rank-deficient → zero \(R_{kk}\). `svd_decomp(p, rm)` → `(U, Σ, V^T)` (thin, \(\sigma\) descending) or `None` if empty, non-finite, failed reserve, or not converged (off-diagonals stop shrinking). `eigen_decomp(p, rm)` → `(Λ, V)` for real symmetric \(A\) (\(\lambda\) descending) or `None` if non-square, non-symmetric, empty, non-finite, or not converged (off-diagonals stop shrinking). `fft`/`ifft(p, rm, cc)` — radix-2 Cooley–Tukey; `(1,n)` or `(n,1)` real, `(2,n)` complex; unnormalized forward; `ifft` divides by `n`; `n` a power of two ≤ `FFT_MAX_POINTS` (65,536), or ≤ `max_points` with `fft_with_max_points` / `ifft_with_max_points`. `random_fill(shape, dist, p, rm, cc)` (`random` feature / tests) samples `RandomDist::Uniform` / `Normal` / `Exponential`. |
 | `ExactRational` | Exact `num/den` with integer-valued `ExactNum` parts, reduced to lowest terms (`den > 0`). `new` / `from_i64` / `from_ints`; `add`/`sub`/`mul`/`div`; `to_exact_num(p, rm)`; `is_integer`; `floor`/`ceil`/`round`; `partial_cmp` by cross-multiply; `parse_exact` / `format_exact`. Zero `den` is `NaN`. Not a float. `0.1` is `1/10`. |
 | `ExactInt` | Signed limb integer (little-endian `Word`s). `from_i64`/`from_u64`/`from_i128`/`from_u128`; `add`/`sub`/`mul`; `div_rem` (truncated, zero divisor `None`); `gcd`; `pow`; `to_exact_num` / `from_exact_num`; `bit_length`. Not a truncated `ExactNum`. |
 | `ExactNumPoly` | Dense univariate, coefficients lowest degree first. `from_coeffs` / `from_i64_coeffs`; `eval` (Horner/`polyval`); `add`/`sub`/`mul`; `div_rem` (zero divisor `None`); `gcd` (Euclidean, integer content, monic); `compose`; `derivative`; `integral` (constant 0); `companion_matrix`; `roots_real` through `POLY_COMPANION_CLOSED_DEG=2`. |
-| Chebyshev | `chebyshev_coeffs(f, n, a, b, p, rm, cc)` interpolates at `n` Chebyshev–Gauss nodes (`n ≤ CHEBYSHEV_MAX_DEGREE`). `chebyshev_eval` maps `[a,b]` then `clenshaw`. `chebyshev_error_bound` is the ℓ¹ tail `Σ_{k≥1}|c_k|`. |
+| Chebyshev | `chebyshev_coeffs(f, n, a, b, p, rm, cc)` interpolates at `n` Chebyshev–Gauss nodes. `chebyshev_eval` maps `[a,b]` then `clenshaw`. `chebyshev_error_bound` is the ℓ¹ tail `Σ_{k≥1}|c_k|`. |
 | Orthogonal polys | `ExactNum::{hermite_he,hermite_h,laguerre,gen_laguerre,chebyshev_t,chebyshev_u,gegenbauer,jacobi_p}(n, …)` via three-term recurrences. `n ≤ ORTHOPOLY_N_MAX`. Standard Gegenbauer `C_n^{(λ)}` (`C_n^{(1/2)}=P_n`, `C_n^{(1)}=U_n`). Jacobi `P_n^{(α,β)}`; `α=β=0` is Legendre. Inverse Jacobi `jacobi_arcsn`/`arccn`/`arcdn`. |
 | Catalog specials | Scorer `scorer_gi`/`scorer_hi`; Kelvin `kelvin_ber`/`bei`/`ker`/`kei` (+ `_nu`); Struve `struve_h`; Anger `anger_j`; Weber `weber_e`; Clausen `clausen_cl2`/`clausen_cl3`; Barnes `barnes_g`; `hurwitz_zeta` / `riemann_zeta` / `polygamma`; `hypergeom_0f1`/`1f1`/`pfq`; `lambert_w0`/`wm1`; `polylog`; Meijer `meijer_g`; Fox `fox_h`; local Heun `heun_g`; confluent Heun `heun_c` (DLMF 31.12.1). |
-| Quadrature | `gauss_legendre(f,a,b,n,…)`; `tanh_sinh(f,a,b,…)`; `gauss_laguerre(f,n,…)`; `gauss_hermite(f,n,…)`. `n ≤ QUADRATURE_MAX_NODES`. Tanh–sinh uses `h=2π/(p ln 2)` and up to `TANH_SINH_LEVELS_MAX` halvings. |
+| Quadrature | `gauss_legendre(f,a,b,n,…)`; `tanh_sinh(f,a,b,…)`; `gauss_laguerre(f,n,…)`; `gauss_hermite(f,n,…)`. Tanh–sinh uses `h=2π/(p ln 2)` and up to `TANH_SINH_LEVELS_MAX` halvings. |
 | Root finding | `bisect`/`newton`/`brent`/`illinois` on `ExactNum`. Opposite signs required for bracket methods (`None` otherwise). `ROOT_MAX_ITER=256`; `root_default_tol` is `2^{ROOT_DEFAULT_TOL}`. |
-| ODE | `rk4`/`rk45_adaptive`/`euler` return `(t, y)` row `ExactNumArray`s. Dormand–Prince 5(4) with `atol`/`rtol`; `h_min=2^{ODE_MIN_STEP}`; cap `ODE_MAX_STEPS`. |
+| ODE | `rk4`/`rk45_adaptive`/`euler` return `(t, y)` row `ExactNumArray`s. Dormand–Prince 5(4) with `atol`/`rtol`; `h_min=2^{-p}` at the working precision. Unreachable tolerances return `OdeError::ToleranceUnreachable`. |
 | DSP | Type-II `dct`/`dst` via a `2N` FFT; type-III inverses (also via a `2N` FFT, `O(N log N)`) scaled so the round-trip is the identity. Each transform has a `*_with_max_points` form taking the length cap per call. `fft_real`/`ifft_real` wrap the radix-2 DFT. Symmetric Hann / Hamming / Blackman / Kaiser / rectangular windows. Real length a power of two ≤ `DSP_MAX_POINTS` (16,384) for transforms; windows allow any `n` in `1..=DSP_MAX_POINTS`. |
 | Modular `ExactInt` | `mod_pow` / `mod_inv` / `miller_rabin` / Brent `pollard_rho`. Zero modulus and non-units are `None`. Cap `POLLARD_RHO_ITER_MAX`. |
 | Hash | FIPS 180-4 `sha256`/`sha512`; HMAC-SHA-256; `constant_time_eq` always scans both slices. |
@@ -220,7 +220,7 @@ There is **no** `%` operator trait; remainder is `rem` or `expr!` `%`.
 
 | Method | Meaning |
 | --- | --- |
-| `cmp` | `Option<SignedWord>` — negative / zero / positive; `None` if unordered (NaN). `SignedWord` is `i128` on 64-bit targets and `i64` on 32-bit; it is the return type of `cmp`/`abs_cmp` even though it is not re-exported at the crate root. |
+| `cmp` | `Option<SignedWord>` — negative / zero / positive; `None` if unordered (NaN). `SignedWord` is `i128`; it is the return type of `cmp`/`abs_cmp` even though it is not re-exported at the crate root. |
 | `abs_cmp` | compare absolute values |
 | `min` / `max` | |
 | `clamp` | |
@@ -323,7 +323,7 @@ Each method’s rustdoc has a **`# Precision`** section (algorithm, region, name
 | `bessel_j(n, p, rm, cc)` | `J_n(self)`, integer order; Miller for large \(n\) | `bessel_j(x, n)` |
 | `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | Real order; \(K\): \(x>0\) | yes |
 | `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_complete` / `elliptic_pi` | Carlson; \(m=k^2\), \(x=\sin\varphi\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\) | `elliptic_k`, `elliptic_e`, `elliptic_f`, `elliptic_e_inc`, `elliptic_pi`, `elliptic_pi_inc` |
-| `jacobi_am` / `sn` / `cn` / `dn` / `cd` / `ns` / `nc` / `nd` / `sc` / `sd` / `cs` / `ds` / `dc` | Real \(m=k^2\in[0,1]\); AGM / Landen, cap `JACOBI_AGM_MAX`; \(m=0\) trig; \(m=1\) hyperbolic; inverse `sn` is `elliptic_f` | `jacobi_am` … `jacobi_dc` |
+| `jacobi_am` / `sn` / `cn` / `dn` / `cd` / `ns` / `nc` / `nd` / `sc` / `sd` / `cs` / `ds` / `dc` | Real \(m=k^2\in[0,1]\); AGM / Landen until the working-precision bound; \(m=0\) trig; \(m=1\) hyperbolic; inverse `sn` is `elliptic_f` | `jacobi_am` … `jacobi_dc` |
 | `legendre_p` / `assoc_legendre_p` | Integer \(n\); \(p+O(n)\) recurrence; Condon–Shortley | `legendre_p(x, n)`, `legendre_p_assoc(x, n, m)` |
 | `hypergeom_2f1` | Series for \(\lvert z\rvert\le 1/2\); Pfaff for \(z<-1/2\); \(z\to 1-z\) connection (DLMF 15.8.4, log case A&S 15.3.10–11) for \(1/2<z<1\); Gauss at \(z=1\) when \(c-a-b>0\); \(z>1\) → NaN; cancellation measured and re-evaluated with guard bits | `hypergeom_2f1(a,b,c,z)` |
 | `betainc` | Regularized \(I_x(a,b)\); continued fraction (DLMF 8.17.22, modified Lentz) with symmetry \(x>(a+1)/(a+b+2)\) | `betainc(a,b,x)` |
@@ -331,8 +331,8 @@ Each method’s rustdoc has a **`# Precision`** section (algorithm, region, name
 | `gamma_pdf` / `beta_pdf` | Scale \(\beta\); \(B\) via \(\Gamma\) | yes |
 | `poisson_pmf` / `binomial_pmf` | Non-negative integer \(k\) | yes |
 | `chi_squared_cdf` / `student_t_pdf` | Regularized \(\gamma(k/2,x/2)/\Gamma(k/2)\); \(t\) via \(\Gamma\) | yes |
-| `meijer_g` / `fox_h` | Residue \(G^{m,n}_{p,q}\) (DLMF 16.17) + \({}_pF_q\); Fox \(H\) is \(G\) when \(A=B=1\), else Gauss lift of positive rational scales. Coincident poles use the hypercomb limit. | no (too many args) |
-| `heun_g` / `heun_c` | Local Heun DLMF 31.3; confluent Heun DLMF 31.12.1 \(y(0)=1\). Series in the disk; Taylor continuation on the real component containing 0. A singular point on the segment is `NaN(InvalidArgument)`. \({}_2F_1\) / \({}_1F_1\) reductions where they apply. | no |
+| `meijer_g` / `fox_h` | Residue \(G^{m,n}_{p,q}\) (DLMF 16.17) + \({}_pF_q\). Fox \(H\) is \(G\) when \(A=B=1\); otherwise a Gauss lift when every scale is an exact fraction whose lift fits in memory, and the Mellin–Barnes residue series at the exact scales otherwise (no slack identification). Coincident poles of \(G\) use the hypercomb limit. | no (too many args) |
+| `heun_g` / `heun_c` | Local Heun DLMF 31.3; confluent Heun DLMF 31.12.1 \(y(0)=1\). Series in the disk; Taylor continuation on the real component containing 0, correctly rounded (ball enclosure, Ziv). A singular point on the segment is `NaN(InvalidArgument)`. \({}_2F_1\) / \({}_1F_1\) reductions where they apply. | no |
 
 ---
 
@@ -570,7 +570,7 @@ Used by `expr!` to lift variables and literals.
 
 ## 24. Binary interchange
 
-Network byte order. Inline record is 16 bytes: flag, version, `n_sig`, inexact, `i32` exponent, two `u32` limbs (least-significant first, matching kernel word order). Specials use flags `0x02`–`0x0A`. Mantissas wider than 64 bits use flag `0x10`/`0x11` plus `u32` limbs. Arrays use flag `0x20` and a shape/`p` header.
+Network byte order. Inline record is 16 bytes: flag, version, `n_sig`, inexact, `i32` exponent, two `u32` limbs (least-significant first, matching kernel word order). Specials use flags `0x02`–`0x0A`. Mantissas wider than 64 bits use flag `0x10`/`0x11` plus `u32` limbs. Exponents outside `i32` use the wide-exponent records: heap `0x12`/`0x13` (the heap header, then the exponent as an 8-byte `i64`, then the limbs; encodes every finite value), and inline `0x0C`/`0x0D` (flag, version, `n_u32 << 1 | inexact`, 8-byte exponent, top 40 mantissa bits). A full 64-bit mantissa next to a 63-bit exponent cannot fit 16 bytes, so `to_inline_bytes` returns `InvalidArgument` for it (a format limit, nothing is allocated), as for a mantissa wider than `BINARY_INLINE_MANT_BITS`; `to_bytes` always succeeds. Each value has one encoding: a wide record with an exponent that fits `i32` is rejected. Arrays use flag `0x20` and a shape/`p` header.
 
 ---
 

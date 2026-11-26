@@ -9,3 +9,6 @@
 SHA256SUMS -text
 zenith-float-num/tests/oracle/goldens/** -text
 golds/hex/** -text
+# Mutant patches are unified diffs: a blank source line is a context line of one space, and a patch may end with an empty
+# context line. That whitespace is the patch format, not an error, so whitespace checks (git diff --check) skip them.
+zenith-float-bound/tools/mutants/**/*.patch -whitespace

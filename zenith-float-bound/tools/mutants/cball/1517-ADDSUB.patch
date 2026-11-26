@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -83,7 +83,7 @@
+     /// Part-wise `Ball::add`.
+     pub fn add(self, other: &CBall, prec: Precision) -> BoundResult<CBall> {
+         Ok(CBall {
+-            re: self.re.add(&other.re, prec)?,
++            re: self.re.sub(&other.re, prec)?,
+             im: self.im.add(&other.im, prec)?,
+         })
+     }

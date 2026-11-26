@@ -1,0 +1,13 @@
+diff --git a/src/mag/add.rs b/src/mag/add.rs
+index 8bcd057..21d9268 100644
+--- a/src/mag/add.rs
++++ b/src/mag/add.rs
+@@ -49,7 +49,7 @@ fn add_checked(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64) -> Option<Mag>
+             norm(sum, i128::from(eb).checked_sub(64)?, false, true)
+         }
+         // gap >= 64: the smaller operand is below one unit of the larger one's last place.
+-        _ => Some(successor(ea, ma)),
++        _ => Some(successor(eb, mb)),
+     }
+ }
+ 

@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..660cbd0 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -388,7 +388,7 @@ impl Ball {
+     pub fn eq(&self, other: &Ball) -> Tri {
+         match endpoint_signs(self, other) {
+             Some((Ordering::Equal, Ordering::Equal)) => Tri::True,
+-            Some((Ordering::Less, _) | (_, Ordering::Greater)) => Tri::False,
++            Some((Ordering::Less, _) | (_, Ordering::Greater)) => Tri::Unknown,
+             Some((Ordering::Equal | Ordering::Greater, Ordering::Equal | Ordering::Less))
+             | None => Tri::Unknown,
+         }

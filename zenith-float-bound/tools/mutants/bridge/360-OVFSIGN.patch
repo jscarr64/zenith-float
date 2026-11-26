@@ -1,0 +1,11 @@
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -141,7 +141,7 @@
+             .ok()?
+             .to_exact_num()
+             .ok()?;
+-        let a_pos = !a.is_negative();
++        let a_pos = a.is_negative();
+         let (u, v) = if a_pos {
+             (a.sub_full_prec(&s), b.add_full_prec(&s))
+         } else {

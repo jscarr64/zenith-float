@@ -4,6 +4,7 @@
 
 use crate::common::consts::ONE;
 use crate::common::util::bump_prec_retry;
+use crate::common::util::reserve_probe;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::num::ExactNumNumber;
@@ -98,10 +99,15 @@ impl Ln10Cache {
     pub(crate) fn for_prec(&mut self, k: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = round_p(k) + p_inc;
+        // Series terms for k bits: k·1.728 + 4, in u128 so no valid k overflows (a valid precision is never
+        // InvalidArgument); a width this machine cannot hold is MemoryAllocation before the series starts.
+        let kext = usize::try_from(
+            u128::try_from(k).map_err(|_| Error::MemoryAllocation)? * 1728 / 1000 + 4,
+        )
+        .map_err(|_| Error::MemoryAllocation)?;
+        reserve_probe(p_wrk)?;
 
         loop {
-            let kext = k * 1728 / 1000 + 4;
-
             if self.b > kext {
                 let mut ret = self.val.clone()?;
 

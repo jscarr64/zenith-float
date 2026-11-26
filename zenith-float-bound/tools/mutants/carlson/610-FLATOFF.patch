@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -295,7 +295,7 @@
+         let doubled = wp.checked_mul(2);
+         // Near the branch point `w*e^w` is flat, so `w` carries only about `wp - 2k` good bits when `|1 + w| ~ 2^-k`:
+         // a certified bound from it would be valid but loose. Raise `wp` first while the cap allows.
+-        if !flat_enough(&w, prec, wp) {
++        if !flat_enough(&w, 0, wp) {
+             if let Some(next) = doubled.filter(|n| *n <= cap) {
+                 wp = next;
+                 continue;

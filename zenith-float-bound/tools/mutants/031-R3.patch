@@ -1,0 +1,13 @@
+diff --git a/src/mag/round.rs b/src/mag/round.rs
+index 904ec82..0d2c607 100644
+--- a/src/mag/round.rs
++++ b/src/mag/round.rs
+@@ -69,7 +69,7 @@ pub(super) fn norm(m: NonZeroU128, scale: i128, sticky: bool, up: bool) -> Optio
+         None => (0, lz.abs_diff(64)),
+     };
+     let m = m.get();
+-    let lost = (m & !(u128::MAX << drop)) != 0;
++    let lost = (m & !(u128::MAX << drop)) > 1;
+     // The aligned significand has exactly 64 bits, so its top bit is set and `low64` is exact.
+     let mant = low64((m >> drop) << add);
+     // |scale| < 2^66 for every caller and drop, add <= 64, so these checked steps cannot fail.

@@ -1,0 +1,26 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 11b06b8..dc72a00 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -151,17 +151,17 @@ impl Mag {
+             // self = 2^e = h + h with h = 2^(e-1) = Mag(TOP, e), in range since big has exponent e.
+             let h = Mag::finite(TOP, e).ok()?.to_exact_num().ok()?;
+             let once = if big_neg {
+-                big.add_full_prec(&h)
+-            } else {
+                 big.sub_full_prec(&h)
++            } else {
++                big.add_full_prec(&h)
+             };
+             if once.inexact() || once.is_nan() {
+                 return None;
+             }
+             if big_neg {
+-                once.add_full_prec(&h)
+-            } else {
+                 once.sub_full_prec(&h)
++            } else {
++                once.add_full_prec(&h)
+             }
+         } else {
+             // me == e: self < 2^e, in range since big has exponent e.

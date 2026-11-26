@@ -395,7 +395,7 @@ assert_eq!(ExactInt::from_i64(2).pow(10), ExactInt::from_i64(1024));
 ### 29. Newton for `x² − 2 = 0`
 
 ```rust
-use zenith_float::{newton, root_default_tol, Consts, ExactNum, RoundingMode};
+use zenith_float::{newton, root_default_tol, Consts, ExactNum, NewtonOptions, RoundingMode};
 let p = 256;
 let rm = RoundingMode::ToEven;
 let mut cc = Consts::new().unwrap();
@@ -405,8 +405,7 @@ let root = newton(
     |x, p, rm, _| x.mul(x, p, rm).sub(&two, p, rm),
     |x, p, rm, _| x.add(x, p, rm),
     &x0,
-    &root_default_tol(p),
-    64,
+    NewtonOptions { tol: &root_default_tol(p), max_iter: 64 },
     p,
     rm,
     &mut cc,
@@ -523,7 +522,7 @@ let back = sn.elliptic_f(&half, p, rm, &mut cc);
 
 **Is HDF5 supported?** No. This crate does not read or write that format. CSV and `to_bytes` remain.
 
-**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. Thumb (`thumbv7em-none-eabihf`) compiles with `default-features = false`, and `scripts/ci_nostd.sh` runs the mpmath reference cases there under QEMU and in a libc-only host binary.
+**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. 64-bit bare-metal targets (`x86_64-unknown-none`, `aarch64-unknown-none`) compile with `default-features = false`, and `scripts/ci_nostd.sh` runs the mpmath reference cases in a libc-only host binary. 2.0 is 64-bit only: 32-bit targets (the former thumbv7em QEMU run among them) were dropped and fail to compile.
 
 **Can I plot?** Not in this crate. Format a string or pack bits in another crate.
 

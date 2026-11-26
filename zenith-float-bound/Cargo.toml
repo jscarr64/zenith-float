@@ -1,0 +1,38 @@
+[package]
+name = "zenith-float-bound"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.99"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Bound layer (ball arithmetic) of zenith-float 2.0, re-exported as zenith_float::bound. Pre-release: nothing is guaranteed yet."
+# Part of the one zenith-float 2.0 library, reached through the facade's `bound` feature; never released on its own.
+publish = false
+
+[dependencies]
+# Intra-library dependency: path only (Jeff 2026-11-10 3:28 PM CT; no crates.io pin, git rev or version key).
+# ExactNum lives in zenith-float-num. No std feature: the bound layer does not need it. No other dependency is allowed.
+zenith-float-num = { path = "../zenith-float-num", default-features = false }
+
+# Applies to every target (lib, tests/, benches/, examples/): Jeff's rules hold in test code too.
+[lints.rust]
+unsafe_code = "forbid"
+unused = { level = "deny", priority = -1 }
+
+[lints.clippy]
+suspicious = { level = "deny", priority = -1 }
+float_arithmetic = "deny"
+float_cmp = "deny"
+cast_precision_loss = "deny"
+as_conversions = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+wildcard_enum_match_arm = "deny"
+match_wildcard_for_single_variants = "deny"

@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -213,7 +213,7 @@
+ 
+     /// The element at a full row-major index; `None` for a wrong rank or an index out of range.
+     pub fn get(&self, index: &[usize]) -> Option<&Mag> {
+-        if index.len() != self.shape.len() {
++        if false {
+             return None;
+         }
+         let mut offset = 0usize;

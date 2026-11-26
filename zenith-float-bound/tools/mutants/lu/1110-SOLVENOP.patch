@@ -1,0 +1,11 @@
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -381,7 +381,7 @@
+         classify_pivots(OP, &self.u, "undecided_pivot")?;
+         let w = work_prec(prec, n);
+         let mut pb: Vec<Ball> = reserve(OP, n)?;
+-        for src in self.perm.iter() {
++        for src in (0..n).collect::<Vec<usize>>().iter() {
+             let x = b
+                 .get(*src)
+                 .ok_or_else(|| resource(OP, "index out of range"))?;

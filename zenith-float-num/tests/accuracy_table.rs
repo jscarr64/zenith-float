@@ -133,7 +133,10 @@ const SKIP: &[&str] = &[
 fn src(rel: &str) -> Result<String, String> {
     let path = format!("{}/src/{rel}", env!("CARGO_MANIFEST_DIR"));
     let text = std::fs::read_to_string(&path).map_err(|err| format!("read {path}: {err}"))?;
-    Ok(match text.find("\n#[cfg(test)]") {
+    // Cut at the test module, not at the first `#[cfg(test)]`: a test-only helper item (catalog.rs
+    // `zeta_prime_2`, made `#[cfg(test)]` in 76359d2) sits above public functions, and cutting there hid
+    // 28 of them from the scan.
+    Ok(match text.find("\n#[cfg(test)]\nmod tests") {
         Some(cut) => text[..cut].to_string(),
         None => text,
     })
@@ -379,7 +382,7 @@ fn accuracy_labels_cover_public_numeric_functions() -> Result<(), Box<dyn std::e
     );
     assert_eq!(
         accuracy_of("ExactNum::lambert_w0"),
-        Some(Accuracy::Unspecified)
+        Some(Accuracy::CorrectlyRounded)
     );
     assert_eq!(
         accuracy_of("ExactNum::hermite_h"),

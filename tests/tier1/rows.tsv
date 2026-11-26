@@ -1,0 +1,561 @@
+T1-barnes_g-negint	c0020743	r.barnes_g	64	down	flint	Z:+	-19p2
+T1-barnes_g-negint	c0020745	r.barnes_g	64	fromzero	flint	Z:+	-19p2
+T1-barnes_g-negint	c0020748	r.barnes_g	64	none	flint	Z:+	-19p2
+T1-barnes_g-negint	c0020746	r.barnes_g	64	toeven	flint	Z:+	-19p2
+T1-barnes_g-negint	c0020747	r.barnes_g	64	toodd	flint	Z:+	-19p2
+T1-barnes_g-negint	c0020744	r.barnes_g	64	tozero	flint	Z:+	-19p2
+T1-barnes_g-negint	c0020742	r.barnes_g	64	up	flint	Z:+	-19p2
+T1-barnes_g-negint	c0020759	r.barnes_g	64	fromzero	flint	Z:+	-3e9p0
+T1-barnes_g-negint	c0020762	r.barnes_g	64	none	flint	Z:+	-3e9p0
+T1-barnes_g-negint	c0020760	r.barnes_g	64	toeven	flint	Z:+	-3e9p0
+T1-barnes_g-negint	c0020761	r.barnes_g	64	toodd	flint	Z:+	-3e9p0
+T1-barnes_g-negint	c0020758	r.barnes_g	64	tozero	flint	Z:+	-3e9p0
+T1-barnes_g-negint	c0020770	r.barnes_g	64	up	flint	Z:+	-abp0
+T1-barnes_g-negint	c0020772	r.barnes_g	64	tozero	flint	Z:+	-abp0
+T1-barnes_g-tiny	c0020610	r.barnes_g	64	down	exact	F:+:-4611686018427387903:8000000000000000	minnorm:64
+T1-barnes_g-tiny	c0020612	r.barnes_g	64	fromzero	exact	F:+:-4611686018427387903:8000000000000001	minnorm:64
+T1-barnes_g-tiny	c0020615	r.barnes_g	64	none	exact	F:+:-4611686018427387903:8000000000000000	minnorm:64
+T1-barnes_g-tiny	c0020613	r.barnes_g	64	toeven	flint	F:+:-4611686018427387903:8000000000000000	minnorm:64
+T1-barnes_g-tiny	c0020614	r.barnes_g	64	toodd	flint	F:+:-4611686018427387903:8000000000000000	minnorm:64
+T1-barnes_g-tiny	c0020611	r.barnes_g	64	tozero	exact	F:+:-4611686018427387903:8000000000000000	minnorm:64
+T1-barnes_g-tiny	c0020609	r.barnes_g	64	up	exact	F:+:-4611686018427387903:8000000000000001	minnorm:64
+T1-barnes_g-tiny	c0020617	r.barnes_g	64	down	exact	F:-:-4611686018427387903:8000000000000000	-minnorm:64
+T1-barnes_g-tiny	c0020619	r.barnes_g	64	fromzero	exact	F:-:-4611686018427387903:8000000000000000	-minnorm:64
+T1-barnes_g-tiny	c0020622	r.barnes_g	64	none	exact	F:-:-4611686018427387903:7fffffffffffffff	-minnorm:64
+T1-barnes_g-tiny	c0020620	r.barnes_g	64	toeven	flint	F:-:-4611686018427387903:8000000000000000	-minnorm:64
+T1-barnes_g-tiny	c0020621	r.barnes_g	64	toodd	flint	F:-:-4611686018427387903:8000000000000000	-minnorm:64
+T1-barnes_g-tiny	c0020618	r.barnes_g	64	tozero	exact	F:-:-4611686018427387903:7fffffffffffffff	-minnorm:64
+T1-barnes_g-tiny	c0020616	r.barnes_g	64	up	exact	F:-:-4611686018427387903:7fffffffffffffff	-minnorm:64
+T1-barnes_g-tiny	c0020626	r.barnes_g	64	fromzero	exact	F:+:-4611686018427387903:0000000000000002	minpos:64
+T1-barnes_g-tiny	c0020629	r.barnes_g	64	none	exact	F:+:-4611686018427387903:0000000000000001	minpos:64
+T1-barnes_g-tiny	c0020627	r.barnes_g	64	toeven	flint	F:+:-4611686018427387903:0000000000000001	minpos:64
+T1-barnes_g-tiny	c0020628	r.barnes_g	64	toodd	flint	F:+:-4611686018427387903:0000000000000001	minpos:64
+T1-barnes_g-tiny	c0020623	r.barnes_g	64	up	exact	F:+:-4611686018427387903:0000000000000002	minpos:64
+T1-bessel_y-x0	c0059682	r.bessel_y	64	down	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0059684	r.bessel_y	64	fromzero	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0059685	r.bessel_y	64	toeven	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0059686	r.bessel_y	64	toodd	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0059683	r.bessel_y	64	tozero	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0059681	r.bessel_y	64	up	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0212285	r.bessel_y	128	down	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0212287	r.bessel_y	128	fromzero	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0212288	r.bessel_y	128	toeven	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0212289	r.bessel_y	128	toodd	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0212286	r.bessel_y	128	tozero	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0212284	r.bessel_y	128	up	mpmath	I:-	0	1p-1
+T1-bessel_y-x0	c0059696	r.bessel_y	64	down	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0059698	r.bessel_y	64	fromzero	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0059699	r.bessel_y	64	toeven	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0059700	r.bessel_y	64	toodd	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0059697	r.bessel_y	64	tozero	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0059695	r.bessel_y	64	up	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0212299	r.bessel_y	128	down	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0212301	r.bessel_y	128	fromzero	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0212302	r.bessel_y	128	toeven	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0212303	r.bessel_y	128	toodd	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0212300	r.bessel_y	128	tozero	mpmath	I:-	0	3p-1
+T1-bessel_y-x0	c0212298	r.bessel_y	128	up	mpmath	I:-	0	3p-1
+T1-c.atan-branchcut	c0128934	c.atan	64	down	mpmath	F:+:1:c90fdaa22168c234;F:+:-3:cd7c9e691a209029	0,5p1
+T1-c.atan-branchcut	c0128936	c.atan	64	fromzero	mpmath	F:+:1:c90fdaa22168c235;F:+:-3:cd7c9e691a20902a	0,5p1
+T1-c.atan-branchcut	c0128937	c.atan	64	toeven	mpmath	F:+:1:c90fdaa22168c235;F:+:-3:cd7c9e691a209029	0,5p1
+T1-c.atan-branchcut	c0128938	c.atan	64	toodd	mpmath	F:+:1:c90fdaa22168c235;F:+:-3:cd7c9e691a209029	0,5p1
+T1-c.atan-branchcut	c0128935	c.atan	64	tozero	mpmath	F:+:1:c90fdaa22168c234;F:+:-3:cd7c9e691a209029	0,5p1
+T1-c.atan-branchcut	c0128933	c.atan	64	up	mpmath	F:+:1:c90fdaa22168c235;F:+:-3:cd7c9e691a20902a	0,5p1
+T1-c.atan-branchcut	c0281537	c.atan	128	down	mpmath	F:+:1:c90fdaa22168c234c4c6628b80dc1cd1;F:+:-3:cd7c9e691a2090290d937babccbbebe6	0,5p1
+T1-c.atan-branchcut	c0281539	c.atan	128	fromzero	mpmath	F:+:1:c90fdaa22168c234c4c6628b80dc1cd2;F:+:-3:cd7c9e691a2090290d937babccbbebe7	0,5p1
+T1-c.atan-branchcut	c0281540	c.atan	128	toeven	mpmath	F:+:1:c90fdaa22168c234c4c6628b80dc1cd1;F:+:-3:cd7c9e691a2090290d937babccbbebe7	0,5p1
+T1-c.atan-branchcut	c0281541	c.atan	128	toodd	mpmath	F:+:1:c90fdaa22168c234c4c6628b80dc1cd1;F:+:-3:cd7c9e691a2090290d937babccbbebe7	0,5p1
+T1-c.atan-branchcut	c0281538	c.atan	128	tozero	mpmath	F:+:1:c90fdaa22168c234c4c6628b80dc1cd1;F:+:-3:cd7c9e691a2090290d937babccbbebe6	0,5p1
+T1-c.atan-branchcut	c0281536	c.atan	128	up	mpmath	F:+:1:c90fdaa22168c234c4c6628b80dc1cd2;F:+:-3:cd7c9e691a2090290d937babccbbebe7	0,5p1
+T1-c.atan-branchcut	c0128983	c.atan	64	down	mpmath	F:-:1:8db70c975df22364;Z:+	-1p1,0
+T1-c.atan-branchcut	c0128985	c.atan	64	fromzero	mpmath	F:-:1:8db70c975df22364;Z:+	-1p1,0
+T1-c.atan-branchcut	c0128986	c.atan	64	toeven	mpmath	F:-:1:8db70c975df22363;Z:+	-1p1,0
+T1-c.atan-branchcut	c0128987	c.atan	64	toodd	mpmath	F:-:1:8db70c975df22363;Z:+	-1p1,0
+T1-c.atan-branchcut	c0128984	c.atan	64	tozero	mpmath	F:-:1:8db70c975df22363;Z:+	-1p1,0
+T1-c.atan-branchcut	c0128982	c.atan	64	up	mpmath	F:-:1:8db70c975df22363;Z:+	-1p1,0
+T1-c.atan-branchcut	c0281586	c.atan	128	down	mpmath	F:-:1:8db70c975df2236368cd511051cd7991;Z:+	-1p1,0
+T1-c.atan-branchcut	c0281588	c.atan	128	fromzero	mpmath	F:-:1:8db70c975df2236368cd511051cd7991;Z:+	-1p1,0
+T1-c.atan-branchcut	c0281589	c.atan	128	toeven	mpmath	F:-:1:8db70c975df2236368cd511051cd7990;Z:+	-1p1,0
+T1-c.atan-branchcut	c0281590	c.atan	128	toodd	mpmath	F:-:1:8db70c975df2236368cd511051cd7990;Z:+	-1p1,0
+T1-c.atan-branchcut	c0281587	c.atan	128	tozero	mpmath	F:-:1:8db70c975df2236368cd511051cd7990;Z:+	-1p1,0
+T1-c.atan-branchcut	c0281585	c.atan	128	up	mpmath	F:-:1:8db70c975df2236368cd511051cd7990;Z:+	-1p1,0
+T1-c.mul-double-round	c0144012	c.mul	64	down	flint	F:+:-3:d738d450064c9040;F:+:-4:b3433be5f4aa4532	f5ce2254979ece99p-67,-81ef115cb7a686b7p-66	ecf91eaa1cb2c991p-66,9bfb3af3f8fb9d67p-64
+T1-c.mul-double-round	c0144014	c.mul	64	fromzero	flint	F:+:-3:d738d450064c9041;F:+:-4:b3433be5f4aa4533	f5ce2254979ece99p-67,-81ef115cb7a686b7p-66	ecf91eaa1cb2c991p-66,9bfb3af3f8fb9d67p-64
+T1-c.mul-double-round	c0144029	c.mul	64	toeven	flint	F:+:2:c4b4547028eb2a8c;F:-:1:c8c1530916bc40ff	-e00821db6cf98d93p-63,8399cda8bb417229p-63	-d933d1f9f26c878fp-63,-ce35c18508c3d415p-67
+T1-c.mul-double-round	c0144016	c.mul	64	toodd	flint	F:+:-3:d738d450064c9040;F:+:-4:b3433be5f4aa4532	f5ce2254979ece99p-67,-81ef115cb7a686b7p-66	ecf91eaa1cb2c991p-66,9bfb3af3f8fb9d67p-64
+T1-c.mul-double-round	c0144020	c.mul	64	tozero	flint	F:-:3:e16474bea6e9e476;F:-:3:9fc21868325fc988	c0720a27db3f302dp-60,-baeee807860cbd21p-65	-928da2e05e96e0c7p-64,-dd6a417aa579dbafp-65
+T1-c.mul-double-round	c0144011	c.mul	64	up	flint	F:+:-3:d738d450064c9041;F:+:-4:b3433be5f4aa4533	f5ce2254979ece99p-67,-81ef115cb7a686b7p-66	ecf91eaa1cb2c991p-66,9bfb3af3f8fb9d67p-64
+T1-c.mul-double-round	c0296629	c.mul	128	down	flint	F:-:1:b14c237bd2ce7afd008ccfe0a532989d;F:+:1:fe94e5557e74856497289dc9958f924e	97182f1c00ab6e32291e721346bc32b3p-129,d7d48540cf71da5ec583b2fbac84229bp-130	a2a8e6b232df17ce403a58b6c7037a2bp-131,d5daa7eb795b1070ee266e15cf545ba1p-125
+T1-c.mul-double-round	c0296617	c.mul	128	fromzero	flint	F:+:4:c255806bcbc58e93789877dc2eb54d1d;F:-:5:8ae1698fb711b558d1e7073bfcea2b46	-d952df29009dd6203784da7057708457p-125,d4aee59eda2cdbfcae10bc43e23aed8bp-124	-b3f2dcda8c5f4d75a2451f6e0fe0fc6dp-127,-c8279a4c4db6c586e2d02c793a6e1771p-130
+T1-c.mul-double-round	c0296625	c.mul	128	toeven	flint	F:-:1:ace1923d99e2fd54997fc7bd0a11930c;F:-:-4:8382f29d74f1985f589d2ba1b72ffa81	-f321a1979630c2228caa04ee29811185p-128,-b6668a33fef1969b3440ba95094405c1p-130	b0a142252f9f64ed3c4bacb568b11107p-127,-e667030cdf4e0bfb5a1c5fdec6401a3dp-130
+T1-c.mul-double-round	c0296626	c.mul	128	toodd	flint	F:-:1:ace1923d99e2fd54997fc7bd0a11930c;F:-:-4:8382f29d74f1985f589d2ba1b72ffa81	-f321a1979630c2228caa04ee29811185p-128,-b6668a33fef1969b3440ba95094405c1p-130	b0a142252f9f64ed3c4bacb568b11107p-127,-e667030cdf4e0bfb5a1c5fdec6401a3dp-130
+T1-c.mul-double-round	c0296616	c.mul	128	tozero	flint	F:+:4:c255806bcbc58e93789877dc2eb54d1c;F:-:5:8ae1698fb711b558d1e7073bfcea2b45	-d952df29009dd6203784da7057708457p-125,d4aee59eda2cdbfcae10bc43e23aed8bp-124	-b3f2dcda8c5f4d75a2451f6e0fe0fc6dp-127,-c8279a4c4db6c586e2d02c793a6e1771p-130
+T1-c.mul-double-round	c0296614	c.mul	128	up	flint	F:+:4:c255806bcbc58e93789877dc2eb54d1d;F:-:5:8ae1698fb711b558d1e7073bfcea2b45	-d952df29009dd6203784da7057708457p-125,d4aee59eda2cdbfcae10bc43e23aed8bp-124	-b3f2dcda8c5f4d75a2451f6e0fe0fc6dp-127,-c8279a4c4db6c586e2d02c793a6e1771p-130
+T1-c.mul-double-round	c0144026	c.mul	64	down	flint	F:+:2:c4b4547028eb2a8c;F:-:1:c8c1530916bc40ff	-e00821db6cf98d93p-63,8399cda8bb417229p-63	-d933d1f9f26c878fp-63,-ce35c18508c3d415p-67
+T1-c.mul-double-round	c0144035	c.mul	64	fromzero	flint	F:-:1:8ffebe2c1b683a8c;F:+:-1:94a8e5ff4e067301	dc5a5887ffcff68dp-68,-864bef2533b07d1fp-60	-9133cb2d91983adfp-68,-8902d697a07182f9p-66
+T1-c.mul-double-round	c0144043	c.mul	64	toeven	flint	F:-:-2:b3fa80a5b6198c92;F:-:0:afeb744aa688ec6d	bd01ae61886d2993p-62,ff316f420cefa73bp-66	-a0f43c641aaa2813p-67,-e77bbf4a2e92be7bp-66
+T1-c.mul-double-round	c0144030	c.mul	64	toodd	flint	F:+:2:c4b4547028eb2a8c;F:-:1:c8c1530916bc40ff	-e00821db6cf98d93p-63,8399cda8bb417229p-63	-d933d1f9f26c878fp-63,-ce35c18508c3d415p-67
+T1-c.mul-double-round	c0144027	c.mul	64	tozero	flint	F:+:2:c4b4547028eb2a8c;F:-:1:c8c1530916bc40fe	-e00821db6cf98d93p-63,8399cda8bb417229p-63	-d933d1f9f26c878fp-63,-ce35c18508c3d415p-67
+T1-c.mul-double-round	c0144018	c.mul	64	up	flint	F:-:3:e16474bea6e9e476;F:-:3:9fc21868325fc988	c0720a27db3f302dp-60,-baeee807860cbd21p-65	-928da2e05e96e0c7p-64,-dd6a417aa579dbafp-65
+T1-c.mul-double-round	c0296643	c.mul	128	down	flint	F:+:-6:9b252c4cf2700c1a6385a83f1b2580e2;F:-:-7:eaef61822bdd0aef423c13ff54e5a4ec	f5a11e5eb7d806d891c07f232e94ec79p-131,948686d041781c5e7263902f5dc019a9p-132	e47a64c44c22a7efadcb86a1b237731dp-132,-9cf73ad6483850baa9711d5ea505b841p-131
+T1-c.mul-double-round	c0296624	c.mul	128	fromzero	flint	F:-:1:ace1923d99e2fd54997fc7bd0a11930d;F:-:-4:8382f29d74f1985f589d2ba1b72ffa82	-f321a1979630c2228caa04ee29811185p-128,-b6668a33fef1969b3440ba95094405c1p-130	b0a142252f9f64ed3c4bacb568b11107p-127,-e667030cdf4e0bfb5a1c5fdec6401a3dp-130
+T1-c.mul-double-round	c0296632	c.mul	128	toeven	flint	F:-:1:b14c237bd2ce7afd008ccfe0a532989d;F:+:1:fe94e5557e74856497289dc9958f924e	97182f1c00ab6e32291e721346bc32b3p-129,d7d48540cf71da5ec583b2fbac84229bp-130	a2a8e6b232df17ce403a58b6c7037a2bp-131,d5daa7eb795b1070ee266e15cf545ba1p-125
+T1-c.mul-double-round	c0296633	c.mul	128	toodd	flint	F:-:1:b14c237bd2ce7afd008ccfe0a532989d;F:+:1:fe94e5557e74856497289dc9958f924e	97182f1c00ab6e32291e721346bc32b3p-129,d7d48540cf71da5ec583b2fbac84229bp-130	a2a8e6b232df17ce403a58b6c7037a2bp-131,d5daa7eb795b1070ee266e15cf545ba1p-125
+T1-c.mul-double-round	c0296623	c.mul	128	tozero	flint	F:-:1:ace1923d99e2fd54997fc7bd0a11930c;F:-:-4:8382f29d74f1985f589d2ba1b72ffa81	-f321a1979630c2228caa04ee29811185p-128,-b6668a33fef1969b3440ba95094405c1p-130	b0a142252f9f64ed3c4bacb568b11107p-127,-e667030cdf4e0bfb5a1c5fdec6401a3dp-130
+T1-c.mul-double-round	c0296621	c.mul	128	up	flint	F:-:1:ace1923d99e2fd54997fc7bd0a11930c;F:-:-4:8382f29d74f1985f589d2ba1b72ffa81	-f321a1979630c2228caa04ee29811185p-128,-b6668a33fef1969b3440ba95094405c1p-130	b0a142252f9f64ed3c4bacb568b11107p-127,-e667030cdf4e0bfb5a1c5fdec6401a3dp-130
+T1-cexp-csin-ccos-no-ziv	c0121003	c.cos	64	down	flint	F:-:-1:d51132ba9b902522;Z:+	-1p1,0
+T1-cexp-csin-ccos-no-ziv	c0120935	c.cos	64	fromzero	flint	F:+:1:c583aa8ecfaa8262;Z:-	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0120964	c.cos	64	toeven	flint	F:+:0:8a51407da8345c92;Z:-	1p0,0
+T1-cexp-csin-ccos-no-ziv	c0120965	c.cos	64	toodd	flint	F:+:0:8a51407da8345c92;Z:-	1p0,0
+T1-cexp-csin-ccos-no-ziv	c0120976	c.cos	64	tozero	flint	F:+:0:d56f54b7a1acd1f3;F:-:0:fd28666957479a49	1p0,1p0
+T1-cexp-csin-ccos-no-ziv	c0120932	c.cos	64	up	flint	F:+:1:c583aa8ecfaa8262;Z:-	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0119344	c.exp	64	down	flint	F:+:0:8a51407da8345c91;F:-:0:d76aa47848677021	0,-1p0
+T1-cexp-csin-ccos-no-ziv	c0119339	c.exp	64	fromzero	flint	F:+:0:8a51407da8345c92;F:+:0:d76aa47848677021	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0119340	c.exp	64	toeven	flint	F:+:0:8a51407da8345c92;F:+:0:d76aa47848677021	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0119341	c.exp	64	toodd	flint	F:+:0:8a51407da8345c92;F:+:0:d76aa47848677021	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0119380	c.exp	64	tozero	flint	F:+:1:bbfe29bbe2d4b047;F:+:2:9264076e310321d6	1p0,1p0
+T1-cexp-csin-ccos-no-ziv	c0119336	c.exp	64	up	flint	F:+:0:8a51407da8345c92;F:+:0:d76aa47848677021	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0120408	c.sin	64	down	flint	Z:+;F:-:1:966cfe2275cc12d5	0,-1p0
+T1-cexp-csin-ccos-no-ziv	c0120403	c.sin	64	fromzero	flint	Z:+;F:+:1:966cfe2275cc12d5	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0120432	c.sin	64	toeven	flint	F:+:0:d76aa47848677021;Z:+	1p0,0
+T1-cexp-csin-ccos-no-ziv	c0120433	c.sin	64	toodd	flint	F:+:0:d76aa47848677021;Z:+	1p0,0
+T1-cexp-csin-ccos-no-ziv	c0120444	c.sin	64	tozero	flint	F:+:1:a633dba7b6627689;F:+:0:a28cfec023fc8e9b	1p0,1p0
+T1-cexp-csin-ccos-no-ziv	c0120400	c.sin	64	up	flint	Z:+;F:+:1:966cfe2275cc12d5	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0273606	c.cos	128	down	flint	F:-:-1:d51132ba9b902521997c565db9586bb5;Z:+	-1p1,0
+T1-cexp-csin-ccos-no-ziv	c0273538	c.cos	128	fromzero	flint	F:+:1:c583aa8ecfaa82615e940800cb527b36;Z:-	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0273567	c.cos	128	toeven	flint	F:+:0:8a51407da8345c91c2466d976871bd2a;Z:-	1p0,0
+T1-cexp-csin-ccos-no-ziv	c0273568	c.cos	128	toodd	flint	F:+:0:8a51407da8345c91c2466d976871bd2a;Z:-	1p0,0
+T1-cexp-csin-ccos-no-ziv	c0273579	c.cos	128	tozero	flint	F:+:0:d56f54b7a1acd1f3d163b3ba57677f43;F:-:0:fd28666957479a495e4c8852ed393e77	1p0,1p0
+T1-cexp-csin-ccos-no-ziv	c0273535	c.cos	128	up	flint	F:+:1:c583aa8ecfaa82615e940800cb527b36;Z:-	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0271947	c.exp	128	down	flint	F:+:0:8a51407da8345c91c2466d976871bd29;F:-:0:d76aa47848677020c6e9e909c50f3c33	0,-1p0
+T1-cexp-csin-ccos-no-ziv	c0271942	c.exp	128	fromzero	flint	F:+:0:8a51407da8345c91c2466d976871bd2a;F:+:0:d76aa47848677020c6e9e909c50f3c33	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0271943	c.exp	128	toeven	flint	F:+:0:8a51407da8345c91c2466d976871bd2a;F:+:0:d76aa47848677020c6e9e909c50f3c33	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0271944	c.exp	128	toodd	flint	F:+:0:8a51407da8345c91c2466d976871bd2a;F:+:0:d76aa47848677020c6e9e909c50f3c33	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0271983	c.exp	128	tozero	flint	F:+:1:bbfe29bbe2d4b047bd44513f162d8f27;F:+:2:9264076e310321d6d9e16df8096c6ea8	1p0,1p0
+T1-cexp-csin-ccos-no-ziv	c0271939	c.exp	128	up	flint	F:+:0:8a51407da8345c91c2466d976871bd2a;F:+:0:d76aa47848677020c6e9e909c50f3c33	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0273011	c.sin	128	down	flint	Z:+;F:-:1:966cfe2275cc12d40124a43f8327feaf	0,-1p0
+T1-cexp-csin-ccos-no-ziv	c0273006	c.sin	128	fromzero	flint	Z:+;F:+:1:966cfe2275cc12d40124a43f8327feaf	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0273035	c.sin	128	toeven	flint	F:+:0:d76aa47848677020c6e9e909c50f3c33;Z:+	1p0,0
+T1-cexp-csin-ccos-no-ziv	c0273036	c.sin	128	toodd	flint	F:+:0:d76aa47848677020c6e9e909c50f3c33;Z:+	1p0,0
+T1-cexp-csin-ccos-no-ziv	c0273047	c.sin	128	tozero	flint	F:+:1:a633dba7b6627689049c97c69c3c3e15;F:+:0:a28cfec023fc8e9ba924eec3d4f39f0b	1p0,1p0
+T1-cexp-csin-ccos-no-ziv	c0273003	c.sin	128	up	flint	Z:+;F:+:1:966cfe2275cc12d40124a43f8327feaf	0,1p0
+T1-cexp-csin-ccos-no-ziv	c0121087	c.cos	64	down	flint	F:-:0:d6cd64486358f905;Z:+	5p1,0
+T1-cexp-csin-ccos-no-ziv	c0120942	c.cos	64	fromzero	flint	F:+:1:c583aa8ecfaa8262;Z:+	0,-1p0
+T1-cexp-csin-ccos-no-ziv	c0121006	c.cos	64	toeven	flint	F:-:-1:d51132ba9b902522;Z:+	-1p1,0
+T1-cexp-csin-ccos-no-ziv	c0121007	c.cos	64	toodd	flint	F:-:-1:d51132ba9b902522;Z:+	-1p1,0
+T1-cexp-csin-ccos-no-ziv	c0120983	c.cos	64	tozero	flint	F:+:0:d56f54b7a1acd1f3;F:+:0:fd28666957479a49	1p0,-1p0
+T1-cexp-csin-ccos-no-ziv	c0120939	c.cos	64	up	flint	F:+:1:c583aa8ecfaa8262;Z:+	0,-1p0
+T1-directed-overflow	c0016564	r.bi	64	down	flint	F:+:4611686018427387903:ffffffffffffffff	1p100
+T1-directed-overflow	c0016565	r.bi	64	tozero	flint	F:+:4611686018427387903:ffffffffffffffff	1p100
+T1-directed-overflow	c0017614	r.bi_prime	64	down	flint	F:+:4611686018427387903:ffffffffffffffff	1p100
+T1-directed-overflow	c0017615	r.bi_prime	64	tozero	flint	F:+:4611686018427387903:ffffffffffffffff	1p100
+T1-directed-overflow	c0012434	r.digamma	64	down	flint	F:+:4611686018427387903:ffffffffffffffff	-minnorm:64
+T1-directed-overflow	c0012428	r.digamma	64	tozero	flint	F:-:4611686018427387903:ffffffffffffffff	minnorm:64
+T1-directed-overflow	c0012426	r.digamma	64	up	flint	F:-:4611686018427387903:ffffffffffffffff	minnorm:64
+T1-directed-overflow	c0041566	r.two_product	64	down	mpmath	F:+:4611686018427387903:ffffffffffffffff;Z:+	1p1000	maxv:64
+T1-directed-overflow	c0041357	r.two_product	64	tozero	mpmath	F:-:4611686018427387903:ffffffffffffffff;Z:+	-c90fdaa22168c235p-62	maxv:64
+T1-directed-overflow	c0041355	r.two_product	64	up	mpmath	F:-:4611686018427387903:ffffffffffffffff;Z:+	-c90fdaa22168c235p-62	maxv:64
+T1-directed-overflow	c0040138	r.two_sum	64	down	mpmath	F:+:4611686018427387903:ffffffffffffffff;Z:+	maxv:64	maxv:64
+T1-directed-overflow	c0040139	r.two_sum	64	tozero	mpmath	F:+:4611686018427387903:ffffffffffffffff;Z:+	maxv:64	maxv:64
+T1-directed-overflow	c0169167	r.bi	128	down	flint	F:+:4611686018427387903:ffffffffffffffffffffffffffffffff	1p100
+T1-directed-overflow	c0169168	r.bi	128	tozero	flint	F:+:4611686018427387903:ffffffffffffffffffffffffffffffff	1p100
+T1-directed-overflow	c0170217	r.bi_prime	128	down	flint	F:+:4611686018427387903:ffffffffffffffffffffffffffffffff	1p100
+T1-directed-overflow	c0170218	r.bi_prime	128	tozero	flint	F:+:4611686018427387903:ffffffffffffffffffffffffffffffff	1p100
+T1-directed-overflow	c0165037	r.digamma	128	down	flint	F:+:4611686018427387903:ffffffffffffffffffffffffffffffff	-minnorm:128
+T1-directed-overflow	c0165031	r.digamma	128	tozero	flint	F:-:4611686018427387903:ffffffffffffffffffffffffffffffff	minnorm:128
+T1-directed-overflow	c0165029	r.digamma	128	up	flint	F:-:4611686018427387903:ffffffffffffffffffffffffffffffff	minnorm:128
+T1-directed-overflow	c0194169	r.two_product	128	down	mpmath	F:+:4611686018427387903:ffffffffffffffffffffffffffffffff;Z:+	1p1000	maxv:128
+T1-directed-overflow	c0193960	r.two_product	128	tozero	mpmath	F:-:4611686018427387903:ffffffffffffffffffffffffffffffff;Z:+	-c90fdaa22168c234c4c6628b80dc1cd1p-126	maxv:128
+T1-directed-overflow	c0193958	r.two_product	128	up	mpmath	F:-:4611686018427387903:ffffffffffffffffffffffffffffffff;Z:+	-c90fdaa22168c234c4c6628b80dc1cd1p-126	maxv:128
+T1-directed-overflow	c0192741	r.two_sum	128	down	mpmath	F:+:4611686018427387903:ffffffffffffffffffffffffffffffff;Z:+	maxv:128	maxv:128
+T1-directed-overflow	c0192742	r.two_sum	128	tozero	mpmath	F:+:4611686018427387903:ffffffffffffffffffffffffffffffff;Z:+	maxv:128	maxv:128
+T1-elliptic_pi-x1	c0096166	r.elliptic_pi	64	down	mpmath	F:+:2:8e2c18d6eb17214e	1p-1	1p0	0
+T1-elliptic_pi-x1	c0096168	r.elliptic_pi	64	fromzero	mpmath	F:+:2:8e2c18d6eb17214f	1p-1	1p0	0
+T1-elliptic_pi-x1	c0096169	r.elliptic_pi	64	toeven	mpmath	F:+:2:8e2c18d6eb17214f	1p-1	1p0	0
+T1-elliptic_pi-x1	c0096170	r.elliptic_pi	64	toodd	mpmath	F:+:2:8e2c18d6eb17214f	1p-1	1p0	0
+T1-elliptic_pi-x1	c0096167	r.elliptic_pi	64	tozero	mpmath	F:+:2:8e2c18d6eb17214e	1p-1	1p0	0
+T1-elliptic_pi-x1	c0096165	r.elliptic_pi	64	up	mpmath	F:+:2:8e2c18d6eb17214f	1p-1	1p0	0
+T1-elliptic_pi-x1	c0248769	r.elliptic_pi	128	down	mpmath	F:+:2:8e2c18d6eb17214edf1f285c1f5f5d03	1p-1	1p0	0
+T1-elliptic_pi-x1	c0248771	r.elliptic_pi	128	fromzero	mpmath	F:+:2:8e2c18d6eb17214edf1f285c1f5f5d04	1p-1	1p0	0
+T1-elliptic_pi-x1	c0248772	r.elliptic_pi	128	toeven	mpmath	F:+:2:8e2c18d6eb17214edf1f285c1f5f5d04	1p-1	1p0	0
+T1-elliptic_pi-x1	c0248773	r.elliptic_pi	128	toodd	mpmath	F:+:2:8e2c18d6eb17214edf1f285c1f5f5d04	1p-1	1p0	0
+T1-elliptic_pi-x1	c0248770	r.elliptic_pi	128	tozero	mpmath	F:+:2:8e2c18d6eb17214edf1f285c1f5f5d03	1p-1	1p0	0
+T1-elliptic_pi-x1	c0248768	r.elliptic_pi	128	up	mpmath	F:+:2:8e2c18d6eb17214edf1f285c1f5f5d04	1p-1	1p0	0
+T1-elliptic_pi-x1	c0096341	r.elliptic_pi	64	down	mpmath	F:+:1:8e2c18d6eb17214e	-1p0	1p0	0
+T1-elliptic_pi-x1	c0096343	r.elliptic_pi	64	fromzero	mpmath	F:+:1:8e2c18d6eb17214f	-1p0	1p0	0
+T1-elliptic_pi-x1	c0096344	r.elliptic_pi	64	toeven	mpmath	F:+:1:8e2c18d6eb17214f	-1p0	1p0	0
+T1-elliptic_pi-x1	c0096345	r.elliptic_pi	64	toodd	mpmath	F:+:1:8e2c18d6eb17214f	-1p0	1p0	0
+T1-elliptic_pi-x1	c0096342	r.elliptic_pi	64	tozero	mpmath	F:+:1:8e2c18d6eb17214e	-1p0	1p0	0
+T1-elliptic_pi-x1	c0096340	r.elliptic_pi	64	up	mpmath	F:+:1:8e2c18d6eb17214f	-1p0	1p0	0
+T1-elliptic_pi-x1	c0248944	r.elliptic_pi	128	down	mpmath	F:+:1:8e2c18d6eb17214edf1f285c1f5f5d03	-1p0	1p0	0
+T1-elliptic_pi-x1	c0248946	r.elliptic_pi	128	fromzero	mpmath	F:+:1:8e2c18d6eb17214edf1f285c1f5f5d04	-1p0	1p0	0
+T1-elliptic_pi-x1	c0248947	r.elliptic_pi	128	toeven	mpmath	F:+:1:8e2c18d6eb17214edf1f285c1f5f5d04	-1p0	1p0	0
+T1-elliptic_pi-x1	c0248948	r.elliptic_pi	128	toodd	mpmath	F:+:1:8e2c18d6eb17214edf1f285c1f5f5d04	-1p0	1p0	0
+T1-elliptic_pi-x1	c0248945	r.elliptic_pi	128	tozero	mpmath	F:+:1:8e2c18d6eb17214edf1f285c1f5f5d03	-1p0	1p0	0
+T1-elliptic_pi-x1	c0248943	r.elliptic_pi	128	up	mpmath	F:+:1:8e2c18d6eb17214edf1f285c1f5f5d04	-1p0	1p0	0
+T1-from_i128	d0005707	misc.from_i128	64	toeven	mpmath/exact (zfs_check2all)	Z:+	0
+T1-from_i128	d0005708	misc.from_i128	64	toeven	mpmath/exact (zfs_check2all)	F:+:1:8000000000000000	1
+T1-from_i128	d0005709	misc.from_i128	64	toeven	mpmath/exact (zfs_check2all)	F:-:1:8000000000000000	-1
+T1-from_i128	d0005710	misc.from_i128	64	toeven	mpmath/exact (zfs_check2all)	F:+:128:8000000000000000	170141183460469231731687303715884105727
+T1-from_i128	d0005711	misc.from_i128	64	toeven	mpmath/exact (zfs_check2all)	F:-:128:8000000000000000	-170141183460469231731687303715884105728
+T1-from_i128	d0005712	misc.from_i128	64	toeven	mpmath/exact (zfs_check2all)	F:+:94:9f906cc91afb26c6	12345678901234567890123456789
+T1-gamma-stirling-cap	c0621446	r.gamma	2048	down	flint	F:+:2:ab73ba9ca4178b3bb234fa4b356011b612d1a9acbb56e50c06de4d9da797256453d3e3072be7eb5c9c58b12ca09c0ffb52232c604f891b9ee89c751b942333bd99d1c2e1f19f4310268907fee046fc6faf52a98da11056867f1d123cfa4339a23005bcdbe193255f0d24d58c000ec18de25445e05f08b5f7f2fb324ca0a1fa15bebbea3f27942b4f95e75a41139b1a33ff87c889d8c52355cfcedcc268e6f886c0faa60f8433208c4d62d72921408ee0845a79e7ace3297f110907f3fb2c459b32df03a8c5bc7233b278af5cdb24112310c612751dac5581ae7b8869c94425612e697c45c0d0bb4daf1b9c5e16bf047e839a4137a7aa688ab0cfa16c0a77432d	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabp-2049
+T1-gamma-stirling-cap	c0621448	r.gamma	2048	fromzero	flint	F:+:2:ab73ba9ca4178b3bb234fa4b356011b612d1a9acbb56e50c06de4d9da797256453d3e3072be7eb5c9c58b12ca09c0ffb52232c604f891b9ee89c751b942333bd99d1c2e1f19f4310268907fee046fc6faf52a98da11056867f1d123cfa4339a23005bcdbe193255f0d24d58c000ec18de25445e05f08b5f7f2fb324ca0a1fa15bebbea3f27942b4f95e75a41139b1a33ff87c889d8c52355cfcedcc268e6f886c0faa60f8433208c4d62d72921408ee0845a79e7ace3297f110907f3fb2c459b32df03a8c5bc7233b278af5cdb24112310c612751dac5581ae7b8869c94425612e697c45c0d0bb4daf1b9c5e16bf047e839a4137a7aa688ab0cfa16c0a77432e	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabp-2049
+T1-gamma-stirling-cap	c0621449	r.gamma	2048	toeven	flint	F:+:2:ab73ba9ca4178b3bb234fa4b356011b612d1a9acbb56e50c06de4d9da797256453d3e3072be7eb5c9c58b12ca09c0ffb52232c604f891b9ee89c751b942333bd99d1c2e1f19f4310268907fee046fc6faf52a98da11056867f1d123cfa4339a23005bcdbe193255f0d24d58c000ec18de25445e05f08b5f7f2fb324ca0a1fa15bebbea3f27942b4f95e75a41139b1a33ff87c889d8c52355cfcedcc268e6f886c0faa60f8433208c4d62d72921408ee0845a79e7ace3297f110907f3fb2c459b32df03a8c5bc7233b278af5cdb24112310c612751dac5581ae7b8869c94425612e697c45c0d0bb4daf1b9c5e16bf047e839a4137a7aa688ab0cfa16c0a77432e	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabp-2049
+T1-gamma-stirling-cap	c0621450	r.gamma	2048	toodd	flint	F:+:2:ab73ba9ca4178b3bb234fa4b356011b612d1a9acbb56e50c06de4d9da797256453d3e3072be7eb5c9c58b12ca09c0ffb52232c604f891b9ee89c751b942333bd99d1c2e1f19f4310268907fee046fc6faf52a98da11056867f1d123cfa4339a23005bcdbe193255f0d24d58c000ec18de25445e05f08b5f7f2fb324ca0a1fa15bebbea3f27942b4f95e75a41139b1a33ff87c889d8c52355cfcedcc268e6f886c0faa60f8433208c4d62d72921408ee0845a79e7ace3297f110907f3fb2c459b32df03a8c5bc7233b278af5cdb24112310c612751dac5581ae7b8869c94425612e697c45c0d0bb4daf1b9c5e16bf047e839a4137a7aa688ab0cfa16c0a77432e	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabp-2049
+T1-gamma-stirling-cap	c0621447	r.gamma	2048	tozero	flint	F:+:2:ab73ba9ca4178b3bb234fa4b356011b612d1a9acbb56e50c06de4d9da797256453d3e3072be7eb5c9c58b12ca09c0ffb52232c604f891b9ee89c751b942333bd99d1c2e1f19f4310268907fee046fc6faf52a98da11056867f1d123cfa4339a23005bcdbe193255f0d24d58c000ec18de25445e05f08b5f7f2fb324ca0a1fa15bebbea3f27942b4f95e75a41139b1a33ff87c889d8c52355cfcedcc268e6f886c0faa60f8433208c4d62d72921408ee0845a79e7ace3297f110907f3fb2c459b32df03a8c5bc7233b278af5cdb24112310c612751dac5581ae7b8869c94425612e697c45c0d0bb4daf1b9c5e16bf047e839a4137a7aa688ab0cfa16c0a77432d	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabp-2049
+T1-gamma-stirling-cap	c0621445	r.gamma	2048	up	flint	F:+:2:ab73ba9ca4178b3bb234fa4b356011b612d1a9acbb56e50c06de4d9da797256453d3e3072be7eb5c9c58b12ca09c0ffb52232c604f891b9ee89c751b942333bd99d1c2e1f19f4310268907fee046fc6faf52a98da11056867f1d123cfa4339a23005bcdbe193255f0d24d58c000ec18de25445e05f08b5f7f2fb324ca0a1fa15bebbea3f27942b4f95e75a41139b1a33ff87c889d8c52355cfcedcc268e6f886c0faa60f8433208c4d62d72921408ee0845a79e7ace3297f110907f3fb2c459b32df03a8c5bc7233b278af5cdb24112310c612751dac5581ae7b8869c94425612e697c45c0d0bb4daf1b9c5e16bf047e839a4137a7aa688ab0cfa16c0a77432e	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabp-2049
+T1-gamma-stirling-cap	c0747291	c.ai	2048	down	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d5;Z:+	0,0
+T1-gamma-stirling-cap	c0747293	c.ai	2048	fromzero	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d6;Z:+	0,0
+T1-gamma-stirling-cap	c0747294	c.ai	2048	toeven	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d6;Z:+	0,0
+T1-gamma-stirling-cap	c0747295	c.ai	2048	toodd	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d6;Z:+	0,0
+T1-gamma-stirling-cap	c0747292	c.ai	2048	tozero	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d5;Z:+	0,0
+T1-gamma-stirling-cap	c0747290	c.ai	2048	up	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d6;Z:+	0,0
+T1-gamma-stirling-cap	c0747823	c.bi	2048	down	flint	F:+:0:9d6bd4da51f54baaecb6804cf7a2ebed9295e0411ef5e1837c243549c5f62ba6b264f543ab24817a52719d7747563d6f034d32d593559131b2bdab5e743ad9dbad4a571f8b92980bfaa87a76263435c60268b2258fd853210c457473ef475f583efdb59c588240ffad09f5efc80bf4ddc5b129b8b070315d01ebdd24c18273a93c0fb8c927222dd6f8307ade1c9f50dd27ee98bc3ba9ce7217c5e9ad4c88cfc54babc607fb308dfb6120309009022d185bec6dfcab58bdff2cf91fef97307a33c80c7826cd66e3b49165e5b03e936b4a5d8347fa94a45dbd2f4410fb2625459e91cc2f09e35bea634b9e57efc9a1870587da9df5eed17f4f64588ffe6961352b;Z:+	0,0
+T1-gamma-stirling-cap	c0747825	c.bi	2048	fromzero	flint	F:+:0:9d6bd4da51f54baaecb6804cf7a2ebed9295e0411ef5e1837c243549c5f62ba6b264f543ab24817a52719d7747563d6f034d32d593559131b2bdab5e743ad9dbad4a571f8b92980bfaa87a76263435c60268b2258fd853210c457473ef475f583efdb59c588240ffad09f5efc80bf4ddc5b129b8b070315d01ebdd24c18273a93c0fb8c927222dd6f8307ade1c9f50dd27ee98bc3ba9ce7217c5e9ad4c88cfc54babc607fb308dfb6120309009022d185bec6dfcab58bdff2cf91fef97307a33c80c7826cd66e3b49165e5b03e936b4a5d8347fa94a45dbd2f4410fb2625459e91cc2f09e35bea634b9e57efc9a1870587da9df5eed17f4f64588ffe6961352c;Z:+	0,0
+T1-gamma-stirling-cap	c0747826	c.bi	2048	toeven	flint	F:+:0:9d6bd4da51f54baaecb6804cf7a2ebed9295e0411ef5e1837c243549c5f62ba6b264f543ab24817a52719d7747563d6f034d32d593559131b2bdab5e743ad9dbad4a571f8b92980bfaa87a76263435c60268b2258fd853210c457473ef475f583efdb59c588240ffad09f5efc80bf4ddc5b129b8b070315d01ebdd24c18273a93c0fb8c927222dd6f8307ade1c9f50dd27ee98bc3ba9ce7217c5e9ad4c88cfc54babc607fb308dfb6120309009022d185bec6dfcab58bdff2cf91fef97307a33c80c7826cd66e3b49165e5b03e936b4a5d8347fa94a45dbd2f4410fb2625459e91cc2f09e35bea634b9e57efc9a1870587da9df5eed17f4f64588ffe6961352b;Z:+	0,0
+T1-gamma-stirling-cap	c0747827	c.bi	2048	toodd	flint	F:+:0:9d6bd4da51f54baaecb6804cf7a2ebed9295e0411ef5e1837c243549c5f62ba6b264f543ab24817a52719d7747563d6f034d32d593559131b2bdab5e743ad9dbad4a571f8b92980bfaa87a76263435c60268b2258fd853210c457473ef475f583efdb59c588240ffad09f5efc80bf4ddc5b129b8b070315d01ebdd24c18273a93c0fb8c927222dd6f8307ade1c9f50dd27ee98bc3ba9ce7217c5e9ad4c88cfc54babc607fb308dfb6120309009022d185bec6dfcab58bdff2cf91fef97307a33c80c7826cd66e3b49165e5b03e936b4a5d8347fa94a45dbd2f4410fb2625459e91cc2f09e35bea634b9e57efc9a1870587da9df5eed17f4f64588ffe6961352b;Z:+	0,0
+T1-gamma-stirling-cap	c0747824	c.bi	2048	tozero	flint	F:+:0:9d6bd4da51f54baaecb6804cf7a2ebed9295e0411ef5e1837c243549c5f62ba6b264f543ab24817a52719d7747563d6f034d32d593559131b2bdab5e743ad9dbad4a571f8b92980bfaa87a76263435c60268b2258fd853210c457473ef475f583efdb59c588240ffad09f5efc80bf4ddc5b129b8b070315d01ebdd24c18273a93c0fb8c927222dd6f8307ade1c9f50dd27ee98bc3ba9ce7217c5e9ad4c88cfc54babc607fb308dfb6120309009022d185bec6dfcab58bdff2cf91fef97307a33c80c7826cd66e3b49165e5b03e936b4a5d8347fa94a45dbd2f4410fb2625459e91cc2f09e35bea634b9e57efc9a1870587da9df5eed17f4f64588ffe6961352b;Z:+	0,0
+T1-gamma-stirling-cap	c0747822	c.bi	2048	up	flint	F:+:0:9d6bd4da51f54baaecb6804cf7a2ebed9295e0411ef5e1837c243549c5f62ba6b264f543ab24817a52719d7747563d6f034d32d593559131b2bdab5e743ad9dbad4a571f8b92980bfaa87a76263435c60268b2258fd853210c457473ef475f583efdb59c588240ffad09f5efc80bf4ddc5b129b8b070315d01ebdd24c18273a93c0fb8c927222dd6f8307ade1c9f50dd27ee98bc3ba9ce7217c5e9ad4c88cfc54babc607fb308dfb6120309009022d185bec6dfcab58bdff2cf91fef97307a33c80c7826cd66e3b49165e5b03e936b4a5d8347fa94a45dbd2f4410fb2625459e91cc2f09e35bea634b9e57efc9a1870587da9df5eed17f4f64588ffe6961352c;Z:+	0,0
+T1-gamma-stirling-cap	c0626290	r.ai	2048	down	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d5	0
+T1-gamma-stirling-cap	c0626292	r.ai	2048	fromzero	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d6	0
+T1-gamma-stirling-cap	c0626293	r.ai	2048	toeven	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d6	0
+T1-gamma-stirling-cap	c0626294	r.ai	2048	toodd	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d6	0
+T1-gamma-stirling-cap	c0626291	r.ai	2048	tozero	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d5	0
+T1-gamma-stirling-cap	c0626289	r.ai	2048	up	flint	F:+:-1:b5c63cb138adc2f52daf7609cc9edb52f56200d64df3d6c842466728441708ae08f972aaf93e7687a49e4b218179dc5067d51ee376c02db16ba4d2eb2ba1403f37661465e01c569e959d41262f4853a3856486bbfbaa8b8dfb50234f0aae5485cbea0ced7ece26f68f599fd072191ec99746d4d6ef9e7fa58446c2eee52923eab86f6fe7b7b6d285a2b6446416e16a9526eb0e1184bc9ef774d70777487d235d94372ebfe156ff1ad174a13d6f8c89f7a85da39aaf9200ae05f2d2eee960e7ff4188155c704061d30ef43aa48d7e8862b75fef18af31fc684cf471b34f69412c41403468a9e513260e84d6292024aaf19fe7c02a486b6313bb922f64d55fe5d6	0
+T1-gammainc_upper-s0	c0056847	r.gammainc_upper	64	down	mpmath	F:+:5:a1bcd33958c4fbd3	0	1p-30
+T1-gammainc_upper-s0	c0056849	r.gammainc_upper	64	fromzero	mpmath	F:+:5:a1bcd33958c4fbd4	0	1p-30
+T1-gammainc_upper-s0	c0056852	r.gammainc_upper	64	none	mpmath	F:+:5:a1bcd33958c4fbd3	0	1p-30
+T1-gammainc_upper-s0	c0056850	r.gammainc_upper	64	toeven	mpmath	F:+:5:a1bcd33958c4fbd4	0	1p-30
+T1-gammainc_upper-s0	c0056851	r.gammainc_upper	64	toodd	mpmath	F:+:5:a1bcd33958c4fbd4	0	1p-30
+T1-gammainc_upper-s0	c0056848	r.gammainc_upper	64	tozero	mpmath	F:+:5:a1bcd33958c4fbd3	0	1p-30
+T1-gammainc_upper-s0	c0056846	r.gammainc_upper	64	up	mpmath	F:+:5:a1bcd33958c4fbd4	0	1p-30
+T1-gammainc_upper-s0	c0209450	r.gammainc_upper	128	down	mpmath	F:+:5:a1bcd33958c4fbd3c6b78662981af805	0	1p-30
+T1-gammainc_upper-s0	c0209452	r.gammainc_upper	128	fromzero	mpmath	F:+:5:a1bcd33958c4fbd3c6b78662981af806	0	1p-30
+T1-gammainc_upper-s0	c0209455	r.gammainc_upper	128	none	mpmath	F:+:5:a1bcd33958c4fbd3c6b78662981af805	0	1p-30
+T1-gammainc_upper-s0	c0209453	r.gammainc_upper	128	toeven	mpmath	F:+:5:a1bcd33958c4fbd3c6b78662981af806	0	1p-30
+T1-gammainc_upper-s0	c0209454	r.gammainc_upper	128	toodd	mpmath	F:+:5:a1bcd33958c4fbd3c6b78662981af806	0	1p-30
+T1-gammainc_upper-s0	c0209451	r.gammainc_upper	128	tozero	mpmath	F:+:5:a1bcd33958c4fbd3c6b78662981af805	0	1p-30
+T1-gammainc_upper-s0	c0209449	r.gammainc_upper	128	up	mpmath	F:+:5:a1bcd33958c4fbd3c6b78662981af806	0	1p-30
+T1-gammainc_upper-s0	c0056854	r.gammainc_upper	64	down	mpmath	F:+:0:8f4d5282ba5c0dba	0	1p-1
+T1-gammainc_upper-s0	c0056856	r.gammainc_upper	64	fromzero	mpmath	F:+:0:8f4d5282ba5c0dbb	0	1p-1
+T1-gammainc_upper-s0	c0056859	r.gammainc_upper	64	none	mpmath	F:+:0:8f4d5282ba5c0dba	0	1p-1
+T1-gammainc_upper-s0	c0056857	r.gammainc_upper	64	toeven	mpmath	F:+:0:8f4d5282ba5c0dbb	0	1p-1
+T1-gammainc_upper-s0	c0056858	r.gammainc_upper	64	toodd	mpmath	F:+:0:8f4d5282ba5c0dbb	0	1p-1
+T1-gammainc_upper-s0	c0056855	r.gammainc_upper	64	tozero	mpmath	F:+:0:8f4d5282ba5c0dba	0	1p-1
+T1-gammainc_upper-s0	c0056853	r.gammainc_upper	64	up	mpmath	F:+:0:8f4d5282ba5c0dbb	0	1p-1
+T1-gammainc_upper-s0	c0209457	r.gammainc_upper	128	down	mpmath	F:+:0:8f4d5282ba5c0dba8d7936d89243f6d2	0	1p-1
+T1-gammainc_upper-s0	c0209459	r.gammainc_upper	128	fromzero	mpmath	F:+:0:8f4d5282ba5c0dba8d7936d89243f6d3	0	1p-1
+T1-gammainc_upper-s0	c0209462	r.gammainc_upper	128	none	mpmath	F:+:0:8f4d5282ba5c0dba8d7936d89243f6d2	0	1p-1
+T1-ieee_soft-rounding	d0114747	ieee32.add	64	toeven	mpmath/exact (zfs_check2all)	B:c51b0189	3a66c250	c51b018d
+T1-ieee_soft-rounding	d0114238	ieee32.div	64	toeven	mpmath/exact (zfs_check2all)	B:2204cc38	1	1276c04f
+T1-ieee_soft-rounding	d0116063	ieee32.fma	64	toeven	mpmath/exact (zfs_check2all)	B:00000000	1fbb8aff	a3fff	0
+T1-ieee_soft-rounding	d0210851	ieee32.from_exact	128	toeven	mpmath/exact (zfs_check2all)	B:00000000	minnorm:128
+T1-ieee_soft-rounding	d0114237	ieee32.mul	64	toeven	mpmath/exact (zfs_check2all)	B:00000000	1	1276c04f
+T1-ieee_soft-rounding	d0115868	ieee32.sub	64	toeven	mpmath/exact (zfs_check2all)	B:274e3b57	274e3b67	1d790292
+T1-ieee_soft-rounding	d0117602	ieee64.add	64	toeven	mpmath/exact (zfs_check2all)	B:2f129de02821e669	2f129de02821e66e	abf27efd0a0c6607
+T1-ieee_soft-rounding	d0114261	ieee64.div	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	841e92b884ddaab9	703906fbbd4ad954
+T1-ieee_soft-rounding	d0125542	ieee64.fma	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	b707c2c6d888c912	ce53498d83d9b	0
+T1-ieee_soft-rounding	d0210850	ieee64.from_exact	128	toeven	mpmath/exact (zfs_check2all)	B:0000000000000000	minnorm:128
+T1-ieee_soft-rounding	d0114228	ieee64.mul	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	800ea4761a42af8c	147ab967ce45b
+T1-ieee_soft-rounding	d0120531	ieee64.sub	64	toeven	mpmath/exact (zfs_check2all)	B:4147a743110ce819	4147a7443c3e8227	4002b319a0d8d428
+T1-ieee_soft-rounding	d0119307	ieee32.add	64	toeven	mpmath/exact (zfs_check2all)	B:924bc401	924bc40f	8585aba
+T1-ieee_soft-rounding	d0114286	ieee32.div	64	toeven	mpmath/exact (zfs_check2all)	B:00000000	7d45e	7948a9bc
+T1-ieee_soft-rounding	d0126687	ieee32.fma	64	toeven	mpmath/exact (zfs_check2all)	B:80000a56	8e705d23	2bb0271b	0
+T1-ieee_soft-rounding	d0210867	ieee32.from_exact	128	toeven	mpmath/exact (zfs_check2all)	B:80000000	-minnorm:128
+T1-ieee_soft-rounding	d0114333	ieee32.mul	64	toeven	mpmath/exact (zfs_check2all)	B:00000000	8001bc58	8028458e
+T1-ieee_soft-rounding	d0120972	ieee32.sub	64	toeven	mpmath/exact (zfs_check2all)	B:568a1ac7	d30dfdcf	d68b36c3
+T1-ieee_soft-rounding	d0135954	ieee64.add	64	toeven	mpmath/exact (zfs_check2all)	B:14dcbcce0ef39d88	920910c2510b56e0	14dcbcce0ef39e51
+T1-ieee_soft-rounding	d0114341	ieee64.div	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	80046ef36d3950c5	68df27a331ba0d27
+T1-ieee_soft-rounding	d0128230	ieee64.fma	64	toeven	mpmath/exact (zfs_check2all)	B:0000000000000000	10000000000000	fffffffffffff	0
+T1-ieee_soft-rounding	d0210866	ieee64.from_exact	128	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	-minnorm:128
+T1-ieee_soft-rounding	d0114324	ieee64.mul	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	982a29ffbabae1fd	17289e08023949b6
+T1-ieee_soft-rounding	d0123123	ieee64.sub	64	toeven	mpmath/exact (zfs_check2all)	B:ffe959524c1b0942	ffe959525c581a35	fe603d10f297538b
+T1-ieee_soft-rounding	d0119611	ieee32.add	64	toeven	mpmath/exact (zfs_check2all)	B:5d7b4d42	d3089a30	5d7b4d4b
+T1-ieee_soft-rounding	d0114334	ieee32.div	64	toeven	mpmath/exact (zfs_check2all)	B:3d3089d3	8001bc58	8028458e
+T1-ieee_soft-rounding	d0146719	ieee32.fma	64	toeven	mpmath/exact (zfs_check2all)	B:8000c4fc	800000	bbc4fc5c	0
+T1-ieee_soft-rounding	d0210547	ieee32.from_exact	128	toeven	mpmath/exact (zfs_check2all)	B:00000000	1p-200
+T1-ieee_soft-rounding	d0114381	ieee32.mul	64	toeven	mpmath/exact (zfs_check2all)	B:80000000	2c37350	80751f97
+T1-ieee_soft-rounding	d0124700	ieee32.sub	64	toeven	mpmath/exact (zfs_check2all)	B:a6909ca5	a6909cdc	9dda2d82
+T1-ieee_soft-rounding	d0144594	ieee64.add	64	toeven	mpmath/exact (zfs_check2all)	B:821cc899da60c277	821cc899da64c925	406ad93f75d49
+T1-ieee_soft-rounding	d0114437	ieee64.div	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	8009ebc81564278c	6d27af7a3c47d910
+T1-ieee_soft-rounding	d0128342	ieee64.fma	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	80024c19305f3220	347d2ad01d05652c	0
+T1-ieee_soft-rounding	d0210562	ieee64.from_exact	128	toeven	mpmath/exact (zfs_check2all)	B:0000000000000000	1p-5000
+T1-ieee_soft-rounding	d0114388	ieee64.mul	64	toeven	mpmath/exact (zfs_check2all)	B:0000000000000000	8a518f12b505ae13	a8a0419025642a06
+T1-ieee_soft-rounding	d0127475	ieee64.sub	64	toeven	mpmath/exact (zfs_check2all)	B:c86a56d36e54cf59	45e1bc9a09200ee3	486a56d36e54e116
+T1-ieee_soft-rounding	d0122747	ieee32.add	64	toeven	mpmath/exact (zfs_check2all)	B:e30f6616	e30f6619	58277a84
+T1-ieee_soft-rounding	d0114526	ieee32.div	64	toeven	mpmath/exact (zfs_check2all)	B:84b6df34	1	afb32f80
+T1-ieee_soft-rounding	d0146767	ieee32.fma	64	toeven	mpmath/exact (zfs_check2all)	B:00000000	118a0576	1	0
+T1-ieee_soft-rounding	d0210563	ieee32.from_exact	128	toeven	mpmath/exact (zfs_check2all)	B:00000000	1p-5000
+T1-ieee_soft-rounding	d0114397	ieee32.mul	64	toeven	mpmath/exact (zfs_check2all)	B:80000000	2089828	b1594789
+T1-ieee_soft-rounding	d0125564	ieee32.sub	64	toeven	mpmath/exact (zfs_check2all)	B:0861d792	805c4381	8861d84b
+T1-ieee_soft-rounding	d0155058	ieee64.add	64	toeven	mpmath/exact (zfs_check2all)	B:3ca1aee8ed7aa5be	b9ddd18b2d7a5199	3ca1aee8ed7aa6ad
+T1-ieee_soft-rounding	d0114485	ieee64.div	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	800a8dd2b21786fa	65d2c6d10a0345b2
+T1-ieee_soft-rounding	d0137638	ieee64.fma	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	dedc5f6e1f8d4	802bcb244b034429	0
+T1-ieee_soft-rounding	d0210802	ieee64.from_exact	128	toeven	mpmath/exact (zfs_check2all)	B:0000000000000000	1p-1099511627776
+T1-ieee_soft-rounding	d0114564	ieee64.mul	64	toeven	mpmath/exact (zfs_check2all)	B:8000000000000000	8006d7d249205620	748ce3fed8058
+T1-ieee_soft-rounding	d0134467	ieee64.sub	64	toeven	mpmath/exact (zfs_check2all)	B:8237269b3ee1e037	8237269c0b5657fe	80e98e8ef8d0016a
+T1-jacobi-m1-huge	c0078295	r.jacobi_am	64	down	mpmath	F:+:1:c90fdaa22168c234	1p100	1p0
+T1-jacobi-m1-huge	c0078297	r.jacobi_am	64	fromzero	mpmath	F:+:1:c90fdaa22168c235	1p100	1p0
+T1-jacobi-m1-huge	c0078300	r.jacobi_am	64	none	mpmath	F:+:1:c90fdaa22168c234	1p100	1p0
+T1-jacobi-m1-huge	c0078298	r.jacobi_am	64	toeven	mpmath	F:+:1:c90fdaa22168c235	1p100	1p0
+T1-jacobi-m1-huge	c0078299	r.jacobi_am	64	toodd	mpmath	F:+:1:c90fdaa22168c235	1p100	1p0
+T1-jacobi-m1-huge	c0078296	r.jacobi_am	64	tozero	mpmath	F:+:1:c90fdaa22168c234	1p100	1p0
+T1-jacobi-m1-huge	c0078294	r.jacobi_am	64	up	mpmath	F:+:1:c90fdaa22168c235	1p100	1p0
+T1-jacobi-m1-huge	c0083251	r.jacobi_nc	64	down	mpmath	F:+:4611686018427387903:ffffffffffffffff	1p100	1p0
+T1-jacobi-m1-huge	c0083252	r.jacobi_nc	64	tozero	mpmath	F:+:4611686018427387903:ffffffffffffffff	1p100	1p0
+T1-jacobi-m1-huge	c0084077	r.jacobi_nd	64	down	mpmath	F:+:4611686018427387903:ffffffffffffffff	1p100	1p0
+T1-jacobi-m1-huge	c0084078	r.jacobi_nd	64	tozero	mpmath	F:+:4611686018427387903:ffffffffffffffff	1p100	1p0
+T1-jacobi-m1-huge	c0082425	r.jacobi_ns	64	down	exact (Arb)	F:+:1:8000000000000000	1p100	1p0
+T1-jacobi-m1-huge	c0082427	r.jacobi_ns	64	fromzero	exact (Arb)	F:+:1:8000000000000001	1p100	1p0
+T1-jacobi-m1-huge	c0082430	r.jacobi_ns	64	none	mpmath	F:+:1:8000000000000000	1p100	1p0
+T1-jacobi-m1-huge	c0082428	r.jacobi_ns	64	toeven	mpmath	F:+:1:8000000000000000	1p100	1p0
+T1-jacobi-m1-huge	c0082429	r.jacobi_ns	64	toodd	mpmath	F:+:1:8000000000000000	1p100	1p0
+T1-jacobi-m1-huge	c0082426	r.jacobi_ns	64	tozero	exact (Arb)	F:+:1:8000000000000000	1p100	1p0
+T1-jacobi-m1-huge	c0082424	r.jacobi_ns	64	up	exact (Arb)	F:+:1:8000000000000001	1p100	1p0
+T1-jacobi-m1-huge	c0084903	r.jacobi_sc	64	down	mpmath	F:+:4611686018427387903:ffffffffffffffff	1p100	1p0
+T1-jacobi-m1-huge	c0084904	r.jacobi_sc	64	tozero	mpmath	F:+:4611686018427387903:ffffffffffffffff	1p100	1p0
+T1-jacobi-m1-huge	c0085729	r.jacobi_sd	64	down	mpmath	F:+:4611686018427387903:ffffffffffffffff	1p100	1p0
+T1-jacobi-m1-huge	c0085730	r.jacobi_sd	64	tozero	mpmath	F:+:4611686018427387903:ffffffffffffffff	1p100	1p0
+T1-jacobi-m1-huge	c0079121	r.jacobi_sn	64	down	exact (Arb)	F:+:0:ffffffffffffffff	1p100	1p0
+T1-jacobi-m1-huge	c0079123	r.jacobi_sn	64	fromzero	exact (Arb)	F:+:1:8000000000000000	1p100	1p0
+T1-jacobi-period-bits	c0078225	r.jacobi_am	64	down	mpmath	F:+:10:d3c8cb3965bc4c73	7dp3	1p-1
+T1-jacobi-period-bits	c0078227	r.jacobi_am	64	fromzero	mpmath	F:+:10:d3c8cb3965bc4c74	7dp3	1p-1
+T1-jacobi-period-bits	c0078230	r.jacobi_am	64	none	mpmath	F:+:10:d3c8cb3965bc4c73	7dp3	1p-1
+T1-jacobi-period-bits	c0078228	r.jacobi_am	64	toeven	mpmath	F:+:10:d3c8cb3965bc4c73	7dp3	1p-1
+T1-jacobi-period-bits	c0078229	r.jacobi_am	64	toodd	mpmath	F:+:10:d3c8cb3965bc4c73	7dp3	1p-1
+T1-jacobi-period-bits	c0078226	r.jacobi_am	64	tozero	mpmath	F:+:10:d3c8cb3965bc4c73	7dp3	1p-1
+T1-jacobi-period-bits	c0078224	r.jacobi_am	64	up	mpmath	F:+:10:d3c8cb3965bc4c74	7dp3	1p-1
+T1-jacobi-period-bits	c0230828	r.jacobi_am	128	down	mpmath	F:+:10:d3c8cb3965bc4c732773db4a6b8ca7c5	7dp3	1p-1
+T1-jacobi-period-bits	c0230830	r.jacobi_am	128	fromzero	mpmath	F:+:10:d3c8cb3965bc4c732773db4a6b8ca7c6	7dp3	1p-1
+T1-jacobi-period-bits	c0230833	r.jacobi_am	128	none	mpmath	F:+:10:d3c8cb3965bc4c732773db4a6b8ca7c5	7dp3	1p-1
+T1-jacobi-period-bits	c0230831	r.jacobi_am	128	toeven	mpmath	F:+:10:d3c8cb3965bc4c732773db4a6b8ca7c6	7dp3	1p-1
+T1-jacobi-period-bits	c0230832	r.jacobi_am	128	toodd	mpmath	F:+:10:d3c8cb3965bc4c732773db4a6b8ca7c6	7dp3	1p-1
+T1-jacobi-period-bits	c0230829	r.jacobi_am	128	tozero	mpmath	F:+:10:d3c8cb3965bc4c732773db4a6b8ca7c5	7dp3	1p-1
+T1-jacobi-period-bits	c0230827	r.jacobi_am	128	up	mpmath	F:+:10:d3c8cb3965bc4c732773db4a6b8ca7c6	7dp3	1p-1
+T1-jacobi-period-bits	c0078239	r.jacobi_am	64	down	mpmath	F:+:7:87169d02dda355ed	7dp3	ffffffffffffffffp-64
+T1-jacobi-period-bits	c0078241	r.jacobi_am	64	fromzero	mpmath	F:+:7:87169d02dda355ee	7dp3	ffffffffffffffffp-64
+T1-jacobi-period-bits	c0078244	r.jacobi_am	64	none	mpmath	F:+:7:87169d02dda355ed	7dp3	ffffffffffffffffp-64
+T1-jacobi-period-bits	c0078242	r.jacobi_am	64	toeven	mpmath	F:+:7:87169d02dda355ed	7dp3	ffffffffffffffffp-64
+T1-jacobi-period-bits	c0078243	r.jacobi_am	64	toodd	mpmath	F:+:7:87169d02dda355ed	7dp3	ffffffffffffffffp-64
+T1-jacobi-period-bits	c0078240	r.jacobi_am	64	tozero	mpmath	F:+:7:87169d02dda355ed	7dp3	ffffffffffffffffp-64
+T1-jacobi-period-bits	c0078238	r.jacobi_am	64	up	mpmath	F:+:7:87169d02dda355ee	7dp3	ffffffffffffffffp-64
+T1-jacobi-period-bits	c0230842	r.jacobi_am	128	down	mpmath	F:+:6:83f5a45ea7e018b81bcec216623a17ee	7dp3	ffffffffffffffffffffffffffffffffp-128
+T1-jacobi-period-bits	c0230844	r.jacobi_am	128	fromzero	mpmath	F:+:6:83f5a45ea7e018b81bcec216623a17ef	7dp3	ffffffffffffffffffffffffffffffffp-128
+T1-jacobi-period-bits	c0230847	r.jacobi_am	128	none	mpmath	F:+:6:83f5a45ea7e018b81bcec216623a17ee	7dp3	ffffffffffffffffffffffffffffffffp-128
+T1-jacobi_am-quasiperiod	c0078099	r.jacobi_am	64	down	mpmath	F:+:4:8644f065a7f139b8	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0078101	r.jacobi_am	64	fromzero	mpmath	F:+:4:8644f065a7f139b9	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0078102	r.jacobi_am	64	toeven	mpmath	F:+:4:8644f065a7f139b8	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0078103	r.jacobi_am	64	toodd	mpmath	F:+:4:8644f065a7f139b8	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0078100	r.jacobi_am	64	tozero	mpmath	F:+:4:8644f065a7f139b8	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0078098	r.jacobi_am	64	up	mpmath	F:+:4:8644f065a7f139b9	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0230702	r.jacobi_am	128	down	mpmath	F:+:4:8644f065a7f139b87c0c4fcbf5bb7c7a	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0230704	r.jacobi_am	128	fromzero	mpmath	F:+:4:8644f065a7f139b87c0c4fcbf5bb7c7b	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0230705	r.jacobi_am	128	toeven	mpmath	F:+:4:8644f065a7f139b87c0c4fcbf5bb7c7a	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0230706	r.jacobi_am	128	toodd	mpmath	F:+:4:8644f065a7f139b87c0c4fcbf5bb7c7a	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0230703	r.jacobi_am	128	tozero	mpmath	F:+:4:8644f065a7f139b87c0c4fcbf5bb7c7a	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0230701	r.jacobi_am	128	up	mpmath	F:+:4:8644f065a7f139b87c0c4fcbf5bb7c7b	5p1	1p-1
+T1-jacobi_am-quasiperiod	c0078120	r.jacobi_am	64	down	mpmath	F:+:4:9ffffffffffffffd	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0078122	r.jacobi_am	64	fromzero	mpmath	F:+:4:9ffffffffffffffe	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0078123	r.jacobi_am	64	toeven	mpmath	F:+:4:9ffffffffffffffe	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0078124	r.jacobi_am	64	toodd	mpmath	F:+:4:9ffffffffffffffe	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0078121	r.jacobi_am	64	tozero	mpmath	F:+:4:9ffffffffffffffd	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0078119	r.jacobi_am	64	up	mpmath	F:+:4:9ffffffffffffffe	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0230723	r.jacobi_am	128	down	mpmath	F:+:4:9ffffffffffffffd9d36d8f55d3cdfd4	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0230725	r.jacobi_am	128	fromzero	mpmath	F:+:4:9ffffffffffffffd9d36d8f55d3cdfd5	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0230726	r.jacobi_am	128	toeven	mpmath	F:+:4:9ffffffffffffffd9d36d8f55d3cdfd5	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0230727	r.jacobi_am	128	toodd	mpmath	F:+:4:9ffffffffffffffd9d36d8f55d3cdfd5	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0230724	r.jacobi_am	128	tozero	mpmath	F:+:4:9ffffffffffffffd9d36d8f55d3cdfd4	5p1	1p-60
+T1-jacobi_am-quasiperiod	c0230722	r.jacobi_am	128	up	mpmath	F:+:4:9ffffffffffffffd9d36d8f55d3cdfd5	5p1	1p-60
+T1-jacobi_arccn-sign	c0073997	r.jacobi_arccn	64	down	mpmath	F:+:2:c90fdaa22168c234	-1p0	0
+T1-jacobi_arccn-sign	c0073999	r.jacobi_arccn	64	fromzero	mpmath	F:+:2:c90fdaa22168c235	-1p0	0
+T1-jacobi_arccn-sign	c0074002	r.jacobi_arccn	64	none	mpmath	F:+:2:c90fdaa22168c234	-1p0	0
+T1-jacobi_arccn-sign	c0074000	r.jacobi_arccn	64	toeven	mpmath	F:+:2:c90fdaa22168c235	-1p0	0
+T1-jacobi_arccn-sign	c0074001	r.jacobi_arccn	64	toodd	mpmath	F:+:2:c90fdaa22168c235	-1p0	0
+T1-jacobi_arccn-sign	c0073998	r.jacobi_arccn	64	tozero	mpmath	F:+:2:c90fdaa22168c234	-1p0	0
+T1-jacobi_arccn-sign	c0073996	r.jacobi_arccn	64	up	mpmath	F:+:2:c90fdaa22168c235	-1p0	0
+T1-jacobi_arccn-sign	c0226600	r.jacobi_arccn	128	down	mpmath	F:+:2:c90fdaa22168c234c4c6628b80dc1cd1	-1p0	0
+T1-jacobi_arccn-sign	c0226602	r.jacobi_arccn	128	fromzero	mpmath	F:+:2:c90fdaa22168c234c4c6628b80dc1cd2	-1p0	0
+T1-jacobi_arccn-sign	c0226605	r.jacobi_arccn	128	none	mpmath	F:+:2:c90fdaa22168c234c4c6628b80dc1cd1	-1p0	0
+T1-jacobi_arccn-sign	c0226603	r.jacobi_arccn	128	toeven	mpmath	F:+:2:c90fdaa22168c234c4c6628b80dc1cd1	-1p0	0
+T1-jacobi_arccn-sign	c0226604	r.jacobi_arccn	128	toodd	mpmath	F:+:2:c90fdaa22168c234c4c6628b80dc1cd1	-1p0	0
+T1-jacobi_arccn-sign	c0226601	r.jacobi_arccn	128	tozero	mpmath	F:+:2:c90fdaa22168c234c4c6628b80dc1cd1	-1p0	0
+T1-jacobi_arccn-sign	c0226599	r.jacobi_arccn	128	up	mpmath	F:+:2:c90fdaa22168c234c4c6628b80dc1cd2	-1p0	0
+T1-jacobi_arccn-sign	c0074186	r.jacobi_arccn	64	down	mpmath	F:+:2:9ace937c9db6192a	-3p-2	0
+T1-jacobi_arccn-sign	c0074188	r.jacobi_arccn	64	fromzero	mpmath	F:+:2:9ace937c9db6192b	-3p-2	0
+T1-jacobi_arccn-sign	c0074191	r.jacobi_arccn	64	none	mpmath	F:+:2:9ace937c9db6192a	-3p-2	0
+T1-jacobi_arccn-sign	c0074189	r.jacobi_arccn	64	toeven	mpmath	F:+:2:9ace937c9db6192b	-3p-2	0
+T1-jacobi_arccn-sign	c0074190	r.jacobi_arccn	64	toodd	mpmath	F:+:2:9ace937c9db6192b	-3p-2	0
+T1-jacobi_arccn-sign	c0074187	r.jacobi_arccn	64	tozero	mpmath	F:+:2:9ace937c9db6192a	-3p-2	0
+T1-jacobi_arccn-sign	c0074185	r.jacobi_arccn	64	up	mpmath	F:+:2:9ace937c9db6192b	-3p-2	0
+T1-jacobi_arccn-sign	c0226789	r.jacobi_arccn	128	down	mpmath	F:+:2:9ace937c9db6192a8d6ae7b1db2a4dab	-3p-2	0
+T1-jacobi_arccn-sign	c0226791	r.jacobi_arccn	128	fromzero	mpmath	F:+:2:9ace937c9db6192a8d6ae7b1db2a4dac	-3p-2	0
+T1-jacobi_arccn-sign	c0226794	r.jacobi_arccn	128	none	mpmath	F:+:2:9ace937c9db6192a8d6ae7b1db2a4dab	-3p-2	0
+T1-log-base0	c0052647	r.log	64	down	exact-standard	Z:-	1p0	0
+T1-log-base0	c0052649	r.log	64	fromzero	exact-standard	Z:-	1p0	0
+T1-log-base0	c0052650	r.log	64	toeven	exact-standard	Z:-	1p0	0
+T1-log-base0	c0052651	r.log	64	toodd	exact-standard	Z:-	1p0	0
+T1-log-base0	c0052648	r.log	64	tozero	exact-standard	Z:-	1p0	0
+T1-log-base0	c0052646	r.log	64	up	exact-standard	Z:-	1p0	0
+T1-log-base0	c0205250	r.log	128	down	exact-standard	Z:-	1p0	0
+T1-log-base0	c0205252	r.log	128	fromzero	exact-standard	Z:-	1p0	0
+T1-log-base0	c0205253	r.log	128	toeven	exact-standard	Z:-	1p0	0
+T1-log-base0	c0205254	r.log	128	toodd	exact-standard	Z:-	1p0	0
+T1-log-base0	c0205251	r.log	128	tozero	exact-standard	Z:-	1p0	0
+T1-log-base0	c0205249	r.log	128	up	exact-standard	Z:-	1p0	0
+T1-log-base0	c0052654	r.log	64	down	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0052656	r.log	64	fromzero	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0052657	r.log	64	toeven	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0052658	r.log	64	toodd	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0052655	r.log	64	tozero	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0052653	r.log	64	up	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0205257	r.log	128	down	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0205259	r.log	128	fromzero	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0205260	r.log	128	toeven	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0205261	r.log	128	toodd	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0205258	r.log	128	tozero	exact-standard	Z:-	1p0	-0
+T1-log-base0	c0205256	r.log	128	up	exact-standard	Z:-	1p0	-0
+T1-logb-inexact	c0027172	r.logb	64	toeven	mpmath	F:-:63:800000000000007e	minpos:64
+T1-logb-inexact	c0027173	r.logb	64	toodd	mpmath	F:-:63:800000000000007e	minpos:64
+T1-logb-inexact	c0179775	r.logb	128	toeven	mpmath	F:-:63:80000000000000fe0000000000000000	minpos:128
+T1-logb-inexact	c0179776	r.logb	128	toodd	mpmath	F:-:63:80000000000000fe0000000000000000	minpos:128
+T1-next_after	c0044506	r.next_after	64	down	exact	F:+:-4611686018427387903:0000000000000001	0	inf
+T1-next_after	c0044508	r.next_after	64	fromzero	exact	F:+:-4611686018427387903:0000000000000001	0	inf
+T1-next_after	c0046072	r.next_after	64	none	exact	F:+:1:8000000000000000	10000000000000001p-64	-ffffffffffffffffp-64
+T1-next_after	c0044509	r.next_after	64	toeven	exact	F:+:-4611686018427387903:0000000000000001	0	inf
+T1-next_after	c0044510	r.next_after	64	toodd	exact	F:+:-4611686018427387903:0000000000000001	0	inf
+T1-next_after	c0044507	r.next_after	64	tozero	exact	F:+:-4611686018427387903:0000000000000001	0	inf
+T1-next_after	c0044505	r.next_after	64	up	exact	F:+:-4611686018427387903:0000000000000001	0	inf
+T1-next_after	c0197109	r.next_after	128	down	exact	F:+:-4611686018427387903:00000000000000000000000000000001	0	inf
+T1-next_after	c0197111	r.next_after	128	fromzero	exact	F:+:-4611686018427387903:00000000000000000000000000000001	0	inf
+T1-next_after	c0198675	r.next_after	128	none	exact	F:+:1:80000000000000000000000000000000	100000000000000000000000000000001p-128	-ffffffffffffffffffffffffffffffffp-128
+T1-next_after	c0197112	r.next_after	128	toeven	exact	F:+:-4611686018427387903:00000000000000000000000000000001	0	inf
+T1-next_after	c0197113	r.next_after	128	toodd	exact	F:+:-4611686018427387903:00000000000000000000000000000001	0	inf
+T1-next_after	c0197110	r.next_after	128	tozero	exact	F:+:-4611686018427387903:00000000000000000000000000000001	0	inf
+T1-next_after	c0197108	r.next_after	128	up	exact	F:+:-4611686018427387903:00000000000000000000000000000001	0	inf
+T1-next_after	c0044513	r.next_after	64	down	exact	F:-:-4611686018427387903:0000000000000001	0	-inf
+T1-next_after	c0044515	r.next_after	64	fromzero	exact	F:-:-4611686018427387903:0000000000000001	0	-inf
+T1-next_after	c0044516	r.next_after	64	toeven	exact	F:-:-4611686018427387903:0000000000000001	0	-inf
+T1-next_after	c0044517	r.next_after	64	toodd	exact	F:-:-4611686018427387903:0000000000000001	0	-inf
+T1-next_after	c0044514	r.next_after	64	tozero	exact	F:-:-4611686018427387903:0000000000000001	0	-inf
+T1-next_after	c0044512	r.next_after	64	up	exact	F:-:-4611686018427387903:0000000000000001	0	-inf
+T1-next_after	c0197116	r.next_after	128	down	exact	F:-:-4611686018427387903:00000000000000000000000000000001	0	-inf
+T1-next_after	c0197118	r.next_after	128	fromzero	exact	F:-:-4611686018427387903:00000000000000000000000000000001	0	-inf
+T1-next_after	c0197119	r.next_after	128	toeven	exact	F:-:-4611686018427387903:00000000000000000000000000000001	0	-inf
+T1-next_after	c0197120	r.next_after	128	toodd	exact	F:-:-4611686018427387903:00000000000000000000000000000001	0	-inf
+T1-next_after	c0197117	r.next_after	128	tozero	exact	F:-:-4611686018427387903:00000000000000000000000000000001	0	-inf
+T1-next_after	c0197115	r.next_after	128	up	exact	F:-:-4611686018427387903:00000000000000000000000000000001	0	-inf
+T1-next_after	c0044611	r.next_after	64	down	exact	F:+:-4611686018427387903:0000000000000001	-0	inf
+T1-next_after	c0044613	r.next_after	64	fromzero	exact	F:+:-4611686018427387903:0000000000000001	-0	inf
+T1-next_after	c0044614	r.next_after	64	toeven	exact	F:+:-4611686018427387903:0000000000000001	-0	inf
+T1-next_after	c0044615	r.next_after	64	toodd	exact	F:+:-4611686018427387903:0000000000000001	-0	inf
+T1-next_after	c0044612	r.next_after	64	tozero	exact	F:+:-4611686018427387903:0000000000000001	-0	inf
+T1-next_after	c0044610	r.next_after	64	up	exact	F:+:-4611686018427387903:0000000000000001	-0	inf
+T1-next_after	c0197214	r.next_after	128	down	exact	F:+:-4611686018427387903:00000000000000000000000000000001	-0	inf
+T1-next_after	c0197216	r.next_after	128	fromzero	exact	F:+:-4611686018427387903:00000000000000000000000000000001	-0	inf
+T1-next_after	c0197217	r.next_after	128	toeven	exact	F:+:-4611686018427387903:00000000000000000000000000000001	-0	inf
+T1-next_after	c0197218	r.next_after	128	toodd	exact	F:+:-4611686018427387903:00000000000000000000000000000001	-0	inf
+T1-next_after	c0197215	r.next_after	128	tozero	exact	F:+:-4611686018427387903:00000000000000000000000000000001	-0	inf
+T1-next_after	c0197213	r.next_after	128	up	exact	F:+:-4611686018427387903:00000000000000000000000000000001	-0	inf
+T1-next_after	c0044618	r.next_after	64	down	exact	F:-:-4611686018427387903:0000000000000001	-0	-inf
+T1-next_after	c0044620	r.next_after	64	fromzero	exact	F:-:-4611686018427387903:0000000000000001	-0	-inf
+T1-next_after	c0044621	r.next_after	64	toeven	exact	F:-:-4611686018427387903:0000000000000001	-0	-inf
+T1-next_after	c0044622	r.next_after	64	toodd	exact	F:-:-4611686018427387903:0000000000000001	-0	-inf
+T1-normal-sigma0	d0006835	r.normal_cdf	64	down	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p0	0	0
+T1-normal-sigma0	d0006833	r.normal_cdf	64	toeven	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p0	0	0
+T1-normal-sigma0	d0006834	r.normal_cdf	64	up	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p0	0	0
+T1-normal-sigma0	d0007588	r.normal_pdf	64	down	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	inf	0	0
+T1-normal-sigma0	d0007586	r.normal_pdf	64	toeven	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	inf	0	0
+T1-normal-sigma0	d0007587	r.normal_pdf	64	up	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	inf	0	0
+T1-normal-sigma0	d0029680	r.normal_cdf	128	down	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p0	0	0
+T1-normal-sigma0	d0029678	r.normal_cdf	128	toeven	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p0	0	0
+T1-normal-sigma0	d0029679	r.normal_cdf	128	up	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p0	0	0
+T1-normal-sigma0	d0030433	r.normal_pdf	128	down	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	inf	0	0
+T1-normal-sigma0	d0030431	r.normal_pdf	128	toeven	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	inf	0	0
+T1-normal-sigma0	d0030432	r.normal_pdf	128	up	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	inf	0	0
+T1-normal-sigma0	d0006943	r.normal_cdf	64	down	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p-1	0	0
+T1-normal-sigma0	d0006941	r.normal_cdf	64	toeven	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p-1	0	0
+T1-normal-sigma0	d0006942	r.normal_cdf	64	up	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p-1	0	0
+T1-normal-sigma0	d0029788	r.normal_cdf	128	down	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p-1	0	0
+T1-normal-sigma0	d0029786	r.normal_cdf	128	toeven	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p-1	0	0
+T1-normal-sigma0	d0029787	r.normal_cdf	128	up	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	1p-1	0	0
+T1-normal-sigma0	d0007051	r.normal_cdf	64	down	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	-3p-1	0	0
+T1-normal-sigma0	d0007049	r.normal_cdf	64	toeven	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	-3p-1	0	0
+T1-normal-sigma0	d0007050	r.normal_cdf	64	up	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	-3p-1	0	0
+T1-normal-sigma0	d0029896	r.normal_cdf	128	down	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	-3p-1	0	0
+T1-normal-sigma0	d0029894	r.normal_cdf	128	toeven	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	-3p-1	0	0
+T1-normal-sigma0	d0029895	r.normal_cdf	128	up	mpmath/exact (zfs_check2all)	N:Some(InvalidArgument)	-3p-1	0	0
+T1-pi-directed-sign	c0140624	c.arg	64	down	exact (Arb)	F:-:1:c90fdaa22168c235	0,-1p0
+T1-pi-directed-sign	c0140623	c.arg	64	up	exact (Arb)	F:-:1:c90fdaa22168c234	0,-1p0
+T1-pi-directed-sign	c0006960	r.atan	64	down	mpmath	F:-:1:c90fdaa22168c235	-inf
+T1-pi-directed-sign	c0006959	r.atan	64	up	mpmath	F:-:1:c90fdaa22168c234	-inf
+T1-pi-directed-sign	c0046877	r.atan2	64	down	mpmath	F:-:1:c90fdaa22168c235	-1p0	0
+T1-pi-directed-sign	c0046876	r.atan2	64	up	mpmath	F:-:1:c90fdaa22168c234	-1p0	0
+T1-pi-directed-sign	c0293227	c.arg	128	down	exact (Arb)	F:-:1:c90fdaa22168c234c4c6628b80dc1cd2	0,-1p0
+T1-pi-directed-sign	c0293226	c.arg	128	up	exact (Arb)	F:-:1:c90fdaa22168c234c4c6628b80dc1cd1	0,-1p0
+T1-pi-directed-sign	c0159563	r.atan	128	down	mpmath	F:-:1:c90fdaa22168c234c4c6628b80dc1cd2	-inf
+T1-pi-directed-sign	c0159562	r.atan	128	up	mpmath	F:-:1:c90fdaa22168c234c4c6628b80dc1cd1	-inf
+T1-pi-directed-sign	c0199480	r.atan2	128	down	mpmath	F:-:1:c90fdaa22168c234c4c6628b80dc1cd2	-1p0	0
+T1-pi-directed-sign	c0199479	r.atan2	128	up	mpmath	F:-:1:c90fdaa22168c234c4c6628b80dc1cd1	-1p0	0
+T1-pi-directed-sign	c0140694	c.arg	64	down	exact (Arb)	F:-:2:c90fdaa22168c235	-1p1,-0
+T1-pi-directed-sign	c0140693	c.arg	64	up	exact (Arb)	F:-:2:c90fdaa22168c234	-1p1,-0
+T1-pi-directed-sign	c0046940	r.atan2	64	down	mpmath	F:-:2:c90fdaa22168c235	-1p0	-inf
+T1-pi-directed-sign	c0046939	r.atan2	64	up	mpmath	F:-:2:c90fdaa22168c234	-1p0	-inf
+T1-pi-directed-sign	c0293297	c.arg	128	down	exact (Arb)	F:-:2:c90fdaa22168c234c4c6628b80dc1cd2	-1p1,-0
+T1-pi-directed-sign	c0293296	c.arg	128	up	exact (Arb)	F:-:2:c90fdaa22168c234c4c6628b80dc1cd1	-1p1,-0
+T1-pi-directed-sign	c0199543	r.atan2	128	down	mpmath	F:-:2:c90fdaa22168c234c4c6628b80dc1cd2	-1p0	-inf
+T1-pi-directed-sign	c0199542	r.atan2	128	up	mpmath	F:-:2:c90fdaa22168c234c4c6628b80dc1cd1	-1p0	-inf
+T1-pi-directed-sign	c0140862	c.arg	64	down	exact (Arb)	F:-:2:c90fdaa22168c235	-1p1,-0
+T1-pi-directed-sign	c0140861	c.arg	64	up	exact (Arb)	F:-:2:c90fdaa22168c234	-1p1,-0
+T1-pi-directed-sign	c0047087	r.atan2	64	down	mpmath	F:-:1:c90fdaa22168c235	-c90fdaa22168c235p-62	0
+T1-pi-directed-sign	c0047086	r.atan2	64	up	mpmath	F:-:1:c90fdaa22168c234	-c90fdaa22168c235p-62	0
+T1-rational-round	d0225311	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:1	round	878039	753765
+T1-rational-round	d0225324	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:-1	round	-540060	374225
+T1-rational-round	d0225337	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:10	round	934276	89703
+T1-rational-round	d0225363	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:-1	round	-616051	450736
+T1-rational-round	d0225376	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	-91580	532138
+T1-rational-round	d0225389	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:-1	round	-932795	727234
+T1-rational-round	d0225402	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	172332	999479
+T1-rational-round	d0225415	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	-187686	530335
+T1-rational-round	d0225441	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:-1	round	-401631	370455
+T1-rational-round	d0225454	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	-41869	830026
+T1-rational-round	d0225467	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	-9775	690890
+T1-rational-round	d0225493	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	-264769	664312
+T1-rational-round	d0225506	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	56878	424367
+T1-rational-round	d0225519	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:-1	round	-992154	962891
+T1-rational-round	d0225532	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	-345905	876123
+T1-rational-round	d0225571	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:2	round	610508	282875
+T1-rational-round	d0225584	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:2	round	839108	384487
+T1-rational-round	d0225662	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:-1	round	-965440	794439
+T1-rational-round	d0225688	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	-232245	896620
+T1-rational-round	d0225701	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	79405	271535
+T1-rational-round	d0225714	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:0	round	85148	309708
+T1-rational-round	d0225727	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:4	round	198361	46031
+T1-rational-round	d0225740	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:2	round	269699	124792
+T1-rational-round	d0225753	x.rat	64	toeven	mpmath/exact (zfs_check2all)	S:1	round	938465	681937
+T1-rem-overflow	c0046475	r.rem	64	toeven	exact	Z:+	maxv:64	minpos:64
+T1-rem-overflow	c0199078	r.rem	128	toeven	exact	Z:+	maxv:128	minpos:128
+T1-trig-huge-arg	c0021177	r.clausen_cl2	64	down	mpmath	F:-:-1:8f7eb30f694ba4ac	1p100000
+T1-trig-huge-arg	c0021179	r.clausen_cl2	64	fromzero	mpmath	F:-:-1:8f7eb30f694ba4ac	1p100000
+T1-trig-huge-arg	c0021180	r.clausen_cl2	64	toeven	mpmath	F:-:-1:8f7eb30f694ba4ab	1p100000
+T1-trig-huge-arg	c0021181	r.clausen_cl2	64	toodd	mpmath	F:-:-1:8f7eb30f694ba4ab	1p100000
+T1-trig-huge-arg	c0021178	r.clausen_cl2	64	tozero	mpmath	F:-:-1:8f7eb30f694ba4ab	1p100000
+T1-trig-huge-arg	c0021176	r.clausen_cl2	64	up	mpmath	F:-:-1:8f7eb30f694ba4ab	1p100000
+T1-trig-huge-arg	c0021702	r.clausen_cl3	64	down	mpmath	F:-:0:d81156dac0d8fbe3	1p100000
+T1-trig-huge-arg	c0021704	r.clausen_cl3	64	fromzero	mpmath	F:-:0:d81156dac0d8fbe3	1p100000
+T1-trig-huge-arg	c0021705	r.clausen_cl3	64	toeven	mpmath	F:-:0:d81156dac0d8fbe3	1p100000
+T1-trig-huge-arg	c0021706	r.clausen_cl3	64	toodd	mpmath	F:-:0:d81156dac0d8fbe3	1p100000
+T1-trig-huge-arg	c0021703	r.clausen_cl3	64	tozero	mpmath	F:-:0:d81156dac0d8fbe2	1p100000
+T1-trig-huge-arg	c0021701	r.clausen_cl3	64	up	mpmath	F:-:0:d81156dac0d8fbe2	1p100000
+T1-trig-huge-arg	c0004853	r.cos	64	down	mpmath	F:-:0:eaf0e5c6b2f56adb	1p100000
+T1-trig-huge-arg	c0004855	r.cos	64	fromzero	mpmath	F:-:0:eaf0e5c6b2f56adb	1p100000
+T1-trig-huge-arg	c0004856	r.cos	64	toeven	mpmath	F:-:0:eaf0e5c6b2f56ada	1p100000
+T1-trig-huge-arg	c0004857	r.cos	64	toodd	mpmath	F:-:0:eaf0e5c6b2f56ada	1p100000
+T1-trig-huge-arg	c0004854	r.cos	64	tozero	mpmath	F:-:0:eaf0e5c6b2f56ada	1p100000
+T1-trig-huge-arg	c0004852	r.cos	64	up	mpmath	F:-:0:eaf0e5c6b2f56ada	1p100000
+T1-trig-huge-arg	c0004328	r.sin	64	down	mpmath	F:-:-1:cb5be94feeca13a4	1p100000
+T1-trig-huge-arg	c0004330	r.sin	64	fromzero	mpmath	F:-:-1:cb5be94feeca13a4	1p100000
+T1-trig-huge-arg	c0004331	r.sin	64	toeven	mpmath	F:-:-1:cb5be94feeca13a4	1p100000
+T1-trig-huge-arg	c0004332	r.sin	64	toodd	mpmath	F:-:-1:cb5be94feeca13a4	1p100000
+T1-trig-huge-arg	c0004329	r.sin	64	tozero	mpmath	F:-:-1:cb5be94feeca13a3	1p100000
+T1-trig-huge-arg	c0004327	r.sin	64	up	mpmath	F:-:-1:cb5be94feeca13a3	1p100000

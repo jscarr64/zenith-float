@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# zenith-float pre-push hook (Jeff 2026-11-24 1:17 PM CT). The pre-commit hook only scans the working diff and the
+# counts; CI's rules-scan job scans the whole range, so a push could pass every local hook and fail CI (land39
+# rulesscan-diag, 10f991e). For every pushed commit this runs:
+#   1. tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..<sha>"   the CI command (.github/workflows/rules-scan.yml)
+#   2. tools/no_suppress_scan.py on <sha>'s tree                 zero #[allow]/#[expect]/relaxed lint config/unsafe
+#      The tree is a --shared clone checked out at <sha>: every tracked file, including one that matches .gitignore
+#      (an archive + `add -A` copy dropped those; Spence m3), and the history the [pending-grew] check reads.
+# Both always run and report. A FAIL stops the push; fix it, never push with --no-verify.
+# Enable once per clone: git config core.hooksPath .githooks     Test: tools/pre_push_selftest.sh
+set -u
+cd "$(git rev-parse --show-toplevel)" || exit 1
+base="${RATCHET_BASE:-c74e834^}"
+zero=0000000000000000000000000000000000000000
+rc=0
+scratch="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-push"  # job scratch, not /tmp (Spence m6); like fold_pr1_selftest
+mkdir -p "$scratch" || exit 2
+tmp=$(mktemp -d "$scratch/run.XXXXXX") || exit 1
+trap 'rm -rf "$tmp"' EXIT
+while read -r lref lsha rref rsha; do
+  [ -z "${lsha:-}" ] && continue
+  if [ "$lsha" = "$zero" ]; then echo "pre-push: $rref deleted, nothing to scan"; continue; fi
+  echo "pre-push: == rules-scan: tools/rules_scan.sh $base..$lsha ($lref)"
+  if tools/rules_scan.sh "$base..$lsha"; then echo "pre-push: ok rules-scan"; else echo "pre-push: FAIL rules-scan"; rc=1; fi
+  t="$tmp/${lsha}"
+  echo "pre-push: == no-suppress: tools/no_suppress_scan.py on the tree of $lsha"
+  if git clone -q --shared --no-checkout "$PWD" "$t" && git -C "$t" checkout -q --detach "$lsha" \
+     && [ -f "$t/tools/no_suppress_scan.py" ]; then
+    if python3 -B "$t/tools/no_suppress_scan.py" --root "$t"; then echo "pre-push: ok no-suppress"
+    else echo "pre-push: FAIL no-suppress"; rc=1; fi
+  else
+    echo "pre-push: FAIL no-suppress (could not check out $lsha or it has no tools/no_suppress_scan.py)"; rc=1
+  fi
+  rm -rf "$t"
+done
+if [ $rc -eq 0 ]; then echo "pre-push: ok"; else echo "pre-push: FAIL (push refused; fix it, never --no-verify)"; fi
+exit $rc

@@ -1,0 +1,16 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -620,6 +620,12 @@
+         prec,
+     } = *sys;
+     let range = || resource(op, "index out of range");
++    if (0..n).any(|i| b_at(i).is_some_and(|x| x.rad().is_infinity())) {
++        return Err(BoundError::Singular {
++            op,
++            detail: "singular",
++        });
++    }
+     let w = la_work_prec(prec, n);
+     xw.clear();
+     for s in 0..n {

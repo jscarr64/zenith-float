@@ -1,11 +1,25 @@
 //! The exponent range is `-(2^62 - 1)..=2^62 - 1` on every target (2.0.0 audit, defect 4; widened from `i32`).
-//! Run on a 32-bit target (`scripts/ci_hex_32bit.sh`, `i686-unknown-linux-musl`) as well as
-//! on the host: results near both limits must be the same on both.
+//! Results near both limits must be the same on every 64-bit target (x86_64, aarch64); 32-bit
+//! targets are not supported (P6/P8).
 
 use std::ops::Neg;
 use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
-const MODES: [RoundingMode; 6] = [
+/// All 7 modes: `None` is toward zero at the storage precision rp(p, 64) (FIXLIST ZF-M27).
+const MODES: [RoundingMode; 7] = [
+    RoundingMode::ToEven,
+    RoundingMode::ToOdd,
+    RoundingMode::Up,
+    RoundingMode::Down,
+    RoundingMode::ToZero,
+    RoundingMode::FromZero,
+    RoundingMode::None,
+];
+
+/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
+/// Up, Down, ToZero, FromZero). NONE-GAP F-B: a `None` overflow gives +-Inf; Jeff ruled +-MAX (toward zero at rp(p,
+/// 64)).
+const NONE_GAP_MODES: [RoundingMode; 6] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
     RoundingMode::Up,
@@ -81,7 +95,8 @@ fn ldexp_reaches_both_limits() {
 #[test]
 fn arithmetic_at_the_top_of_the_range() {
     for p in precisions() {
-        for rm in MODES {
+        // NONE-GAP F-B: 2*max, max+max and max/0.5 overflow under None (ZF-M27)
+        for rm in NONE_GAP_MODES {
             for negative in [false, true] {
                 let two = ExactNum::from_u8(2, p);
                 let half = ExactNum::from_u8(1, p).ldexp(-1, p, rm);

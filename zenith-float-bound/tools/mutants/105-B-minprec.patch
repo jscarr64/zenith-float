@@ -1,0 +1,12 @@
+diff --git a/src/ball/mod.rs b/src/ball/mod.rs
+--- a/src/ball/mod.rs
++++ b/src/ball/mod.rs
+@@ -100,7 +100,7 @@
+ 
+ /// A prec outside `MIN_PRECISION..=MAX_PRECISION` is rejected before zenith-float sees it (CONTRACT 8.1, O17-W).
+ fn check_prec(op: &'static str, prec: Precision) -> Result<(), BoundError> {
+-    if prec < MIN_PRECISION {
++    if prec <= MIN_PRECISION {
+         Err(BoundError::InvalidArgument {
+             op,
+             detail: "prec must be at least MIN_PRECISION (1)",

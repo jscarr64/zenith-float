@@ -1,0 +1,16 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -560,7 +560,11 @@
+         return Ok(());
+     }
+     for i in 0..n {
+-        if contains_zero(diag_of(op, t, n, i)?) {
++        let d = diag_of(op, t, n, i)?;
++        if contains_zero(d) && !(d.mid().is_zero() && d.rad().is_zero()) {
++            return Err(resource(op, "undecided_pivot"));
++        }
++        if contains_zero(d) {
+             return Err(BoundError::Singular {
+                 op,
+                 detail: "singular",

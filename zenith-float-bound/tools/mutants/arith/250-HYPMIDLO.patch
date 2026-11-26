@@ -1,0 +1,14 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index f86eb99..4e78b7d 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -299,8 +299,7 @@ impl Ball {
+         let Mid::Value(mid) = classify(OP, lo.add_full_prec(&hi).ldexp(-1, prec, MID_RM))? else {
+             return Ball::all_reals(prec);
+         };
+-        let rad = Mag::from_exact_num(&hi.sub_full_prec(&mid))
+-            .max(Mag::from_exact_num(&mid.sub_full_prec(&lo)));
++        let rad = Mag::from_exact_num(&hi.sub_full_prec(&mid));
+         Ball::from_mid_rad(mid, rad, prec)
+     }
+ }

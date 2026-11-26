@@ -14,14 +14,16 @@ mod cbrt;
 pub mod consts;
 mod cos;
 mod cosh;
+pub(crate) mod exp_bb;
 mod expm1;
 mod fma;
 mod hypot;
 mod ieee;
 mod jacobi;
-pub use jacobi::JACOBI_AGM_MAX;
 mod log;
 mod log1p;
+mod log_newton;
+pub(crate) mod log_primes;
 mod nroot;
 mod pow;
 mod recip;
@@ -35,6 +37,7 @@ mod sqrt;
 mod tan;
 mod tanh;
 mod util;
+pub(crate) mod zeta_ui;
 
 #[cfg(test)]
 mod tests;

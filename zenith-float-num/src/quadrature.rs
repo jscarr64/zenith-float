@@ -9,9 +9,12 @@
 
 pub use crate::gauss_kronrod::gauss_kronrod_interval;
 pub use crate::gauss_kronrod::integrate_adaptive_gk;
+pub use crate::gauss_kronrod::integrate_adaptive_gk_estimate;
 pub use crate::gauss_kronrod::integrate_adaptive_gk_infinite;
+pub use crate::gauss_kronrod::integrate_adaptive_gk_infinite_estimate;
 pub use crate::gauss_kronrod::kronrod_pair;
 pub use crate::gauss_kronrod::wynn_epsilon;
+pub use crate::gauss_kronrod::GkOptions;
 pub use crate::gauss_kronrod::GkResult;
 pub use crate::gauss_kronrod::QuadratureError;
 pub use crate::gauss_kronrod::GK_GAUSS_ORDER;
@@ -26,28 +29,18 @@ use crate::RoundingMode;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-/// Maximum number of Gauss nodes. Larger `n` is `None`.
-pub const QUADRATURE_MAX_NODES: usize = 64;
-
-/// Maximum tanh–sinh step halvings after the precision-based `h`.
-pub const TANH_SINH_LEVELS_MAX: usize = 8;
-
-/// Newton sweeps per Gauss root.
-const QUADRATURE_NEWTON_MAX: usize = 64;
-
-/// Grid points per expected root when isolating Laguerre / Hermite zeros.
+/// Starting grid points per expected root when isolating Laguerre / Hermite
+/// zeros. If a pass finds fewer than n brackets the grid is doubled.
 const QUADRATURE_BRACKET_MUL: usize = 8;
-
-/// Bisection steps inside a sign-change bracket before Newton.
-const QUADRATURE_BISECT_STEPS: usize = 16;
-
-/// Hard cap on tanh–sinh sample index `|k|`.
-const TANH_SINH_K_MAX: usize = 512;
 
 /// Destination width, rounded up to a word, plus two guard words.
 ///
 /// The same guard as the (7, 15) rule. One extra word rounds Gauss nodes in
 /// the same place the weighted sum is formed.
+fn nodes_fit(n: usize) -> bool {
+    n > 0 && n <= u32::MAX as usize && n.checked_mul(4).and_then(|v| v.checked_add(4)).is_some()
+}
+
 fn work_p(p: usize) -> usize {
     let stored = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
     stored.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
@@ -102,7 +95,8 @@ where
 {
     let guard = tiny(p, 8);
     let mut x = x0;
-    for _ in 0..QUADRATURE_NEWTON_MAX {
+    let mut prev: Option<ExactNum> = None;
+    loop {
         let y = f(&x, p, rm, cc);
         let d = df(&x, p, rm, cc);
         if !finite(&y) || !finite(&d) || d.is_zero() {
@@ -113,11 +107,17 @@ where
         if !finite(&x) {
             return None;
         }
-        if below(&step.abs(), &guard) {
+        let sa = step.abs();
+        if below(&sa, &guard) {
             return Some(x);
         }
+        if let Some(ref pr) = prev {
+            if !below(&sa, pr) {
+                return None;
+            }
+        }
+        prev = Some(sa);
     }
-    None
 }
 
 fn bisect_zero<F>(
@@ -146,8 +146,11 @@ where
         return None;
     }
     let two = ExactNum::from_u8(2, p);
-    for _ in 0..QUADRATURE_BISECT_STEPS {
+    loop {
         let m = ExactNum::add_ref(&a, &b, p, rm).div(&two, p, rm);
+        if m.compare(&a) == Some(0) || m.compare(&b) == Some(0) {
+            return Some(m);
+        }
         let fm = f(&m, p, rm, cc);
         if !finite(&fm) {
             return None;
@@ -161,14 +164,13 @@ where
             b = m;
         }
     }
-    Some(a.add(&b, p, rm).div(&two, p, rm))
 }
 
 fn isolate_positive<F>(
     mut f: F,
-    lo: &ExactNum,
-    hi: &ExactNum,
+    [lo, hi]: [&ExactNum; 2],
     want: usize,
+    sqrt_grid: bool,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -179,43 +181,70 @@ where
     if want == 0 {
         return Some(Vec::new());
     }
-    let n_grid = want
+    // Start at the historical oversampling, then double the grid if any
+    // of the `want` roots sit together in one cell. Stop when two successive
+    // sample points compare equal at the working precision (no finer grid).
+    let mut n_grid = want
         .saturating_mul(QUADRATURE_BRACKET_MUL)
         .saturating_add(4);
-    let step = ExactNum::sub_ref(hi, lo, p, rm).div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
-    let mut prev_x = lo.clone();
-    let mut prev_f = f(lo, p, rm, cc);
-    if !finite(&prev_f) {
-        return None;
-    }
-    let mut out = Vec::new();
-    for i in 1..=n_grid {
-        let x = if i == n_grid {
-            hi.clone()
-        } else {
-            ExactNum::from_u32(i as u32, p)
-                .mul(&step, p, rm)
-                .add(lo, p, rm)
-        };
-        let y = f(&x, p, rm, cc);
-        if !finite(&y) {
+    loop {
+        if n_grid == 0 || n_grid > u32::MAX as usize {
             return None;
         }
-        if prev_f.is_zero() {
-            out.push((prev_x.clone(), x.clone()));
-        } else if y.is_zero() || prev_f.is_positive() != y.is_positive() {
-            out.push((prev_x, x.clone()));
+        let step =
+            ExactNum::sub_ref(hi, lo, p, rm).div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
+        let mut prev_x = lo.clone();
+        let mut prev_f = f(lo, p, rm, cc);
+        if !finite(&prev_f) {
+            return None;
+        }
+        let mut out = Vec::new();
+        let mut resolved = false;
+        for i in 1..=n_grid {
+            let x = if i == n_grid {
+                hi.clone()
+            } else if sqrt_grid {
+                // Uniform in sqrt(x - lo): Laguerre zeros sit near j_k^2 / (4n+2)
+                // (Bessel zeros j_k), i.e. evenly spaced in sqrt(x), clustered at 0.
+                let t = ExactNum::from_u32(i as u32, p).div(
+                    &ExactNum::from_u32(n_grid as u32, p),
+                    p,
+                    rm,
+                );
+                ExactNum::sub_ref(hi, lo, p, rm)
+                    .mul(&t.sqr(p, rm), p, rm)
+                    .add(lo, p, rm)
+            } else {
+                ExactNum::from_u32(i as u32, p)
+                    .mul(&step, p, rm)
+                    .add(lo, p, rm)
+            };
+            if x.compare(&prev_x) == Some(0) {
+                resolved = true;
+            }
+            let y = f(&x, p, rm, cc);
+            if !finite(&y) {
+                return None;
+            }
+            // Roots strictly above `lo` only: a zero at `lo` itself (H_n(0) for odd n) is
+            // the caller's to handle. A zero at a grid point is counted once, in the
+            // interval it closes, never again in the interval it opens.
+            if !prev_f.is_zero() && (y.is_zero() || prev_f.is_positive() != y.is_positive()) {
+                out.push((prev_x, x.clone()));
+            }
+            if out.len() == want {
+                return Some(out);
+            }
+            prev_x = x;
+            prev_f = y;
         }
         if out.len() == want {
             return Some(out);
         }
-        prev_x = x;
-        prev_f = y;
-    }
-    if out.len() == want {
-        Some(out)
-    } else {
-        None
+        if resolved {
+            return None;
+        }
+        n_grid = n_grid.checked_mul(2)?;
     }
 }
 
@@ -232,7 +261,7 @@ fn gauss_legendre_nodes(
     _rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<Vec<(ExactNum, ExactNum)>> {
-    if n == 0 || n > QUADRATURE_MAX_NODES {
+    if !nodes_fit(n) {
         return None;
     }
     let wrk = work_p(p);
@@ -301,7 +330,7 @@ fn gauss_legendre_nodes(
 ///
 /// Nodes are roots of `P_n`; weights `w_i = 2 / ((1-x_i²) [P_n'(x_i)]²)`.
 /// Exact for polynomials of degree `≤ 2n−1`. `None` if `n` is 0 or greater
-/// than [`QUADRATURE_MAX_NODES`], the interval is not a finite `a < b`, or
+/// than what fits in `u32`, the interval is not a finite `a < b`, or
 /// a root fails to converge.
 pub fn gauss_legendre<F>(
     mut f: F,
@@ -341,13 +370,16 @@ fn tanh_sinh_sum<F>(
     a: &ExactNum,
     b: &ExactNum,
     h: &ExactNum,
+    odd_only: bool,
     p: usize,
-    rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<ExactNum>
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
+    // Unscaled weighted sum Σ w_k (f(x_k) + f(-x_k)) over k = 0, 1, 2, ... (or odd k
+    // only), at working precision. No index cap: the loop ends when the weight
+    // falls below the working grid or the abscissa reaches the endpoint.
     let wrk = work_p_de(p);
     let two = ExactNum::from_u8(2, wrk);
     let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
@@ -356,8 +388,15 @@ where
     let half_pi = pi.div(&two, wrk, RoundingMode::None);
     let wmin = tiny(wrk, 8);
     let mut acc = ExactNum::new(wrk);
-    for k in 0..TANH_SINH_K_MAX {
-        let t = ExactNum::from_u32(k as u32, wrk).mul(h, wrk, RoundingMode::None);
+    let mut k: u64 = u64::from(odd_only);
+    let k_step: u64 = if odd_only { 2 } else { 1 };
+    loop {
+        let kk = k;
+        k += k_step;
+        let k = kk;
+        // k·h stays below ~ln(wrk) before the weight underflows the grid, so k fits.
+        let k32 = u32::try_from(k).ok()?;
+        let t = ExactNum::from_u32(k32, wrk).mul(h, wrk, RoundingMode::None);
         let (sh, ch) = t.sinh_cosh(wrk, RoundingMode::None, cc);
         let u = sh.mul(&half_pi, wrk, RoundingMode::None);
         let (su, cu) = u.sinh_cosh(wrk, RoundingMode::None, cc);
@@ -407,18 +446,16 @@ where
             }
         }
     }
-    let mut out = half
-        .mul(h, wrk, RoundingMode::None)
-        .mul(&acc, wrk, RoundingMode::None);
-    let _ = out.set_precision(p, rm);
-    Some(out)
+    Some(acc)
 }
 
 /// Tanh–sinh (double-exponential) quadrature of `f` on `[a, b]`.
 ///
 /// `x = tanh((π/2) sinh t)`, step `h = 2π / (p ln 2)` then up to
-/// [`TANH_SINH_LEVELS_MAX`] successive halvings until successive sums
-/// agree to working precision. `None` if the interval is not a finite `a < b`.
+/// successive halvings until the error bound or a stall (each adds only the new odd
+/// abscissae) until successive estimates agree to working precision. `None` if
+/// the interval is not a finite `a < b`, or if the estimates have not agreed after
+/// the last halving. An unconverged sum is never returned as a value.
 pub fn tanh_sinh<F>(
     mut f: F,
     a: &ExactNum,
@@ -444,25 +481,48 @@ where
         RoundingMode::None,
     );
     let guard = tiny(p, 8);
-    let mut prev: Option<ExactNum> = None;
-    let mut best = None;
+    let wde = work_p_de(p);
+    let half_len = ExactNum::sub_ref(b, a, wde, RoundingMode::None).div(
+        &ExactNum::from_u8(2, wde),
+        wde,
+        RoundingMode::None,
+    );
     let two_wrk = ExactNum::from_u8(2, wrk);
     let mut h = h0;
-    for level in 0..TANH_SINH_LEVELS_MAX {
-        if level > 0 {
-            h = h.div(&two_wrk, wrk, RoundingMode::None);
+    let mut acc = tanh_sinh_sum(&mut f, a, b, &h, false, p, cc)?;
+    let estimate = |acc: &ExactNum, h: &ExactNum| {
+        ExactNum::mul_ref(&half_len, h, wde, RoundingMode::None).mul(acc, wde, RoundingMode::None)
+    };
+    let mut prev = estimate(&acc, &h);
+    let mut prev_err: Option<ExactNum> = None;
+    loop {
+        h = h.div(&two_wrk, wrk, RoundingMode::None);
+        let odd = tanh_sinh_sum(&mut f, a, b, &h, true, p, cc)?;
+        acc = acc.add(&odd, wde, RoundingMode::None);
+        let s = estimate(&acc, &h);
+        let err = ExactNum::sub_ref(&s, &prev, wde, RoundingMode::None).abs();
+        // Agreement to 2^-(p-8) relative to max(|s|, 1).
+        let sa = s.abs_ref();
+        let lim_scaled;
+        let lim: &ExactNum = if sa.compare(&ExactNum::from_u8(1, wde)) == Some(1) {
+            lim_scaled = ExactNum::mul_ref(&guard, &sa, wde, RoundingMode::None);
+            &lim_scaled
+        } else {
+            &guard
+        };
+        if below(&err, lim) {
+            let mut out = s;
+            let _ = out.set_precision(p, rm);
+            return Some(out);
         }
-        let s = tanh_sinh_sum(&mut f, a, b, &h, p, rm, cc)?;
-        if let Some(pr) = &prev {
-            let err = ExactNum::sub_ref(&s, pr, p, rm).abs();
-            if below(&err, &guard) {
-                return Some(s);
+        if let Some(ref pe) = prev_err {
+            if !below(&err, pe) {
+                return None;
             }
         }
-        prev = Some(s.clone());
-        best = Some(s);
+        prev_err = Some(err);
+        prev = s;
     }
-    best
 }
 
 fn gauss_laguerre_nodes(
@@ -471,7 +531,7 @@ fn gauss_laguerre_nodes(
     _rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<Vec<(ExactNum, ExactNum)>> {
-    if n == 0 || n > QUADRATURE_MAX_NODES {
+    if !nodes_fit(n) {
         return None;
     }
     let wrk = work_p(p);
@@ -480,9 +540,9 @@ fn gauss_laguerre_nodes(
     let hi = ExactNum::from_u32((4 * n + 4) as u32, wrk);
     let brackets = isolate_positive(
         |x, p, rm, _cc| x.laguerre(n, p, rm),
-        &zero,
-        &hi,
+        [&zero, &hi],
         n,
+        true,
         wrk,
         RoundingMode::None,
         cc,
@@ -565,7 +625,7 @@ fn gauss_hermite_nodes(
     _rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<Vec<(ExactNum, ExactNum)>> {
-    if n == 0 || n > QUADRATURE_MAX_NODES {
+    if !nodes_fit(n) {
         return None;
     }
     let wrk = work_p(p);
@@ -575,9 +635,9 @@ fn gauss_hermite_nodes(
     let want_pos = n / 2;
     let brackets = isolate_positive(
         |x, p, rm, _cc| x.hermite_h(n, p, rm),
-        &zero,
-        &hi,
+        [&zero, &hi],
         want_pos,
+        false,
         wrk,
         RoundingMode::None,
         cc,
@@ -611,7 +671,7 @@ fn gauss_hermite_nodes(
         if !finite(&w0) {
             return None;
         }
-        nodes.push((zero.clone(), w0));
+        nodes.push((zero, w0));
     }
     for (a, b) in brackets {
         let x0 = bisect_zero(
@@ -768,6 +828,50 @@ mod tests {
             &mut cc
         )
         .is_none());
+        // Past the old 64-node refusal (the removed QUADRATURE_MAX_NODES); ∫_{-1}^{1} 1 dx = 2
+        // is exact for any n ≥ 1.
+        let gl65 = gauss_legendre(
+            |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+            &a,
+            &b,
+            65,
+            64,
+            rm,
+            &mut cc,
+        )
+        .ok_or(crate::Error::InvalidArgument)?;
+        let two64 = ExactNum::from_u8(2, 64);
+        assert_eq!(gl65.compare(&two64), Some(0));
+        Ok(())
+    }
+
+    /// Three roots inside one coarse-grid step: a single
+    /// `want * QUADRATURE_BRACKET_MUL + 4` uniform scan on [0, 1] sees only
+    /// one sign change in (0, 0.1) and would return None. Refine until all
+    /// five brackets are found.
+    #[test]
+    fn isolate_positive_refines_when_roots_cluster() -> Result<(), crate::Error> {
+        let (p, rm) = gold_p();
+        let mut cc = Consts::new()?;
+        let roots = [
+            ExactNum::from_u8(1, p).div(&ExactNum::from_u32(1000, p), p, rm),
+            ExactNum::from_u8(2, p).div(&ExactNum::from_u32(1000, p), p, rm),
+            ExactNum::from_u8(3, p).div(&ExactNum::from_u32(1000, p), p, rm),
+            ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm),
+            ExactNum::from_u8(9, p).div(&ExactNum::from_u8(10, p), p, rm),
+        ];
+        let f = |x: &ExactNum, p: usize, rm: RoundingMode, _cc: &mut Consts| {
+            let mut y = ExactNum::from_u8(1, p);
+            for r in &roots {
+                y = y.mul(&ExactNum::sub_ref(x, r, p, rm), p, rm);
+            }
+            y
+        };
+        let lo = ExactNum::new(p);
+        let hi = ExactNum::from_u8(1, p);
+        let brackets = isolate_positive(f, [&lo, &hi], 5, false, p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(brackets.len(), 5, "clustered roots were missed");
         Ok(())
     }
 }

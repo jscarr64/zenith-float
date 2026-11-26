@@ -1,0 +1,12 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -71,7 +71,7 @@
+         if hi.is_nan() || lo.is_nan() {
+             return Tri::Unknown;
+         }
+-        let upper = Mag::from_exact_num(&hi).max(Mag::from_exact_num(&lo));
++        let upper = Mag::from_exact_num(&hi).min(Mag::from_exact_num(&lo));
+         if upper <= *self.rad() {
+             return Tri::True;
+         }

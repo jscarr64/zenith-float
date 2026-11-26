@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -140,7 +140,7 @@
+         const OP: &str = "BallMat::lu";
+         check_prec(OP, prec)?;
+         let n = self.nrows();
+-        if self.ncols() != n {
++        if self.ncols() < n {
+             return Err(mismatch(OP, "rectangular"));
+         }
+         let w = work_prec(prec, n);

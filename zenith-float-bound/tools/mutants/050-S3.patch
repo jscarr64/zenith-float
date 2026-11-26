@@ -1,0 +1,13 @@
+diff --git a/src/mag/sqrt.rs b/src/mag/sqrt.rs
+index 6f35fb4..597e9be 100644
+--- a/src/mag/sqrt.rs
++++ b/src/mag/sqrt.rs
+@@ -15,7 +15,7 @@ fn p64() -> NonZeroU128 {
+ 
+ /// `2^63` as a nonzero `u128`, built the same way.
+ fn p63() -> NonZeroU128 {
+-    (NonZeroU128::MIN | (1u128 << 63)).isolate_highest_one()
++    (NonZeroU128::MIN | (1u128 << 62)).isolate_highest_one()
+ }
+ 
+ impl Mag {

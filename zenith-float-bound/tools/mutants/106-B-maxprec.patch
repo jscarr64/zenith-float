@@ -1,0 +1,12 @@
+diff --git a/src/ball/mod.rs b/src/ball/mod.rs
+--- a/src/ball/mod.rs
++++ b/src/ball/mod.rs
+@@ -105,7 +105,7 @@
+             op,
+             detail: "prec must be at least MIN_PRECISION (1)",
+         })
+-    } else if prec > MAX_PRECISION {
++    } else if prec >= MAX_PRECISION {
+         Err(BoundError::InvalidArgument {
+             op,
+             detail: "prec must be at most MAX_PRECISION",

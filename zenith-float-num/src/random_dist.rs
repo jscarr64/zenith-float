@@ -32,14 +32,25 @@ fn random_unit(p: usize, rm: RoundingMode) -> ExactNum {
     acc.ldexp(-((nwords * WORD_BIT_SIZE) as Exponent), p, rm)
 }
 
+/// Most draws [`random_unit_open`] makes. A draw is zero with probability at most 2^-64, so correct
+/// arithmetic never comes near the cap.
+const RANDOM_UNIT_REDRAW_MAX: usize = 64;
+
 /// `(0, 1]` — redraws a zero so `ln` is defined.
 fn random_unit_open(p: usize, rm: RoundingMode) -> ExactNum {
-    loop {
-        let u = random_unit(p, rm);
+    redraw_nonzero(RANDOM_UNIT_REDRAW_MAX, || random_unit(p, rm))
+}
+
+/// The first non-zero result of `draw` in at most `max` calls; NaN (`PrecisionRetryExhausted`) when
+/// every call gave zero, so a draw that is always zero cannot loop forever.
+fn redraw_nonzero(max: usize, mut draw: impl FnMut() -> ExactNum) -> ExactNum {
+    for _ in 0..max {
+        let u = draw();
         if !u.is_zero() {
             return u;
         }
     }
+    ExactNum::nan(Some(Error::PrecisionRetryExhausted))
 }
 
 /// Which law [`ExactNumArray::random_fill`] samples.
@@ -65,8 +76,7 @@ impl ExactNum {
         match a.compare(b) {
             Some(c) if c > 0 => return dist_nan(),
             Some(0) => {
-                let mut v = a.clone();
-                let _ = v.set_precision(p, rm);
+                let v = a.rounded_to(p, rm);
                 return v;
             }
             None => return NAN,
@@ -126,6 +136,38 @@ mod tests {
 
     /// Named sample count for the exponential-mean gold.
     const RANDOM_EXP_MEAN_SAMPLES: usize = 10_000;
+
+    /// Calls `redraw_nonzero(max, …)` on a draw that gives zero for its first `zeros` calls and 1
+    /// after that; returns the result and the number of calls.
+    fn count_redraws(max: usize, zeros: usize) -> (ExactNum, usize) {
+        let mut calls = 0usize;
+        let u = redraw_nonzero(max, || {
+            calls += 1;
+            ExactNum::from_u8(u8::from(calls > zeros), 64)
+        });
+        (u, calls)
+    }
+
+    /// `redraw_nonzero` returns the first non-zero draw, and NaN (`PrecisionRetryExhausted`) after
+    /// exactly `max` zero draws instead of drawing on forever (every draw is zero when the
+    /// arithmetic under `random_unit` is broken).
+    #[test]
+    fn redraw_nonzero_is_bounded() {
+        let one = ExactNum::from_u8(1, 64);
+        let (u, calls) = count_redraws(3, 0);
+        assert_eq!((u.compare(&one), calls), (Some(0), 1));
+        let (u, calls) = count_redraws(3, 2);
+        assert_eq!((u.compare(&one), calls), (Some(0), 3));
+        let (u, calls) = count_redraws(3, 3);
+        assert_eq!(
+            (u.is_nan(), u.err(), calls),
+            (true, Some(Error::PrecisionRetryExhausted), 3)
+        );
+        let (u, calls) = count_redraws(RANDOM_UNIT_REDRAW_MAX, 1000);
+        assert_eq!((u.is_nan(), calls), (true, RANDOM_UNIT_REDRAW_MAX));
+        let (u, calls) = count_redraws(0, 0);
+        assert_eq!((u.is_nan(), calls), (true, 0));
+    }
 
     #[test]
     fn random_dist_plan_golds() -> Result<(), crate::Error> {

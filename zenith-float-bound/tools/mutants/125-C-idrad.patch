@@ -1,0 +1,12 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -46,7 +46,7 @@
+     }
+ 
+     fn identical(&self, other: &Ball) -> bool {
+-        self.prec() == other.prec() && self.rad() == other.rad() && self.mid() == other.mid()
++        self.prec() == other.prec() && self.mid() == other.mid()
+     }
+ 
+     fn contains(&self, x: &ExactNum) -> Tri {

@@ -1,0 +1,14 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..dee2fa9 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -368,7 +368,8 @@ impl Ball {
+     /// `self ≤ other` decided by exact endpoint comparison (CONTRACT 15.2, D14, 16.S1.11).
+     pub fn le(&self, other: &Ball) -> Tri {
+         match endpoint_signs(self, other) {
+-            Some((Ordering::Less | Ordering::Equal, _)) => Tri::True,
++            Some((Ordering::Less, _)) => Tri::True,
++            Some((Ordering::Equal, _)) => Tri::Unknown,
+             Some((Ordering::Greater, Ordering::Greater)) => Tri::False,
+             Some((Ordering::Greater, Ordering::Equal | Ordering::Less)) | None => Tri::Unknown,
+         }

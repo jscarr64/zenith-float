@@ -433,13 +433,9 @@ static int emit_complex(const char *op, mpfr_t re, mpfr_t im, int prec, const ch
         if (mpfr_signbit(wre)) {
             mpfr_neg(out_re, out_re, MPFR_RNDN);
         }
-        /* Above the cut matches mpmath: imag is -acosh for x>1 and +acosh for x<-1.
-           Below the cut is the conjugate. */
-        if (mpfr_signbit(wre)) {
-            mpfr_set(out_im, u, MPFR_RNDN);
-        } else {
-            mpfr_neg(out_im, u, MPFR_RNDN);
-        }
+        /* C99 G.6.2.2 (as GNU MPC and glibc): above the cut (+0) imag is +acosh|x| for
+           either sign of x; below the cut (-0) it is the conjugate. */
+        mpfr_set(out_im, u, MPFR_RNDN);
         if (below) {
             mpfr_neg(out_im, out_im, MPFR_RNDN);
         }

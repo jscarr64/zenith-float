@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 5995d15..67f5d58 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -568,7 +568,7 @@ fn classify(op: &'static str, raw: ExactNum) -> BoundResult<Mid> {
+     }
+     // Deliberate: an inexact result in the top binade (exponent EXPONENT_MAX) may have been clamped there by zf, so
+     // its true value can lie beyond any finite enclosure; it is reported as overflow, i.e. all reals (CONTRACT 15.1).
+-    if raw.inexact() && raw.exponent() == Some(EXPONENT_MAX) {
++    if raw.exponent() == Some(EXPONENT_MAX) {
+         return Ok(Mid::Overflow);
+     }
+     Ok(Mid::Value(raw))

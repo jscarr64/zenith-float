@@ -89,14 +89,22 @@ impl Ball {
     /// Exponential of a ball. `exp` is increasing; the radius uses
     /// \(\lvert\exp(m)\rvert(e^{r}-1)\) plus a rounding ulp (same `Up` convention as `add`/`mul`).
     pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        // exp is increasing, so the image is [e^(m-r), e^(m+r)]. The radius is measured from the
+        // rounded midpoint to certified bounds of both ends (exp(m) rounded Up/Down times
+        // e^(±r) rounded the same way): the error of the midpoint itself, which e^r scales, is
+        // inside the radius in every mode, including None.
+        let up = RoundingMode::Up;
+        let down = RoundingMode::Down;
         let mid = self.mid.exp(p, rm, cc);
-        let em1 = self.rad.expm1(p, RoundingMode::Up, cc);
-        let rad = (if mid.is_negative() {
-            mid.neg_via_mul().mul(&em1, p, RoundingMode::Up)
-        } else {
-            em1.mul(&mid, p, RoundingMode::Up)
-        })
-        .add(&Self::rounding_ulp(&mid, p), p, RoundingMode::Up);
+        let hi = self.mid.exp(p, up, cc).mul(&self.rad.exp(p, up, cc), p, up);
+        let neg_r = ExactNum::from_i8(-1, p).mul(&self.rad, p, RoundingMode::None);
+        let lo = self
+            .mid
+            .exp(p, down, cc)
+            .mul(&neg_r.exp(p, down, cc), p, down);
+        let r_hi = ExactNum::sub_ref(&hi, &mid, p, up);
+        let r_lo = ExactNum::sub_ref(&mid, &lo, p, up);
+        let rad = if matches!(r_hi.compare(&r_lo), Some(o) if o >= 0) { r_hi } else { r_lo };
         Ball { mid, rad }
     }
 
@@ -342,9 +350,19 @@ impl ComplexBall {
         let mid = self.mid.ln(p, rm, cc);
         let den = am.sub(&self.rad, p, RoundingMode::Down);
         let lip = ExactNum::from_u8(1, p).div(&den, p, RoundingMode::Up);
-        let rad =
+        let mut rad =
             lip.mul(&self.rad, p, RoundingMode::Up)
                 .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        // A disk that meets the cut (-inf, 0] has points on both sides of the 2*pi*i jump: each
+        // is within the Lipschitz bound of the analytic continuation of ln(mid), which differs
+        // from the principal value by at most 2*pi in the imaginary part.
+        let crosses = !self.rad.is_zero()
+            && !(self.mid.re().is_positive() && !self.mid.re().is_zero())
+            && matches!(self.mid.im().abs_cmp(&self.rad), Some(c) if c <= 0);
+        if crosses {
+            let two_pi = cc.pi(p, RoundingMode::Up).ldexp(1, p, RoundingMode::Up);
+            rad = rad.add(&two_pi, p, RoundingMode::Up);
+        }
         ComplexBall { mid, rad }
     }
 
@@ -401,6 +419,9 @@ pub fn ziv_round<F>(p: usize, rm: RoundingMode, mut compute: F) -> ExactNum
 where
     F: FnMut(usize) -> ExactNum,
 {
+    if let Err(e) = crate::common::util::reserve_probe(crate::common::util::round_p(p)) {
+        return ExactNum::nan(Some(e));
+    }
     let mut p_inc = WORD_BIT_SIZE;
     let mut p_wrk = match round_p(p).checked_add(p_inc) {
         Some(v) => v,
@@ -424,6 +445,9 @@ pub fn ziv_round_vec<F>(p: usize, rm: RoundingMode, inputs: &[ExactNum], mut com
 where
     F: FnMut(usize, &[ExactNum]) -> ExactNum,
 {
+    if let Err(e) = crate::common::util::reserve_probe(crate::common::util::round_p(p)) {
+        return ExactNum::nan(Some(e));
+    }
     let mut p_inc = WORD_BIT_SIZE;
     let mut p_wrk = match round_p(p).checked_add(p_inc) {
         Some(v) => v,

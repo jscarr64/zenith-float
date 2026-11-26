@@ -11,7 +11,16 @@ impl ExactNumNumber {
         if self.is_zero() {
             return Ok((self, 0));
         }
-        let e = self.exponent();
+        let mut e = self.exponent();
+        if self.is_subnormal() {
+            // A subnormal keeps the exponent field at EXPONENT_MIN with leading zero bits in
+            // the mantissa; the true exponent is lower by that count. Raising the field by
+            // that count shifts the zeros out (the field stays at EXPONENT_MIN), so the call
+            // below then puts the now-normal mantissa at exponent 0, in [0.5, 1).
+            let lz = self.subnormal_leading_zeros();
+            e -= lz;
+            self.set_exponent(EXPONENT_MIN + lz);
+        }
         self.set_exponent(0);
         Ok((self, e))
     }
@@ -23,6 +32,13 @@ impl ExactNumNumber {
         if self.is_zero() {
             self.set_precision(p, rm)?;
             return Ok(self);
+        }
+        let mut n = n;
+        if self.is_subnormal() {
+            // Normalize first so the range check below sees the true exponent.
+            let lz = self.subnormal_leading_zeros();
+            self.set_exponent(EXPONENT_MIN + lz);
+            n = n.saturating_sub(lz);
         }
         let e = self.exponent();
         let sum = crate::exp::wide(e) + crate::exp::wide(n);
@@ -51,6 +67,59 @@ impl ExactNumNumber {
         }
     }
 
+    /// [`Self::ldexp`] of a borrowed `self`: the result is rounded straight from `self` into new storage,
+    /// bit-identical to the by-value form.
+    pub fn ldexp_ref(&self, n: Exponent, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.ldexp_flags((self.inexact(), self.op_inexact_raw()), n, p, rm)
+    }
+
+    /// [`Self::ldexp_ref`] of `self` with its flags replaced by `flags` (accumulated, per-operation).
+    pub(crate) fn ldexp_flags(
+        &self,
+        flags: (bool, Option<bool>),
+        n: Exponent,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if self.is_zero() {
+            return self.rescaled(0, self.exponent(), p, rm, flags);
+        }
+        // A subnormal is normalized first (as `ldexp` does): its mantissa moves up by its leading zero
+        // bits while the exponent field stays at EXPONENT_MIN.
+        let lz = self.subnormal_leading_zeros();
+        let shl = lz as usize;
+        let n = n.saturating_sub(lz);
+        let e = self.exponent();
+        let sum = crate::exp::wide(e) + crate::exp::wide(n);
+        match Exponent::try_from(sum) {
+            Ok(sum) if (EXPONENT_MIN..=EXPONENT_MAX).contains(&sum) => {
+                self.rescaled(shl, sum, p, rm, flags)
+            }
+            _ => {
+                if n >= 0 {
+                    Err(Error::ExponentOverflow(self.sign()))
+                } else {
+                    // Below the range, as in `ldexp`: the normalized operand at the clamped exponent `s1`,
+                    // written once at its own width, times 2^EXPONENT_MIN rounds onto the subnormal grid.
+                    let s1 = crate::exp::narrow(sum - crate::exp::wide(EXPONENT_MIN));
+                    let s1 = s1.max(EXPONENT_MIN);
+                    let t = self.rescaled(
+                        shl,
+                        s1,
+                        self.mantissa_max_bit_len(),
+                        RoundingMode::None,
+                        flags,
+                    )?;
+                    let mut b = Self::from_word(1, WORD_BIT_SIZE)?;
+                    b.set_exponent(EXPONENT_MIN + 1);
+                    t.mul(&b, p, rm)
+                }
+            }
+        }
+    }
+
     /// Binary `logb`: `floor(log2(|self|))` as an integer-valued float.
     pub fn logb(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         let p = round_p(p);
@@ -58,7 +127,10 @@ impl ExactNumNumber {
         if self.is_zero() {
             return Err(Error::ExponentOverflow(crate::Sign::Neg));
         }
-        let e = self.exponent().saturating_sub(1);
+        let e = self
+            .exponent()
+            .saturating_sub(1)
+            .saturating_sub(self.subnormal_leading_zeros());
         let mut v = Self::from_word(e.unsigned_abs() as crate::Word, p)?;
         if e < 0 {
             v.set_sign(Sign::Neg);
@@ -72,7 +144,20 @@ impl ExactNumNumber {
         if self.is_zero() {
             return Err(Error::InvalidArgument);
         }
-        Ok(self.exponent().saturating_sub(1))
+        Ok(self
+            .exponent()
+            .saturating_sub(1)
+            .saturating_sub(self.subnormal_leading_zeros()))
+    }
+
+    /// Leading zero bits of a subnormal mantissa (0 for a normal number): the stored exponent
+    /// field minus this count is the true exponent.
+    fn subnormal_leading_zeros(&self) -> Exponent {
+        if self.is_subnormal() {
+            (self.mantissa_max_bit_len() - self.precision()) as Exponent
+        } else {
+            0
+        }
     }
 }
 

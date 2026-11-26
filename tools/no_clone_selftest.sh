@@ -3,7 +3,7 @@
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/src" "$t/tools"
-run() { NO_CLONE_ROOT="$t" python3 "$here/no_clone.py" "$@"; }
+run() { NO_CLONE_ROOT="$t" python3 -B "$here/no_clone.py" "$@"; }
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 printf 'fn clean() { let a = 1; }\n#[derive(Clone, Copy)]\nstruct S;\n' > "$t/src/a.rs"
 run >/dev/null || fail "clean tree reported violations"
@@ -13,6 +13,10 @@ printf 'fn a() {}\n#[cfg(all(test, feature = "std"))]\n#[test]\nfn t() { let y =
 printf 'fn a() {}\n' > "$t/src/a.rs"; mkdir -p "$t/src/ops" "$t/zenith-float-num/tests"
 printf 'fn t() { let y = x.clone(); }\n' > "$t/src/ops/tests.rs"; run >/dev/null && fail "ops/tests.rs clone not counted"; rm "$t/src/ops/tests.rs"
 printf 'fn t() { let y = x.clone(); }\n' > "$t/zenith-float-num/tests/it.rs"; run >/dev/null && fail "integration-test clone not counted"; rm "$t/zenith-float-num/tests/it.rs"
+# P16 (Jeff 2026-11-10 23:06 CT): the folded zenith-float-bound crate is scanned too (src and tests).
+mkdir -p "$t/zenith-float-bound/src" "$t/zenith-float-bound/tests"
+printf 'fn t() { let y = x.clone(); }\n' > "$t/zenith-float-bound/src/b.rs"; run >/dev/null && fail "zenith-float-bound/src clone not counted"; rm "$t/zenith-float-bound/src/b.rs"
+printf 'fn t() { let y = s.to_vec(); }\n' > "$t/zenith-float-bound/tests/b.rs"; run >/dev/null && fail "zenith-float-bound/tests to_vec not counted"; rm "$t/zenith-float-bound/tests/b.rs"
 printf 'fn clean() {}\n' > "$t/src/a.rs"
 for body in 'let y = x.clone();' 'let y = s.to_vec();' 'let y = it.cloned();' 'let y = Clone::clone(&x);' 'y.clone_from(&x);'; do
   printf 'fn f() { %s }\n' "$body" > "$t/src/a.rs"; run >/dev/null && fail "missed: $body"
@@ -24,4 +28,26 @@ printf '## Exception: constant caches\n' > "$t/tools/NO_CLONE_RULES.md"
 printf 'src/a.rs\tf\tproof\tapproved\ttools/NO_CLONE_RULES.md\t1\n' > "$t/tools/clone_allowlist.txt"; run >/dev/null || fail "allowlist ignored"
 printf 'src/a.rs\tf\tproof\tapproved\n' > "$t/tools/clone_allowlist.txt"; run >/dev/null && fail "4-field (undocumented) allowlist entry accepted"
 printf 'src/a.rs\tg\tproof\tapproved\ttools/NO_CLONE_RULES.md\t1\n' > "$t/tools/clone_allowlist.txt"; run >/dev/null && fail "stale / wrong-fn allowlist entry accepted"
+# --progress (Jeff 2026-11-23 07:43 CT): the gate's no-clone-progress step FAILS on any rise above
+# tools/no_clone_progress_baseline.txt (one `kind<TAB>count` line per form, plus total and helper_copies); it never writes it
+rm -f "$t/tools/clone_allowlist.txt"
+printf 'fn f() { let y = x.clone(); }\n' > "$t/src/a.rs"
+run --progress >/dev/null && fail "--progress passed without tools/no_clone_progress_baseline.txt"
+printf 'clone()\t1\nto_vec()\t0\ncloned()\t0\nderive(Clone)\t0\nimpl Clone\t0\nClone::clone\t0\nclone_from\t0\ntotal\t1\nhelper_copies\t0\n' > "$t/tools/no_clone_progress_baseline.txt"
+cp "$t/tools/no_clone_progress_baseline.txt" "$t/base.keep"
+out="$(run --progress)" || fail "count == baseline failed --progress: $out"
+echo "$out" | tail -1 | grep -q '^no_clone_progress: ok' || fail "no ok verdict: $out"
+printf 'fn f() { let y = x.clone(); let z = x.clone(); }\n' > "$t/src/a.rs"
+out="$(run --progress)" && fail "a clone rise 1 -> 2 passed --progress: $out"
+echo "$out" | grep -q '^no_clone_progress: FAIL clone() 2 RISES above baseline 1' || fail "rise not named: $out"
+printf '#[derive(Clone)]\nstruct Big;\n' > "$t/src/a.rs"
+out="$(run --progress)" && fail "derive(Clone) 0 -> 1 passed although the total did not rise: $out"
+printf 'fn f() { let y = exact_copy(x); }\n' > "$t/src/a.rs"
+out="$(run --progress)" && fail "a helper copy 0 -> 1 passed --progress: $out"
+printf 'fn f() {}\n' > "$t/src/a.rs"
+out="$(run --progress)" || fail "a drop below baseline failed --progress: $out"
+echo "$out" | grep -q 'below baseline' || fail "no lower-the-baseline hint: $out"
+cmp -s "$t/tools/no_clone_progress_baseline.txt" "$t/base.keep" || fail "--progress rewrote the baseline"
+printf 'clone()\t1\n' > "$t/tools/no_clone_progress_baseline.txt"
+run --progress >/dev/null && fail "a baseline without every kind passed"
 echo "no_clone selftest: ok"

@@ -74,7 +74,9 @@ fn sine_form_matches_through_asin() -> Result<(), Box<dyn std::error::Error>> {
             gap <= 1,
             "f_phi(asin({text})) and elliptic_f({text}) differ by {gap} ulps"
         );
-        if text == "0" || text == "1" || text == "-1" {
+        // asin(±1) rounds to fl(±π/2), a rational a little above π/2 in magnitude, so
+        // F there is not K(m) (FLINT: one ulp above at 64 bits). Only 0 is exact.
+        if text == "0" {
             assert!(
                 same_bits(&by_angle, &by_sine),
                 "endpoint {text} must be limb-identical"
@@ -105,25 +107,58 @@ fn angle_two_is_not_the_sine_form() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn half_pi_matches_complete() -> Result<(), Box<dyn std::error::Error>> {
+fn rounded_half_pi_is_not_a_quarter_period() -> Result<(), Box<dyn std::error::Error>> {
+    // fl64(π/2) - π/2 ≈ 2.508e-20 (FLINT). The amplitude is that rational, not π/2:
+    // FLINT gives F and E one ulp above K(m) and E(m) at 64 bits; Π rounds to Π(n|m).
     let mut consts = cc()?;
     let p = 64;
     let rm = RoundingMode::ToEven;
     let phi = parse(HALF_PI, p, rm, &mut consts);
     let m = parse("0.5", p, rm, &mut consts);
     let n = parse("0.2", p, rm, &mut consts);
-    assert!(same_bits(
-        &phi.elliptic_f_phi(&m, p, rm, &mut consts),
-        &m.elliptic_k(p, rm, &mut consts)
-    ));
-    assert!(same_bits(
-        &phi.elliptic_e_phi(&m, p, rm, &mut consts),
-        &m.elliptic_e_complete(p, rm, &mut consts)
-    ));
+    let f = phi.elliptic_f_phi(&m, p, rm, &mut consts);
+    let e = phi.elliptic_e_phi(&m, p, rm, &mut consts);
+    assert_eq!(ulp_gap(&f, &m.elliptic_k(p, rm, &mut consts), p), 1);
+    assert_eq!(
+        ulp_gap(&e, &m.elliptic_e_complete(p, rm, &mut consts), p),
+        1
+    );
     assert!(same_bits(
         &n.elliptic_pi_phi(&phi, &m, p, rm, &mut consts),
         &n.elliptic_pi_complete(&m, p, rm, &mut consts)
     ));
+    Ok(())
+}
+
+#[test]
+fn e_phi_at_512_fl_half_pi_rounds_above_one_in_up_modes() -> Result<(), Box<dyn std::error::Error>>
+{
+    // Official oracle-deep at be63db9 failed elliptic_e_phi p=512 Up and
+    // FromZero on a "limbs" gold. At p=512, ToEven fl(π/2) is above π/2, so
+    // E(φ|1) is 1 + ~2^{-1030}: above 1 and far below one ulp (2^{-511}).
+    // Up and FromZero must be 1+ulp; the other five modes stay 1.
+    let mut consts = cc()?;
+    let p = 512;
+    let phi = parse(HALF_PI, p, RoundingMode::ToEven, &mut consts);
+    let m = parse("1", p, RoundingMode::ToEven, &mut consts);
+    let one = parse("1", p, RoundingMode::ToEven, &mut consts);
+    for rm in [
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::FromZero,
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::None,
+    ] {
+        let e = phi.elliptic_e_phi(&m, p, rm, &mut consts);
+        if matches!(rm, RoundingMode::Up | RoundingMode::FromZero) {
+            assert_eq!(ulp_gap(&e, &one, p), 1, "{rm:?} should be 1+ulp");
+            assert_eq!(e.compare(&one), Some(1), "{rm:?} should be above 1");
+        } else {
+            assert!(same_bits(&e, &one), "{rm:?} should be exact 1, got {e}");
+        }
+    }
     Ok(())
 }
 

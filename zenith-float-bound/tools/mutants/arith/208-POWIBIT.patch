@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index deeda66..06c115e 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -132,7 +132,7 @@ impl Ball {
+         let mut started = false;
+         for i in (0..u64::BITS).rev() {
+             let bit = n.checked_shr(i).map_or(0, |v| v & 1) == 1;
+-            if started {
++            if started && bit {
+                 acc = acc.sqr(wp)?;
+             }
+             if bit {

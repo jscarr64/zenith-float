@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -69,7 +69,7 @@
+     /// `(re, −im)`, exact.
+     pub fn conj(self) -> CBall {
+         CBall {
+-            re: self.re,
++            re: self.re.negated(),
+             im: self.im.negated(),
+         }
+     }

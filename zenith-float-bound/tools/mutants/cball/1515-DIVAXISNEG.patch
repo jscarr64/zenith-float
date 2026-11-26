@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -220,7 +220,7 @@
+         } else if exact_zero(&a) {
+             Ok((arb_div(&b, d, prec)?, zero_ball(prec)?))
+         } else {
+-            Ok((arb_div(&b, d, prec)?, arb_div(&a, d, prec)?.negated()))
++            Ok((arb_div(&b, d, prec)?, arb_div(&a, d, prec)?))
+         }
+     } else if prec > ACB_DIV_EXACT_PREC
+         && c.is_exact()

@@ -18,9 +18,14 @@
     )
 )]
 
+// P6/P8 (Jeff 2026-11-10 "Yes 64 bit only please"): 64-bit targets only.
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("zenith-float-num requires a 64-bit target (target_pointer_width = 64); 32-bit targets are not supported.");
+
 extern crate alloc;
 
 mod accuracy;
+mod aprcl;
 mod ball;
 mod binfmt;
 mod catalog;
@@ -28,12 +33,14 @@ mod chebyshev;
 mod common;
 mod complex;
 mod complex_airy;
+mod complex_ball;
 mod complex_bessel;
 mod complex_ei;
 mod complex_elliptic;
 mod complex_hypergeom;
 mod complex_special;
 mod conv;
+mod conv_mpn_exp;
 mod csvfmt;
 pub mod ctx;
 mod defs;
@@ -44,6 +51,7 @@ mod ext;
 mod gauss_kronrod;
 mod hash;
 mod heun_fox;
+mod hurwitz_jet;
 mod ieee_soft;
 mod integer;
 mod mantissa;
@@ -54,6 +62,7 @@ mod ops;
 mod orthopoly;
 mod parser;
 mod poly;
+mod primality;
 mod quadrature;
 mod radix_float;
 #[cfg(any(test, feature = "random"))]
@@ -61,6 +70,17 @@ mod random_dist;
 mod rational;
 mod roots;
 mod strop;
+#[cfg(test)]
+mod test_must;
+/// `?` on a library `Result` inside a unit test returning `Result<(), String>` (see `test_must`).
+#[cfg(test)]
+impl From<Error> for alloc::string::String {
+    fn from(e: Error) -> alloc::string::String {
+        alloc::format!("{e:?}")
+    }
+}
+#[cfg(test)]
+use zenith_float_testkit::test_time;
 
 #[cfg(feature = "std")]
 mod for_3rd;
@@ -79,8 +99,12 @@ pub use crate::binfmt::InlineBinaryBuffer;
 pub use crate::binfmt::BINARY_FLAG_ARRAY;
 pub use crate::binfmt::BINARY_FLAG_HEAP_NEG;
 pub use crate::binfmt::BINARY_FLAG_HEAP_POS;
+pub use crate::binfmt::BINARY_FLAG_HEAP_WIDE_NEG;
+pub use crate::binfmt::BINARY_FLAG_HEAP_WIDE_POS;
 pub use crate::binfmt::BINARY_FLAG_INF_NEG;
 pub use crate::binfmt::BINARY_FLAG_INF_POS;
+pub use crate::binfmt::BINARY_FLAG_INLINE_WIDE_NEG;
+pub use crate::binfmt::BINARY_FLAG_INLINE_WIDE_POS;
 pub use crate::binfmt::BINARY_FLAG_NAN_BARE;
 pub use crate::binfmt::BINARY_FLAG_NAN_DIV0;
 pub use crate::binfmt::BINARY_FORMAT_VERSION;
@@ -94,7 +118,6 @@ pub use crate::chebyshev::chebyshev_coeffs;
 pub use crate::chebyshev::chebyshev_error_bound;
 pub use crate::chebyshev::chebyshev_eval;
 pub use crate::chebyshev::clenshaw;
-pub use crate::chebyshev::CHEBYSHEV_MAX_DEGREE;
 pub use crate::common::buf::INLINE_WORDS;
 pub use crate::complex::ExactComplex;
 pub use crate::defs::Error;
@@ -134,11 +157,13 @@ pub use crate::hash::constant_time_eq;
 pub use crate::hash::hmac_sha256;
 pub use crate::hash::sha256;
 pub use crate::hash::sha512;
+pub use crate::heun_fox::{FoxHParams, HeunCParams, HeunGParams, MeijerParams};
 pub use crate::ieee_soft::{
     check_alloc_bytes, Bfloat16, ExactNumArray, Ieee16, Ieee32, Ieee32Array, Ieee64, Ieee64Array,
     FFT_MAX_POINTS, IEEE_SIMD_LANE_WIDTH,
 };
 pub use crate::integer::ExactInt;
+pub use crate::modular::is_prime;
 pub use crate::modular::miller_rabin;
 pub use crate::modular::mod_inv;
 pub use crate::modular::mod_pow;
@@ -148,8 +173,9 @@ pub use crate::ode::euler;
 pub use crate::ode::ode_min_step;
 pub use crate::ode::rk4;
 pub use crate::ode::rk45_adaptive;
-pub use crate::ode::ODE_MAX_STEPS;
-pub use crate::ode::ODE_MIN_STEP;
+pub use crate::ode::OdeError;
+pub use crate::ode::OdeSpan;
+pub use crate::ode::OdeTol;
 pub use crate::ops::consts::CachedFBig;
 pub use crate::ops::consts::ConstCache;
 pub use crate::ops::consts::ConstCacheInfo;
@@ -158,7 +184,6 @@ pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;
 pub use crate::ops::special::beta;
-pub use crate::ops::JACOBI_AGM_MAX;
 pub use crate::orthopoly::ORTHOPOLY_N_MAX;
 pub use crate::poly::ExactNumPoly;
 pub use crate::poly::POLY_COMPANION_CLOSED_DEG;
@@ -167,17 +192,18 @@ pub use crate::quadrature::gauss_kronrod_interval;
 pub use crate::quadrature::gauss_laguerre;
 pub use crate::quadrature::gauss_legendre;
 pub use crate::quadrature::integrate_adaptive_gk;
+pub use crate::quadrature::integrate_adaptive_gk_estimate;
 pub use crate::quadrature::integrate_adaptive_gk_infinite;
+pub use crate::quadrature::integrate_adaptive_gk_infinite_estimate;
 pub use crate::quadrature::kronrod_pair;
 pub use crate::quadrature::tanh_sinh;
 pub use crate::quadrature::wynn_epsilon;
+pub use crate::quadrature::GkOptions;
 pub use crate::quadrature::GkResult;
 pub use crate::quadrature::QuadratureError;
 pub use crate::quadrature::GK_GAUSS_ORDER;
 pub use crate::quadrature::GK_KRONROD_ORDER;
 pub use crate::quadrature::GK_SUBINTERVAL_MAX;
-pub use crate::quadrature::QUADRATURE_MAX_NODES;
-pub use crate::quadrature::TANH_SINH_LEVELS_MAX;
 pub use crate::radix_float::RadixFloat;
 #[cfg(any(test, feature = "random"))]
 pub use crate::random_dist::RandomDist;
@@ -187,6 +213,7 @@ pub use crate::roots::brent;
 pub use crate::roots::illinois;
 pub use crate::roots::newton;
 pub use crate::roots::root_default_tol;
+pub use crate::roots::NewtonOptions;
 pub use crate::roots::ROOT_DEFAULT_TOL;
 pub use crate::roots::ROOT_MAX_ITER;
 

@@ -24,9 +24,7 @@ fn finite(x: &ExactNum) -> bool {
 }
 
 fn copy_p(x: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
-    let mut y = x.clone();
-    let _ = y.set_precision(p, rm);
-    y
+    x.rounded_to(p, rm)
 }
 
 fn to_row(p: usize, rm: RoundingMode, vals: &[ExactNum]) -> Option<ExactNumArray> {

@@ -1,0 +1,12 @@
+diff --git a/tests/harness/slice_cball.rs b/tests/harness/slice_cball.rs
+--- a/tests/harness/slice_cball.rs
++++ b/tests/harness/slice_cball.rs
+@@ -880,7 +880,7 @@
+     let (rx, ry) = (&r.a[1], &r.a[3]);
+     let so_re = rx.mul_full_prec(rx).add_full_prec(&ry.mul_full_prec(ry));
+     let xy = rx.mul_full_prec(ry);
+-    let so_im = xy.add_full_prec(&xy);
++    let so_im = xy.sub_full_prec(&xy);
+     [
+         r.rref[0].add_full_prec(&so_re),
+         r.rref[1].add_full_prec(&so_im),

@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # Canonical full gate. usage: tools/full_gate.sh TAG
-# Every step runs under `timeout` (STEP_TIMEOUT, default 20m; the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
+# 64-bit host only (P6; Jeff 2026-11-10 19:15 CT): no 32-bit target is built, linted or tested here
+# (tools/test_full_gate_64bit_only.sh, run in the unsafe-scan step, keeps it that way).
+# Every step runs under `timeout` (STEP_TIMEOUT, default 20m; build-debug, features-random-serde and prepublish default to 90m (Jeff 2026-11-24 9:27 AM CT); the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
 # output to $T/TAG-<step>.log (T, else ZF_GATE_LOG_DIR, else $HOME/rusty-work/logs/zf-gate/<sha>-<time>; never /tmp). REPO selects the checkout (default: this one).
-# CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The first
-# step, target-dir, runs the tools/fresh_test_run.sh selftest and --claim: it fails if CARGO_TARGET_DIR is unset or owned
+# The library rules run first (Jeff 2026-11-23 07:43 CT): rules-scan, no-clone-progress, fmt, then target-dir, then clippy.
+# CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The
+# target-dir step (before the first build, clippy-x86_64) runs the tools/fresh_test_run.sh selftest and --claim: it fails if CARGO_TARGET_DIR is unset or owned
 # by another worktree (marker $CARGO_TARGET_DIR/.worktree-owner). Every cargo test step (mpfr-tests-build included) runs
 # through tools/fresh_test_run.sh: build with --no-run, then fail on zero test binaries or one outside CARGO_TARGET_DIR,
 # before any test runs; only then the tests run.
 #
 # Clone ratchet "in progress" mode: `rules-scan` scans the added lines since the ratchet started (RATCHET_BASE,
 # default c74e834^ = the parent of the first commit with rules_scan and the baseline) and enforces the baseline
-# count; `no-clone-progress` prints the remaining no_clone.sh violations (a tracked count, it never fails the gate).
+# count; `no-clone-progress` FAILS when any no_clone.sh form, the total or the helper-copy count rises above
+# tools/no_clone_progress_baseline.txt (tools/no_clone.sh --progress; Jeff 2026-11-23 07:43 CT).
 # The zero-clone goal is unchanged: the baseline in tools/clone_count_baseline.txt only goes down.
 # `rules-scan` also enforces (via rules_scan.py count checks) the helper-copy baseline (tools/helper_copy_count_baseline.txt),
 # the exception allowlist (stale entries fail, tools/exception_count_baseline.txt) and the library-scoped ref ratchets;
@@ -28,9 +32,16 @@ echo "poplog: $POPLOG_FILE" | tee -a "$T/$tag.rc" >&2
 # Pop scheduling (Paul, 2026-10-23): heavy gates share 3 counting-lock slots (/tmp/pop-gate.slot1..3, replaces the
 # single flock /tmp/pop-gate.lock), 8 jobs each (24 of 32 cores). The slot is held on an fd until this script exits;
 # waiting shows as WAITING in ~/pop-logs/RUNNING.tsv. Skipped when a caller already holds a slot (POPSLOT_HELD).
-# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value POPSLOT_JOBS (4) (pop_slot_acquire) unless the caller sets them.
+# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value POPSLOT_JOBS (pop_slot_acquire) unless the caller sets them;
+# with no slot value they fall back to the host's core count (P14). No test step is pinned to one thread
+# (tools/test_full_gate_threads.sh).
 if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-8}"; fi
-export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-4}} RUST_TEST_THREADS=${RUST_TEST_THREADS:-${POPSLOT_JOBS:-4}}
+export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-$(nproc)}} RUST_TEST_THREADS=${RUST_TEST_THREADS:-${POPSLOT_JOBS:-$(nproc)}}
+# No python bytecode cache in the tree: a leftover __pycache__ makes the poplog footer NOT A GATE (tree dirty at end).
+# Steps that clear the environment (env -i) set it again themselves (tools/oracle_env_selftest.sh run_forged).
+export PYTHONDONTWRITEBYTECODE=1
+# This gate run's id: the features-random-serde evidence counts for prepublish only within the same run.
+export ZF_GATE_RUN_ID="$tag-$$-$(date +%s%N)"
 TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
@@ -50,7 +61,16 @@ run() {
   name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"
   rm -f "$(_pl_out)"  # the last step left it a symlink to its log; log_step_start truncates it
   log_step_start "$name"; ln -sf "$T/$tag-$name.log" "$(_pl_out)"  # nested: own out file, never the parent's
-  to=${STEP_TIMEOUT:-20m}; [[ $name == mpfr ]] && to=${MPFR_STEP_TIMEOUT:-40m}  # mpfr: integration_tests alone is ~1090 s
+  to=${STEP_TIMEOUT:-20m}
+  [[ $name == mpfr ]] && to=${MPFR_STEP_TIMEOUT:-40m}  # mpfr: integration_tests alone is ~1090 s
+  # Debug workspace suites (no --release): post-985b100 tests are heavier;
+  # 20m was not enough for build-debug at 6e2165e, nor for
+  # features-random-serde at f17d6ee (exit 124, tests still passing).
+  # Jeff 2026-11-23 23:04 CT: "timing limits are enforced in the release step only; debug still runs every
+  # test for correctness, and the debug step limit goes to 60 min" (measured ~44 min at f21c27e).
+  # Jeff 2026-11-24 12:58 AM CT: "Go: features-random-serde and prepublish get the same 60 min limit as build-debug".
+  # Jeff 2026-11-24 9:27 AM CT: "just move it to 90" (all three; build-release stays 20m).
+  [[ $name =~ ^(build-debug|features-random-serde|prepublish)$ && -z "${STEP_TIMEOUT:-}" ]] && to=90m
   timeout "$to" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""
@@ -63,9 +83,18 @@ run() {
   grep -E '^ *Running .*\(/[^)]*\)$|^test result: ' "$T/$tag-$name.log" || true
 }
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
+# Jeff 2026-11-23 07:43 CT (ROOT-CAUSE.md): the library rules run FIRST, so no stop-at-first-failure kill can skip them:
+# rules-scan, no-clone-progress and fmt need no target dir; target-dir claims it before clippy, the first build.
+# ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
+run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
+# FAILS on any rise (Jeff 2026-11-23 07:43 CT; it ended in `true` from da53be7 to 2026-11-23): every form, the total and the
+# helper-copy count against tools/no_clone_progress_baseline.txt (the 25e2d82 counts), which is only ever lowered by hand
+run no-clone-progress "tools/no_clone_selftest.sh && tools/no_clone.sh --progress"
+run fmt "cargo fmt --all -- --check"
 run target-dir "tools/fresh_test_run_selftest.sh && tools/fresh_test_run.sh --claim"
+run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 # goldens pinned by SHA256SUMS next to them (fails closed: missing/empty sums, unlisted golden, drift)
-run golden-sums "tools/golden_sums_selftest.sh && tools/golden_sums_check.sh zenith-float-num/tests/oracle/goldens borrow_ops.jsonl"
+run golden-sums "bash tools/test_gate_tool_checks.sh && tools/golden_sums_selftest.sh && python3 tools/test_round_mpf_directed_residue.py && python3 tools/test_specials_exact_and_hidden_residue.py && tools/golden_sums_check.sh zenith-float-num/tests/oracle/goldens borrow_ops.jsonl"
 # arm-tests.yml must run the workspace tests with --release, like build-release below (fails closed: missing workflow, step or flag)
 run arm-tests-release "tools/test_arm_tests_release.sh"
 # the qemu-aarch64 ZF_TIME_FACTOR pin must stay at or above the measured s9_erf ratio + margin (fails closed)
@@ -83,26 +112,25 @@ run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --r
 # build-release for the same reason.
 run zero-test "bash scripts/check_zero_test_targets.sh"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
+# ACCEPTANCE-pr39 E6 (P12): every #[ignore]d test must pass when run; this step runs them all (heavy tiers SKIP visibly without their env).
+run ignored "tools/fresh_test_run.sh cargo test --workspace --release $TT --ignored"
+# ACCEPTANCE-pr39 I10 (T3): the exhaustive small-p enumeration prints its point counts into this step log (--nocapture).
+run small-p-counts "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --test small_p_exhaustive $TT --nocapture"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
-run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-eabihf && cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf"
-run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
-run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
-run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
+# Jeff 2026-11-24 9:06 AM CT: prepublish skips its random,serde rerun only after checking this step passed rc=0 on the same
+# SHA (evidence written here by scripts/gate_serde_evidence.sh; tools/test_prepublish_serde_dedupe.sh).
+run features-random-serde "bash scripts/gate_serde_evidence.sh run '$T/$tag-features-random-serde.evidence' tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
+run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
+run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
 # MPFR_TIER selects the MPFR tier (tests/mpfr/common.rs): the gate runs `full` (every run count, the
 # 100032-bit tests) unless the caller sets MPFR_TIER=fast.
-run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests -- --test-threads=1"
-# ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
-run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
-# informational: remaining violations are a tracked count (must only go down; hard fail is for the final step)
-run no-clone-progress "tools/no_clone_selftest.sh && { tools/no_clone.sh | tail -1; tools/no_clone.sh --helpers | tail -1; true; }"
-run fmt "cargo fmt --all -- --check"
-run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
-run clippy-i686 "cargo clippy -p zenith-float-num --all-targets --target i686-unknown-linux-musl -- -D warnings"
+run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $TT"
+# K11 (Paul 2026-11-10): no machine path in shipped scripts; every oracle generator refuses a forged wrong-pin env
+run oracle-env "tools/oracle_env_selftest.sh"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
-run hex-32bit "bash scripts/ci_hex_32bit.sh"
-run unsafe-scan "bash tools/gate_unsafe_scan.sh"
-run prepublish "bash scripts/zenith_prepublish.sh"
+run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_commit_msg_agent_trailer.sh && bash tools/test_prepublish_serde_dedupe.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_full_gate_debug_suite_timeouts.sh && bash tools/test_rules_enforcement.sh && bash tools/no_suppress_selftest.sh && bash tools/no_suppress_scan.sh && bash tools/pre_push_selftest.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
+run prepublish "ZF_GATE_SERDE_EVIDENCE='$T/$tag-features-random-serde.evidence' bash scripts/zenith_prepublish.sh"
 echo "done" >> "$T/$tag.rc"
 poplog_finish
 exit "$POPLOG_OVERALL"

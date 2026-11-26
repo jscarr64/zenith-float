@@ -14,6 +14,33 @@ use crate::{num::ExactNumNumber, Sign, EXPONENT_MIN};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+/// The width (in bits) of a constant that reduces an argument of exponent `e` (`e > 0`) with no
+/// loss: `base` bits plus `e` extra bits, so the remainder keeps every bit of `base`. There is no
+/// limit on `e`: the width is checked, never capped. A width the exponent arithmetic cannot hold
+/// (see `p_assertion`), or that this machine cannot reserve, is `MemoryAllocation`; the reservation
+/// is a probe only (nothing is written), so a refusal costs no memory.
+pub(crate) fn reduction_width(base: usize, e: crate::defs::Exponent) -> Result<usize, Error> {
+    let extra = usize::try_from(e.max(0)).map_err(|_| Error::MemoryAllocation)?;
+    let width = base.checked_add(extra).ok_or(Error::MemoryAllocation)?;
+    reserve_probe(width)?;
+    Ok(width)
+}
+
+/// `Ok` when a `width`-bit mantissa is representable (`p_assertion`) and this machine can reserve it; otherwise
+/// `MemoryAllocation`, before any series work starts at that width. Nothing is written, so the probe costs no memory.
+///
+/// The reserved buffer is otherwise unused. Without an observation, LLVM may legally elide
+/// `try_reserve_exact` and treat the probe as success; dest-width entry points then fall
+/// through to Ziv and report `PrecisionRetryExhausted`. `black_box` keeps the reservation
+/// observable, so the outcome cannot depend on inlining.
+pub(crate) fn reserve_probe(width: usize) -> Result<(), Error> {
+    crate::num::ExactNumNumber::p_assertion(width)?;
+    let mut probe: alloc::vec::Vec<Word> = alloc::vec::Vec::new();
+    probe.try_reserve_exact(width.div_ceil(WORD_BIT_SIZE))?;
+    core::hint::black_box(&probe);
+    Ok(())
+}
+
 /// integer logarithm base 2 of a number.
 pub fn log2_ceil(mut n: usize) -> usize {
     let mut ret = 0;
@@ -712,5 +739,18 @@ mod retry_budget_tests {
                 "p = {p}: stopped at {p_wrk}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod reserve_probe_tests {
+    use super::reserve_probe;
+    use crate::defs::Error;
+
+    #[test]
+    fn reserve_probe_at_dest_2_59_is_memory_allocation() {
+        // Release + LTO may legally elide an unobserved try_reserve and return Ok(());
+        // dest 2^59 must stay MemoryAllocation.
+        assert_eq!(reserve_probe(1usize << 59), Err(Error::MemoryAllocation));
     }
 }

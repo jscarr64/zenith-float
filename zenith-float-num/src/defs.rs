@@ -59,9 +59,8 @@ pub const EXPONENT_MIN: Exponent = -EXPONENT_MAX;
 pub const MIN_NORMAL_EXPONENT: Exponent = EXPONENT_MIN;
 
 /// A precision in bits: the type of [`MIN_PRECISION`], [`MAX_PRECISION`], [`DEFAULT_P`] and of the
-/// precisions the API reports. Accepted values are `MIN_PRECISION..=MAX_PRECISION`; `MAX_PRECISION` is
-/// `2^60 - 1` on 64-bit targets and smaller (`2^30 - 2`) on 32-bit targets. An alias of `usize`, so code
-/// written against `usize` keeps compiling.
+/// precisions the API reports. Accepted values are `MIN_PRECISION..=MAX_PRECISION`. An alias of `usize`,
+/// so code written against `usize` keeps compiling. zenith-float 2.0 targets 64-bit hosts only (P6).
 pub type Precision = usize;
 
 /// Smallest accepted precision in bits. Precision `0` is rejected with
@@ -70,25 +69,12 @@ pub const MIN_PRECISION: Precision = 1;
 
 /// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
 ///
-/// `min(2^60, usize::MAX / 4) - 1`: `2^60 - 1` on 64-bit targets, so that an exponent plus or minus a
-/// precision stays inside `±2^62` (see [`crate::defs`] exponent helpers), and
-/// `2^30 - 2` on 32-bit targets, where sizes are 32-bit `usize` (`usize::MAX / 4 = 2^30 - 1`).
-/// Allocating a mantissa this large still fails with `Error::MemoryAllocation` on real hardware.
-pub const MAX_PRECISION: Precision = {
-    let by_exponent: u64 = 1 << 60;
-    let by_size = (usize::MAX / 4) as u64;
-    let lim = if by_exponent < by_size { by_exponent } else { by_size };
-    (lim - 1) as Precision
-};
+/// The fixed value `2^60 - 1`, so that an exponent plus or minus twice a precision stays inside `i64`
+/// (see [`crate::defs`] exponent helpers). It is not derived from the width of `usize`. This is the one
+/// definition: `zenith_float::bound` re-exports it. Allocating a mantissa this large still fails with
+/// `Error::MemoryAllocation` on real hardware.
+pub const MAX_PRECISION: Precision = (1 << 60) - 1;
 
-const _: () = assert!(
-    (MAX_PRECISION as u128) + 1
-        == if (1u128 << 60) < (usize::MAX / 4) as u128 {
-            1u128 << 60
-        } else {
-            (usize::MAX / 4) as u128
-        }
-);
 // Two exponents add without overflow, and so do an exponent and twice a precision.
 const _: () = assert!(EXPONENT_MAX as i128 * 2 <= i64::MAX as i128);
 const _: () = assert!(EXPONENT_MAX as i128 + MAX_PRECISION as i128 * 2 <= i64::MAX as i128);

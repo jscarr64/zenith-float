@@ -70,9 +70,7 @@ impl CachedFBig {
 
     /// Round the cached value to `p` bits.
     pub fn round(&self, p: usize, rm: RoundingMode) -> ExactNum {
-        let mut v = self.inner.clone();
-        let _ = v.set_precision(p, rm);
-        v
+        self.inner.rounded_to(p, rm)
     }
 }
 

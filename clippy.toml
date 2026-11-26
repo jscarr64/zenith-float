@@ -1,13 +1,7 @@
-# Clippy for zenith-float SoftFloat kernels.
-#
-# too-many-arguments-threshold: numeric kernels (ODE, SVD householders, roots,
-# Airy, hypergeom) carry 8–13 matrices/coeff/state params. Grouping into structs
-# would obscure the math and churn the public API for no correctness gain.
-# Same rationale as the downstream application workspace.
-
-too-many-arguments-threshold = 13
-max-fn-params-bools = 8
-type-complexity-threshold = 300
+# Clippy for zenith-float SoftFloat kernels. Every threshold is clippy's default
+# (Jeff 2026-11-24: no relaxed lint limits; 2:35 PM CT: the 11 public fns over 7
+# arguments take grouped option/param structs instead). tools/no_suppress_scan.py
+# reports any threshold key added here.
 
 # Portable integer code only. scripts/ci_no_intrinsics.sh is the text scan;
 # these entries make `cargo clippy -D warnings` reject the same calls.

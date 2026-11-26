@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 5817ee4..d001922 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -463,7 +463,7 @@ fn endpoint_signs(a: &Ball, b: &Ball) -> Option<(Ordering, Ordering)> {
+ /// outside zenith-float's range, the same with the roles swapped. `None` when neither radius converts.
+ fn far_side(r1: &Mag, r2: &Mag, d: &ExactNum) -> Option<Ordering> {
+     if r2.is_zero() {
+-        return Some(Ordering::Greater);
++        return Some(Ordering::Less);
+     }
+     if let Ok(mut rn) = r1.to_exact_num() {
+         if d.is_negative() {

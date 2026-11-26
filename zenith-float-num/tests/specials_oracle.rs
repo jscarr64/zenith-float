@@ -7,14 +7,17 @@
 //! allowed. `WorkingPrecision` uses the class budget. `Unspecified` checks
 //! the domain, the sign, and two decimal digits.
 
+// Per-row wall-clock limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the
+// library (test_time::wait_row).
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use zenith_float_testkit::test_time;
 
 use zenith_float_num::{
-    accuracy_of, Accuracy, Consts, Error, ExactComplex, ExactNum, Exponent, Radix, RoundingMode,
-    Sign, Word, INF_NEG, INF_POS,
+    accuracy_of, Accuracy, Consts, Error, ExactComplex, ExactNum, Exponent, FoxHParams,
+    HeunGParams, MeijerParams, Radix, RoundingMode, Sign, Word, INF_NEG, INF_POS,
 };
 
 /// `|x|` for an operand that stays borrowed: fresh `±1` times `x` at `x`'s own precision.
@@ -26,7 +29,7 @@ fn abs_of(x: &ExactNum) -> ExactNum {
     ExactNum::from_i8(sign, p).mul(x, p, RoundingMode::None)
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 enum Canon {
     Finite {
         sign: String,
@@ -337,22 +340,44 @@ fn eval_real(
             let ap = json_nums(row.get("ap"), p, cc)?;
             let bm = json_nums(row.get("bm"), p, cc)?;
             let bq = json_nums(row.get("bq"), p, cc)?;
-            num(toks, 0)?.meijer_g(&an, &ap, &bm, &bq, p, rm, cc)
+            num(toks, 0)?.meijer_g(
+                MeijerParams {
+                    an: &an,
+                    ap: &ap,
+                    bm: &bm,
+                    bq: &bq,
+                },
+                p,
+                rm,
+                cc,
+            )
         }
         "fox_h" => {
             let an = json_pairs(row.get("an"), p, cc)?;
             let ap = json_pairs(row.get("ap"), p, cc)?;
             let bm = json_pairs(row.get("bm"), p, cc)?;
             let bq = json_pairs(row.get("bq"), p, cc)?;
-            num(toks, 0)?.fox_h(&an, &ap, &bm, &bq, p, rm, cc)
+            num(toks, 0)?.fox_h(
+                FoxHParams {
+                    an: &an,
+                    ap: &ap,
+                    bm: &bm,
+                    bq: &bq,
+                },
+                p,
+                rm,
+                cc,
+            )
         }
         "heun_g" => num(toks, 0)?.heun_g(
-            num(toks, 1)?,
-            num(toks, 2)?,
-            num(toks, 3)?,
-            num(toks, 4)?,
-            num(toks, 5)?,
-            num(toks, 6)?,
+            HeunGParams {
+                a: num(toks, 1)?,
+                q: num(toks, 2)?,
+                alpha: num(toks, 3)?,
+                beta: num(toks, 4)?,
+                gamma: num(toks, 5)?,
+                delta: num(toks, 6)?,
+            },
             p,
             rm,
             cc,
@@ -616,7 +641,11 @@ fn verdict(got: &Canon, expect: &Canon, row: &serde_json::Value) -> Result<(), S
     // Unspecified, and functions outside the accuracy scan, use the two-digit smoke.
     if !matches!(
         class,
-        Some(Accuracy::Unspecified) | None | Some(Accuracy::Faithful) | Some(Accuracy::Enclosure)
+        Some(Accuracy::Unspecified)
+            | Some(Accuracy::CorrectlyRoundedOutsideDisk)
+            | None
+            | Some(Accuracy::Faithful)
+            | Some(Accuracy::Enclosure)
     ) {
         return Err(format!("unhandled class for {op}"));
     }
@@ -654,7 +683,26 @@ fn push_range(out: &mut String, start: usize, end: usize) {
     }
 }
 
+/// M27-POLE08 (held): `riemann_zeta(1)` rows in `specials/zeta.jsonl` (p in {53, 64, 113, 128, 256}, both tiers).
+/// The golden expects NaN(InvalidArgument); POLE-08 rules zeta(1) = +Inf, divideByZero, exact. The library still
+/// returns NaN, so the rows are left out by id (no golden regen in #39); `zeta` asserts all 7 were found. ZF-M27
+/// fixes them red-first.
+const POLE08_ZETA_HELD: &[&str] = &[
+    "riemann_zeta-53-ToEven-29",
+    "riemann_zeta-53-Up-30",
+    "riemann_zeta-113-ToEven-31",
+    "riemann_zeta-113-Up-32",
+    "riemann_zeta-64-ToEven-33",
+    "riemann_zeta-128-ToEven-34",
+    "riemann_zeta-256-ToEven-35",
+];
+
 fn run_file(name: &str) -> Result<(), String> {
+    run_file_holding(name, &[]).map(|_| ())
+}
+
+/// Runs `name`, leaving out the rows whose id is in `held` (every tier); returns how many held rows it found.
+fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
     let path = format!(
         "{}/tests/oracle/goldens/specials/{name}.jsonl",
         env!("CARGO_MANIFEST_DIR")
@@ -668,30 +716,32 @@ fn run_file(name: &str) -> Result<(), String> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(12usize);
+    let mut held_found = 0usize;
     for (idx, line) in text.lines().enumerate() {
         if line.is_empty() {
             continue;
         }
         let row: serde_json::Value =
             serde_json::from_str(line).map_err(|err| format!("json {name}: {err}"))?;
-        let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
-        if !tier_selected(tier) {
-            continue;
-        }
-        ran += 1;
         let id = row
             .get("id")
             .and_then(|v| v.as_str())
             .unwrap_or("?")
             .to_string();
+        if held.contains(&id.as_str()) {
+            held_found += 1;
+            continue;
+        }
+        let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
+        if !tier_selected(tier) {
+            continue;
+        }
+        ran += 1;
         let line_no = idx + 1;
         let budget = row
             .get("budget_s")
             .and_then(|v| v.as_u64())
-            .map_or(Duration::from_secs(2), Duration::from_secs)
-            // Budgets are for optimised builds; an unoptimised build that shares the machine
-            // with the rest of the workspace tests runs several times slower.
-            .saturating_mul(if cfg!(debug_assertions) { 10 } else { 1 });
+            .map_or(Duration::from_secs(2), Duration::from_secs);
         let expect = expect_of(row.get("expect").unwrap_or(&serde_json::Value::Null));
         let (tx, rx) = mpsc::channel();
         let row_for_thread = row.clone();
@@ -699,13 +749,18 @@ fn run_file(name: &str) -> Result<(), String> {
             let result = catch_unwind(AssertUnwindSafe(|| eval_row(&row_for_thread)));
             let _ = tx.send(result);
         });
-        let outcome = match rx.recv_timeout(budget) {
+        // Release step: the row fails at `budget`. Debug: not a limit; the hang watchdog is budget x 10
+        // (test_time::DEBUG_WATCHDOG_FACTOR, the factor this file used for debug rows).
+        let outcome = match test_time::wait_row(&rx, budget) {
             Ok(Ok(Ok(got))) => match verdict(&got, &expect, &row) {
                 Ok(()) => None,
                 Err(why) => Some(format!("{name}:{line_no} {id}: {why}")),
             },
             Ok(Ok(Err(err))) => Some(format!("{name}:{line_no} {id}: {err}")),
             Ok(Err(_)) => Some(format!("{name}:{line_no} {id}: panic")),
+            Err(test_time::RowWait::Hang) => {
+                Some(format!("{name}:{line_no} {id}: hang watchdog (debug)"))
+            }
             Err(_) => Some(format!("{name}:{line_no} {id}: timeout")),
         };
         if let Some(msg) = outcome {
@@ -723,8 +778,8 @@ fn run_file(name: &str) -> Result<(), String> {
             samples.join("\n")
         ));
     }
-    eprintln!("{name}.jsonl passed {ran}");
-    Ok(())
+    eprintln!("{name}.jsonl passed {ran}, held {held_found}");
+    Ok(held_found)
 }
 
 #[test]
@@ -799,7 +854,10 @@ fn clausen() -> Result<(), String> {
 
 #[test]
 fn zeta() -> Result<(), String> {
-    run_file("zeta")
+    let held = run_file_holding("zeta", POLE08_ZETA_HELD)?;
+    // M27-POLE08: the 7 riemann_zeta(1) NaN rows are held, not asserted
+    assert_eq!(held, 7);
+    Ok(())
 }
 
 #[test]

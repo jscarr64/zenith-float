@@ -380,7 +380,7 @@ mod tests {
         );
     }
 
-    fn gen_pair(m1: Mantissa, mut e: Exponent) -> (ExactNum, ExactNum) {
+    fn gen_pair(m1: Mantissa, mut e: Exponent) -> Result<(ExactNum, ExactNum), crate::Error> {
         let s = if crate::common::test_rng::random::<i8>() & 1 == 0 {
             Sign::Pos
         } else {
@@ -401,7 +401,7 @@ mod tests {
 
         let n2 = ExactNumNumber::from_raw_unchecked(m2, s, e, true);
 
-        (n1.into(), n2.into())
+        Ok((n1.into(), n2.into()))
     }
 
     fn gen_num_pair(
@@ -439,7 +439,7 @@ mod tests {
                 .ok_or(crate::Error::InvalidArgument)? |= WORD_SIGNIFICANT_BIT;
         }
 
-        Ok(gen_pair(m1, e))
+        gen_pair(m1, e)
     }
 
     fn gen_num_pair_trig(
@@ -481,7 +481,7 @@ mod tests {
             }
         }
 
-        Ok(gen_pair(m1, e))
+        gen_pair(m1, e)
     }
 
     fn calc_err(mut d1: ExactNum, mut d2: ExactNum, p: usize) -> Result<usize, crate::Error> {

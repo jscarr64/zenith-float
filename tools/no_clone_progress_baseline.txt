@@ -1,0 +1,12 @@
+# no_clone.py --progress baseline (gate step no-clone-progress): kind<TAB>count. Any rise FAILS; lower by hand only, never raise.
+# Set 2026-11-23 (Jeff 07:43 CT ruling) to the counts of 25e2d82 = 11377ab, the last tree whose gate passed rules-scan (ROOT-CAUSE.md), not the inflated tip.
+# Lowered 2026-11-23 16:40 CT (Jeff 16:35 CT go) to the measured counts of 98f9c5b: clone() 475->467, cloned() 5->4, derive(Clone) 11->9, total 497->486, helper_copies 321->317.
+clone()	467
+to_vec()	5
+cloned()	4
+Clone::clone	0
+clone_from	0
+impl Clone	1
+derive(Clone)	9
+total	486
+helper_copies	317

@@ -1,0 +1,15 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -625,9 +625,8 @@
+     for s in 0..n {
+         let i = match side {
+             Triangle::Lower => s,
+-            Triangle::Upper => n
+-                .checked_sub(s)
+-                .and_then(|v| v.checked_sub(1))
++            Triangle::Upper => Some(s)
++                .filter(|v| *v < n)
+                 .ok_or_else(range)?,
+         };
+         let row = row_of(op, t, i, n)?;

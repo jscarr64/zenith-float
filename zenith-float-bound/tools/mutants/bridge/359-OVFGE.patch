@@ -1,0 +1,11 @@
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -134,7 +134,7 @@
+         if me <= EXPONENT_MAX {
+             return Some(Ordering::Less);
+         }
+-        if me >= EXPONENT_MAX.checked_add(2)? {
++        if me >= EXPONENT_MAX.checked_add(1)? {
+             return Some(Ordering::Greater);
+         }
+         let s = Mag::finite(self.mant()?, EXPONENT_MAX)

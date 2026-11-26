@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -419,7 +419,7 @@
+     );
+     let lost_re = ac.inexact() || bd.inexact();
+     let lost_im = ad.inexact() || bc.inexact();
+-    let re = finish(ac.sub(&bd, prec, MID_RM), &er, prec, prec, lost_re)?;
++    let re = finish(ac.add(&bd, prec, MID_RM), &er, prec, prec, lost_re)?;
+     let im = finish(ad.add(&bc, prec, MID_RM), &fr, prec, prec, lost_im)?;
+     Ok((re, im))
+ }

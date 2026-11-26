@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -153,7 +153,7 @@
+ ) -> BoundResult<Ball> {
+     check_prec(op, prec)?;
+     let strict = match policy {
+-        DomainPolicy::Strict => true,
++        DomainPolicy::Strict => false,
+         DomainPolicy::Clip => false,
+     };
+     let mut cc = Consts::new().map_err(|_| resource(op, "zf constants cache"))?;

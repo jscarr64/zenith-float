@@ -1,0 +1,13 @@
+diff --git a/src/mag/add.rs b/src/mag/add.rs
+index 8bcd057..bc8acb9 100644
+--- a/src/mag/add.rs
++++ b/src/mag/add.rs
+@@ -59,7 +59,7 @@ fn successor(exp: i64, mant: NonZeroU64) -> Mag {
+         Some(next) => Mag::from_canonical(exp, next),
+         // mant was u64::MAX: the next value is 2^63 at the next exponent, or Infinity (reachable).
+         None => match exp.checked_add(1) {
+-            Some(exp) => Mag::from_canonical(exp, TOP),
++            Some(exp) => Mag::from_canonical(exp, TOP | 1),
+             None => Mag::infinity(),
+         },
+     }

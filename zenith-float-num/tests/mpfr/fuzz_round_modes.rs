@@ -39,14 +39,16 @@ const ROUNDS: [(RoundingMode, rnd_t); 5] = [
     (RoundingMode::ToZero, rnd_t::RNDZ),
 ];
 
-/// Every mode with a bit-exact reference, `ToOdd` included (emulated in `mpfr_reference`).
-const ALL_MODES: [RoundingMode; 6] = [
+/// All 7 modes, each with a bit-exact reference: `ToOdd` is emulated in `mpfr_reference`, and `None` is MPFR toward zero at the
+/// storage precision rp(p, 64) (FIXLIST ZF-M27).
+const ALL_MODES: [RoundingMode; 7] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
     RoundingMode::Up,
     RoundingMode::Down,
     RoundingMode::ToZero,
     RoundingMode::FromZero,
+    RoundingMode::None,
 ];
 
 #[test]
@@ -376,7 +378,7 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::err
         ((f3.to_f64() - want) / want).abs() < 1e-8,
         "MPFR product {f3}"
     );
-    for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::Up] {
+    for rm in ALL_MODES {
         let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, rm)?;
         let n3 = zenith_binop(&n1, &n2, BinOp::Mul, p, rm);
         assert_exact_eq(&n3, &f3, p, &format!("mul {rm:?}"), &mut cc)?;
@@ -435,7 +437,8 @@ fn fuzz_mpfr_sqr_all_round_modes() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    // 9 precisions x 4 bands x 40 operands x 6 modes, less ToOdd in the low band
+    // 9 precisions x 4 bands x 40 operands x the loop's modes (ToEven, ToOdd, Up, Down, ToZero, FromZero), less ToOdd in
+    // the low band
     assert_eq!(checked, 9 * 40 * (3 * 6 + 5));
     Ok(())
 }
