@@ -371,5 +371,11 @@ if command -v strace >/dev/null; then
 else
   echo "note lexical strace check skipped (no strace)"
 fi
+# ---- round 4 N1 (Cassie): a symlink loop stays rc 2 but says so plainly ----
+t="$work/n1"; mkdir -p "$t/s"; ln -s loop "$t/s/loop"; ln -s "$t/b" "$t/a"; ln -s "$t/a" "$t/b"
+out=$(run --all --scan "$t/s" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 2 ] && grep -q "ERROR $t/s/loop is a symlink loop" <<<"$out" && ok "N1: a --scan child that is a symlink loop: rc 2, 'is a symlink loop'" || { bad "N1: symlink loop child (want rc=2 and a loop message, got rc=$rc)"; show "$out"; }
+out=$(run --all --scan "$t/a" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 2 ] && grep -q -- "--scan $t/a is a symlink loop" <<<"$out" && ok "N1: a --scan folder that is a 2-link loop: rc 2, 'is a symlink loop'" || { bad "N1: symlink loop --scan (want rc=2 and a loop message, got rc=$rc)"; show "$out"; }
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

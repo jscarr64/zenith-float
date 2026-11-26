@@ -122,5 +122,9 @@ if command -v strace >/dev/null; then
 else
   echo "note strace check skipped (no strace)"
 fi
+# ---- round 4 N1 (Cassie): a root that is a symlink loop stays rc 2 but says so plainly ----
+mkdir -p "$work/lp"; ln -s l "$work/lp/l"
+check "a root that is a symlink loop: rc 2, 'is a symlink loop'" 2 re:"root $work/lp/l is a symlink loop" -- "$work/lp/l"
+check "a glob match that is a symlink loop: rc 2, 'is a symlink loop'" 2 re:"root $work/lp/l is a symlink loop" -- "$work/lp/*"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
