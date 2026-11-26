@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -f "$dc" ] || { echo "rule_checks_daily: drift_check not found: $dc" >&2; exit 2; }
-excluded() {  # PATH: 0 when PATH, as written or followed symlink by symlink, has an excluded component.
+excluded() {  # PATH: 3 when PATH's symlinks never end (more than 40 hops); else 0 when PATH, as written or followed symlink by symlink, has an excluded component.
   # Decided from names and readlink strings only (Cassie r4): each component is checked BEFORE it is touched
   # ([ -L ] / readlink, never -f), so nothing excluded, and nothing under it, is ever stat'ed or listed.
   local rest=$1 cur= c t x hops=0
@@ -36,7 +36,7 @@ excluded() {  # PATH: 0 when PATH, as written or followed symlink by symlink, ha
     case "$c" in .) continue;; ..) cur=${cur%/*}; continue;; esac
     for x in "${excl[@]}"; do [ "$c" = "$x" ] && return 0; done
     if [ -L "$cur/$c" ]; then
-      hops=$((hops+1)); [ $hops -le 40 ] || return 1   # a symlink loop; it fails later as not a directory
+      hops=$((hops+1)); [ $hops -le 40 ] || return 3
       t=$(readlink -- "$cur/$c")
       case "$t" in /*) cur=;; esac
       rest="$t/$rest"
@@ -48,13 +48,17 @@ excluded() {  # PATH: 0 when PATH, as written or followed symlink by symlink, ha
 roots=(); nex=0
 for p in "${pats[@]+"${pats[@]}"}"; do
   # the pattern's own name decides first, before it is expanded or stat'ed (Cassie r4)
-  if excluded "$p"; then echo "rule_checks_daily: excluded $p"; nex=$((nex+1)); continue; fi
+  excluded "$p"; e=$?
+  [ $e = 3 ] && { echo "rule_checks_daily: root $p is a symlink loop" >&2; exit 2; }
+  if [ $e = 0 ]; then echo "rule_checks_daily: excluded $p"; nex=$((nex+1)); continue; fi
   case "$p" in
     *[\*\?\[]*) mapfile -t ms < <(compgen -G "$p" | sort)
                 nd=0
                 for m in "${ms[@]+"${ms[@]}"}"; do
                   # each match is judged by name before [ -d ] can follow it into MathWorks
-                  if excluded "$m"; then echo "rule_checks_daily: excluded $m"; nex=$((nex+1)); nd=$((nd+1)); continue; fi
+                  excluded "$m"; e=$?
+                  [ $e = 3 ] && { echo "rule_checks_daily: root $m is a symlink loop" >&2; exit 2; }
+                  if [ $e = 0 ]; then echo "rule_checks_daily: excluded $m"; nex=$((nex+1)); nd=$((nd+1)); continue; fi
                   [ -d "$m" ] && { nd=$((nd+1)); roots+=("$m"); }
                 done
                 # a mistyped glob must not silently drop a root (Cassie round-3 N4)

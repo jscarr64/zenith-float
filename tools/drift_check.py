@@ -154,8 +154,11 @@ def activity(repo, now, window, max_age):
     return False, "idle: last change %d s ago (window %d s)" % (now - last, window)
 
 
+LOOP = "loop"  # excluded()'s answer for a path whose symlinks never end
+
+
 def excluded(path, names):
-    """True when PATH, as written or followed symlink by symlink, has a path component in NAMES.
+    """LOOP when PATH's symlinks never end (more than 40 hops); else True when PATH, as written or followed symlink by symlink, has a path component in NAMES.
     Decided from names and readlink strings only (Cassie r4): each component is checked BEFORE it is
     touched, and a symlink's target string is spliced in and checked the same way, so nothing named in
     NAMES, and nothing under it, is ever stat'ed, listed or read."""
@@ -178,7 +181,7 @@ def excluded(path, names):
             continue
         hops += 1
         if hops > 40:
-            return False  # a symlink loop; it fails later as unreadable
+            return LOOP
         if os.path.isabs(link):
             cur = os.sep
         todo.extend(link.split(os.sep)[::-1])
@@ -289,9 +292,13 @@ def main(argv=None):
             print("drift_check: %s is not the top of a git work tree" % r, file=sys.stderr)
             return 2
         repos.append((r, None))
-    unreadable = []
+    unreadable, loops = [], []
     for d in a.scan:
-        if excluded(d, a.exclude):  # before any isdir/listdir/stat on it (Cassie r4 B1)
+        why = excluded(d, a.exclude)  # before any isdir/listdir/stat on it (Cassie r4 B1)
+        if why == LOOP:
+            print("drift_check: --scan %s is a symlink loop" % d, file=sys.stderr)
+            return 2
+        if why:
             report("excluded %s (--exclude)" % d)
             continue
         if not os.path.isdir(d):
@@ -303,7 +310,11 @@ def main(argv=None):
             print("drift_check: --scan %s cannot be read: %s" % (d, e), file=sys.stderr)
             return 2
         for c in [d] + sorted(os.path.join(d, c) for c in names):
-            if excluded(c, a.exclude):
+            why = excluded(c, a.exclude)
+            if why == LOOP:
+                loops.append(c)
+                continue
+            if why:
                 report("excluded %s (--exclude)" % c)
                 continue
             try:
@@ -324,6 +335,8 @@ def main(argv=None):
     seen = set()
     for c in unreadable:
         print("drift_check: ERROR %s has a .git but is not a readable work tree" % c, file=sys.stderr)
+    for c in loops:
+        print("drift_check: ERROR %s is a symlink loop" % c, file=sys.stderr)
     done = set()
     checked = skipped = 0
     try:
@@ -347,7 +360,7 @@ def main(argv=None):
     print("drift_check: %s (%d repo(s) checked, %d idle skipped, max %d ahead, max age %g min, %s)"
           % ("FAIL" if bad else "ok", checked, skipped, a.max_ahead, a.max_age_min,
              "all work trees" if a.all else "active window %g min" % a.active_window_min))
-    if unreadable:
+    if unreadable or loops:
         return 2
     return 1 if bad else 0
 
