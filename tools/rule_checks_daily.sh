@@ -4,7 +4,7 @@
 # trees and branches; this sweep runs drift_check --all, so long-abandoned unpushed or dirty work FAILs once a day.
 # usage: tools/rule_checks_daily.sh [--exclude NAME]... ROOT_OR_GLOB... [-- DRIFT_CHECK_ARGS...]
 #   ROOT_OR_GLOB  a directory, or a glob of directories (quoted, expanded here; non-dir matches are ignored, a glob
-#                 that matches nothing is noted). Each root goes to drift_check as --scan ROOT (ROOT and its children).
+#                 that matches no directory is an error, rc 2). Each root goes to drift_check as --scan ROOT (ROOT and its children).
 #   --exclude N   leave out any root that has a path component N, as given or after resolving symlinks. MathWorks is
 #                 always excluded (Jeff: MathWorks is not touched by this cleanup); --exclude adds names. The names
 #                 also go to drift_check --exclude, so a scanned child with such a component is left out too.
@@ -33,7 +33,9 @@ roots=(); nex=0
 for p in "${pats[@]+"${pats[@]}"}"; do
   case "$p" in
     *[\*\?\[]*) mapfile -t ms < <(compgen -G "$p" | sort)
-                [ ${#ms[@]} -gt 0 ] || echo "rule_checks_daily: note: $p matches nothing";;
+                nd=0; for m in "${ms[@]+"${ms[@]}"}"; do [ -d "$m" ] && nd=$((nd+1)); done
+                # a mistyped glob must not silently drop a root (Cassie round-3 N4)
+                [ $nd -gt 0 ] || { echo "rule_checks_daily: root glob $p matches no directory" >&2; exit 2; };;
     *) [ -d "$p" ] || { echo "rule_checks_daily: root $p is not a directory" >&2; exit 2; }; ms=("$p");;
   esac
   for m in "${ms[@]+"${ms[@]}"}"; do
