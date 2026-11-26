@@ -377,5 +377,27 @@ out=$(run --all --scan "$t/s" --exclude MathWorks 2>&1); rc=$?
 [ $rc = 2 ] && grep -q "ERROR $t/s/loop is a symlink loop" <<<"$out" && ok "N1: a --scan child that is a symlink loop: rc 2, 'is a symlink loop'" || { bad "N1: symlink loop child (want rc=2 and a loop message, got rc=$rc)"; show "$out"; }
 out=$(run --all --scan "$t/a" --exclude MathWorks 2>&1); rc=$?
 [ $rc = 2 ] && grep -q -- "--scan $t/a is a symlink loop" <<<"$out" && ok "N1: a --scan folder that is a 2-link loop: rc 2, 'is a symlink loop'" || { bad "N1: symlink loop --scan (want rc=2 and a loop message, got rc=$rc)"; show "$out"; }
+# ---- round 4 (Cassie): git status in a checked repo never reads a MathWorks folder inside it ----
+# untracked MathWorks folders: excluded by pathspec (git prunes them unread); a repo that TRACKS files under
+# MathWorks: pathspec cannot stop git reading those, so its dirty-work check is skipped, said plainly
+t="$work/gs"; mkdir -p "$t"; m=$(fresh gsu); mkdir -p "$m/MathWorks/d" "$m/sub/MathWorks"; echo x > "$m/MathWorks/d/f"; echo y > "$m/sub/MathWorks/g"
+touch -d "@$((NOW-7200))" "$m/MathWorks/d/f" "$m/sub/MathWorks/g"; mv "$m" "$t/untracked"
+out=$(run --all --scan "$t/untracked" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "ok   $t/untracked" <<<"$out" && ok "git status: old work inside an untracked MathWorks folder is not read (rc 0)" || { bad "git status: untracked MathWorks folder (want rc=0, got rc=$rc)"; show "$out"; }
+m=$(fresh gst); mkdir -p "$m/MathWorks"; echo z > "$m/MathWorks/h"; git -C "$m" add MathWorks/h; git -C "$m" commit -q -m mw; git -C "$m" push -q 2>/dev/null
+echo more >> "$m/MathWorks/h"; touch -d "@$((NOW-7200))" "$m/MathWorks/h"; mv "$m" "$t/tracked"
+out=$(run --all --scan "$t/tracked" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "skip dirty check $t/tracked: it tracks files under MathWorks" <<<"$out" && ok "git status: a repo that tracks MathWorks files skips its dirty check, said plainly (rc 0)" || { bad "git status: tracked MathWorks files (want rc=0 and a skip line, got rc=$rc)"; show "$out"; }
+out=$(run --all --scan "$t/tracked" 2>&1); rc=$?
+[ $rc = 1 ] && grep -q "FAIL $t/tracked: dirty work" <<<"$out" && ok "git status: without --exclude the same dirty work FAILs (rc 1)" || { bad "git status: no --exclude (want rc=1, got rc=$rc)"; show "$out"; }
+if command -v strace >/dev/null; then
+  for k in untracked tracked; do
+    strace -f -qq -e trace=%file,%desc -o "$t/trace.$k" python3 -B "$dc" --now "$NOW" --all --scan "$t/$k" --exclude MathWorks >/dev/null 2>&1; rc=$?
+    hits=$(grep -v 'execve(' "$t/trace.$k" | grep -F "MathWorks")
+    [ $rc = 0 ] && [ -z "$hits" ] && ok "git status: strace shows no syscall on MathWorks inside a $k repo" || { bad "git status: syscalls on MathWorks inside a $k repo (rc=$rc)"; show "$hits"; }
+  done
+else
+  echo "note git status strace check skipped (no strace)"
+fi
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
