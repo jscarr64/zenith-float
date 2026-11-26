@@ -30,6 +30,9 @@ Active mode (Jeff 2026-11-25 3:55 PM CT: "limit the check to active work trees")
   old (a tip with no commit date is checked). Idle trees and branches are named as "skip".
   --all checks every scanned tree and every branch (the full sweep). --repo and --include trees are always checked
   in full.
+--exclude NAME (repeatable): a --scan entry (DIR itself or a child) with a path component NAME, as given or after
+resolving symlinks, is left out and named "excluded" (the daily sweep passes MathWorks). --repo/--include are never
+excluded.
 Read-only: every git call uses --no-optional-locks and drops GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR.
 --max-age-min and --active-window-min must be finite and >= 0 (nan, inf or a negative value is a usage error).
 rc 0 ok, 1 drift, 2 usage or git error (fail closed).
@@ -151,6 +154,14 @@ def activity(repo, now, window, max_age):
     return False, "idle: last change %d s ago (window %d s)" % (now - last, window)
 
 
+def excluded(path, names):
+    """True when PATH, as given or with symlinks resolved, has a path component in NAMES."""
+    for p in (path, os.path.realpath(path)):
+        if any(n in p.split(os.sep) for n in names):
+            return True
+    return False
+
+
 def head_state(repo):
     """(detached?, head sha or None)."""
     try:
@@ -229,6 +240,7 @@ def main(argv=None):
     ap.add_argument("--active-window-min", type=float, default=1440)
     ap.add_argument("--exclude", action="append", default=[], help="NAME: a --scan entry with this path component is left out")
     a = ap.parse_args(argv)
+    report = lambda s: print("drift_check: " + s)
     now = time.time() if a.now is None else a.now
     max_age = a.max_age_min * 60
     window = a.active_window_min * 60
@@ -241,7 +253,6 @@ def main(argv=None):
     if window < 0:
         print("drift_check: --active-window-min must be >= 0", file=sys.stderr)
         return 2
-    report = lambda s: print("drift_check: " + s)
     explicit = list(a.repo) + list(a.include)
     for f in a.include_file:
         try:
@@ -266,6 +277,9 @@ def main(argv=None):
             print("drift_check: --scan %s cannot be read: %s" % (d, e), file=sys.stderr)
             return 2
         for c in [d] + sorted(os.path.join(d, c) for c in names):
+            if excluded(c, a.exclude):
+                report("excluded %s (--exclude)" % c)
+                continue
             try:
                 os.lstat(os.path.join(c, ".git"))
             except (FileNotFoundError, NotADirectoryError):

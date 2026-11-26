@@ -6,7 +6,8 @@
 #   ROOT_OR_GLOB  a directory, or a glob of directories (quoted, expanded here; non-dir matches are ignored, a glob
 #                 that matches nothing is noted). Each root goes to drift_check as --scan ROOT (ROOT and its children).
 #   --exclude N   leave out any root that has a path component N, as given or after resolving symlinks. MathWorks is
-#                 always excluded (Jeff: MathWorks is not touched by this cleanup); --exclude adds names.
+#                 always excluded (Jeff: MathWorks is not touched by this cleanup); --exclude adds names. The names
+#                 also go to drift_check --exclude, so a scanned child with such a component is left out too.
 #   -- ARGS       passed on to drift_check (the selftest passes --now).
 # DRIFT_CHECK selects drift_check.py (default: beside this script). Read-only, like drift_check.
 # rc 0 no drift, 1 drift (any FAIL in any root), 2 usage error, no roots, or a drift_check / git error (fail closed).
@@ -43,6 +44,7 @@ for p in "${pats[@]+"${pats[@]}"}"; do
 done
 [ ${#roots[@]} -gt 0 ] || { echo "rule_checks_daily: no roots to sweep" >&2; exit 2; }
 args=(); for r in "${roots[@]}"; do args+=(--scan "$r"); done
+for x in "${excl[@]}"; do args+=(--exclude "$x"); done   # scanned children too, not only roots
 echo "rule_checks_daily: sweeping ${#roots[@]} root(s) with drift_check --all: ${roots[*]}"
 out=$(python3 -B "$dc" --all "${args[@]}" "${extra[@]+"${extra[@]}"}" 2>&1); rc=$?
 # drift_check's own one-line summary ("drift_check: ok|FAIL (N repo(s) checked, ...)") is folded into the sweep's
