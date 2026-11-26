@@ -102,9 +102,23 @@ def branches(repo):
     return rows
 
 
-def dirty_span(repo):
-    """(oldest, newest) mtime among dirty paths, (None, None) when clean."""
-    out = git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none")
+def tracked_excluded(repo, names):
+    """The first of NAMES that is a path component of a file in REPO's index, else None (reads .git only)."""
+    for p in git(repo, "ls-files", "-z").split("\0"):
+        for n in names:
+            if n in p.split("/"):
+                return n
+    return None
+
+
+def dirty_span(repo, names=()):
+    """(oldest, newest) mtime among dirty paths, (None, None) when clean. A folder named in NAMES is left out by
+    pathspec, so git prunes it unread (Cassie r4); a caller must first skip a repo that TRACKS files there
+    (tracked_excluded), since pathspec cannot stop git reading those."""
+    spec = ["--", "."]
+    for n in names:
+        spec += [":(exclude,glob)**/%s" % n, ":(exclude,glob)**/%s/**" % n]
+    out = git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none", *spec)
     entries = out.split("\0")
     oldest = newest = None
     i = 0
@@ -130,7 +144,7 @@ def dirty_span(repo):
     return oldest, newest
 
 
-def activity(repo, now, window, max_age):
+def activity(repo, now, window, max_age, names=()):
     """(active?, reason) for a --scan tree. Anything unreadable counts as active (fail closed)."""
     try:
         gd = git(repo, "rev-parse", "--absolute-git-dir").strip()
@@ -139,7 +153,9 @@ def activity(repo, now, window, max_age):
             p = os.path.join(gd, f)
             if os.path.exists(p):
                 times.append(os.stat(p).st_mtime)
-        oldest, newest = dirty_span(repo)
+        oldest = newest = None
+        if not tracked_excluded(repo, names):
+            oldest, newest = dirty_span(repo, names)
     except (GitError, OSError, ValueError) as e:
         return True, "activity unknown, checked (%s)" % str(e).splitlines()[0][:120]
     if newest is not None and now - newest < max_age:
@@ -201,7 +217,7 @@ def head_state(repo):
         return True, sha
 
 
-def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=None, window=None):
+def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=None, window=None, names=()):
     """seen: set of (common git dir, branch) already checked; linked worktrees share branches, report each once.
     window: None checks every branch; else only the HEAD branch and branches whose tip is at most window old."""
     bad = 0
@@ -244,7 +260,12 @@ def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=Non
             report("FAIL %s detached HEAD: %d commits not on any remote ref (max %d)" % (repo, n, max_ahead)); bad = 1
         elif n and now - oldest > max_age:
             report("FAIL %s detached HEAD: unpushed commit %d s old (max %d s)" % (repo, now - oldest, max_age)); bad = 1
-    d, _ = dirty_span(repo)
+    n = tracked_excluded(repo, names)
+    if n:
+        report("skip dirty check %s: it tracks files under %s (git status would read them)" % (repo, n))
+        d = None
+    else:
+        d, _ = dirty_span(repo, names)
     if d is not None and now - d > max_age:
         report("FAIL %s: dirty work %d s old (max %d s)" % (repo, int(now - d), max_age)); bad = 1
     if not bad:
@@ -347,13 +368,13 @@ def main(argv=None):
             done.add(key)
             win = None
             if how == "scan" and not a.all:
-                act, why = activity(r, now, window, max_age)
+                act, why = activity(r, now, window, max_age, a.exclude)
                 if not act:
                     report("skip %s (%s)" % (r, why)); skipped += 1
                     continue
                 win = window
             checked += 1
-            bad |= check_repo(r, now, a.max_ahead, max_age, report, a.pre_commit, seen, win)
+            bad |= check_repo(r, now, a.max_ahead, max_age, report, a.pre_commit, seen, win, a.exclude)
     except GitError as e:
         print("drift_check: %s" % e, file=sys.stderr)
         return 2
