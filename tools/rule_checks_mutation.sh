@@ -11,7 +11,9 @@ jobs=4; [ "${1:-}" = "-j" ] && jobs=$2
 base="${ZF_SCRATCH:-$HOME/.cache/zenith-float}"; mkdir -p "$base" || exit 2   # a fresh ZF_SCRATCH may not exist yet (Cassie N2)
 work=$(mktemp -d "$base/mutation.XXXXXX") || exit 2
 trap 'rm -rf "$work"' EXIT
-# id | file | occurrence | old ==> new
+# id | file | occurrence | old ==> new        (a literal \n in old or new is a newline)
+# Equivalent, so not a row: Cassie r4 X18, rule_checks_daily.sh `args+=(--exclude "$x")` -> `args+=(--exclude="$x")`.
+# argparse reads `--exclude X` and `--exclude=X` the same way, so no test can tell them apart.
 rows() { cat <<'T'
 A01|tools/drift_check.py|1|if now - last <= window: ==> if now - last < window:
 A02|tools/drift_check.py|1|if now - last <= window: ==> if now - last <= window + 1:
@@ -62,7 +64,7 @@ D21|tools/drift_check.py|1|bad |= check_repo ==> bad = check_repo
 D22|tools/drift_check.py|1|if detached and head not in tips: ==> if False:
 D23|tools/drift_check.py|1|if (common, name) in seen: ==> if False:
 D24|tools/drift_check.py|1|seen.add((common, name)) ==> pass
-D25|tools/drift_check.py|1|a.pre_commit, seen, win) ==> a.pre_commit, None, win)
+D25|tools/drift_check.py|1|a.pre_commit, seen, win, a.exclude) ==> a.pre_commit, None, win, a.exclude)
 G01|tools/pr_done_check.py|1|except OSError as e: ==> except ImportError as e:
 G02|tools/pr_done_check.py|1|    if not out: ==>     if False:
 G03|tools/pr_done_check.py|1|if not isinstance(prs, list): ==> if False:
@@ -82,7 +84,7 @@ H12|.githooks/pre-push|1|rc=1; continue ==> continue
 H13|.githooks/pre-push|1|n=$((n + 1)); t="$tmp/$n" ==> t="$tmp/$lsha"
 N01|tools/drift_check.py|1|except (FileNotFoundError, NotADirectoryError): ==> except OSError:
 N02|tools/drift_check.py|1|unreadable.append(c) ==> pass
-N03|tools/drift_check.py|1|    if unreadable: ==>     if False:
+N03|tools/drift_check.py|1|    if unreadable or loops: ==>     if loops:
 P01|tools/pr_done_check.py|1|LANDED = ("identical", "behind") ==> LANDED = ("identical",)
 P02|tools/pr_done_check.py|1|LANDED = ("identical", "behind") ==> LANDED = ("behind",)
 P03|tools/pr_done_check.py|1|LANDED = ("identical", "behind") ==> LANDED = ("identical", "behind", "ahead")
@@ -138,9 +140,9 @@ Z07|tools/drift_check.py|1|if oldest is not None and now - oldest > max_age: ==>
 Z08|tools/pr_done_check.py|1|if not isinstance(pr, dict): ==> if False:
 Z11|tools/rule_checks_daily.sh|1|--all "${args[@]}" ==> "${args[@]}"
 Z12|tools/rule_checks_daily.sh|1|excl=(MathWorks) ==> excl=()
-Z13|tools/rule_checks_daily.sh|1|for p in "$1" "$real"; do ==> for p in "$1"; do
-Z14|tools/rule_checks_daily.sh|1|case "/$p/" in */"$x"/*) return 0 ==> case "/$p/" in *"$x"*) return 0
-Z15|tools/rule_checks_daily.sh|1|[ -d "$m" ] || continue ==> :
+Z13|tools/rule_checks_daily.sh|1|    if [ -L "$cur/$c" ]; then ==>     if false; then
+Z14|tools/rule_checks_daily.sh|1|    for x in "${excl[@]}"; do [ "$c" = "$x" ] && return 0; done ==>     for x in "${excl[@]}"; do case "$c" in *"$x"*) return 0;; esac; done
+Z15|tools/rule_checks_daily.sh|1|[ -d "$m" ] && { nd=$((nd+1)); roots+=("$m"); } ==> { nd=$((nd+1)); roots+=("$m"); }
 Z16|tools/rule_checks_daily.sh|1|[ -d "$p" ] || { ==> true || {
 Z17|tools/rule_checks_daily.sh|1|[ ${#roots[@]} -gt 0 ] || { ==> true || {
 Z18|tools/rule_checks_daily.sh|1|excl+=("$2") ==> :
@@ -160,7 +162,7 @@ W01|tools/drift_check.py|1|os.lstat(os.path.join(c, ".git")) ==> os.listdir(os.p
 W02|tools/drift_check.py|1|except (FileNotFoundError, NotADirectoryError): ==> except FileNotFoundError:
 W03|tools/drift_check.py|1|except (FileNotFoundError, NotADirectoryError): ==> except NotADirectoryError:
 W04|tools/drift_check.py|1|if oldest is not None and now - oldest > max_age: ==> if oldest is not None and now - oldest > max_age + 60:
-W05|tools/drift_check.py|1|oldest, newest = dirty_span(repo) ==> newest, oldest = dirty_span(repo)
+W05|tools/drift_check.py|1|oldest, newest = dirty_span(repo, names) ==> newest, oldest = dirty_span(repo, names)
 W06|tools/drift_check.py|1|if not math.isfinite(a.active_window_min): ==> if math.isinf(a.active_window_min):
 W07|tools/pr_done_check.py|1|if not isinstance(pr, dict): ==> if isinstance(pr, (int, float, str)):
 W10|tools/rule_checks_daily.sh|1|[ $# -ge 2 ] || ==> true ||
@@ -168,8 +170,8 @@ W11|tools/rule_checks_daily.sh|1|unknown option $1" >&2; exit 2;; ==> unknown op
 W12|tools/rule_checks_daily.sh|1|[ -f "$dc" ] || ==> true ||
 W13|tools/rule_checks_daily.sh|1|*) v=ERROR; rc=2;; ==> *) v=ERROR; rc=0;;
 W14|tools/rule_checks_daily.sh|1|compgen -G "$p" | sort) ==> compgen -G "$p" | sort | head -1)
-W15|tools/rule_checks_daily.sh|1|ms=("$p");; ==> ms=();;
-W16|tools/rule_checks_daily.sh|1|real=$(readlink -f -- "$1" 2>/dev/null || echo "$1") ==> real="$1"
+W15|tools/rule_checks_daily.sh|1|exit 2; }; roots+=("$p");; ==> exit 2; };;
+W16|tools/rule_checks_daily.sh|1|      rest="$t/$rest" ==>       rest="$rest"
 W17|tools/rule_checks_daily.sh|1|case $rc in 0) v=PASS;; ==> case $rc in 0) v=PASS; rc=1;;
 W20|tools/scoped_gate.sh|1|[ $# = 1 ] || usage ==> true || usage
 W21|tools/scoped_gate.sh|1|unknown scope '$scope'" >&2; usage;; ==> unknown scope '$scope'" >&2; exit 0;;
@@ -181,13 +183,69 @@ W26|tools/scoped_gate.sh|1|repo="${REPO:-$here/..}" ==> repo="$here/.."
 W27|tools/scoped_gate.sh|1|[ "$k" = 1 ] || ==> [ "$k" != 0 ] ||
 W28|tools/scoped_gate.sh|1|"full-gate-poplog|tools/test_full_gate_poplog.sh" ==> "full-gate-poplog|true"
 W29|tools/scoped_gate.sh|1|"full-gate-syntax|bash -n tools/full_gate.sh" ==> "full-gate-syntax|true"
-V10|tools/drift_check.py|1|if excluded(c, a.exclude): ==> if False:
-V11|tools/drift_check.py|1|for p in (path, os.path.realpath(path)): ==> for p in (path,):
-V12|tools/drift_check.py|1|if any(n in p.split(os.sep) for n in names): ==> if any(n in p for n in names):
+V10|tools/drift_check.py|1|            if why:\n                report("excluded %s (--exclude)" % c) ==>             if False:\n                report("excluded %s (--exclude)" % c)
+V11|tools/drift_check.py|1|            link = os.readlink(nxt) ==>             raise OSError
+V12|tools/drift_check.py|1|        if c in names: ==>         if any(n in c for n in names):
 V13|tools/drift_check.py|1|"--exclude", action="append", default=[] ==> "--exclude", action="append", default=["MathWorks"]
 V14|tools/rule_checks_daily.sh|1|for x in "${excl[@]}"; do args+=(--exclude "$x"); done ==> :
 V15|tools/rule_checks_daily.sh|1|[ $nd -gt 0 ] || ==> true ||
-V16|tools/rule_checks_daily.sh|1|[ -d "$m" ] && nd=$((nd+1)) ==> nd=$((nd+1))
+V16|tools/rule_checks_daily.sh|1|[ -d "$m" ] && { nd=$((nd+1)); roots+=("$m"); } ==> nd=$((nd+1)); [ -d "$m" ] && roots+=("$m")
+R4X01|tools/drift_check.py|1|        if c in names: ==>         if c in names and not os.path.islink(os.path.join(cur, c)):
+R4X02|tools/drift_check.py|1|                report("excluded %s (--exclude)" % c) ==>                 pass
+R4X03|tools/drift_check.py|1|                report("excluded %s (--exclude)" % c)\n                continue ==>                 report("excluded %s (--exclude)" % c)
+R4X04|tools/drift_check.py|1|        if c in names: ==>         if c in names and any(todo):
+R4X05|tools/drift_check.py|1|        if c in names: ==>         if c.lower() in [n.lower() for n in names]:
+R4X06|tools/drift_check.py|1|        todo.extend(link.split(os.sep)[::-1]) ==>         cur = nxt
+R4X07|tools/drift_check.py|1|        if c in names: ==>         if names and all(n == c for n in names):
+R4X08|tools/drift_check.py|1|        if c in names:\n            return True ==>         if c in names:\n            return False
+R4X09|tools/drift_check.py|1|for c in [d] + sorted(os.path.join(d, c) for c in names): ==> for c in [d] + sorted(os.path.join(d, c) for c in names if not excluded(os.path.join(d, c), a.exclude)):
+R4X10|tools/rule_checks_daily.sh|1|[ -d "$m" ] && { nd= ==> [ -e "$m" ] && { nd=
+R4X11|tools/rule_checks_daily.sh|1|matches no directory" >&2; exit 2; } ==> matches no directory" >&2; exit 1; }
+R4X12|tools/rule_checks_daily.sh|1|[ $nd -gt 0 ] || ==> [ $nd -ge 0 ] ||
+R4X13|tools/rule_checks_daily.sh|1|args+=(--exclude "$x") ==> args+=(--exclude MathWorks)
+R4X14|tools/rule_checks_daily.sh|1|for x in "${excl[@]}"; do args+= ==> for x in "${excl[@]:1}"; do args+=
+R4X15|tools/rule_checks_daily.sh|1|                nd=0\n ==>                 nd=1\n
+R4X16|tools/rule_checks_daily.sh|1|[ $hops -le 40 ] || return 3 ==> [ $hops -le 1 ] || return 1
+R4X17|tools/rule_checks_daily.sh|1|matches no directory" >&2; exit 2; } ==> matches no directory"; exit 2; }
+R4X19|tools/rule_checks_daily.sh|1|*[\*\?\[]*) mapfile ==> *[\*\?]*) mapfile
+R4X20|tools/rule_checks_daily.sh|1|                done\n                # a mistyped glob ==>                 done; nd=${#ms[@]}\n                # a mistyped glob
+R4X21|tools/rule_checks_daily.sh|1|matches no directory" >&2; exit 2; };; ==> matches no directory" >&2; };;
+R4N01|tools/drift_check.py|1|        why = excluded(d, a.exclude) ==>         why = excluded(d, ())
+R4N02|tools/drift_check.py|1|        if hops > 40: ==>         if hops > 0:
+R4N03|tools/drift_check.py|1|            return LOOP ==>             return False
+R4N04|tools/drift_check.py|1|            cur = os.path.dirname(cur) ==>             pass
+R4N05|tools/drift_check.py|1|            cur = os.sep\n ==>             pass\n
+R4N08|tools/drift_check.py|1|        if why == LOOP: ==>         if False:
+R4N09|tools/drift_check.py|1|            if why == LOOP: ==>             if False:
+R4N10|tools/drift_check.py|1|                loops.append(c) ==>                 pass
+R4N11|tools/drift_check.py|1|    if unreadable or loops: ==>     if unreadable:
+R4N13|tools/drift_check.py|1|        print("drift_check: ERROR %s is a symlink loop" % c, file=sys.stderr) ==>         pass
+R4N14|tools/drift_check.py|1|            print("drift_check: --scan %s is a symlink loop" % d, file=sys.stderr)\n            return 2 ==>             return 2
+R4N15|tools/drift_check.py|1|                return n ==>                 return None
+R4N16|tools/drift_check.py|1|            if n in p.split("/"): ==>             if n in p:
+R4N17|tools/drift_check.py|1|    spec = ["--"] + [":(exclude,glob)**/%s/**" % n for n in names] ==>     spec = ["--"]
+R4N18|tools/drift_check.py|1|    spec = ["--"] + [":(exclude,glob)**/%s/**" % n for n in names] ==>     spec = ["--"] + [":(exclude,glob)**/%s" % n for n in names]
+R4N19|tools/drift_check.py|1|        if not tracked_excluded(repo, names): ==>         if True:
+R4N20|tools/drift_check.py|1|            oldest, newest = dirty_span(repo, names) ==>             oldest, newest = dirty_span(repo)
+R4N21|tools/drift_check.py|1|    n = tracked_excluded(repo, names) ==>     n = None
+R4N22|tools/drift_check.py|1|        d, _ = dirty_span(repo, names) ==>         d, _ = dirty_span(repo)
+R4N23|tools/drift_check.py|1|activity(r, now, window, max_age, a.exclude) ==> activity(r, now, window, max_age)
+R4N24|tools/drift_check.py|1|a.pre_commit, seen, win, a.exclude) ==> a.pre_commit, seen, win)
+R4N25|tools/drift_check.py|1|        d = None ==>         d = 0
+R4D03|tools/rule_checks_daily.sh|1|      case "$t" in /*) cur=;; esac ==>       :
+R4D04|tools/rule_checks_daily.sh|1|..) cur=${cur%/*}; continue;; ==> ..) continue;;
+R4D05|tools/rule_checks_daily.sh|1|  case "$rest" in /*) ;; *) rest="$PWD/$rest";; esac ==>   :
+R4D07|tools/rule_checks_daily.sh|1|[ $e = 3 ] && ==> [ $e = 9 ] &&
+R4D08|tools/rule_checks_daily.sh|2|[ $e = 3 ] && ==> [ $e = 9 ] &&
+R4D09|tools/rule_checks_daily.sh|1|  if [ $e = 0 ]; then echo "rule_checks_daily: excluded $p" ==>   if false; then echo "rule_checks_daily: excluded $p"
+R4D10|tools/rule_checks_daily.sh|1|                  if [ $e = 0 ]; then echo ==>                   if false; then echo
+R4D11|tools/rule_checks_daily.sh|1|nex=$((nex+1)); nd=$((nd+1)); continue; fi ==> nex=$((nex+1)); continue; fi
+R4D15|tools/rule_checks_daily.sh|1|last component only" >&2; exit 2;; ==> last component only" >&2;;
+R4D16|tools/rule_checks_daily.sh|1|*[\*\?\[]*/*) echo ==> *[\*\?\[]*/*/*) echo
+R4D17|tools/rule_checks_daily.sh|1|  k=$(readlink -f -- "$r"); ==>   k=$r;
+R4D18|tools/rule_checks_daily.sh|1|[ -n "${seen[$k]+x}" ] && continue ==> false && continue
+R4D19|tools/rule_checks_daily.sh|1|  seen[$k]=1; uniq+=("$r") ==>   uniq+=("$r")
+R4D20|tools/rule_checks_daily.sh|1|roots=("${uniq[@]+"${uniq[@]}"}") ==> :
 T
 }
 one() {  # id file occ old new
@@ -195,6 +253,7 @@ one() {  # id file occ old new
   mkdir -p "$d/scratch"; local m="$d/$(basename "$f")"
   python3 -B - "$f" "$m" "$occ" "$old" "$new" <<'PY' || { echo "$id ERROR pattern not found: $old"; return; }
 import sys; src, dst, occ, old, new = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
+old, new = old.replace("\\n", "\n"), new.replace("\\n", "\n")  # a row's \n is a newline (Cassie r4 harness)
 s = open(src).read(); i = -1
 for _ in range(occ):
     i = s.find(old, i + 1)
@@ -211,7 +270,8 @@ PY
     tools/rule_checks_daily.sh) st=tools/rule_checks_daily_selftest.sh; env="RULE_CHECKS_DAILY=$m";;
     tools/scoped_gate.sh) st=tools/scoped_gate_selftest.sh; env="SCOPED_GATE=$m";;
   esac
-  if env "$env" ZF_SCRATCH="$d/scratch" bash "$st" >"$d/log" 2>&1; then
+  # a mutant that hangs (a walk that never ends) counts as killed after 15 min
+  if timeout 900 env "$env" ZF_SCRATCH="$d/scratch" bash "$st" >"$d/log" 2>&1; then
     echo "$id SURVIVED $f: '$old' -> '$new'"
   else
     echo "$id KILLED   $f: '$old' -> '$new' ($(grep -m1 '^FAIL' "$d/log" | cut -c1-90))"
@@ -221,6 +281,6 @@ export -f one; export work
 out=$(rows | while IFS='|' read -r id f occ rest; do old=${rest%% ==> *}; new=${rest#* ==> }; printf '%s\0%s\0%s\0%s\0%s\0' "$id" "$f" "$occ" "$old" "$new"; done \
   | xargs -0 -n5 -P "$jobs" bash -c 'one "$@"' _ | sort)
 echo "$out"
-total=$(echo "$out" | grep -c .); killed=$(echo "$out" | grep -c ' KILLED '); surv=$(echo "$out" | grep -c ' SURVIVED '); err=$(echo "$out" | grep -c ' ERROR ')
+total=$(echo "$out" | grep -c .); killed=$(echo "$out" | grep -c '^[^ ]* KILLED '); surv=$(echo "$out" | grep -c '^[^ ]* SURVIVED '); err=$(echo "$out" | grep -c '^[^ ]* ERROR ')
 echo "rule_checks_mutation: $killed/$total killed, $surv survived, $err errors"
 [ "$surv" = 0 ] && [ "$err" = 0 ]
