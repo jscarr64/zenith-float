@@ -103,5 +103,13 @@ check "a glob that matches only files beside a real root: rc 2" 2 re:'matches no
 check "a typo glob after a drifted root still fails rc 2, not 1" 2 re:'matches no directory' -- "$work/r1" "$work/r1-typo*"
 # the sweep's own root exclusion resolves symlinks (drift_check --exclude would also hide it, so check the sweep's own line)
 check "a lone root symlinked into MathWorks: the sweep excludes it, no roots, rc 2" 2 re:"^rule_checks_daily: excluded $work/lnk/mwlink" -- "$work/lnk/mwlink"
+# ---- round 4 (Cassie X16, X17, X19) ----
+mkdir -p "$work/h2"; ln -s "$work/x/MathWorks/mw" "$work/h2/l2"; ln -s "$work/h2/l2" "$work/h2/l1"
+check "a lone root reached by a 2-hop symlink chain into MathWorks: excluded by the sweep, rc 2 (X16)" 2 re:"^rule_checks_daily: excluded $work/h2/l1" -- "$work/h2/l1"
+ln -s "$work/x/MathWorks" "$work/sp"
+check "a lone root under a symlinked parent that points into MathWorks: excluded by the sweep, rc 2 (X16)" 2 re:"^rule_checks_daily: excluded $work/sp/mw" -- "$work/sp/mw"
+err=$(bash "$daily" "$work/no-such-*" "$work/r1/clean" -- --now "$NOW" 2>&1 >/dev/null); rc=$?
+[ $rc = 2 ] && grep -q 'matches no directory' <<<"$err" && ok "the 'matches no directory' error goes to stderr (X17)" || { bad "'matches no directory' on stderr (rc=$rc)"; show "$err"; }
+check "a bracket glob root is expanded (X19)" 1 re:"FAIL $work/hm/a-work/t1 " re:"ok   $work/hm/b-work/t2" -- "$work/hm/[ab]-work"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

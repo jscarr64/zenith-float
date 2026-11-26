@@ -334,5 +334,12 @@ v="$work/xv"; mkdir -p "$v"; m=$(fresh xa); commit_at "$m" 60 m1; commit_at "$m"
 out=$(run --all --scan "$v" --exclude a --exclude b 2>&1); rc=$?
 [ $rc = 0 ] && grep -q "excluded $v/a" <<<"$out" && grep -q "excluded $v/b" <<<"$out" && ok "exclude: repeatable (rc=0)" || { bad "exclude: repeatable (want rc=0, got rc=$rc)"; show "$out"; }
 expect "exclude: --repo is never excluded"                   1 run --repo "$t/MathWorks/r" --exclude MathWorks
+# ---- round 4 (Cassie X01, X05): the name decides as given, and matching is exact (case-sensitive) ----
+s="$work/x01"; mkdir -p "$s"; m=$(fresh x01r); commit_at "$m" 60 m1; commit_at "$m" 50 m2; ln -s "$m" "$s/MathWorks"
+out=$(run --all --scan "$s" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $s/MathWorks" <<<"$out" && ok "exclude: a symlink NAMED MathWorks that points elsewhere is left out (X01)" || { bad "exclude: symlink named MathWorks (want rc=0, got rc=$rc)"; show "$out"; }
+s="$work/x05"; mkdir -p "$s"; for n in mathworks MATHWORKS; do m=$(fresh "x05$n"); commit_at "$m" 60 m1; commit_at "$m" 50 m2; mv "$m" "$s/$n"; done
+out=$(run --all --scan "$s" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 1 ] && grep -q "FAIL $s/mathworks " <<<"$out" && grep -q "FAIL $s/MATHWORKS " <<<"$out" && ok "exclude: mathworks and MATHWORKS are still checked (exact match, X05)" || { bad "exclude: case variants (want rc=1 and both checked, got rc=$rc)"; show "$out"; }
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
