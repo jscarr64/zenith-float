@@ -227,6 +227,7 @@ def main(argv=None):
     ap.add_argument("--include", action="append", default=[], help="a work tree always checked (repeatable)")
     ap.add_argument("--include-file", action="append", default=[], help="file of work trees always checked")
     ap.add_argument("--active-window-min", type=float, default=1440)
+    ap.add_argument("--exclude", action="append", default=[], help="NAME: a --scan entry with this path component is left out")
     a = ap.parse_args(argv)
     now = time.time() if a.now is None else a.now
     max_age = a.max_age_min * 60
