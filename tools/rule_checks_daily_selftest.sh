@@ -140,5 +140,18 @@ out=$(cd "$work" && bash "$daily" lnk/mwlink -- --now "$NOW" 2>&1); rc=$?
 [ $rc = 2 ] && grep -q '^rule_checks_daily: excluded lnk/mwlink' <<<"$out" && ok "a relative root is walked from the cwd (excluded by the sweep)" || { bad "relative root (rc=$rc)"; show "$out"; }
 # the sweep itself refuses a literal root that is not a dir (drift_check would too, but later and less plainly)
 check "a missing literal root is refused by the sweep itself" 2 re:"^rule_checks_daily: root $work/no-such-root is not a directory" -- "$work/no-such-root" "$work/r1/clean"
+# ---- round 5 B2 (Cassie Q17 Q18/Q19 Q20 Q24): '.', the 40-hop limit, '[' mid-path, a double slash ----
+mkdir -p "$work/r5x"
+check "r5: '.' is skipped, so r5x/./.. walks back before h2/l1 (excluded by the sweep, Q17)" 2 re:"^rule_checks_daily: excluded $work/r5x/./../h2/l1" -- "$work/r5x/./../h2/l1"
+for N in 40 41; do
+  c="$work/ch$N"; mkdir -p "$c"; i=1; while [ $i -lt $N ]; do ln -s "$c/L$((i+1))" "$c/L$i"; i=$((i+1)); done
+  ln -s "$work/hm/a-work" "$c/L$N"
+done
+check "r5: a 40-hop root chain is followed, not a loop (Q18)" 1 re:"FAIL $work/ch40/L1/t1 " -- "$work/ch40/L1"
+check "r5: a 41-hop root chain is a symlink loop (Q19)" 2 re:"root $work/ch41/L1 is a symlink loop" -- "$work/ch41/L1"
+check "r5: a '[' wildcard before the last component is refused (Q20)" 2 re:"wildcards are allowed in the last component only" -- "$work/x/[ab]/y*" "$work/x/ok"
+check "r5: an empty component before '..' does not shift the walk (r5x//.. then h2/l1: excluded by the sweep, Q24)" 2 re:"^rule_checks_daily: excluded $work/r5x//../h2/l1" -- "$work/r5x//../h2/l1"
+out=$(timeout 60 bash "$daily" "$work//r1///clean/" -- --now "$NOW" 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "ok   $work//r1///clean/" <<<"$out" && ok "r5: double slashes in a root are walked and finish (Q24)" || { bad "r5: double slashes (rc=$rc)"; show "$out"; }
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

@@ -427,5 +427,29 @@ if command -v strace >/dev/null; then
   hits=$(grep -v 'execve(' "$t/trace" | grep -F "MathWorks")
   [ $rc = 0 ] && [ -z "$hits" ] && ok "B1 r5: strace shows no syscall on a file or symlink named MathWorks" || { bad "B1 r5: syscalls on a file/symlink named MathWorks (rc=$rc)"; show "$hits"; }
 fi
+# ---- round 5 B2 (Cassie Q01 Q04 Q02/Q03 Q14 Q15): '.', a relative --scan, the 40-hop limit, a clean loop line, a
+# tracked FILE named MathWorks ----
+t="$work/r5"; mkdir -p "$t/x" "$t/A" "$t/MathWorks"; m=$(fresh r5r); commit_at "$m" 60 m1; commit_at "$m" 50 m2; mv "$m" "$t/MathWorks/r"
+ln -s "$t/MathWorks/r" "$t/A/rel"
+out=$(run --all --scan "$t/x/./../A" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $t/x/./../A/rel" <<<"$out" && ok "r5: '.' is skipped, so x/./.. walks back to the right folder (Q01)" || { bad "r5: '.' before '..' (want rc=0 excluded, got rc=$rc)"; show "$out"; }
+out=$(cd "$t" && python3 -B "$dc" --now "$NOW" --all --scan A --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded A/rel" <<<"$out" && ok "r5: a relative --scan is walked from the cwd (Q04)" || { bad "r5: relative --scan (want rc=0 excluded, got rc=$rc)"; show "$out"; }
+# chain N: head -> c/L1 -> ... -> c/L(N-1) -> a drifted repo outside MathWorks: N hops in all. The kernel allows 40.
+m=$(fresh r5c); commit_at "$m" 60 m1; commit_at "$m" 50 m2
+for N in 40 41; do
+  c="$t/ch$N"; mkdir -p "$c/s"; i=1; while [ $i -lt $((N-1)) ]; do ln -s "$c/L$((i+1))" "$c/L$i"; i=$((i+1)); done
+  ln -s "$m" "$c/L$((N-1))"; ln -s "$c/L1" "$c/s/head"
+done
+out=$(run --all --scan "$t/ch40/s" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 1 ] && grep -q "FAIL $t/ch40/s/head " <<<"$out" && ok "r5: a 40-hop chain is followed, not a loop (Q02)" || { bad "r5: 40-hop chain (want rc=1 FAIL, got rc=$rc)"; show "$out"; }
+out=$(run --all --scan "$t/ch41/s" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 2 ] && grep -q "ERROR $t/ch41/s/head is a symlink loop" <<<"$out" && ok "r5: a 41-hop chain is a symlink loop (Q03)" || { bad "r5: 41-hop chain (want rc=2 loop, got rc=$rc)"; show "$out"; }
+out=$(run --all --scan "$work/n1/s" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 2 ] && ! grep -q "not a readable work tree" <<<"$out" && ! grep -q "excluded $work/n1/s/loop" <<<"$out" && ok "r5: a loop child gets only the loop line, not 'not a readable work tree' (Q14)" || { bad "r5: loop child extra line (rc=$rc)"; show "$out"; }
+m=$(fresh r5t); echo z > "$m/MathWorks"; git -C "$m" add MathWorks; git -C "$m" commit -q -m mwf; git -C "$m" push -q 2>/dev/null
+echo more >> "$m/MathWorks"; touch -d "@$((NOW-7200))" "$m/MathWorks"
+out=$(run --all --repo "$m" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "skip dirty check $m: it tracks files under MathWorks" <<<"$out" && ok "r5: a tracked FILE named MathWorks skips the dirty check (Q15)" || { bad "r5: tracked file named MathWorks (want rc=0 and a skip line, got rc=$rc)"; show "$out"; }
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
