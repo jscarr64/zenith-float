@@ -358,5 +358,18 @@ if command -v strace >/dev/null; then
 else
   echo "note B1 strace check skipped (no strace)"
 fi
+# ---- round 4 (Cassie): a symlink is judged by its readlink string, hop by hop, never by stat'ing its target ----
+# link -> .../MathWorks/hop, and hop -> a drifted repo elsewhere: the first hop already names MathWorks, so excluded
+t="$work/lx"; mkdir -p "$t/MathWorks" "$t/s" "$t/u"; m=$(fresh lxr); commit_at "$m" 60 m1; commit_at "$m" 50 m2
+ln -s "$m" "$t/MathWorks/hop"; ln -s "$t/MathWorks/hop" "$t/s/link"; ln -s "$t/MathWorks" "$t/u/lk"
+out=$(run --all --scan "$t/s" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $t/s/link" <<<"$out" && ok "lexical: a child whose first hop names MathWorks is excluded, whatever the target (rc 0)" || { bad "lexical: child linked through MathWorks (want rc=0 excluded, got rc=$rc)"; show "$out"; }
+if command -v strace >/dev/null; then
+  strace -f -qq -e trace=%file,%desc -o "$t/trace" python3 -B "$dc" --now "$NOW" --all --scan "$t/s" --scan "$t/u/lk/hop" --exclude MathWorks >/dev/null 2>&1; rc=$?
+  hits=$(grep -v 'execve(' "$t/trace" | grep -F "$t/MathWorks")
+  [ $rc = 0 ] && [ -z "$hits" ] && ok "lexical: strace shows no syscall on a symlink target inside MathWorks" || { bad "lexical: syscalls inside MathWorks through a symlink (rc=$rc)"; show "$hits"; }
+else
+  echo "note lexical strace check skipped (no strace)"
+fi
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

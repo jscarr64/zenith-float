@@ -111,5 +111,16 @@ check "a lone root under a symlinked parent that points into MathWorks: excluded
 err=$(bash "$daily" "$work/no-such-*" "$work/r1/clean" -- --now "$NOW" 2>&1 >/dev/null); rc=$?
 [ $rc = 2 ] && grep -q 'matches no directory' <<<"$err" && ok "the 'matches no directory' error goes to stderr (X17)" || { bad "'matches no directory' on stderr (rc=$rc)"; show "$err"; }
 check "a bracket glob root is expanded (X19)" 1 re:"FAIL $work/hm/a-work/t1 " re:"ok   $work/hm/b-work/t2" -- "$work/hm/[ab]-work"
+# ---- round 4 (Cassie): roots are judged by readlink strings hop by hop, never by stat'ing a target in MathWorks ----
+tree "$work/far/t" unpushed; mkdir -p "$work/h3"; ln -s "$work/far/t" "$work/x/MathWorks/hop2"; ln -s "$work/x/MathWorks/hop2" "$work/h3/l1"
+check "a root whose first hop names MathWorks is excluded, whatever the target (no roots, rc 2)" 2 re:"^rule_checks_daily: excluded $work/h3/l1" nore:"FAIL $work" -- "$work/h3/l1"
+check "a glob match whose first hop names MathWorks is excluded, whatever the target" 0 re:"^rule_checks_daily: excluded $work/h3/l1" nore:"FAIL $work" -- "$work/h3/*" "$work/x/ok"
+if command -v strace >/dev/null; then
+  strace -f -qq -e trace=%file -o "$work/trace" bash "$daily" "$work/h3/l1" "$work/h3/*" "$work/x/MathWorks/mw" "$work/sp/mw" "$work/x/ok" -- --now "$NOW" >/dev/null 2>&1; rc=$?
+  hits=$(grep -v 'execve(' "$work/trace" | grep -F "$work/x/MathWorks")
+  [ $rc = 0 ] && [ -z "$hits" ] && ok "strace shows no syscall inside MathWorks while choosing roots" || { bad "syscalls inside MathWorks while choosing roots (rc=$rc)"; show "$hits"; }
+else
+  echo "note strace check skipped (no strace)"
+fi
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
