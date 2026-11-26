@@ -399,5 +399,22 @@ if command -v strace >/dev/null; then
 else
   echo "note git status strace check skipped (no strace)"
 fi
+# ---- round 4: the lexical walk follows "..", absolute targets and chains the way the kernel would ----
+t="$work/lw"; mkdir -p "$t/MathWorks" "$t/h" "$t/s" "$t/s2"; m=$(fresh lwr); commit_at "$m" 60 m1; commit_at "$m" 50 m2; mv "$m" "$t/MathWorks/r"
+ln -s "$t/MathWorks/r" "$t/h/x"; ln -s ../h/x "$t/s/up"; ln -s "$t/h/x" "$t/s2/c1"
+out=$(run --all --scan "$t/s" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $t/s/up" <<<"$out" && ok "lexical: '..' in a relative target is walked from the link's folder (rc 0)" || { bad "lexical: '..' target (want rc=0 excluded, got rc=$rc)"; show "$out"; }
+out=$(run --all --scan "$t/s2" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $t/s2/c1" <<<"$out" && ok "lexical: an absolute target restarts the walk at / (2 absolute hops, rc 0)" || { bad "lexical: absolute 2-hop target (want rc=0 excluded, got rc=$rc)"; show "$out"; }
+# a tracked folder that only CONTAINS the name is not skipped; active mode (no --all) never reads MathWorks either
+m=$(fresh gso); mkdir -p "$m/MathWorksOld"; echo z > "$m/MathWorksOld/h"; git -C "$m" add MathWorksOld/h; git -C "$m" commit -q -m o; git -C "$m" push -q 2>/dev/null
+echo more >> "$m/MathWorksOld/h"; touch -d "@$((NOW-7200))" "$m/MathWorksOld/h"
+out=$(run --all --repo "$m" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 1 ] && grep -q "FAIL $m: dirty work" <<<"$out" && ok "git status: a tracked MathWorksOld folder is still checked (rc 1)" || { bad "git status: MathWorksOld (want rc=1, got rc=$rc)"; show "$out"; }
+if command -v strace >/dev/null; then
+  strace -f -qq -e trace=%file -o "$work/gs/trace.active" python3 -B "$dc" --now "$NOW" --scan "$work/gs/tracked" --scan "$work/gs/untracked" --exclude MathWorks >/dev/null 2>&1; rc=$?
+  hits=$(grep -v 'execve(' "$work/gs/trace.active" | grep -F "MathWorks")
+  [ $rc = 0 ] && [ -z "$hits" ] && ok "git status: active mode (no --all) shows no syscall on MathWorks inside repos" || { bad "git status: active mode syscalls on MathWorks (rc=$rc)"; show "$hits"; }
+fi
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

@@ -134,5 +134,11 @@ k=$(grep -c "^drift_check: FAIL $work/hm/a-work/t1 " <<<"$out")
 # ---- round 4: a glob may have wildcards in its LAST component only. Expanding x/*/mw would stat x/MathWorks/mw
 # before any name check could run; a last-component glob only lists its (already name-checked) parent ----
 check "a root glob with a wildcard before its last component: refused, rc 2" 2 re:"wildcards are allowed in the last component only" nore:"FAIL $work" -- "$work/x/*/mw" "$work/x/ok"
+# ---- round 4: the sweep's lexical walk handles "..", and a relative root is walked from the cwd ----
+check "a root with '..' walks back up before following h2/l1 into MathWorks (excluded by the sweep)" 2 re:"^rule_checks_daily: excluded $work/hm/../h2/l1" -- "$work/hm/../h2/l1"
+out=$(cd "$work" && bash "$daily" lnk/mwlink -- --now "$NOW" 2>&1); rc=$?
+[ $rc = 2 ] && grep -q '^rule_checks_daily: excluded lnk/mwlink' <<<"$out" && ok "a relative root is walked from the cwd (excluded by the sweep)" || { bad "relative root (rc=$rc)"; show "$out"; }
+# the sweep itself refuses a literal root that is not a dir (drift_check would too, but later and less plainly)
+check "a missing literal root is refused by the sweep itself" 2 re:"^rule_checks_daily: root $work/no-such-root is not a directory" -- "$work/no-such-root" "$work/r1/clean"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
