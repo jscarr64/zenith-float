@@ -14,6 +14,8 @@ trap 'rm -rf "$work"' EXIT
 # id | file | occurrence | old ==> new        (a literal \n in old or new is a newline)
 # Equivalent, so not a row: Cassie r4 X18, rule_checks_daily.sh `args+=(--exclude "$x")` -> `args+=(--exclude="$x")`.
 # argparse reads `--exclude X` and `--exclude=X` the same way, so no test can tell them apart.
+# Equivalent, so not a row: Cassie r5 Q12, drift_check.py `**/%s/**` -> `**/%s/*` in the git status pathspec. With
+# `**/NAME` beside it, strace shows the same pruning either way (0 NAME syscalls; her zf42r5-probe-q12.out).
 rows() { cat <<'T'
 A01|tools/drift_check.py|1|if now - last <= window: ==> if now - last < window:
 A02|tools/drift_check.py|1|if now - last <= window: ==> if now - last <= window + 1:
@@ -223,8 +225,8 @@ R4N13|tools/drift_check.py|1|        print("drift_check: ERROR %s is a symlink l
 R4N14|tools/drift_check.py|1|            print("drift_check: --scan %s is a symlink loop" % d, file=sys.stderr)\n            return 2 ==>             return 2
 R4N15|tools/drift_check.py|1|                return n ==>                 return None
 R4N16|tools/drift_check.py|1|            if n in p.split("/"): ==>             if n in p:
-R4N17|tools/drift_check.py|1|    spec = ["--"] + [":(exclude,glob)**/%s/**" % n for n in names] ==>     spec = ["--"]
-R4N18|tools/drift_check.py|1|    spec = ["--"] + [":(exclude,glob)**/%s/**" % n for n in names] ==>     spec = ["--"] + [":(exclude,glob)**/%s" % n for n in names]
+R4N17|tools/drift_check.py|1|        spec += [":(exclude,glob)**/%s" % n, ":(exclude,glob)**/%s/**" % n] ==>         pass
+R4N18|tools/drift_check.py|1|        spec += [":(exclude,glob)**/%s" % n, ":(exclude,glob)**/%s/**" % n] ==>         spec += [":(exclude,glob)**/%s" % n]
 R4N19|tools/drift_check.py|1|        if not tracked_excluded(repo, names): ==>         if True:
 R4N20|tools/drift_check.py|1|            oldest, newest = dirty_span(repo, names) ==>             oldest, newest = dirty_span(repo)
 R4N21|tools/drift_check.py|1|    n = tracked_excluded(repo, names) ==>     n = None
@@ -246,6 +248,31 @@ R4D17|tools/rule_checks_daily.sh|1|  k=$(readlink -f -- "$r"); ==>   k=$r;
 R4D18|tools/rule_checks_daily.sh|1|[ -n "${seen[$k]+x}" ] && continue ==> false && continue
 R4D19|tools/rule_checks_daily.sh|1|  seen[$k]=1; uniq+=("$r") ==>   uniq+=("$r")
 R4D20|tools/rule_checks_daily.sh|1|roots=("${uniq[@]+"${uniq[@]}"}") ==> :
+R5Q01|tools/drift_check.py|1|        if c in ("", "."): ==>         if c == "":
+R5Q02|tools/drift_check.py|1|        if hops > 40: ==>         if hops > 39:
+R5Q03|tools/drift_check.py|1|        if hops > 40: ==>         if hops > 400:
+R5Q04|tools/drift_check.py|1|    todo = os.path.join(os.getcwd(), path).split(os.sep)[::-1] ==>     todo = path.split(os.sep)[::-1]
+R5Q05|tools/drift_check.py|1|        except OSError:\n            cur = nxt ==>         except OSError:\n            pass
+R5Q06|tools/drift_check.py|1|        except OSError:\n            cur = nxt ==>         except FileNotFoundError:\n            cur = nxt
+R5Q07|tools/drift_check.py|1|        todo.extend(link.split(os.sep)[::-1]) ==>         todo.extend(link.split(os.sep))
+R5Q08|tools/drift_check.py|1|            print("drift_check: --scan %s is a symlink loop" % d, file=sys.stderr)\n            return 2 ==>             print("drift_check: --scan %s is a symlink loop" % d, file=sys.stderr)\n            return 0
+R5Q09|tools/drift_check.py|1|    for p in git(repo, "ls-files", "-z").split("\0"): ==>     for p in git(repo, "ls-files", "-z").split("\n"):
+R5Q10|tools/drift_check.py|1|        spec += [":(exclude,glob)**/%s" % n, ":(exclude,glob)**/%s/**" % n] ==>         spec += [":(exclude,glob)**/%s/**" % n]
+R5Q11|tools/drift_check.py|1|":(exclude,glob)**/%s/**" % n ==> ":(exclude,glob)%s/**" % n
+R5Q13|tools/drift_check.py|1|        report("skip dirty check %s: it tracks files under %s (git status would read them)" % (repo, n)) ==>         pass
+R5Q14|tools/drift_check.py|1|                loops.append(c)\n                continue ==>                 loops.append(c)
+R5Q15|tools/drift_check.py|1|            if n in p.split("/"): ==>             if n in p.split("/")[:-1]:
+R5Q16|tools/drift_check.py|1|        if os.path.isabs(link):\n            cur = os.sep ==>         if link.startswith("//"):\n            cur = os.sep
+R5Q17|tools/rule_checks_daily.sh|1|    case "$c" in .) continue;; ==>     case "$c" in .x) continue;;
+R5Q18|tools/rule_checks_daily.sh|1|[ $hops -le 40 ] || return 3 ==> [ $hops -le 39 ] || return 3
+R5Q19|tools/rule_checks_daily.sh|1|[ $hops -le 40 ] || return 3 ==> [ $hops -le 400 ] || return 3
+R5Q20|tools/rule_checks_daily.sh|1|    *[\*\?\[]*/*) echo ==>     *[\*\?]*/*) echo
+R5Q21|tools/rule_checks_daily.sh|1|  k=$(readlink -f -- "$r"); ==>   k=$(realpath -s -- "$r");
+R5Q22|tools/rule_checks_daily.sh|1|  excluded "$p"; e=$? ==>   e=1
+R5Q23|tools/rule_checks_daily.sh|1|      hops=$((hops+1)); ==>       :;
+R5Q24|tools/rule_checks_daily.sh|1|    while [ "${rest#/}" != "$rest" ]; do rest=${rest#/}; done ==>     rest=${rest#/}
+R5Q25|tools/rule_checks_daily.sh|1|  k=$(readlink -f -- "$r"); ==>   k=${r%/};
+R5Q26|tools/drift_check.py|1|        hops += 1 ==>         hops += 0
 T
 }
 one() {  # id file occ old new
