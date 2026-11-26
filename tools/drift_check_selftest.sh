@@ -341,5 +341,22 @@ out=$(run --all --scan "$s" --exclude MathWorks 2>&1); rc=$?
 s="$work/x05"; mkdir -p "$s"; for n in mathworks MATHWORKS; do m=$(fresh "x05$n"); commit_at "$m" 60 m1; commit_at "$m" 50 m2; mv "$m" "$s/$n"; done
 out=$(run --all --scan "$s" --exclude MathWorks 2>&1); rc=$?
 [ $rc = 1 ] && grep -q "FAIL $s/mathworks " <<<"$out" && grep -q "FAIL $s/MATHWORKS " <<<"$out" && ok "exclude: mathworks and MATHWORKS are still checked (exact match, X05)" || { bad "exclude: case variants (want rc=1 and both checked, got rc=$rc)"; show "$out"; }
+# ---- round 4 B1 (Cassie): an excluded --scan folder is decided by name BEFORE it is stat'ed or listed ----
+# an unlistable (mode 000) excluded folder, and one whose parent cannot be searched, must still just be "excluded"
+t="$work/b1"; mkdir -p "$t/a/MathWorks/locked" "$t/b/MathWorks/r"; chmod 000 "$t/a/MathWorks/locked" "$t/b/MathWorks"
+out=$(run --all --scan "$t/a/MathWorks/locked" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $t/a/MathWorks/locked" <<<"$out" && ok "B1: an unlistable excluded --scan folder is not listed (rc 0, excluded)" || { bad "B1: unlistable excluded --scan folder (want rc=0 excluded, got rc=$rc)"; show "$out"; }
+out=$(run --all --scan "$t/b/MathWorks/r" --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "excluded $t/b/MathWorks/r" <<<"$out" && ok "B1: an excluded --scan folder is not stat'ed (unsearchable parent: rc 0, excluded)" || { bad "B1: excluded --scan folder stat'ed (want rc=0 excluded, got rc=$rc)"; show "$out"; }
+chmod 755 "$t/a/MathWorks/locked" "$t/b/MathWorks"
+# and, when strace is installed, no file syscall names the excluded folder at all
+if command -v strace >/dev/null; then
+  mkdir -p "$t/c/MathWorks"; m=$(fresh b1r); mv "$m" "$t/c/MathWorks/r"
+  strace -f -qq -e trace=%file,%desc -o "$t/trace" python3 -B "$dc" --now "$NOW" --all --scan "$t/c/MathWorks" --scan "$t/c/MathWorks/r" --exclude MathWorks >/dev/null 2>&1; rc=$?
+  hits=$(grep -v 'execve(' "$t/trace" | grep -F "$t/c/MathWorks")
+  [ $rc = 0 ] && [ -z "$hits" ] && ok "B1: strace shows no syscall on an excluded --scan folder" || { bad "B1: syscalls on an excluded --scan folder (rc=$rc)"; show "$hits"; }
+else
+  echo "note B1 strace check skipped (no strace)"
+fi
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
