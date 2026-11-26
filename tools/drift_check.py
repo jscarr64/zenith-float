@@ -155,11 +155,34 @@ def activity(repo, now, window, max_age):
 
 
 def excluded(path, names):
-    """True when PATH, as given or with symlinks resolved, has a path component in NAMES.
-    The name as given is checked first, so an excluded path is decided without touching it (Cassie r4 B1)."""
-    if any(n in path.split(os.sep) for n in names):
-        return True
-    return any(n in os.path.realpath(path).split(os.sep) for n in names)
+    """True when PATH, as written or followed symlink by symlink, has a path component in NAMES.
+    Decided from names and readlink strings only (Cassie r4): each component is checked BEFORE it is
+    touched, and a symlink's target string is spliced in and checked the same way, so nothing named in
+    NAMES, and nothing under it, is ever stat'ed, listed or read."""
+    todo = os.path.join(os.getcwd(), path).split(os.sep)[::-1]  # a stack of components still to walk
+    cur, hops = os.sep, 0
+    while todo:
+        c = todo.pop()
+        if c in ("", "."):
+            continue
+        if c == "..":
+            cur = os.path.dirname(cur)
+            continue
+        if c in names:
+            return True
+        nxt = os.path.join(cur, c)
+        try:
+            link = os.readlink(nxt)  # never follows NXT itself; CUR is already free of symlinks
+        except OSError:
+            cur = nxt  # not a symlink, missing or unreadable: go on by name
+            continue
+        hops += 1
+        if hops > 40:
+            return False  # a symlink loop; it fails later as unreadable
+        if os.path.isabs(link):
+            cur = os.sep
+        todo.extend(link.split(os.sep)[::-1])
+    return False
 
 
 def head_state(repo):

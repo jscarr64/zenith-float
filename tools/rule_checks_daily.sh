@@ -24,25 +24,43 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -f "$dc" ] || { echo "rule_checks_daily: drift_check not found: $dc" >&2; exit 2; }
-excluded() {  # PATH: 0 when PATH, as given or resolved, has an excluded component
-  local p x real; real=$(readlink -f -- "$1" 2>/dev/null || echo "$1")
-  for p in "$1" "$real"; do for x in "${excl[@]}"; do case "/$p/" in */"$x"/*) return 0;; esac; done; done
-  return 1
+excluded() {  # PATH: 0 when PATH, as written or followed symlink by symlink, has an excluded component.
+  # Decided from names and readlink strings only (Cassie r4): each component is checked BEFORE it is touched
+  # ([ -L ] / readlink, never -f), so nothing excluded, and nothing under it, is ever stat'ed or listed.
+  local rest=$1 cur= c t x hops=0
+  case "$rest" in /*) ;; *) rest="$PWD/$rest";; esac
+  while :; do
+    while [ "${rest#/}" != "$rest" ]; do rest=${rest#/}; done
+    [ -n "$rest" ] || return 1
+    c=${rest%%/*}; rest=${rest#"$c"}
+    case "$c" in .) continue;; ..) cur=${cur%/*}; continue;; esac
+    for x in "${excl[@]}"; do [ "$c" = "$x" ] && return 0; done
+    if [ -L "$cur/$c" ]; then
+      hops=$((hops+1)); [ $hops -le 40 ] || return 1   # a symlink loop; it fails later as not a directory
+      t=$(readlink -- "$cur/$c")
+      case "$t" in /*) cur=;; esac
+      rest="$t/$rest"
+    else
+      cur="$cur/$c"
+    fi
+  done
 }
 roots=(); nex=0
 for p in "${pats[@]+"${pats[@]}"}"; do
+  # the pattern's own name decides first, before it is expanded or stat'ed (Cassie r4)
+  if excluded "$p"; then echo "rule_checks_daily: excluded $p"; nex=$((nex+1)); continue; fi
   case "$p" in
     *[\*\?\[]*) mapfile -t ms < <(compgen -G "$p" | sort)
-                nd=0; for m in "${ms[@]+"${ms[@]}"}"; do [ -d "$m" ] && nd=$((nd+1)); done
+                nd=0
+                for m in "${ms[@]+"${ms[@]}"}"; do
+                  # each match is judged by name before [ -d ] can follow it into MathWorks
+                  if excluded "$m"; then echo "rule_checks_daily: excluded $m"; nex=$((nex+1)); nd=$((nd+1)); continue; fi
+                  [ -d "$m" ] && { nd=$((nd+1)); roots+=("$m"); }
+                done
                 # a mistyped glob must not silently drop a root (Cassie round-3 N4)
                 [ $nd -gt 0 ] || { echo "rule_checks_daily: root glob $p matches no directory" >&2; exit 2; };;
-    *) [ -d "$p" ] || { echo "rule_checks_daily: root $p is not a directory" >&2; exit 2; }; ms=("$p");;
+    *) [ -d "$p" ] || { echo "rule_checks_daily: root $p is not a directory" >&2; exit 2; }; roots+=("$p");;
   esac
-  for m in "${ms[@]+"${ms[@]}"}"; do
-    [ -d "$m" ] || continue
-    if excluded "$m"; then echo "rule_checks_daily: excluded $m"; nex=$((nex+1)); continue; fi
-    roots+=("$m")
-  done
 done
 [ ${#roots[@]} -gt 0 ] || { echo "rule_checks_daily: no roots to sweep" >&2; exit 2; }
 args=(); for r in "${roots[@]}"; do args+=(--scan "$r"); done
