@@ -131,5 +131,8 @@ ln -s "$work/hm/a-work" "$work/alias"
 out=$(sweep "$work/hm/a-work" "$work/hm/*" "$work/hm/./b-work" "$work/alias" 2>&1); rc=$?
 k=$(grep -c "^drift_check: FAIL $work/hm/a-work/t1 " <<<"$out")
 [ $rc = 1 ] && [ "$k" = 1 ] && grep -q "sweeping 2 root(s) with drift_check --all: $work/hm/a-work $work/hm/b-work\$" <<<"$out" && grep -q "1 FAIL line(s), 0 ERROR line(s), 2 root(s), 0 excluded" <<<"$out" && ok "N2: overlapping roots are swept once (2 roots, 1 FAIL)" || { bad "N2: overlapping roots (rc=$rc, $k FAIL lines for t1)"; show "$out"; }
+# ---- round 4: a glob may have wildcards in its LAST component only. Expanding x/*/mw would stat x/MathWorks/mw
+# before any name check could run; a last-component glob only lists its (already name-checked) parent ----
+check "a root glob with a wildcard before its last component: refused, rc 2" 2 re:"wildcards are allowed in the last component only" nore:"FAIL $work" -- "$work/x/*/mw" "$work/x/ok"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
