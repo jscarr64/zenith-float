@@ -69,7 +69,7 @@ check "a glob matching nothing beside a real root fails loudly: rc 2" 2 re:"no-s
 check "only a glob matching nothing: no roots, rc 2" 2 -- "$work/no-such-*"
 check "a literal root that is missing: rc 2" 2 -- "$work/no-such-root" "$work/r1/clean"
 check "a literal root that is a file: rc 2" 2 -- "$work/hm/afile"
-check "no roots at all: rc 2" 2 --
+check "no roots at all: rc 2, says so (Z17)" 2 re:'^rule_checks_daily: no roots to sweep' --
 # ---- errors fail closed ----
 mkdir -p "$work/e/broken"; echo "gitdir: $work/no-such-gitdir" > "$work/e/broken/.git"
 check "a drift_check error (unreadable child): rc 2" 2 re:"$work/e/broken" -- "$work/e"
