@@ -168,8 +168,9 @@ OWNER_NAME = re.compile(r"[a-z0-9-]+/[a-z0-9._-]+")
 
 
 def github_path(url):
-    """OWNER/NAME in lower case when URL names a GitHub repo; "" when it clearly names something else (a local path,
-    another host, a GitHub path that is not exactly OWNER/NAME); None when it cannot be parsed."""
+    """The GitHub path in lower case (OWNER/NAME for a repo; a path with other parts never equals a valid
+    --only-origin) when URL is on GitHub; "" when it is a local path or another host; None when it cannot be parsed.
+    A local path is what git treats as one: no ":" before the first "/"."""
     u = url.strip()
     m = URL.fullmatch(u)
     if m:
@@ -178,7 +179,7 @@ def github_path(url):
             return ""
         if scheme not in SCHEMES or not host:
             return None
-    elif u.startswith(("/", ".")) or ":" not in u:
+    elif ":" not in u.split("/", 1)[0]:
         return ""  # a local path
     else:
         m = SCP.fullmatch(u)
@@ -190,8 +191,7 @@ def github_path(url):
     p = path[1:] if path.startswith("/") else path
     p = p[:-1] if p.endswith("/") else p
     p = p[:-4] if p.lower().endswith(".git") else p
-    parts = p.split("/")
-    return p.lower() if len(parts) == 2 and all(parts) else ""
+    return p.lower()
 
 
 def origin_repo(repo):
