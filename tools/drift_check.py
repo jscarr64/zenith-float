@@ -30,10 +30,14 @@ Active mode (Jeff 2026-11-25 3:55 PM CT: "limit the check to active work trees")
   old (a tip with no commit date is checked). Idle trees and branches are named as "skip".
   --all checks every scanned tree and every branch (the full sweep). --repo and --include trees are always checked
   in full.
---only-origin OWNER/NAME (lower case; Jeff 2026-11-27 4:42 PM CT: only our own zenith-float clones): a --scan entry
-is checked only when its remote.origin.url is GitHub OWNER/NAME (https://github.com/, git@github.com: or
-ssh://git@github.com/, any case, with or without .git). Others (no origin, a local path, another host, owner or
-name) are named as "skip". --repo and --include trees are never filtered.
+--only-origin OWNER/NAME (Jeff 2026-11-27 4:42 PM CT: only our own zenith-float clones; trimmed and lower-cased,
+anything but OWNER/NAME is rc 2): a --scan entry is checked only when origin is GitHub OWNER/NAME. The URL is the
+one git fetches from (`git ls-remote --get-url origin`, so insteadOf counts): ssh, git, http or https (any user,
+token or port) or scp form, host github.com or www.github.com, any case, an optional trailing / and .git. An origin
+that clearly names something else (no origin remote, a local path or file://, another host, a GitHub path that is
+not exactly OWNER/NAME) is named as "skip"; one that cannot be read or parsed, or has two url values, is an ERROR
+(rc 2), as is matching none of the work trees found under --scan. --repo and --include trees are never filtered.
+A child whose .git cannot be read, a symlink loop included, is "has a .git but is not a readable work tree", rc 2.
 Read-only: every git call uses --no-optional-locks and drops GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR.
 --max-age-min and --active-window-min must be finite and >= 0 (nan, inf or a negative value is a usage error).
 rc 0 ok, 1 drift, 2 usage or git error (fail closed).
@@ -41,6 +45,7 @@ rc 0 ok, 1 drift, 2 usage or git error (fail closed).
 import argparse
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -155,21 +160,57 @@ def activity(repo, now, window, max_age):
     return False, "idle: last change %d s ago (window %d s)" % (now - last, window)
 
 
-GITHUB = ("https://github.com/", "git@github.com:", "ssh://git@github.com/")
+SCHEMES = ("ssh", "git", "http", "https")
+HOSTS = ("github.com", "www.github.com")
+URL = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*)://(?:[^@/]*@)?([^/:@]*)(?::[0-9]*)?(/.*)?")  # scheme://[user@]host[:port]/path
+SCP = re.compile(r"(?:[^@/:]*@)?([^/:@]+):(.*)")  # [user@]host:path
+OWNER_NAME = re.compile(r"[a-z0-9-]+/[a-z0-9._-]+")
 
 
-def github_repo(repo):
-    """OWNER/NAME in lower case when REPO's remote.origin.url is a GitHub URL (https, scp or ssh form, with or
-    without .git), else None: no origin, a local path or another host."""
+def github_path(url):
+    """OWNER/NAME in lower case when URL names a GitHub repo; "" when it clearly names something else (a local path,
+    another host, a GitHub path that is not exactly OWNER/NAME); None when it cannot be parsed."""
+    u = url.strip()
+    m = URL.fullmatch(u)
+    if m:
+        scheme, host, path = m.group(1).lower(), m.group(2).lower(), m.group(3) or ""
+        if scheme == "file":
+            return ""
+        if scheme not in SCHEMES or not host:
+            return None
+    elif u.startswith(("/", ".")) or ":" not in u:
+        return ""  # a local path
+    else:
+        m = SCP.fullmatch(u)
+        if not m:
+            return None
+        host, path = m.group(1).lower(), m.group(2)
+    if host not in HOSTS:
+        return ""
+    p = path[1:] if path.startswith("/") else path
+    p = p[:-1] if p.endswith("/") else p
+    p = p[:-4] if p.lower().endswith(".git") else p
+    parts = p.split("/")
+    return p.lower() if len(parts) == 2 and all(parts) else ""
+
+
+def origin_repo(repo):
+    """github_path() of the URL git fetches origin from (insteadOf applied); "" when REPO has no origin remote.
+    GitError when it cannot be read or parsed, or origin has more than one url (fail closed). The URL itself is
+    never put in a message (it may hold a token)."""
     try:
-        u = git(repo, "config", "--get", "remote.origin.url").strip()
+        if "origin" not in git(repo, "remote").split():
+            return ""
+        n = len(git(repo, "config", "--get-all", "remote.origin.url").splitlines())
+        u = git(repo, "ls-remote", "--get-url", "origin")
     except GitError:
-        return None
-    for p in GITHUB:
-        if u.lower().startswith(p):
-            r = u[len(p):]
-            return (r[:-4] if r.endswith(".git") else r).lower()
-    return None
+        raise GitError("origin url cannot be read")
+    if n != 1:
+        raise GitError("origin has %d url values" % n)
+    r = github_path(u)
+    if r is None:
+        raise GitError("origin url cannot be parsed")
+    return r
 
 
 def head_state(repo):
@@ -249,7 +290,7 @@ def main(argv=None):
     ap.add_argument("--include-file", action="append", default=[], help="file of work trees always checked")
     ap.add_argument("--active-window-min", type=float, default=1440)
     ap.add_argument("--only-origin", metavar="OWNER/NAME", default=None,
-                    help="--scan checks only work trees whose remote.origin.url is GitHub OWNER/NAME (lower case)")
+                    help="--scan checks only work trees whose origin is GitHub OWNER/NAME")
     a = ap.parse_args(argv)
     report = lambda s: print("drift_check: " + s)
     now = time.time() if a.now is None else a.now
@@ -277,7 +318,14 @@ def main(argv=None):
             print("drift_check: %s is not the top of a git work tree" % r, file=sys.stderr)
             return 2
         repos.append((r, None))
-    unreadable = []
+    only = None
+    if a.only_origin is not None:
+        only = a.only_origin.strip().lower()
+        if not OWNER_NAME.fullmatch(only) or only.endswith(".git"):
+            print("drift_check: --only-origin must be OWNER/NAME, got %r" % a.only_origin, file=sys.stderr)
+            return 2
+    unreadable, badorigin = [], []
+    trees = matched = 0
     for d in a.scan:
         if not os.path.isdir(d):
             print("drift_check: %s is not a directory" % d, file=sys.stderr)
@@ -295,12 +343,21 @@ def main(argv=None):
             except OSError:
                 unreadable.append(c)  # EACCES and the like: cannot tell, fail closed
                 continue
-            if not is_work_tree(c):
+            if not is_work_tree(c):  # before the origin check: a broken .git is this ERROR (Cassie r7 CR06)
                 unreadable.append(c)
-            elif a.only_origin and github_repo(c) != a.only_origin:
-                report("skip %s (origin is not GitHub %s)" % (c, a.only_origin))
-            else:
-                repos.append((c, "scan"))
+                continue
+            trees += 1
+            if only is not None:
+                try:
+                    r = origin_repo(c)
+                except GitError as e:
+                    badorigin.append((c, str(e)))
+                    continue
+                if r != only:
+                    report("skip %s (origin is not GitHub %s)" % (c, only))
+                    continue
+            matched += 1
+            repos.append((c, "scan"))
     if not explicit and not a.scan:
         print("drift_check: give --repo or --scan", file=sys.stderr)
         return 2
@@ -308,6 +365,12 @@ def main(argv=None):
     seen = set()
     for c in unreadable:
         print("drift_check: ERROR %s has a .git but is not a readable work tree" % c, file=sys.stderr)
+    for c, why in badorigin:
+        print("drift_check: ERROR %s: %s" % (c, why), file=sys.stderr)
+    nomatch = only is not None and trees and not matched
+    if nomatch:
+        print("drift_check: ERROR --only-origin %s matched none of %d work tree(s) under --scan" % (only, trees),
+              file=sys.stderr)
     done = set()
     checked = skipped = 0
     try:
@@ -331,7 +394,7 @@ def main(argv=None):
     print("drift_check: %s (%d repo(s) checked, %d idle skipped, max %d ahead, max age %g min, %s)"
           % ("FAIL" if bad else "ok", checked, skipped, a.max_ahead, a.max_age_min,
              "all work trees" if a.all else "active window %g min" % a.active_window_min))
-    if unreadable:
+    if unreadable or badorigin or nomatch:
         return 2
     return 1 if bad else 0
 
