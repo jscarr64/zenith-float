@@ -41,7 +41,7 @@ Nothing named NAME, and nothing under it, is ever stat'ed, listed or read (Cassi
   a target). `..` and absolute targets are walked as the kernel would. More than 40 hops is a symlink loop:
   `--scan DIR is a symlink loop` or `ERROR CHILD is a symlink loop`, rc 2.
 - `git status` in a checked repo gets `-- ':(exclude,glob)**/NAME' ':(exclude,glob)**/NAME/**'` per NAME, so git
-  prunes any untracked or ignored entry named NAME (folder, file or symlink; Jeff decision D3) unread (checked with
+  prunes any untracked or ignored entry named NAME (folder, file or symlink; Jeff 2026-11-25 (thumbs-up on D3 confirmation in Spence chat)) unread (checked with
   strace). Correction: commit 68e4650e said "no behaviour change", but dropping `**/NAME` made git lstat a FILE or
   symlink named NAME and count it as dirty work (Cassie r5 B1); 0829abcc restores it. Pathspec cannot stop git lstat'ing files the index TRACKS
   under NAME, so a repo whose `git ls-files` (index only) lists such a file skips its dirty-work check, said as
@@ -81,11 +81,12 @@ fixture, so update that test in the same merge.
 
 `tools/drift_check_selftest.sh`, `tools/pr_done_check_selftest.sh` (mock gh that honours `--state` and `--limit`),
 `tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), `tools/rule_checks_daily_selftest.sh`,
-`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (256 mutants, including Cassie's
-16 round-1, 12 round-2, 25 round-3, 20 round-4 and 25 round-5 rows; every one must be killed; a row's `\n` is a newline, and a
+`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (261 mutants, including Cassie's
+16 round-1, 12 round-2, 25 round-3, 20 round-4, 25 round-5 and 5 round-6 rows; every one must be killed; a row's `\n` is a newline, and a
 mutant that hangs is killed after 15 min). Cassie's round-4 X18 (`--exclude "$x"` -> `--exclude="$x"`) is
 equivalent, not a row: argparse reads both forms the same. Her round-5 Q12 (`**/NAME/**` -> `**/NAME/*`) is
-equivalent too: beside `**/NAME`, strace shows the same pruning either way. Her Q10 is adapted to the restored
+equivalent too: beside `**/NAME`, strace shows the same pruning either way. Her round-6 P06 (`["--", "."]`) and P07 (the two specs swapped) are
+equivalent as well: an exclude-only pathspec implies `.`, and pathspec order does not matter. Her Q10 is adapted to the restored
 pathspec (drop the `**/NAME` form), and R4N17/R4N18 to the two-form spec line. Rows whose code was rewritten in round 4 were adapted to
 the new code with the same intent (D25, N03, Z13-Z15, W05, W15, W16, V10-V12, V16, and Cassie's X01, X04-X08,
 X10, X15, X16, X20). Each behavior landed as one red commit, then one fix commit. Test-only commits (56878368,

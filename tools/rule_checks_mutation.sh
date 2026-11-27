@@ -16,6 +16,8 @@ trap 'rm -rf "$work"' EXIT
 # argparse reads `--exclude X` and `--exclude=X` the same way, so no test can tell them apart.
 # Equivalent, so not a row: Cassie r5 Q12, drift_check.py `**/%s/**` -> `**/%s/*` in the git status pathspec. With
 # `**/NAME` beside it, strace shows the same pruning either way (0 NAME syscalls; her zf42r5-probe-q12.out).
+# Equivalent, so not rows: Cassie r6 P06 (`spec = ["--", "."]`: an exclude-only pathspec implies ".") and P07 (the two
+# exclude specs swapped: pathspec order does not change what is excluded).
 rows() { cat <<'T'
 A01|tools/drift_check.py|1|if now - last <= window: ==> if now - last < window:
 A02|tools/drift_check.py|1|if now - last <= window: ==> if now - last <= window + 1:
@@ -273,6 +275,11 @@ R5Q23|tools/rule_checks_daily.sh|1|      hops=$((hops+1)); ==>       :;
 R5Q24|tools/rule_checks_daily.sh|1|    while [ "${rest#/}" != "$rest" ]; do rest=${rest#/}; done ==>     rest=${rest#/}
 R5Q25|tools/rule_checks_daily.sh|1|  k=$(readlink -f -- "$r"); ==>   k=${r%/};
 R5Q26|tools/drift_check.py|1|        hops += 1 ==>         hops += 0
+R6P01|tools/drift_check.py|1|        spec += [":(exclude,glob)**/%s" % n, ==>         spec += [":(exclude,glob)%s" % n,
+R6P02|tools/drift_check.py|1|        spec += [":(exclude,glob)**/%s" % n, ==>         spec += [":(exclude)**/%s" % n,
+R6P03|tools/drift_check.py|1|    for n in names:  # an entry named NAME ==>     for n in names[:1]:  # an entry named NAME
+R6P04|tools/drift_check.py|1|        spec += [":(exclude,glob)**/%s" % n, ":(exclude,glob)**/%s/**" % n] ==>         spec += [":(exclude,glob)**/%s*" % n, ":(exclude,glob)**/%s/**" % n]
+R6P05|tools/drift_check.py|1|        spec += [":(exclude,glob)**/%s" % n, ":(exclude,glob)**/%s/**" % n] ==>         spec += [":(exclude,glob,icase)**/%s" % n, ":(exclude,glob)**/%s/**" % n]
 T
 }
 one() {  # id file occ old new
