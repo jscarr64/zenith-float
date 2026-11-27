@@ -191,6 +191,20 @@ R4D19|tools/rule_checks_daily.sh|1|  seen[$k]=1; uniq+=("$r") ==>   uniq+=("$r")
 R4D20|tools/rule_checks_daily.sh|1|roots=("${uniq[@]+"${uniq[@]}"}") ==> :
 R5Q21|tools/rule_checks_daily.sh|1|  k=$(readlink -f -- "$r"); ==>   k=$(realpath -s -- "$r");
 R5Q25|tools/rule_checks_daily.sh|1|  k=$(readlink -f -- "$r"); ==>   k=${r%/};
+L01|tools/drift_check.py|1|elif a.only_origin and github_repo(c) != a.only_origin: ==> elif False:
+L02|tools/drift_check.py|1|elif a.only_origin and github_repo(c) != a.only_origin: ==> elif a.only_origin and github_repo(c) == a.only_origin:
+L03|tools/drift_check.py|1|report("skip %s (origin is not GitHub %s)" % (c, a.only_origin)) ==> repos.append((c, "scan"))
+L04|tools/drift_check.py|1|GITHUB = ("https://github.com/", ==> GITHUB = (
+L05|tools/drift_check.py|1|"https://github.com/", "git@github.com:", ==> "https://github.com/",
+L06|tools/drift_check.py|1|, "ssh://git@github.com/") ==> )
+L07|tools/drift_check.py|1|if u.lower().startswith(p): ==> if u.startswith(p):
+L08|tools/drift_check.py|1|return (r[:-4] if r.endswith(".git") else r).lower() ==> return r.lower()
+L09|tools/drift_check.py|1|return (r[:-4] if r.endswith(".git") else r).lower() ==> return (r[:-4] if r.endswith(".git") else r)
+L10|tools/drift_check.py|1|    except GitError:\n        return None\n    for p in GITHUB: ==>     except GitError:\n        raise\n    for p in GITHUB:
+L11|tools/drift_check.py|1|r = u[len(p):] ==> r = u[len(p) + 1:]
+L12|tools/drift_check.py|1|"git@github.com:" ==> "git@github.com/"
+L13|tools/drift_check.py|1|return (r[:-4] if ==> return (r[:-3] if
+L14|tools/drift_check.py|1|u = git(repo, "config", "--get", "remote.origin.url").strip() ==> u = git(repo, "config", "--get", "remote.upstream.url").strip()
 T
 }
 one() {  # id file occ old new

@@ -31,7 +31,12 @@ gives rc 2; a child without `.git` (a plain dir, a bare repo) is skipped. An unr
 of a repository is reported once.
 
 Options: `drift_check.py --repo DIR | --scan DIR [--all] [--include DIR] [--include-file FILE]
-[--active-window-min 1440] [--max-ahead 1] [--max-age-min 30] [--pre-commit] [--now EPOCH]`.
+[--active-window-min 1440] [--max-ahead 1] [--max-age-min 30] [--only-origin OWNER/NAME] [--pre-commit] [--now EPOCH]`.
+`--only-origin OWNER/NAME` (lower case) is the allowlist (Jeff 2026-11-27 4:42 PM CT: check only our own zenith-float
+folders): a `--scan` entry (DIR or a direct child) is checked only when its `remote.origin.url` is GitHub OWNER/NAME
+(`https://github.com/`, `git@github.com:` or `ssh://git@github.com/`, any case, `.git` optional). No origin, a local
+path, another host, owner or name: named as `skip PATH (origin is not GitHub OWNER/NAME)`. `--repo` and `--include`
+are never filtered (the pre-commit hook uses `--repo`).
 `pr_done_check.py --repo OWNER/NAME [--since YYYY-MM-DD] [--limit 1000]` (GH=<gh binary>; GET calls only).
 `--max-age-min` and `--active-window-min` must be finite and >= 0 (`nan`, `inf` or a negative value gives rc 2).
 `--include-file` entries are paths as written, resolved against the current directory: use absolute paths.
@@ -67,7 +72,7 @@ fixture, so update that test in the same merge.
 
 `tools/drift_check_selftest.sh`, `tools/pr_done_check_selftest.sh` (mock gh that honours `--state` and `--limit`),
 `tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), `tools/rule_checks_daily_selftest.sh`,
-`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (178 mutants, including Cassie's review rows; every one must be killed; a row's `\n` is a newline, and a
+`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (192 mutants, including Cassie's review rows and the L01-L14 allowlist rows; every one must be killed; a row's `\n` is a newline, and a
 mutant that hangs is killed after 15 min). Every selftest run is capped at 60 s, so a hang fails its case fast.
 The rows for the retired `--exclude` mechanism (the step-by-step symlink walk, the git status pathspec and the
 tracked-file skip) were removed with it; D25, N03, W05 and X20 were adapted to the code that is left. Each behavior
@@ -91,10 +96,10 @@ full_gate evidence: it covers 2 of full_gate's 25 run steps (no Rust builds or t
 
 "Yes, add a daily full sweep over every worktree that fails on any drift." Active mode hides idle drift (Cassie N1),
 so once a day `tools/rule_checks_daily.sh` runs `drift_check.py --all` (every tree and every branch, nothing skipped)
-over every root and FAILs (rc 1) on any drift; rc 2 on no roots, a bad root or a git error.
-- Roots are dirs or quoted globs of dirs: on Pop `/mnt/hub/{paul,rusty,spence,vera}-work` and
-  `/mnt/hub/home-moved/*`. Non-dir matches are ignored, but a glob that matches no directory at all is an error
-  (rc 2), so a mistyped root cannot silently drop out of the sweep.
+over every root and FAILs (rc 1) on any drift; rc 2 on no roots, a bad root or a git error. Arguments after `--` go
+to drift_check (`run-daily.sh` passes `--only-origin jscarr64/zenith-float`).
+- Roots are dirs or quoted globs of dirs. Non-dir matches are ignored, but a glob that matches no directory at all is
+  an error (rc 2), so a mistyped root, or a Team with no agent folders, cannot silently pass.
 - The same dir given twice (a literal and a glob, `./`, a symlink) is swept once, first spelling kept. A root nested
   inside another root is still listed as its own root; drift_check checks each repo once, so findings are not
   doubled.
@@ -102,18 +107,24 @@ over every root and FAILs (rc 1) on any drift; rc 2 on no roots, a bad root or a
 
 ## 15-minute scheduler on Pop
 
-A systemd **user** timer, the same pattern as `poprotate.timer`. No cron, no system units.
+A systemd **user** timer, the same pattern as `poprotate.timer`. No cron, no system units. Both timers are disabled
+until Jeff re-enables them.
+- Scope (Jeff 2026-11-27 4:42 PM CT): only our own zenith-float clones and worktrees. The roots are
+  `/home/jsc64/MathWorks/Team/<agent>-work` (the symlink resolved with `readlink -f` at run time) and their direct
+  children; a work tree counts only when its `remote.origin.url` is GitHub `jscarr64/zenith-float`
+  (`--only-origin`). Other repos, zenith-bound clones, local-path origins and anything deeper are not checked.
 - `~/.config/systemd/user/zf-rule-checks.timer`: `OnCalendar=*:0/15`, `Persistent=true`.
-- `~/.config/systemd/user/zf-rule-checks.service`: oneshot, `ExecStart=/mnt/hub/spence-work/rule-checks-bin/run.sh`.
+- `~/.config/systemd/user/zf-rule-checks.service`: oneshot,
+  `ExecStart=/home/jsc64/MathWorks/Team/spence-work/rule-checks-bin/run.sh`.
 - `run.sh` runs copies of `drift_check.py` and `pr_done_check.py` pinned to one commit, kept in
-  `/mnt/hub/spence-work/rule-checks-bin/<sha>/` with `SHA256SUMS`. It refuses to run if a hash does not match.
-  It runs `drift_check.py --scan` (active mode) over `/mnt/hub/{paul,rusty,spence,vera}-work` with
-  `--include-file rule-checks-bin/include.txt` then `pr_done_check.py` on `jscarr64/zenith-float` and
-  `jscarr64/zenith-bound`. Output is appended to `/home/jsc64/pop-logs/spence/rule-checks/YYYY-MM-DD.log`.
+  `/home/jsc64/MathWorks/Team/spence-work/rule-checks-bin/<sha>/` with `SHA256SUMS`. It refuses to run if a hash
+  does not match. It runs `drift_check.py --scan` (active mode) over every `Team/*-work` with
+  `--only-origin jscarr64/zenith-float` and `--include-file rule-checks-bin/include.txt`, then `pr_done_check.py` on
+  `jscarr64/zenith-float`. Output is appended to `/home/jsc64/pop-logs/spence/rule-checks/YYYY-MM-DD.log`.
 - Daily: `zf-rule-checks-daily.timer` (`OnCalendar=*-*-* 06:00`, `Persistent=true`) starts
-  `zf-rule-checks-daily.service` (oneshot, `ExecStart=/mnt/hub/spence-work/rule-checks-bin/run-daily.sh`). It checks
-  the same pinned `SHA256SUMS` and runs the pinned `rule_checks_daily.sh` over the roots above. Output:
-  `/home/jsc64/pop-logs/spence/rule-checks/YYYY-MM-DD-daily.log`.
+  `zf-rule-checks-daily.service` (oneshot, `ExecStart=/home/jsc64/MathWorks/Team/spence-work/rule-checks-bin/run-daily.sh`).
+  It checks the same pinned `SHA256SUMS` and runs the pinned `rule_checks_daily.sh` over `Team/*-work` with the same
+  `--only-origin`. Output: `/home/jsc64/pop-logs/spence/rule-checks/YYYY-MM-DD-daily.log`.
 - To repin after a merge, copy `drift_check.py`, `pr_done_check.py` and `rule_checks_daily.sh` at the new sha into
   `rule-checks-bin/<sha>/`, write `SHA256SUMS`, and change `PIN` in `run.sh` and `run-daily.sh`. To stop them:
   `systemctl --user disable --now zf-rule-checks.timer zf-rule-checks-daily.timer`.
