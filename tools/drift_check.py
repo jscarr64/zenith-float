@@ -30,6 +30,10 @@ Active mode (Jeff 2026-11-25 3:55 PM CT: "limit the check to active work trees")
   old (a tip with no commit date is checked). Idle trees and branches are named as "skip".
   --all checks every scanned tree and every branch (the full sweep). --repo and --include trees are always checked
   in full.
+--only-origin OWNER/NAME (lower case; Jeff 2026-11-27 4:42 PM CT: only our own zenith-float clones): a --scan entry
+is checked only when its remote.origin.url is GitHub OWNER/NAME (https://github.com/, git@github.com: or
+ssh://git@github.com/, any case, with or without .git). Others (no origin, a local path, another host, owner or
+name) are named as "skip". --repo and --include trees are never filtered.
 Read-only: every git call uses --no-optional-locks and drops GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR.
 --max-age-min and --active-window-min must be finite and >= 0 (nan, inf or a negative value is a usage error).
 rc 0 ok, 1 drift, 2 usage or git error (fail closed).
@@ -151,6 +155,23 @@ def activity(repo, now, window, max_age):
     return False, "idle: last change %d s ago (window %d s)" % (now - last, window)
 
 
+GITHUB = ("https://github.com/", "git@github.com:", "ssh://git@github.com/")
+
+
+def github_repo(repo):
+    """OWNER/NAME in lower case when REPO's remote.origin.url is a GitHub URL (https, scp or ssh form, with or
+    without .git), else None: no origin, a local path or another host."""
+    try:
+        u = git(repo, "config", "--get", "remote.origin.url").strip()
+    except GitError:
+        return None
+    for p in GITHUB:
+        if u.lower().startswith(p):
+            r = u[len(p):]
+            return (r[:-4] if r.endswith(".git") else r).lower()
+    return None
+
+
 def head_state(repo):
     """(detached?, head sha or None)."""
     try:
@@ -228,7 +249,7 @@ def main(argv=None):
     ap.add_argument("--include-file", action="append", default=[], help="file of work trees always checked")
     ap.add_argument("--active-window-min", type=float, default=1440)
     ap.add_argument("--only-origin", metavar="OWNER/NAME", default=None,
-                    help="--scan checks only work trees whose remote.origin.url is GitHub OWNER/NAME")
+                    help="--scan checks only work trees whose remote.origin.url is GitHub OWNER/NAME (lower case)")
     a = ap.parse_args(argv)
     report = lambda s: print("drift_check: " + s)
     now = time.time() if a.now is None else a.now
@@ -274,10 +295,12 @@ def main(argv=None):
             except OSError:
                 unreadable.append(c)  # EACCES and the like: cannot tell, fail closed
                 continue
-            if is_work_tree(c):
-                repos.append((c, "scan"))
-            else:
+            if not is_work_tree(c):
                 unreadable.append(c)
+            elif a.only_origin and github_repo(c) != a.only_origin:
+                report("skip %s (origin is not GitHub %s)" % (c, a.only_origin))
+            else:
+                repos.append((c, "scan"))
     if not explicit and not a.scan:
         print("drift_check: give --repo or --scan", file=sys.stderr)
         return 2
