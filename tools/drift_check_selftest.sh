@@ -320,5 +320,68 @@ r=$(stale w05 172800); git -C "$r" push -q origin w 2>/dev/null; touch -d "@$((N
 echo a > "$r/u1.txt"; echo b > "$r/u2.txt"; touch -d "@$((NOW-60))" "$r/u1.txt"; touch -d "@$((NOW-1801))" "$r/u2.txt"
 out=$(run --scan "$work/w05" --active-window-min 5 2>&1); rc=$?
 [ $rc = 1 ] && ! grep -q "skip $r" <<<"$out" && ok "active: dirty 60 s and 1801 s in an idle tree, 5 min window: checked, FAIL (W05)" || { bad "active: dirty 60 s + 1801 s, 5 min window (want rc=1, not skipped, got rc=$rc)"; show "$out"; }
+# ---- allowlist (Jeff 2026-11-27 4:42 PM CT): --only-origin OWNER/NAME makes --scan check only work trees whose
+# remote.origin.url is GitHub OWNER/NAME (https, scp or ssh form, any case, with or without .git). Other origins,
+# local-path origins and no origin are skipped and named. The roots are agent folders: each --scan DIR and its
+# direct children, so a clone two levels down is not seen. ----
+# zf PATH URL [clean|dirty|ahead] : a work tree at PATH with one pushed commit, then its origin URL set to URL
+# ("-" keeps the local bare origin, "none" removes the remote)
+zf() {
+  local p=$1 o; o="$work/zforigins/$(echo "$1" | tr / _).git"
+  mkdir -p "$(dirname "$p")" "$work/zforigins"; git init -q --bare "$o"; git init -q -b w "$p"
+  git -C "$p" remote add origin "$o"; commit_at "$p" 7200 base; git -C "$p" push -q -u origin w 2>/dev/null
+  case "$2" in -) ;; none) git -C "$p" remote remove origin;; *) git -C "$p" remote set-url origin "$2";; esac
+  case "${3:-clean}" in
+    dirty) echo d > "$p/old.txt"; touch -d "@$((NOW-7200))" "$p/old.txt";;
+    ahead) commit_at "$p" 60 a1; commit_at "$p" 60 a2;;
+  esac
+}
+T="$work/team"; ZF=https://github.com/jscarr64/zenith-float.git; oo=(--only-origin jscarr64/zenith-float)
+# allow NAME WANT_RC [re:REGEX]... [nore:REGEX]... -- ARGS... : run drift_check --only-origin jscarr64/zenith-float ARGS
+allow() {
+  local name=$1 want=$2; shift 2; local res=() nres=()
+  while [ "$1" != -- ]; do case "$1" in re:*) res+=("${1#re:}");; nore:*) nres+=("${1#nore:}");; esac; shift; done; shift
+  local out rc good=1; out=$(run "${oo[@]}" "$@" 2>&1); rc=$?
+  [ "$rc" = "$want" ] || good=0
+  local x; for x in "${res[@]+"${res[@]}"}"; do grep -Eq -- "$x" <<<"$out" || good=0; done
+  for x in "${nres[@]+"${nres[@]}"}"; do grep -Eq -- "$x" <<<"$out" && good=0; done
+  if [ $good = 1 ]; then ok "allowlist: $name (rc=$rc)"; else bad "allowlist: $name (want rc=$want, got rc=$rc)"; show "$out"; fi
+}
+allow "zero roots: usage error" 2 re:'give --repo or --scan' --
+mkdir -p "$T/empty-work"
+allow "an empty agent folder: nothing checked" 0 re:'\(0 repo\(s\) checked' -- --scan "$T/empty-work"
+zf "$T/a-work/acc" https://github.com/jscarr64/accumath.git dirty
+allow "a non-zenith-float origin is skipped, even with old dirty work" 0 re:"skip $T/a-work/acc \(origin " nore:FAIL -- --scan "$T/a-work"
+zf "$T/b-work/zb" https://github.com/jscarr64/zenith-bound.git ahead
+allow "a zenith-bound origin is skipped, even 2 ahead" 0 re:"skip $T/b-work/zb \(origin " nore:FAIL -- --scan "$T/b-work"
+zf "$T/c-work/loc" - dirty
+allow "a local-path origin is skipped" 0 re:"skip $T/c-work/loc \(origin " nore:FAIL -- --scan "$T/c-work"
+zf "$T/d-work/sub/deep" "$ZF" dirty
+allow "a zenith-float clone two levels down is not seen" 0 re:'\(0 repo\(s\) checked' nore:deep -- --scan "$T/d-work"
+zf "$T/e-real/zf" "$ZF" dirty; ln -s "$T/e-real" "$T/e-work"
+allow "a symlinked agent folder is followed: its dirty clone FAILs" 1 re:"FAIL $T/e-work/zf: dirty work" -- --scan "$T/e-work"
+zf "$T/f-work/zf" "$ZF" dirty
+allow "a dirty zenith-float clone FAILs" 1 re:"FAIL $T/f-work/zf: dirty work" -- --scan "$T/f-work"
+zf "$T/g-work/zf" "$ZF" ahead
+allow "a zenith-float clone 2 ahead FAILs" 1 re:"FAIL $T/g-work/zf w: 2 commits ahead" -- --scan "$T/g-work"
+zf "$T/h-work/zf" "$ZF"
+allow "a clean zenith-float clone is checked: ok" 0 re:"ok   $T/h-work/zf\$" re:'\(1 repo\(s\) checked' -- --scan "$T/h-work"
+# every GitHub URL form of jscarr64/zenith-float counts; near names, other owners, other hosts and no origin do not
+i=0
+for u in https://github.com/jscarr64/zenith-float https://github.com/jscarr64/zenith-float.git \
+         git@github.com:jscarr64/zenith-float.git ssh://git@github.com/jscarr64/zenith-float \
+         https://GitHub.com/JScarr64/Zenith-Float.git; do
+  i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
+  allow "origin $u is zenith-float: checked" 1 re:"FAIL $T/u$i-work/zf w: 2 commits ahead" -- --scan "$T/u$i-work"
+done
+for u in https://github.com/jscarr64/zenith-float-old.git https://github.com/other/zenith-float.git \
+         https://gitlab.com/jscarr64/zenith-float.git https://github.com/jscarr64/zenith-float/x.git none; do
+  i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
+  allow "origin $u is not zenith-float: skipped" 0 re:"skip $T/u$i-work/zf \(" nore:FAIL -- --scan "$T/u$i-work"
+done
+# the agent folder itself is filtered the same way, and --repo is never filtered (the pre-commit hook uses it)
+zf "$T/acc-as-root" https://github.com/jscarr64/accumath.git ahead
+allow "a non-zenith-float --scan DIR itself is skipped" 0 re:"skip $T/acc-as-root \(" nore:FAIL -- --scan "$T/acc-as-root"
+allow "--repo is checked whatever its origin" 1 re:"FAIL $T/acc-as-root w: 2 commits ahead" -- --repo "$T/acc-as-root"
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

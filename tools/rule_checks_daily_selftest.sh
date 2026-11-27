@@ -92,5 +92,13 @@ k=$(grep -c "^drift_check: FAIL $work/hm/a-work/t1 " <<<"$out")
 [ $rc = 1 ] && [ "$k" = 1 ] && grep -q "sweeping 2 root(s) with drift_check --all: $work/hm/a-work $work/hm/b-work\$" <<<"$out" && grep -q "1 FAIL line(s), 0 ERROR line(s), 2 root(s);" <<<"$out" && ok "N2: overlapping roots are swept once (2 roots, 1 FAIL)" || { bad "N2: overlapping roots (rc=$rc, $k FAIL lines for t1)"; show "$out"; }
 # the sweep itself refuses a literal root that is not a dir (drift_check would too, but later and less plainly)
 check "a missing literal root is refused by the sweep itself" 2 re:"^rule_checks_daily: root $work/no-such-root is not a directory" -- "$work/no-such-root" "$work/r1/clean"
+# ---- allowlist (Jeff 2026-11-27 4:42 PM CT): run-daily.sh passes --only-origin jscarr64/zenith-float to drift_check,
+# and its root is the glob of agent folders ----
+tree "$work/al/a-work/acc" unpushed; git -C "$work/al/a-work/acc" remote set-url origin https://github.com/jscarr64/accumath.git
+tree "$work/al/b-work/zf" unpushed; git -C "$work/al/b-work/zf" remote set-url origin https://github.com/jscarr64/zenith-float.git
+out=$(timeout 60 bash "$daily" "$work/al/*-work" -- --now "$NOW" --only-origin jscarr64/zenith-float 2>&1); rc=$?
+[ $rc = 1 ] && grep -q "FAIL $work/al/b-work/zf " <<<"$out" && grep -q "skip $work/al/a-work/acc (" <<<"$out" && ! grep -q "FAIL $work/al/a-work" <<<"$out" && ok "allowlist: the sweep FAILs the idle zenith-float clone and skips the other origin (rc=1)" || { bad "allowlist: sweep with --only-origin (want rc=1, zf FAIL, acc skip; got rc=$rc)"; show "$out"; }
+mkdir -p "$work/al0"
+check "allowlist: zero agent folders: the root glob matches no directory, rc 2" 2 re:'matches no directory' -- "$work/al0/*-work"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
