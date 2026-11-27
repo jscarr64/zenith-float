@@ -241,7 +241,7 @@ r=$(stale d30 172800); echo u > "$r/u.txt"; touch -d "@$((NOW-1800))" "$r/u.txt"
 expect "active: dirty exactly 30 min, 5 min window: idle"    0 run --scan "$work/d30" --active-window-min 5
 r=$(stale brk 172800); echo 0123456789abcdef0123456789abcdef01234567 > "$r/.git/refs/heads/w"
 out=$(run --scan "$work/brk" 2>&1); rc=$?
-[ $rc != 0 ] && ok "active: unreadable activity fails closed (checked, rc=$rc)" || { bad "active: unreadable activity fails closed (rc=0)"; show "$out"; }
+[ $rc = 2 ] && ok "active: unreadable activity fails closed (checked, rc=$rc)" || { bad "active: unreadable activity fails closed (want rc=2, got rc=$rc)"; show "$out"; }
 # branches inside an active tree
 r=$(fresh obr); git -C "$r" switch -q -c old; commit_at "$r" 172800 o1; commit_at "$r" 172800 o2; git -C "$r" switch -q w
 expect "active: other branch idle 2 days is skipped"         0 run --scan "$work/obr"
@@ -418,14 +418,14 @@ if command -v strace >/dev/null; then
   hits=$(grep -v 'execve(' "$work/gs/trace.active" | grep -F "MathWorks")
   [ $rc = 0 ] && [ -z "$hits" ] && ok "git status: active mode (no --all) shows no syscall on MathWorks inside repos" || { bad "git status: active mode syscalls on MathWorks (rc=$rc)"; show "$hits"; }
 fi
-# ---- round 5 B1 (Cassie; Jeff decision D3): ANY entry named MathWorks (folder, file or symlink) is excluded and never
+# ---- round 5 B1 (Cassie; Jeff 2026-11-25 (thumbs-up on D3 confirmation in Spence chat)): ANY entry named MathWorks (folder, file or symlink) is excluded and never
 # lstat'ed by git status, the same as tracked_excluded treats a tracked file named MathWorks ----
 t="$work/r5b1"; mkdir -p "$t"; m=$(fresh r5f); echo f > "$m/MathWorks"; mkdir -p "$m/d"; ln -s "$work/r5b1" "$m/d/MathWorks"
 touch -h -d "@$((NOW-172800))" "$m/MathWorks" "$m/d/MathWorks"; mv "$m" "$t/r"
 out=$(run --all --scan "$t/r" --exclude MathWorks 2>&1); rc=$?
 [ $rc = 0 ] && grep -q "ok   $t/r" <<<"$out" && ok "B1 r5: an untracked 2-day-old FILE and a symlink named MathWorks are not dirty work (rc 0)" || { bad "B1 r5: file/symlink named MathWorks (want rc=0, got rc=$rc)"; show "$out"; }
 if command -v strace >/dev/null; then
-  strace -f -qq -e trace=%file -o "$t/trace" python3 -B "$dc" --now "$NOW" --all --scan "$t/r" --exclude MathWorks >/dev/null 2>&1; rc=$?
+  strace -f -qq -e trace=%file -o "$t/trace" timeout 60 python3 -B "$dc" --now "$NOW" --all --scan "$t/r" --exclude MathWorks >/dev/null 2>&1; rc=$?
   hits=$(grep -v 'execve(' "$t/trace" | grep -F "MathWorks")
   [ $rc = 0 ] && [ -z "$hits" ] && ok "B1 r5: strace shows no syscall on a file or symlink named MathWorks" || { bad "B1 r5: syscalls on a file/symlink named MathWorks (rc=$rc)"; show "$hits"; }
 fi
@@ -435,7 +435,7 @@ t="$work/r5"; mkdir -p "$t/x" "$t/A" "$t/MathWorks"; m=$(fresh r5r); commit_at "
 ln -s "$t/MathWorks/r" "$t/A/rel"
 out=$(run --all --scan "$t/x/./../A" --exclude MathWorks 2>&1); rc=$?
 [ $rc = 0 ] && grep -q "excluded $t/x/./../A/rel" <<<"$out" && ok "r5: '.' is skipped, so x/./.. walks back to the right folder (Q01)" || { bad "r5: '.' before '..' (want rc=0 excluded, got rc=$rc)"; show "$out"; }
-out=$(cd "$t" && python3 -B "$dc" --now "$NOW" --all --scan A --exclude MathWorks 2>&1); rc=$?
+out=$(cd "$t" && timeout 60 python3 -B "$dc" --now "$NOW" --all --scan A --exclude MathWorks 2>&1); rc=$?
 [ $rc = 0 ] && grep -q "excluded A/rel" <<<"$out" && ok "r5: a relative --scan is walked from the cwd (Q04)" || { bad "r5: relative --scan (want rc=0 excluded, got rc=$rc)"; show "$out"; }
 # chain N: head -> c/L1 -> ... -> c/L(N-1) -> a drifted repo outside MathWorks: N hops in all. The kernel allows 40.
 m=$(fresh r5c); commit_at "$m" 60 m1; commit_at "$m" 50 m2
@@ -453,5 +453,17 @@ m=$(fresh r5t); echo z > "$m/MathWorks"; git -C "$m" add MathWorks; git -C "$m" 
 echo more >> "$m/MathWorks"; touch -d "@$((NOW-7200))" "$m/MathWorks"
 out=$(run --all --repo "$m" --exclude MathWorks 2>&1); rc=$?
 [ $rc = 0 ] && grep -q "skip dirty check $m: it tracks files under MathWorks" <<<"$out" && ok "r5: a tracked FILE named MathWorks skips the dirty check (Q15)" || { bad "r5: tracked file named MathWorks (want rc=0 and a skip line, got rc=$rc)"; show "$out"; }
+# ---- round 6 (Cassie P03 P04 P05): the git-status pathspec takes every --exclude name, matches the name exactly ----
+# two names: an old untracked file under the SECOND name (MathWorks) is still pruned (P03)
+m=$(fresh r6two); mkdir -p "$m/skipme" "$m/MathWorks"; echo a > "$m/skipme/f"; echo b > "$m/MathWorks/g"
+touch -d "@$((NOW-172800))" "$m/skipme/f" "$m/MathWorks/g"
+out=$(run --all --repo "$m" --exclude skipme --exclude MathWorks 2>&1); rc=$?
+[ $rc = 0 ] && grep -q "ok   $m" <<<"$out" && ok "r6: git status prunes every --exclude name, not only the first (P03)" || { bad "r6: two --exclude names (want rc=0, got rc=$rc)"; show "$out"; }
+# near-names are NOT excluded: an old dirty MathWorksX (P04) and an old dirty lowercase mathworks (P05) still FAIL
+for n in MathWorksX mathworks; do
+  m=$(fresh "r6$n"); echo c > "$m/$n"; touch -d "@$((NOW-172800))" "$m/$n"
+  out=$(run --all --repo "$m" --exclude MathWorks 2>&1); rc=$?
+  [ $rc = 1 ] && grep -q "FAIL $m: dirty work" <<<"$out" && ok "r6: an old dirty $n is still checked (rc 1)" || { bad "r6: $n near-name (want rc=1 dirty FAIL, got rc=$rc)"; show "$out"; }
+done
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
