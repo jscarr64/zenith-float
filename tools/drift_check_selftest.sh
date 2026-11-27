@@ -417,8 +417,14 @@ for u in https://github.com.evil.com/jscarr64/zenith-float https://evilgithub.co
   i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
   allow "r7 B2: origin $u is another repo: skipped" 0 re:"skip $T/u$i-work/zf \(" nore:FAIL -- --scan "$T/u$i-work" "${A[@]}"
 done
+# what git itself treats as a local path (no ":" before the first "/") is skipped, even with a ":" later on;
+# a near name that only ends in "git" is another repo
+for u in /x/y:z/jscarr64/zenith-float ./a:b rel/a:b https://github.com/jscarr64/zenith-floatxgit; do
+  i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
+  allow "r7 B2: origin $u is another repo: skipped" 0 re:"skip $T/u$i-work/zf \(" nore:FAIL -- --scan "$T/u$i-work" "${A[@]}"
+done
 # an origin that cannot be read or parsed is an ERROR (rc 2), never a skip, and its URL is not printed
-for u in ftp://u:s3cret@github.com/jscarr64/zenith-float https:///jscarr64/zenith-float; do
+for u in ftp://u:s3cret@github.com/jscarr64/zenith-float https:///jscarr64/zenith-float u@v@github.com:jscarr64/zenith-float; do
   i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
   allow "r7 B2: origin $u cannot be parsed: ERROR" 2 re:"ERROR $T/u$i-work/zf: origin " nore:s3cret nore:"skip $T/u$i-work" -- --scan "$T/u$i-work" "${A[@]}"
 done
