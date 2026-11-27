@@ -31,21 +31,7 @@ gives rc 2; a child without `.git` (a plain dir, a bare repo) is skipped. An unr
 of a repository is reported once.
 
 Options: `drift_check.py --repo DIR | --scan DIR [--all] [--include DIR] [--include-file FILE]
-[--active-window-min 1440] [--max-ahead 1] [--max-age-min 30] [--exclude NAME] [--pre-commit] [--now EPOCH]`;
-`--exclude NAME` (repeatable) leaves out, and names as `excluded`, every `--scan` entry (DIR or child) with a path
-component NAME, as written or after following its symlinks; `--repo` / `--include` trees are never excluded.
-Nothing named NAME, and nothing under it, is ever stat'ed, listed or read (Cassie round 4):
-- A `--scan` DIR is judged before any isdir/listdir/stat on it.
-- Symlinks are followed by name only: the path is walked component by component, each name is checked before it
-  is touched, and a symlink's `readlink` string is spliced in and checked the same way (no `realpath`, no stat of
-  a target). `..` and absolute targets are walked as the kernel would. More than 40 hops is a symlink loop:
-  `--scan DIR is a symlink loop` or `ERROR CHILD is a symlink loop`, rc 2.
-- `git status` in a checked repo gets `-- ':(exclude,glob)**/NAME' ':(exclude,glob)**/NAME/**'` per NAME, so git
-  prunes any untracked or ignored entry named NAME (folder, file or symlink; Jeff 2026-11-25 (thumbs-up on D3 confirmation in Spence chat)) unread (checked with
-  strace). Correction: commit 68e4650e said "no behaviour change", but dropping `**/NAME` made git lstat a FILE or
-  symlink named NAME and count it as dirty work (Cassie r5 B1); 0829abcc restores it. Pathspec cannot stop git lstat'ing files the index TRACKS
-  under NAME, so a repo whose `git ls-files` (index only) lists such a file skips its dirty-work check, said as
-  `skip dirty check REPO: it tracks files under NAME`; its branch checks still run (they read `.git` only).
+[--active-window-min 1440] [--max-ahead 1] [--max-age-min 30] [--pre-commit] [--now EPOCH]`.
 `pr_done_check.py --repo OWNER/NAME [--since YYYY-MM-DD] [--limit 1000]` (GH=<gh binary>; GET calls only).
 `--max-age-min` and `--active-window-min` must be finite and >= 0 (`nan`, `inf` or a negative value gives rc 2).
 `--include-file` entries are paths as written, resolved against the current directory: use absolute paths.
@@ -81,17 +67,12 @@ fixture, so update that test in the same merge.
 
 `tools/drift_check_selftest.sh`, `tools/pr_done_check_selftest.sh` (mock gh that honours `--state` and `--limit`),
 `tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), `tools/rule_checks_daily_selftest.sh`,
-`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (261 mutants, including Cassie's
-16 round-1, 12 round-2, 25 round-3, 20 round-4, 25 round-5 and 5 round-6 rows; every one must be killed; a row's `\n` is a newline, and a
-mutant that hangs is killed after 15 min). Cassie's round-4 X18 (`--exclude "$x"` -> `--exclude="$x"`) is
-equivalent, not a row: argparse reads both forms the same. Her round-5 Q12 (`**/NAME/**` -> `**/NAME/*`) is
-equivalent too: beside `**/NAME`, strace shows the same pruning either way. Her round-6 P06 (`["--", "."]`) and P07 (the two specs swapped) are
-equivalent as well: an exclude-only pathspec implies `.`, and pathspec order does not matter. Her Q10 is adapted to the restored
-pathspec (drop the `**/NAME` form), and R4N17/R4N18 to the two-form spec line. Rows whose code was rewritten in round 4 were adapted to
-the new code with the same intent (D25, N03, Z13-Z15, W05, W15, W16, V10-V12, V16, and Cassie's X01, X04-X08,
-X10, X15, X16, X20). Each behavior landed as one red commit, then one fix commit. Test-only commits (56878368,
-50229306, bf438dca, b3b7a524, 89d7a4ec, 88dbde40 and the round-5 B2 cases) add cases for code that was already
-right; their red proof is the mutant each one kills, all in the sweep. full_gate.sh runs all six as step `rule-checks`.
+`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (178 mutants, including Cassie's review rows; every one must be killed; a row's `\n` is a newline, and a
+mutant that hangs is killed after 15 min). Every selftest run is capped at 60 s, so a hang fails its case fast.
+The rows for the retired `--exclude` mechanism (the step-by-step symlink walk, the git status pathspec and the
+tracked-file skip) were removed with it; D25, N03, W05 and X20 were adapted to the code that is left. Each behavior
+landed as one red commit, then one fix commit. Test-only commits add cases for code that was already right; their
+red proof is the mutant each one kills, all in the sweep. full_gate.sh runs all six as step `rule-checks`.
 
 ## Scoped gate (in the repo)
 
@@ -113,17 +94,11 @@ so once a day `tools/rule_checks_daily.sh` runs `drift_check.py --all` (every tr
 over every root and FAILs (rc 1) on any drift; rc 2 on no roots, a bad root or a git error.
 - Roots are dirs or quoted globs of dirs: on Pop `/mnt/hub/{paul,rusty,spence,vera}-work` and
   `/mnt/hub/home-moved/*`. Non-dir matches are ignored, but a glob that matches no directory at all is an error
-  (rc 2), so a mistyped root cannot silently drop out of the sweep. Wildcards are allowed in the last component
-  only (rc 2 otherwise): expanding `x/*/mw` would stat `x/MathWorks/mw` before any name check.
+  (rc 2), so a mistyped root cannot silently drop out of the sweep.
 - The same dir given twice (a literal and a glob, `./`, a symlink) is swept once, first spelling kept. A root nested
   inside another root is still listed as its own root; drift_check checks each repo once, so findings are not
   doubled.
-- Any root with a `MathWorks` path component, as written or after following its symlinks by name (the same
-  lexical walk as drift_check: `[ -L ]` and `readlink`, never `readlink -f` or a stat of a target), is left out
-  (named `excluded`). The pattern itself is judged before it is expanded, and each glob match before `[ -d ]`. A
-  root that is a symlink loop gives `root PATH is a symlink loop`, rc 2. The same names go to `drift_check --exclude`, so a scanned child folder named `MathWorks` is left out
-  too. Trees elsewhere whose git data lives in MathWorks are still read (read-only), like in the 15-minute run.
-- The summary line counts the FAIL (finding) and ERROR lines, roots and exclusions.
+- The summary line counts the FAIL (finding) and ERROR lines and the roots.
 
 ## 15-minute scheduler on Pop
 
@@ -133,7 +108,7 @@ A systemd **user** timer, the same pattern as `poprotate.timer`. No cron, no sys
 - `run.sh` runs copies of `drift_check.py` and `pr_done_check.py` pinned to one commit, kept in
   `/mnt/hub/spence-work/rule-checks-bin/<sha>/` with `SHA256SUMS`. It refuses to run if a hash does not match.
   It runs `drift_check.py --scan` (active mode) over `/mnt/hub/{paul,rusty,spence,vera}-work` with
-  `--include-file rule-checks-bin/include.txt` and `--exclude MathWorks`, then `pr_done_check.py` on `jscarr64/zenith-float` and
+  `--include-file rule-checks-bin/include.txt` then `pr_done_check.py` on `jscarr64/zenith-float` and
   `jscarr64/zenith-bound`. Output is appended to `/home/jsc64/pop-logs/spence/rule-checks/YYYY-MM-DD.log`.
 - Daily: `zf-rule-checks-daily.timer` (`OnCalendar=*-*-* 06:00`, `Persistent=true`) starts
   `zf-rule-checks-daily.service` (oneshot, `ExecStart=/mnt/hub/spence-work/rule-checks-bin/run-daily.sh`). It checks

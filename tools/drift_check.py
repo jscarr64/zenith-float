@@ -30,9 +30,6 @@ Active mode (Jeff 2026-11-25 3:55 PM CT: "limit the check to active work trees")
   old (a tip with no commit date is checked). Idle trees and branches are named as "skip".
   --all checks every scanned tree and every branch (the full sweep). --repo and --include trees are always checked
   in full.
---exclude NAME (repeatable): a --scan entry (DIR itself or a child) with a path component NAME, as given or after
-resolving symlinks, is left out and named "excluded" (the daily sweep passes MathWorks). --repo/--include are never
-excluded.
 Read-only: every git call uses --no-optional-locks and drops GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE/GIT_COMMON_DIR.
 --max-age-min and --active-window-min must be finite and >= 0 (nan, inf or a negative value is a usage error).
 rc 0 ok, 1 drift, 2 usage or git error (fail closed).
@@ -102,24 +99,9 @@ def branches(repo):
     return rows
 
 
-def tracked_excluded(repo, names):
-    """The first of NAMES that is a path component of a file in REPO's index, else None (reads .git only)."""
-    for p in git(repo, "ls-files", "-z").split("\0"):
-        for n in names:
-            if n in p.split("/"):
-                return n
-    return None
-
-
-def dirty_span(repo, names=()):
-    """(oldest, newest) mtime among dirty paths, (None, None) when clean. Any entry named in NAMES (folder, file
-    or symlink) and everything under it is left out by pathspec, so git prunes it unread (Cassie r4, r5 B1); a
-    caller must first skip a repo that TRACKS files there (tracked_excluded), since pathspec cannot stop git
-    reading those."""
-    spec = ["--"]  # exclude-only pathspecs imply "."
-    for n in names:  # an entry named NAME (folder, file or symlink), and everything under it (Cassie r5 B1)
-        spec += [":(exclude,glob)**/%s" % n, ":(exclude,glob)**/%s/**" % n]
-    out = git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none", *spec)
+def dirty_span(repo):
+    """(oldest, newest) mtime among dirty paths, (None, None) when clean."""
+    out = git(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none")
     entries = out.split("\0")
     oldest = newest = None
     i = 0
@@ -145,7 +127,7 @@ def dirty_span(repo, names=()):
     return oldest, newest
 
 
-def activity(repo, now, window, max_age, names=()):
+def activity(repo, now, window, max_age):
     """(active?, reason) for a --scan tree. Anything unreadable counts as active (fail closed)."""
     try:
         gd = git(repo, "rev-parse", "--absolute-git-dir").strip()
@@ -154,9 +136,7 @@ def activity(repo, now, window, max_age, names=()):
             p = os.path.join(gd, f)
             if os.path.exists(p):
                 times.append(os.stat(p).st_mtime)
-        oldest = newest = None
-        if not tracked_excluded(repo, names):
-            oldest, newest = dirty_span(repo, names)
+        oldest, newest = dirty_span(repo)
     except (GitError, OSError, ValueError) as e:
         return True, "activity unknown, checked (%s)" % str(e).splitlines()[0][:120]
     if newest is not None and now - newest < max_age:
@@ -169,40 +149,6 @@ def activity(repo, now, window, max_age, names=()):
     if now - last <= window:
         return True, "last change %d s ago" % (now - last)
     return False, "idle: last change %d s ago (window %d s)" % (now - last, window)
-
-
-LOOP = "loop"  # excluded()'s answer for a path whose symlinks never end
-
-
-def excluded(path, names):
-    """LOOP when PATH's symlinks never end (more than 40 hops); else True when PATH, as written or followed symlink by symlink, has a path component in NAMES.
-    Decided from names and readlink strings only (Cassie r4): each component is checked BEFORE it is
-    touched, and a symlink's target string is spliced in and checked the same way, so nothing named in
-    NAMES, and nothing under it, is ever stat'ed, listed or read."""
-    todo = os.path.join(os.getcwd(), path).split(os.sep)[::-1]  # a stack of components still to walk
-    cur, hops = os.sep, 0
-    while todo:
-        c = todo.pop()
-        if c in ("", "."):
-            continue
-        if c == "..":
-            cur = os.path.dirname(cur)
-            continue
-        if c in names:
-            return True
-        nxt = os.path.join(cur, c)
-        try:
-            link = os.readlink(nxt)  # never follows NXT itself; CUR is already free of symlinks
-        except OSError:
-            cur = nxt  # not a symlink, missing or unreadable: go on by name
-            continue
-        hops += 1
-        if hops > 40:
-            return LOOP
-        if os.path.isabs(link):
-            cur = os.sep
-        todo.extend(link.split(os.sep)[::-1])
-    return False
 
 
 def head_state(repo):
@@ -218,7 +164,7 @@ def head_state(repo):
         return True, sha
 
 
-def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=None, window=None, names=()):
+def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=None, window=None):
     """seen: set of (common git dir, branch) already checked; linked worktrees share branches, report each once.
     window: None checks every branch; else only the HEAD branch and branches whose tip is at most window old."""
     bad = 0
@@ -261,12 +207,7 @@ def check_repo(repo, now, max_ahead, max_age, report, pre_commit=False, seen=Non
             report("FAIL %s detached HEAD: %d commits not on any remote ref (max %d)" % (repo, n, max_ahead)); bad = 1
         elif n and now - oldest > max_age:
             report("FAIL %s detached HEAD: unpushed commit %d s old (max %d s)" % (repo, now - oldest, max_age)); bad = 1
-    n = tracked_excluded(repo, names)
-    if n:
-        report("skip dirty check %s: it tracks files under %s (git status would read them)" % (repo, n))
-        d = None
-    else:
-        d, _ = dirty_span(repo, names)
+    d, _ = dirty_span(repo)
     if d is not None and now - d > max_age:
         report("FAIL %s: dirty work %d s old (max %d s)" % (repo, int(now - d), max_age)); bad = 1
     if not bad:
@@ -286,7 +227,6 @@ def main(argv=None):
     ap.add_argument("--include", action="append", default=[], help="a work tree always checked (repeatable)")
     ap.add_argument("--include-file", action="append", default=[], help="file of work trees always checked")
     ap.add_argument("--active-window-min", type=float, default=1440)
-    ap.add_argument("--exclude", action="append", default=[], help="NAME: a --scan entry with this path component is left out")
     a = ap.parse_args(argv)
     report = lambda s: print("drift_check: " + s)
     now = time.time() if a.now is None else a.now
@@ -314,15 +254,8 @@ def main(argv=None):
             print("drift_check: %s is not the top of a git work tree" % r, file=sys.stderr)
             return 2
         repos.append((r, None))
-    unreadable, loops = [], []
+    unreadable = []
     for d in a.scan:
-        why = excluded(d, a.exclude)  # before any isdir/listdir/stat on it (Cassie r4 B1)
-        if why == LOOP:
-            print("drift_check: --scan %s is a symlink loop" % d, file=sys.stderr)
-            return 2
-        if why:
-            report("excluded %s (--exclude)" % d)
-            continue
         if not os.path.isdir(d):
             print("drift_check: %s is not a directory" % d, file=sys.stderr)
             return 2
@@ -332,13 +265,6 @@ def main(argv=None):
             print("drift_check: --scan %s cannot be read: %s" % (d, e), file=sys.stderr)
             return 2
         for c in [d] + sorted(os.path.join(d, c) for c in names):
-            why = excluded(c, a.exclude)
-            if why == LOOP:
-                loops.append(c)
-                continue
-            if why:
-                report("excluded %s (--exclude)" % c)
-                continue
             try:
                 os.lstat(os.path.join(c, ".git"))
             except (FileNotFoundError, NotADirectoryError):
@@ -357,8 +283,6 @@ def main(argv=None):
     seen = set()
     for c in unreadable:
         print("drift_check: ERROR %s has a .git but is not a readable work tree" % c, file=sys.stderr)
-    for c in loops:
-        print("drift_check: ERROR %s is a symlink loop" % c, file=sys.stderr)
     done = set()
     checked = skipped = 0
     try:
@@ -369,20 +293,20 @@ def main(argv=None):
             done.add(key)
             win = None
             if how == "scan" and not a.all:
-                act, why = activity(r, now, window, max_age, a.exclude)
+                act, why = activity(r, now, window, max_age)
                 if not act:
                     report("skip %s (%s)" % (r, why)); skipped += 1
                     continue
                 win = window
             checked += 1
-            bad |= check_repo(r, now, a.max_ahead, max_age, report, a.pre_commit, seen, win, a.exclude)
+            bad |= check_repo(r, now, a.max_ahead, max_age, report, a.pre_commit, seen, win)
     except GitError as e:
         print("drift_check: %s" % e, file=sys.stderr)
         return 2
     print("drift_check: %s (%d repo(s) checked, %d idle skipped, max %d ahead, max age %g min, %s)"
           % ("FAIL" if bad else "ok", checked, skipped, a.max_ahead, a.max_age_min,
              "all work trees" if a.all else "active window %g min" % a.active_window_min))
-    if unreadable or loops:
+    if unreadable:
         return 2
     return 1 if bad else 0
 
