@@ -347,15 +347,17 @@ allow() {
   for x in "${nres[@]+"${nres[@]}"}"; do grep -Eq -- "$x" <<<"$out" && good=0; done
   if [ $good = 1 ]; then ok "allowlist: $name (rc=$rc)"; else bad "allowlist: $name (want rc=$want, got rc=$rc)"; show "$out"; fi
 }
+# a clean zenith-float clone in its own agent folder: a skip case scans it too, so the allowlist matches something
+zf "$T/anchor-work/zf" "$ZF"; A=(--scan "$T/anchor-work")
 allow "zero roots: usage error" 2 re:'give --repo or --scan' --
 mkdir -p "$T/empty-work"
 allow "an empty agent folder: nothing checked" 0 re:'\(0 repo\(s\) checked' -- --scan "$T/empty-work"
 zf "$T/a-work/acc" https://github.com/jscarr64/accumath.git dirty
-allow "a non-zenith-float origin is skipped, even with old dirty work" 0 re:"skip $T/a-work/acc \(origin " nore:FAIL -- --scan "$T/a-work"
+allow "a non-zenith-float origin is skipped, even with old dirty work" 0 re:"skip $T/a-work/acc \(origin " nore:FAIL -- --scan "$T/a-work" "${A[@]}"
 zf "$T/b-work/zb" https://github.com/jscarr64/zenith-bound.git ahead
-allow "a zenith-bound origin is skipped, even 2 ahead" 0 re:"skip $T/b-work/zb \(origin " nore:FAIL -- --scan "$T/b-work"
+allow "a zenith-bound origin is skipped, even 2 ahead" 0 re:"skip $T/b-work/zb \(origin " nore:FAIL -- --scan "$T/b-work" "${A[@]}"
 zf "$T/c-work/loc" - dirty
-allow "a local-path origin is skipped" 0 re:"skip $T/c-work/loc \(origin " nore:FAIL -- --scan "$T/c-work"
+allow "a local-path origin is skipped" 0 re:"skip $T/c-work/loc \(origin " nore:FAIL -- --scan "$T/c-work" "${A[@]}"
 zf "$T/d-work/sub/deep" "$ZF" dirty
 allow "a zenith-float clone two levels down is not seen" 0 re:'\(0 repo\(s\) checked' nore:deep -- --scan "$T/d-work"
 zf "$T/e-real/zf" "$ZF" dirty; ln -s "$T/e-real" "$T/e-work"
@@ -377,11 +379,60 @@ done
 for u in https://github.com/jscarr64/zenith-float-old.git https://github.com/other/zenith-float.git \
          https://gitlab.com/jscarr64/zenith-float.git https://github.com/jscarr64/zenith-float/x.git none; do
   i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
-  allow "origin $u is not zenith-float: skipped" 0 re:"skip $T/u$i-work/zf \(" nore:FAIL -- --scan "$T/u$i-work"
+  allow "origin $u is not zenith-float: skipped" 0 re:"skip $T/u$i-work/zf \(" nore:FAIL -- --scan "$T/u$i-work" "${A[@]}"
 done
 # the agent folder itself is filtered the same way, and --repo is never filtered (the pre-commit hook uses it)
 zf "$T/acc-as-root" https://github.com/jscarr64/accumath.git ahead
-allow "a non-zenith-float --scan DIR itself is skipped" 0 re:"skip $T/acc-as-root \(" nore:FAIL -- --scan "$T/acc-as-root"
+allow "a non-zenith-float --scan DIR itself is skipped" 0 re:"skip $T/acc-as-root \(" nore:FAIL -- --scan "$T/acc-as-root" "${A[@]}"
 allow "--repo is checked whatever its origin" 1 re:"FAIL $T/acc-as-root w: 2 commits ahead" -- --repo "$T/acc-as-root"
+# ---- round 7 B1 (Cassie): --only-origin is trimmed and lower-cased, must be OWNER/NAME (else rc 2), and matching
+# none of the work trees under --scan is an ERROR (rc 2), not a silent ok ----
+for o in JScarr64/Zenith-Float " jscarr64/zenith-float "; do
+  out=$(run --only-origin "$o" --scan "$T/g-work" 2>&1); rc=$?
+  [ $rc = 1 ] && grep -q "FAIL $T/g-work/zf w: 2 commits ahead" <<<"$out" && ok "r7 B1: --only-origin '$o' is normalized: checked (rc=1)" || { bad "r7 B1: --only-origin '$o' (want rc=1 FAIL, got rc=$rc)"; show "$out"; }
+done
+for o in https://github.com/jscarr64/zenith-float jscarr64/zenith-float.git jscarr64/ jscarr64 /zenith-float a/b/c "" "jscarr64/zenith float"; do
+  out=$(run --only-origin "$o" --scan "$T/g-work" 2>&1); rc=$?
+  [ $rc = 2 ] && grep -q -- "--only-origin must be OWNER/NAME" <<<"$out" && ok "r7 B1: malformed --only-origin '$o': rc 2" || { bad "r7 B1: malformed --only-origin '$o' (want rc=2, got rc=$rc)"; show "$out"; }
+done
+allow "r7 B1: work trees under --scan but none matches: ERROR rc 2" 2 re:"ERROR --only-origin jscarr64/zenith-float matched none of 1 work tree" -- --scan "$T/a-work"
+allow "r7 B1: an empty agent folder beside a zf one is fine" 0 -- --scan "$T/empty-work" --scan "$T/h-work"
+# ---- round 7 B2 (Cassie): every real URL form of our repo is CHECKED (origin read with git ls-remote --get-url, so
+# insteadOf counts); credentials in the URL are never printed ----
+for u in ssh://git@github.com:22/jscarr64/zenith-float.git git@github.com:jscarr64/zenith-float.git/ \
+         https://github.com/jscarr64/zenith-float/ https://www.github.com/jscarr64/zenith-float \
+         https://user:s3cret@github.com/jscarr64/zenith-float.git https://x-access-token:ghs_s3cret@github.com/jscarr64/zenith-float \
+         http://github.com/jscarr64/zenith-float git://github.com/jscarr64/zenith-float.git ssh://github.com/jscarr64/zenith-float \
+         github.com:jscarr64/zenith-float HTTPS://GITHUB.COM/JSCARR64/ZENITH-FLOAT.GIT; do
+  i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
+  allow "r7 B2: origin $u is zenith-float: checked" 1 re:"FAIL $T/u$i-work/zf w: 2 commits ahead" nore:s3cret -- --scan "$T/u$i-work"
+done
+i=$((i+1)); zf "$T/u$i-work/zf" gh:jscarr64/zenith-float ahead; git -C "$T/u$i-work/zf" config url.https://github.com/.insteadOf gh:
+allow "r7 B2: an insteadOf alias that resolves to zenith-float: checked" 1 re:"FAIL $T/u$i-work/zf w: 2 commits ahead" -- --scan "$T/u$i-work"
+# clearly another repo: skipped (look-alike hosts, github.com mid-URL, extra or empty parts, near names, a bare path)
+for u in https://github.com.evil.com/jscarr64/zenith-float https://evilgithub.com/jscarr64/zenith-float \
+         https://evil.com/github.com/jscarr64/zenith-float https://github.com/jscarr64/zenith.git-float \
+         https://github.com/jscarr64/zenith-floatgit https://github.com/jscarr64/zenith-float.git.git \
+         https://github.com//zenith-float https://github.com/jscarr64/ jscarr64/zenith-float file:///x/jscarr64/zenith-float; do
+  i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
+  allow "r7 B2: origin $u is another repo: skipped" 0 re:"skip $T/u$i-work/zf \(" nore:FAIL -- --scan "$T/u$i-work" "${A[@]}"
+done
+# an origin that cannot be read or parsed is an ERROR (rc 2), never a skip, and its URL is not printed
+for u in ftp://u:s3cret@github.com/jscarr64/zenith-float https:///jscarr64/zenith-float; do
+  i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
+  allow "r7 B2: origin $u cannot be parsed: ERROR" 2 re:"ERROR $T/u$i-work/zf: origin " nore:s3cret nore:"skip $T/u$i-work" -- --scan "$T/u$i-work" "${A[@]}"
+done
+i=$((i+1)); zf "$T/u$i-work/zf" "$ZF" ahead; git -C "$T/u$i-work/zf" config --add remote.origin.url https://github.com/other/x.git
+allow "r7 B2: two origin url values: ERROR" 2 re:"ERROR $T/u$i-work/zf: origin " nore:"skip $T/u$i-work" -- --scan "$T/u$i-work" "${A[@]}"
+i=$((i+1)); zf "$T/u$i-work/zf" "$ZF" ahead; git -C "$T/u$i-work/zf" config --unset remote.origin.url
+allow "r7 B2: an origin remote with no url: ERROR" 2 re:"ERROR $T/u$i-work/zf: origin " nore:"skip $T/u$i-work" -- --scan "$T/u$i-work" "${A[@]}"
+# ---- round 7 B3 CR06 (Cassie): the work-tree check runs before the origin check, so a broken .git is the work-tree ERROR ----
+mkdir -p "$T/k-work/broken"; echo "gitdir: $work/no-such-gitdir" > "$T/k-work/broken/.git"
+allow "r7 CR06: a broken .git under --only-origin: work-tree ERROR, rc 2" 2 re:"ERROR $T/k-work/broken has a .git but is not a readable work tree" nore:"skip $T/k-work/broken" -- --scan "$T/k-work" "${A[@]}"
+# ---- round 7 N1 (Cassie): a child that is a symlink loop fails closed (rc 2) with the unreadable-work-tree ERROR;
+# a --scan DIR that is a loop is "not a directory" ----
+mkdir -p "$T/lp-work"; ln -s l "$T/lp-work/l"
+allow "r7 N1: a symlink-loop child: rc 2, ERROR line" 2 re:"ERROR $T/lp-work/l has a .git but is not a readable work tree" -- --scan "$T/lp-work" "${A[@]}"
+allow "r7 N1: a --scan DIR that is a symlink loop: rc 2" 2 re:"lp-work/l is not a directory" -- --scan "$T/lp-work/l"
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]

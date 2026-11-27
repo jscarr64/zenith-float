@@ -100,5 +100,8 @@ out=$(timeout 60 bash "$daily" "$work/al/*-work" -- --now "$NOW" --only-origin j
 [ $rc = 1 ] && grep -q "FAIL $work/al/b-work/zf " <<<"$out" && grep -q "skip $work/al/a-work/acc (" <<<"$out" && ! grep -q "FAIL $work/al/a-work" <<<"$out" && ok "allowlist: the sweep FAILs the idle zenith-float clone and skips the other origin (rc=1)" || { bad "allowlist: sweep with --only-origin (want rc=1, zf FAIL, acc skip; got rc=$rc)"; show "$out"; }
 mkdir -p "$work/al0"
 check "allowlist: zero agent folders: the root glob matches no directory, rc 2" 2 re:'matches no directory' -- "$work/al0/*-work"
+# ---- round 7 N1 (Cassie): a root that is a symlink loop is "not a directory", rc 2 ----
+mkdir -p "$work/lp"; ln -s l "$work/lp/l"
+check "r7 N1: a root that is a symlink loop: rc 2" 2 re:"^rule_checks_daily: root $work/lp/l is not a directory" -- "$work/lp/l" "$work/r1/clean"
 echo "rule_checks_daily_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
