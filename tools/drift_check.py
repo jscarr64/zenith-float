@@ -112,9 +112,10 @@ def tracked_excluded(repo, names):
 
 
 def dirty_span(repo, names=()):
-    """(oldest, newest) mtime among dirty paths, (None, None) when clean. A folder named in NAMES is left out by
-    pathspec, so git prunes it unread (Cassie r4); a caller must first skip a repo that TRACKS files there
-    (tracked_excluded), since pathspec cannot stop git reading those."""
+    """(oldest, newest) mtime among dirty paths, (None, None) when clean. Any entry named in NAMES (folder, file
+    or symlink) and everything under it is left out by pathspec, so git prunes it unread (Cassie r4, r5 B1); a
+    caller must first skip a repo that TRACKS files there (tracked_excluded), since pathspec cannot stop git
+    reading those."""
     spec = ["--"]  # exclude-only pathspecs imply "."
     for n in names:  # an entry named NAME (folder, file or symlink), and everything under it (Cassie r5 B1)
         spec += [":(exclude,glob)**/%s" % n, ":(exclude,glob)**/%s/**" % n]
