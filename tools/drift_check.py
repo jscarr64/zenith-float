@@ -227,6 +227,8 @@ def main(argv=None):
     ap.add_argument("--include", action="append", default=[], help="a work tree always checked (repeatable)")
     ap.add_argument("--include-file", action="append", default=[], help="file of work trees always checked")
     ap.add_argument("--active-window-min", type=float, default=1440)
+    ap.add_argument("--only-origin", metavar="OWNER/NAME", default=None,
+                    help="--scan checks only work trees whose remote.origin.url is GitHub OWNER/NAME")
     a = ap.parse_args(argv)
     report = lambda s: print("drift_check: " + s)
     now = time.time() if a.now is None else a.now
