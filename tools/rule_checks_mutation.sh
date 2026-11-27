@@ -82,7 +82,7 @@ H12|.githooks/pre-push|1|rc=1; continue ==> continue
 H13|.githooks/pre-push|1|n=$((n + 1)); t="$tmp/$n" ==> t="$tmp/$lsha"
 N01|tools/drift_check.py|1|except (FileNotFoundError, NotADirectoryError): ==> except OSError:
 N02|tools/drift_check.py|1|unreadable.append(c) ==> pass
-N03|tools/drift_check.py|1|    if unreadable: ==>     if False:
+N03|tools/drift_check.py|1|    if unreadable or badorigin or nomatch: ==>     if badorigin or nomatch:
 P01|tools/pr_done_check.py|1|LANDED = ("identical", "behind") ==> LANDED = ("identical",)
 P02|tools/pr_done_check.py|1|LANDED = ("identical", "behind") ==> LANDED = ("behind",)
 P03|tools/pr_done_check.py|1|LANDED = ("identical", "behind") ==> LANDED = ("identical", "behind", "ahead")
@@ -191,20 +191,52 @@ R4D19|tools/rule_checks_daily.sh|1|  seen[$k]=1; uniq+=("$r") ==>   uniq+=("$r")
 R4D20|tools/rule_checks_daily.sh|1|roots=("${uniq[@]+"${uniq[@]}"}") ==> :
 R5Q21|tools/rule_checks_daily.sh|1|  k=$(readlink -f -- "$r"); ==>   k=$(realpath -s -- "$r");
 R5Q25|tools/rule_checks_daily.sh|1|  k=$(readlink -f -- "$r"); ==>   k=${r%/};
-L01|tools/drift_check.py|1|elif a.only_origin and github_repo(c) != a.only_origin: ==> elif False:
-L02|tools/drift_check.py|1|elif a.only_origin and github_repo(c) != a.only_origin: ==> elif a.only_origin and github_repo(c) == a.only_origin:
-L03|tools/drift_check.py|1|report("skip %s (origin is not GitHub %s)" % (c, a.only_origin)) ==> repos.append((c, "scan"))
-L04|tools/drift_check.py|1|GITHUB = ("https://github.com/", ==> GITHUB = (
-L05|tools/drift_check.py|1|"https://github.com/", "git@github.com:", ==> "https://github.com/",
-L06|tools/drift_check.py|1|, "ssh://git@github.com/") ==> )
-L07|tools/drift_check.py|1|if u.lower().startswith(p): ==> if u.startswith(p):
-L08|tools/drift_check.py|1|return (r[:-4] if r.endswith(".git") else r).lower() ==> return r.lower()
-L09|tools/drift_check.py|1|return (r[:-4] if r.endswith(".git") else r).lower() ==> return (r[:-4] if r.endswith(".git") else r)
-L10|tools/drift_check.py|1|    except GitError:\n        return None\n    for p in GITHUB: ==>     except GitError:\n        raise\n    for p in GITHUB:
-L11|tools/drift_check.py|1|r = u[len(p):] ==> r = u[len(p) + 1:]
-L12|tools/drift_check.py|1|"git@github.com:" ==> "git@github.com/"
-L13|tools/drift_check.py|1|return (r[:-4] if ==> return (r[:-3] if
-L14|tools/drift_check.py|1|u = git(repo, "config", "--get", "remote.origin.url").strip() ==> u = git(repo, "config", "--get", "remote.upstream.url").strip()
+CR01|tools/drift_check.py|1|    if host not in HOSTS: ==>     if not any(h in u.lower() for h in HOSTS):
+CR02|tools/drift_check.py|1|p = p[:-4] if p.lower().endswith(".git") else p ==> p = p.replace(".git", "")
+CR03|tools/drift_check.py|1|    u = url.strip() ==>     u = url
+CR04|tools/drift_check.py|1|        return ""  # a local path ==>         return u.lower()  # a local path
+CR05|tools/drift_check.py|1|    return p.lower()\n ==>     return "/".join(p.split("/")[:2]).lower()\n
+CR06|tools/drift_check.py|1|            if not is_work_tree(c):  # before the origin check: a broken .git is this ERROR (Cassie r7 CR06)\n                unreadable.append(c)\n                continue\n            trees += 1\n            if only is not None:\n                try:\n                    r = origin_repo(c)\n                except GitError as e:\n                    badorigin.append((c, str(e)))\n                    continue\n ==>             trees += 1\n            if only is not None:\n                try:\n                    r = origin_repo(c)\n                except GitError as e:\n                    badorigin.append((c, str(e)))\n                    continue\n            if not is_work_tree(c):\n                unreadable.append(c)\n                continue\n
+CR07|tools/drift_check.py|1|                if r != only: ==>                 if r and r != only:
+CR08|tools/drift_check.py|1|report("skip %s (origin is not GitHub %s)" % (c, only)) ==> pass
+CR09|tools/drift_check.py|1|p = p[:-4] if p.lower().endswith(".git") else p ==> p = p[:-4] if p.lower().endswith("git") else p
+CR10|tools/drift_check.py|1|for c in [d] + sorted( ==> for c in sorted(
+CR11|tools/drift_check.py|1|        raise GitError("origin url cannot be read") ==>         return "jscarr64/zenith-float"
+CR12|tools/drift_check.py|1|HOSTS = ("github.com", "www.github.com") ==> HOSTS = ("github.com",)
+R701|tools/drift_check.py|1|only = a.only_origin.strip().lower() ==> only = a.only_origin
+R702|tools/drift_check.py|1|only = a.only_origin.strip().lower() ==> only = a.only_origin.lower()
+R703|tools/drift_check.py|1|only = a.only_origin.strip().lower() ==> only = a.only_origin.strip()
+R704|tools/drift_check.py|1|if not OWNER_NAME.fullmatch(only) or only.endswith(".git"): ==> if not OWNER_NAME.fullmatch(only):
+R705|tools/drift_check.py|1|if not OWNER_NAME.fullmatch(only) or only.endswith(".git"): ==> if only.endswith(".git"):
+R706|tools/drift_check.py|1|OWNER_NAME = re.compile(r"[a-z0-9-]+/[a-z0-9._-]+") ==> OWNER_NAME = re.compile(r"[a-z0-9-]*/[a-z0-9._-]*")
+R707|tools/drift_check.py|1|OWNER_NAME = re.compile(r"[a-z0-9-]+/[a-z0-9._-]+") ==> OWNER_NAME = re.compile(r"[a-z0-9-]+/[a-z0-9._ -]+")
+R708|tools/drift_check.py|1|    if a.only_origin is not None: ==>     if a.only_origin:
+R709|tools/drift_check.py|1|nomatch = only is not None and trees and not matched ==> nomatch = False
+R710|tools/drift_check.py|1|nomatch = only is not None and trees and not matched ==> nomatch = only is not None and not matched
+R711|tools/drift_check.py|1|            matched += 1 ==>             pass
+R712|tools/drift_check.py|1|            trees += 1 ==>             pass
+R713|tools/drift_check.py|1|    if unreadable or badorigin or nomatch: ==>     if unreadable or nomatch:
+R714|tools/drift_check.py|1|    if unreadable or badorigin or nomatch: ==>     if unreadable or badorigin:
+R715|tools/drift_check.py|1|    if n != 1: ==>     if n > 2:
+R716|tools/drift_check.py|1|    if n != 1: ==>     if n < 1:
+R717|tools/drift_check.py|1|u = git(repo, "ls-remote", "--get-url", "origin") ==> u = git(repo, "config", "--get", "remote.origin.url")
+R718|tools/drift_check.py|1|if "origin" not in git(repo, "remote").split(): ==> if False:
+R719|tools/drift_check.py|1|        if scheme == "file": ==>         if False:
+R720|tools/drift_check.py|1|if scheme not in SCHEMES or not host: ==> if not host:
+R721|tools/drift_check.py|1|if scheme not in SCHEMES or not host: ==> if scheme not in SCHEMES:
+R722|tools/drift_check.py|1|    elif ":" not in u.split("/", 1)[0]: ==>     elif ":" not in u:
+R723|tools/drift_check.py|1|        if not m:\n            return None ==>         if not m:\n            return ""
+R724|tools/drift_check.py|1|    if host not in HOSTS: ==>     if False:
+R725|tools/drift_check.py|1|p = path[1:] if path.startswith("/") else path ==> p = path
+R726|tools/drift_check.py|1|p = p[:-1] if p.endswith("/") else p ==> p = p
+R727|tools/drift_check.py|1|p = p[:-4] if p.lower().endswith(".git") else p ==> p = p[:-4] if p.endswith(".git") else p
+R728|tools/drift_check.py|1|URL = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*)://(?:[^@/]*@)? ==> URL = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*)://
+R729|tools/drift_check.py|1|(?::[0-9]*)?(/.*)?") ==> (/.*)?")
+R730|tools/drift_check.py|1|SCP = re.compile(r"(?:[^@/:]*@)?([^/:@]+):(.*)") ==> SCP = re.compile(r"([^/:@]+):(.*)")
+R731|tools/drift_check.py|1|        raise GitError("origin url cannot be parsed") ==>         raise GitError("origin url cannot be parsed: " + u)
+R732|tools/drift_check.py|1|        raise GitError("origin has %d url values" % n) ==>         return ""
+R733|tools/drift_check.py|1|                    report("skip %s (origin is not GitHub %s)" % (c, only))\n                    continue ==>                     report("skip %s (origin is not GitHub %s)" % (c, only))
+R734|tools/drift_check.py|1|        print("drift_check: ERROR %s: %s" % (c, why), file=sys.stderr) ==>         pass
 T
 }
 one() {  # id file occ old new

@@ -32,11 +32,23 @@ of a repository is reported once.
 
 Options: `drift_check.py --repo DIR | --scan DIR [--all] [--include DIR] [--include-file FILE]
 [--active-window-min 1440] [--max-ahead 1] [--max-age-min 30] [--only-origin OWNER/NAME] [--pre-commit] [--now EPOCH]`.
-`--only-origin OWNER/NAME` (lower case) is the allowlist (Jeff 2026-11-27 4:42 PM CT: check only our own zenith-float
-folders): a `--scan` entry (DIR or a direct child) is checked only when its `remote.origin.url` is GitHub OWNER/NAME
-(`https://github.com/`, `git@github.com:` or `ssh://git@github.com/`, any case, `.git` optional). No origin, a local
-path, another host, owner or name: named as `skip PATH (origin is not GitHub OWNER/NAME)`. `--repo` and `--include`
-are never filtered (the pre-commit hook uses `--repo`).
+`--only-origin OWNER/NAME` is the allowlist (Jeff 2026-11-27 4:42 PM CT: check only our own zenith-float folders).
+It fails closed (Cassie r7 B1-B3):
+- The value is trimmed and lower-cased and must be exactly OWNER/NAME (`[a-z0-9-]+/[a-z0-9._-]+`, no `.git`), else rc 2.
+- A `--scan` entry (DIR or a direct child) is checked only when origin is GitHub OWNER/NAME. The URL is the one git
+  fetches from (`git ls-remote --get-url origin`, so `insteadOf` counts): `ssh://`, `git://`, `http://`, `https://`
+  (any user, token or port) or scp form `[user@]host:path`; host `github.com` or `www.github.com`; any case; an
+  optional trailing `/` and `.git`. The URL is never printed (it may hold a token).
+- Skipped, as `skip PATH (origin is not GitHub OWNER/NAME)`: no origin remote, a local path (git's rule: no `:`
+  before the first `/`) or `file://`, another host (look-alikes included), or a GitHub path that is not exactly
+  OWNER/NAME (extra or empty parts, near names, zenith-bound).
+- ERROR, rc 2, never a skip: an origin that cannot be read or parsed (an unknown scheme, an empty host, an origin
+  remote with no url) or that has two url values; and work trees found under `--scan` with none matching
+  (`ERROR --only-origin X matched none of N work tree(s) under --scan`). An empty agent folder is not a work tree.
+- The work-tree check runs first, so a broken `.git` is `ERROR PATH has a .git but is not a readable work tree`.
+  That message also covers a child that is a symlink loop (rc 2); a `--scan` DIR or daily root that is a loop is
+  `not a directory` (rc 2).
+- `--repo` and `--include` are never filtered (the pre-commit hook uses `--repo`).
 `pr_done_check.py --repo OWNER/NAME [--since YYYY-MM-DD] [--limit 1000]` (GH=<gh binary>; GET calls only).
 `--max-age-min` and `--active-window-min` must be finite and >= 0 (`nan`, `inf` or a negative value gives rc 2).
 `--include-file` entries are paths as written, resolved against the current directory: use absolute paths.
@@ -72,10 +84,13 @@ fixture, so update that test in the same merge.
 
 `tools/drift_check_selftest.sh`, `tools/pr_done_check_selftest.sh` (mock gh that honours `--state` and `--limit`),
 `tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), `tools/rule_checks_daily_selftest.sh`,
-`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (192 mutants, including Cassie's review rows and the L01-L14 allowlist rows; every one must be killed; a row's `\n` is a newline, and a
+`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (224 mutants, including Cassie's review rows, her r7 CR01-CR12 and the R701-R734 allowlist rows; every one must be killed; a row's `\n` is a newline, and a
 mutant that hangs is killed after 15 min). Every selftest run is capped at 60 s, so a hang fails its case fast.
 The rows for the retired `--exclude` mechanism (the step-by-step symlink walk, the git status pathspec and the
-tracked-file skip) were removed with it; D25, N03, W05 and X20 were adapted to the code that is left. Each behavior
+tracked-file skip) were removed with it; D25, N03, W05 and X20 were adapted to the code that is left. The r7 rewrite
+of the origin check replaced L01-L14 with R701-R734, and Cassie's CR rows are adapted to it with the same intent
+(CR01 host substring, CR02/CR09 the .git strip, CR04 the local-path return, CR05 extra parts, CR06 the work-tree
+check order, CR07 the skip test, CR11 a read error, CR12 www.). Each behavior
 landed as one red commit, then one fix commit. Test-only commits add cases for code that was already right; their
 red proof is the mutant each one kills, all in the sweep. full_gate.sh runs all six as step `rule-checks`.
 
