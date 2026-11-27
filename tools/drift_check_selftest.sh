@@ -42,7 +42,9 @@ fresh() {
   git -C "$d/r" push -q -u origin w 2>/dev/null
   echo "$d/r"
 }
-run() { python3 -B "$dc" --now "$NOW" "$@"; }
+# every run is capped at 60 s (normal runs take about 1 s), so a walk that never ends FAILs that case (rc 124)
+# instead of hanging the selftest (Cassie r5 Q26)
+run() { timeout 60 python3 -B "$dc" --now "$NOW" "$@"; }
 # ---- ahead cap: FAIL when a branch or detached HEAD is more than 1 commit ahead of what is pushed ----
 r=$(fresh a0);  expect "0 ahead, clean"                    0 run --repo "$r"
 r=$(fresh a1);  commit_at "$r" 600 c1

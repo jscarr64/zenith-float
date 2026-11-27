@@ -35,7 +35,9 @@ tree() {
   touch -d "@$((NOW-172800))" "$d/.git/index" "$d/.git/logs/HEAD"
 }
 # sweep ARGS... : run the daily sweep with a fixed --now
-sweep() { bash "$daily" "$@" -- --now "$NOW"; }
+# every sweep is capped at 60 s (normal sweeps take a few s), so a walk that never ends FAILs that case (rc 124)
+# instead of hanging the selftest (Cassie r5 Q23)
+sweep() { timeout 60 bash "$daily" "$@" -- --now "$NOW"; }
 # check NAME WANT_RC [re:REGEX]... [nore:REGEX]... -- ARGS...
 check() {
   local name=$1 want=$2; shift 2; local res=() nres=()
