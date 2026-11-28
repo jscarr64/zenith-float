@@ -12,6 +12,7 @@ base="${ZF_SCRATCH:-$HOME/.cache/zenith-float}"; mkdir -p "$base" || exit 2   # 
 work=$(mktemp -d "$base/mutation.XXXXXX") || exit 2
 trap 'rm -rf "$work"' EXIT
 # id | file | occurrence | old ==> new        (a literal \n in old or new is a newline)
+# Equivalent, so not a row: Cassie r8 M11, OWNER_NAME += '$'. fullmatch after strip already anchors the end.
 rows() { cat <<'T'
 A01|tools/drift_check.py|1|if now - last <= window: ==> if now - last < window:
 A02|tools/drift_check.py|1|if now - last <= window: ==> if now - last <= window + 1:
@@ -237,6 +238,17 @@ R731|tools/drift_check.py|1|        raise GitError("origin url cannot be parsed"
 R732|tools/drift_check.py|1|        raise GitError("origin has %d url values" % n) ==>         return ""
 R733|tools/drift_check.py|1|                    report("skip %s (origin is not GitHub %s)" % (c, only))\n                    continue ==>                     report("skip %s (origin is not GitHub %s)" % (c, only))
 R734|tools/drift_check.py|1|        print("drift_check: ERROR %s: %s" % (c, why), file=sys.stderr) ==>         pass
+M01|tools/drift_check.py|1|if not OWNER_NAME.fullmatch(only) or only.endswith(".git"): ==> if not OWNER_NAME.match(only) or only.endswith(".git"):
+M02|tools/drift_check.py|1|if not OWNER_NAME.fullmatch(only) or only.endswith(".git"): ==> if not OWNER_NAME.search(only) or only.endswith(".git"):
+M03|tools/drift_check.py|1|m = URL.fullmatch(u) ==> m = URL.match(u)
+M04|tools/drift_check.py|1|m = URL.fullmatch(u) ==> m = URL.search(u)
+M05|tools/drift_check.py|1|        m = SCP.fullmatch(u) ==>         m = SCP.search(u)
+M06|tools/drift_check.py|1|if "origin" not in git(repo, "remote").split(): ==> if "origin" not in git(repo, "remote"):
+M07|tools/drift_check.py|1|    if host not in HOSTS: ==>     if host.rstrip(".") not in HOSTS:
+M08|tools/drift_check.py|1|    p = path[1:] if path.startswith("/") else path ==>     p = (path.split("?")[0].split("#")[0])[1:] if path.startswith("/") else path.split("?")[0].split("#")[0]
+M09|tools/drift_check.py|1|scheme, host, path = m.group(1).lower(), m.group(2).lower(), m.group(3) or "" ==> scheme, host, path = m.group(1), m.group(2).lower(), m.group(3) or ""
+M10|tools/drift_check.py|1|print("drift_check: ERROR --only-origin %s matched none of %d work tree(s) under --scan" % (only, trees), ==> pass  #
+M12|tools/drift_check.py|1|u = git(repo, "ls-remote", "--get-url", "origin") ==> u = git(repo, "ls-remote", "--get-url", "origin").split("#")[0]
 T
 }
 one() {  # id file occ old new

@@ -84,15 +84,22 @@ fixture, so update that test in the same merge.
 
 `tools/drift_check_selftest.sh`, `tools/pr_done_check_selftest.sh` (mock gh that honours `--state` and `--limit`),
 `tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), `tools/rule_checks_daily_selftest.sh`,
-`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (224 mutants, including Cassie's review rows, her r7 CR01-CR12 and the R701-R734 allowlist rows; every one must be killed; a row's `\n` is a newline, and a
+`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (235 mutants, including Cassie's review rows, her r7 CR01-CR12, the R701-R734 allowlist rows and her r8 M01-M10 and M12; every one must be killed; a row's `\n` is a newline, and a
 mutant that hangs is killed after 15 min). Every selftest run is capped at 60 s, so a hang fails its case fast.
 The rows for the retired `--exclude` mechanism (the step-by-step symlink walk, the git status pathspec and the
 tracked-file skip) were removed with it; D25, N03, W05 and X20 were adapted to the code that is left. The r7 rewrite
 of the origin check replaced L01-L14 with R701-R734, and Cassie's CR rows are adapted to it with the same intent
 (CR01 host substring, CR02/CR09 the .git strip, CR04 the local-path return, CR05 extra parts, CR06 the work-tree
-check order, CR07 the skip test, CR11 a read error, CR12 www.). Each behavior
+check order, CR07 the skip test, CR11 a read error, CR12 www.). Cassie's r8 M11 (`OWNER_NAME` += `$`) is equivalent,
+not a row: `fullmatch` after `strip()` already anchors the end. Each behavior
 landed as one red commit, then one fix commit. Test-only commits add cases for code that was already right; their
 red proof is the mutant each one kills, all in the sweep. full_gate.sh runs all six as step `rule-checks`.
+
+## Follow-ups (Cassie r8, non-blocking; left alone)
+
+- `ssh://github.com:org/repo` and `@` inside userinfo are unparseable ERROR, not skip (Cassie r8 N1).
+- A daily sweep of a Team whose every `*-work` folder has no work trees is rc 0 with 0 repos checked (Cassie r8,
+  empty-Team). A typo'd Team with no `*-work` dirs is already rc 2 at the glob.
 
 ## Scoped gate (in the repo)
 
