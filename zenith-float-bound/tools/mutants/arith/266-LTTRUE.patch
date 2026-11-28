@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..36bb6ff 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -357,7 +357,7 @@ impl Ball {
+     /// `self < other` decided by exact endpoint comparison (CONTRACT 15.2, D14, 16.S1.11).
+     pub fn lt(&self, other: &Ball) -> Tri {
+         match endpoint_signs(self, other) {
+-            Some((Ordering::Less, _)) => Tri::True,
++            Some((Ordering::Less, _)) => Tri::Unknown,
+             // lo(a) >= hi(b): every point of `a` is >= every point of `b`, so `a < b` is certainly False, also when the
+             // balls only touch (R > 0, lo(a) = hi(b)).
+             Some((_, Ordering::Greater | Ordering::Equal)) => Tri::False,

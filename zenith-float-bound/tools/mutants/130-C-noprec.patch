@@ -1,0 +1,12 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -58,7 +58,7 @@
+         }
+         let p = match working_prec(self.mid(), x) {
+             Some(p) => p,
+-            None => return Tri::Unknown,
++            None => return Tri::False,
+         };
+         // d = mid - x, enclosed by [lo, hi]: both steps round in one direction and are monotone.
+         let hi = ExactNum::new(p)

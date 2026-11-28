@@ -6,8 +6,8 @@ Plan v2 step 1 (Jeff 2026-11-25: "push and merge as we go", "make sure PRs are c
 | Check | File | FAILS when | rc |
 |---|---|---|---|
 | Drift | `tools/drift_check.py` | a local branch or detached HEAD is **more than 1** commit ahead of what is pushed; the oldest unpushed commit is **older than 30 min**; the oldest dirty path (modified, deleted, untracked, not ignored, submodules included) is **older than 30 min**. Exactly 30 min passes. | 0 ok, 1 drift, 2 usage or git error |
-| Unpushed cap | `.githooks/pre-commit` -> `drift_check.py --pre-commit` | the current branch (or detached HEAD) already has **1** unpushed commit: push it first. An unborn branch has 0. | 0 / 1 / 2 (not in a work tree, git error) |
-| Pre-push | `.githooks/pre-push` | for each pushed ref, in a clean `--shared` clone checked out at the **pushed sha** (tags peeled): `tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..<sha>"` fails or is missing; `tools/no_suppress_scan.py` (when the pushed tree has it) fails; the clone cannot be made. No tests run, so a red-first commit pushes. | 0 / 1 |
+| Unpushed cap + library rules | `.githooks/pre-commit` -> `drift_check.py --pre-commit`, then #40's `rules_scan.sh --working`, `rules_scan.sh --count-only --no-rise HEAD`, `cargo fmt --check`, `cargo clippy -D warnings` | the current branch (or detached HEAD) already has **1** unpushed commit: push it first (an unborn branch has 0; a refusal or error stops the hook before the rules run); or any of #40's four rule steps fails (all four always run and report). | 0 / 1 / 2 (not in a work tree, git error) |
+| Pre-push | `.githooks/pre-push` | for each pushed ref, in a clean `--shared` clone checked out at the **pushed sha** (tags peeled): `tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..<sha>"` fails or is missing; `tools/no_suppress_scan.py` fails or is missing (required since #40 landed; it was reported and skipped while #40 was open); the clone cannot be made. No tests run, so a red-first commit pushes. | 0 / 1 |
 | PR done | `tools/pr_done_check.py` | an **OPEN** PR whose head is already on its base (merged-open); a **landed** PR (MERGED, or CLOSED with head on base) whose head branch still exists (branch-not-deleted). Cross-repo PRs skipped. | 0 ok, 1 not done, 2 any gh error, or a list that reaches `--limit` |
 
 **"Ahead of what is pushed."** Commits on the branch that are not on its upstream, when the upstream is an existing
@@ -76,15 +76,18 @@ Reproduced in `tools/pre_push_selftest.sh` against #40's hook:
 2. #40's hook ran `rules_scan.sh` in the pusher's worktree. Its count checks read working-tree files, so dirty
    files decided the verdict for a clean commit. The new hook runs every scanner in the clean clone at the pushed sha.
 
-#40 also adds `.githooks/pre-commit` (rules_scan, fmt, clippy). When both land, the merged hook must keep both: the
-unpushed cap and #40's steps. `drift_check_selftest.sh` copies only the hook and `drift_check.py` into its
-fixture, so update that test in the same merge.
+#40 also added `.githooks/pre-commit` (rules_scan, fmt, clippy). The #40 merge (Jeff 2026-11-27 10:42 PM CT) keeps
+both: the unpushed cap runs first, then #40's four steps. `drift_check_selftest.sh` stubs `tools/rules_scan.sh` and
+`cargo` in its fixture (it tests the cap); `tools/test_rules_enforcement.sh` part 4 tests the rules part and now pushes
+each accepted fixture commit (the cap allows one unpushed commit). The mutation runner runs both selftests for a
+pre-commit mutant. `tools/pre_push_selftest.sh` has two parts: part 1 (#42, wiring with stub scanners) and part 2
+(#40, the real scanners on fixture commits of a clone of this repo's HEAD).
 
 ## Tests
 
 `tools/drift_check_selftest.sh`, `tools/pr_done_check_selftest.sh` (mock gh that honours `--state` and `--limit`),
-`tools/pre_push_selftest.sh` (real pushes to a local bare origin, stub scanners), `tools/rule_checks_daily_selftest.sh`,
-`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (235 mutants, including Cassie's review rows, her r7 CR01-CR12, the R701-R734 allowlist rows and her r8 M01-M10 and M12; every one must be killed; a row's `\n` is a newline, and a
+`tools/pre_push_selftest.sh` (part 1: real pushes to a local bare origin, stub scanners; part 2: the real scanners), `tools/rule_checks_daily_selftest.sh`,
+`tools/scoped_gate_selftest.sh` (stub poprun), and `tools/rule_checks_mutation.sh` (243 mutants, including the #40-merge rows C02 (adapted), P01-P07 and H14, Cassie's review rows, her r7 CR01-CR12, the R701-R734 allowlist rows and her r8 M01-M10 and M12; every one must be killed; a row's `\n` is a newline, and a
 mutant that hangs is killed after 15 min). Every selftest run is capped at 60 s, so a hang fails its case fast.
 The rows for the retired `--exclude` mechanism (the step-by-step symlink walk, the git status pathspec and the
 tracked-file skip) were removed with it; D25, N03, W05 and X20 were adapted to the code that is left. The r7 rewrite

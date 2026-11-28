@@ -4,6 +4,7 @@
 # allowlist works, that staged/working/range modes work, that the clone-count, helper-copy baselines only go down, that the borrowing ops' call graph holds no copy,
 # and that the constant-cache exception allowlist works (unlisted clone fails, listed passes, stale entry fails, count only down).
 set -u
+unset RULES_SCAN_FAULT   # the fault hook is set per call below, never inherited
 here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
 scan() { "$here/rules_scan.sh" "$@"; }
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
@@ -244,6 +245,9 @@ hx v-closure-in-let 1 "$K:1 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k
 hx v-trait-default-method 1 "$K:1 in fn dup: \`.clone(\` (add_ref -> dup)" 'a.dup()' 'trait Dup { fn dup(&self) -> N { self.clone() } }\nimpl Dup for N {}'
 hx v-nested-macros 1 "$K:1 in fn inner!: \`.clone(\` (add_ref -> k -> outer! -> inner!)" 'k(a, b)' 'macro_rules! inner { ($x:expr) => { $x.clone() } }\nmacro_rules! outer { ($x:expr) => { inner!($x) } }\nfn k(a: &N, b: &N) -> N { outer!(a) }'
 hx v-map-clone-path 1 "$K:1 in fn k: \`::clone\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(Clone::clone).collect(); N(v.len()) }'
+# a macro metavariable as the qualified self type (`<$bits>::add_lanes(..)` in ieee_soft/array.rs, 6c61fd6): an unknown
+# resolves through the macro's invocations (mk!(A, B): only B::k2, not C::k2); it used to raise IndexError in _callees
+hx v-macro-metavar-qself 1/1 "$K:11 in fn k2: \`.clone(\` (add_ref -> k -> k2)" 'A::k(a, b)' 'macro_rules! mk {\n    ($a:ident, $b:ty) => {\n        impl $a {\n            pub fn k(a: &N, b: &N) -> N {\n                <$b>::k2(a, b)\n            }\n        }\n    };\n}\nmk!(A, B);\nimpl B { fn k2(a: &N, b: &N) -> N { a.clone() } }\nimpl C { fn k2(a: &N, b: &N) -> N { a.clone() } }'
 # named exceptions, site-keyed (tools/borrow_exceptions.tsv: file, impl, fn, line anchor, allowance). Rusty's
 # exception-exact / over-allowance / moved-impl / token-swap / shift-same-name cover those cases; these add a second
 # copy on an identical line, another token beside a listed site, another file, and a listed site that is removed
@@ -267,7 +271,7 @@ rm -f tools/borrow_exceptions.tsv
 hx x-fallback-copy-free 0 - 'k(a, b)' 'fn k<T: Fro>(t: &T, b: &N) -> N { t.frob() }\nimpl M { fn frob(&self) -> N { N(1) } }' 'ops/h.rs:impl Z { fn frob(&self) -> N { N(0) } }'
 scan --borrow-reach | grep -q "ops/h.rs:1 frob" || fail "same-name fallback did not reach ops/h.rs frob"
 rm -rf zenith-float-num/src/ops; echo 0 > tools/helper_copy_count_baseline.txt
-[ "$bx_n" = 30 ] || fail "BORROW fixtures: ran $bx_n, want 30"
+[ "$bx_n" = 31 ] || fail "BORROW fixtures: ran $bx_n, want 31"
 echo "rules_scan selftest: BORROW per-op fixtures ok ($bx_n)"
 rm -f zenith-float-num/src/mantissa/kern.rs
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ext.rs; echo 0 > tools/clone_count_baseline.txt
@@ -379,7 +383,7 @@ rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ops/h.rs zenith-float-
 echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
 [ -z "$bred" ] || fail "BORROW fixtures red:$bred"
 [ "$bc_n" = 44 ] && [ "$bp_n" = 19 ] || fail "BORROW fixtures: ran $bc_n bcase + $bp_n bpin, want 44 + 19"
-[ $((bx_n + bc_n)) = 74 ] || fail "BORROW fixtures total: $((bx_n + bc_n)), want 74"
+[ $((bx_n + bc_n)) = 75 ] || fail "BORROW fixtures total: $((bx_n + bc_n)), want 75"
 # ---- test code is counted by the clone count (cfg(test) items, tests.rs, test dirs) ----
 rm -f zenith-float-num/src/x.rs; mkdir -p zenith-float-num/src/ops zenith-float-num/tests nostd-tests/src
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(x: &S) { let y = x.clone(); }\n}\n' > zenith-float-num/src/x.rs
@@ -412,7 +416,7 @@ printf 'fn r(c: &Rc<X>) { let a = Rc::clone(c); }\n' > zenith-float-num/src/y.rs
 echo 0 > tools/clone_count_baseline.txt
 echo 9 > tools/helper_copy_count_baseline.txt   # 6 uses + 1 in cfg(test) + Rc::clone + Arc::clone
 scan --count-only | grep -q "helper-copy count 9 == baseline" || fail "helper-copy count should be 9: $(scan --count-only)"
-NO_CLONE_ROOT="$g" python3 "$here/no_clone.py" --helpers | grep -q "^helper_copies: 9 " || fail "no_clone.py --helpers disagrees: $(NO_CLONE_ROOT="$g" python3 "$here/no_clone.py" --helpers)"
+NO_CLONE_ROOT="$g" python3 -B "$here/no_clone.py" --helpers | grep -q "^helper_copies: 9 " || fail "no_clone.py --helpers disagrees: $(NO_CLONE_ROOT="$g" python3 -B "$here/no_clone.py" --helpers)"
 echo 8 > tools/helper_copy_count_baseline.txt; scan --count-only | grep -q "helper-copy count 9 is ABOVE" || fail "helper count above baseline not reported"
 scan --count-only >/dev/null && fail "helper count above baseline passed"
 echo 12 > tools/helper_copy_count_baseline.txt; scan --count-only | grep -qi "helper-copy count 9 is below baseline 12: lower the baseline" || fail "no hint to lower helper baseline"
@@ -422,7 +426,7 @@ rm -f tools/helper_copy_count_baseline.txt; scan --count-only >/dev/null && fail
 rm -f zenith-float-compare/src/a.rs zenith-float-num/src/y.rs; echo 0 > tools/helper_copy_count_baseline.txt
 
 # ---- named exception for the constant caches (tools/clone_allowlist.txt) ----
-nc() { NO_CLONE_ROOT="$g" python3 "$here/no_clone.py" "$@"; }
+nc() { NO_CLONE_ROOT="$g" python3 -B "$here/no_clone.py" "$@"; }
 mkdir -p zenith-float-num/src/ops/consts
 printf '## Exception: constant caches\n' > tools/NO_CLONE_RULES.md
 CC=zenith-float-num/src/ops/consts/pi.rs
@@ -644,5 +648,47 @@ rm -f tools/ziv_shape_a_sites.txt tools/clone_helper_combined_baseline.txt; echo
 
 rm -f $ZH; rm -rf zenith-float-num/src/num; : > .github/CODEOWNERS; printf 'fn a() {}\n' > zenith-float-num/src/x.rs
 echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
+
+# ---- Jeff 2026-11-23 07:43 CT (ROOT-CAUSE.md): the library scanner names itself, a crashing check is its own named
+# FAIL while every other check still reports, and --no-rise REV lets a cleanup commit through only when no count rises ----
+git add -A; git commit -qm clean-end --allow-empty
+out="$(scan --count-only)" || fail "clean tree at baseline 0 failed: $out"
+echo "$out" | head -1 | grep -q '^rules_scan: zenith-float LIBRARY scanner (tools/rules_scan.py' || fail "no library banner first: $(echo "$out" | head -1)"
+CHECKS="clone helper-copy exceptions test-panic neg_via_mul combined borrow"
+echo "$out" | grep -q "^rules_scan: checks: clone=ok helper-copy=ok exceptions=ok test-panic=ok neg_via_mul=ok combined=ok borrow=ok$" \
+  || fail "no per-check summary line: $out"
+for chk in $CHECKS; do
+  out="$(RULES_SCAN_FAULT=$chk scan --count-only 2>&1)" && fail "a crash in check $chk exited 0: $out"
+  echo "$out" | grep -q "^rules_scan: FAIL check $chk CRASHED: RuntimeError: RULES_SCAN_FAULT" || fail "crash in $chk is not a named FAIL: $out"
+  for o in $CHECKS; do
+    want=ok; [ "$o" = "$chk" ] && want=CRASH
+    echo "$out" | grep '^rules_scan: checks: ' | grep -qw "$o=$want" || fail "fault in $chk: check $o did not report $want: $out"
+  done
+done
+for chk in diff-scan per-commit; do
+  out="$(RULES_SCAN_FAULT=$chk scan "$base..HEAD" 2>&1)" && fail "a crash in $chk exited 0: $out"
+  echo "$out" | grep -q "^rules_scan: FAIL check $chk CRASHED" || fail "crash in range $chk is not a named FAIL: $out"
+  echo "$out" | grep -q "^rules_scan: checks: clone=ok .* borrow=ok" || fail "range crash in $chk hid the count checks: $out"
+done
+# --no-rise REV: over baseline is allowed only while no count rises against REV (the hook's cleanup mode); crash = FAIL
+printf 'fn a(x: &S) { let y = x.clone(); let z = x.clone(); }\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm two
+scan --count-only >/dev/null && fail "2 clones over baseline 0 passed strict --count-only"
+out="$(scan --count-only --no-rise HEAD)" || fail "no rise vs HEAD (2 == 2) failed --no-rise: $out"
+echo "$out" | grep -q "clone count 2 is ABOVE the baseline 0 but does not rise vs HEAD (2)" || fail "no-rise pass not explained: $out"
+echo "$out" | grep -q "^rules_scan: checks: clone=held " || fail "held count not marked held: $out"
+echo "$out" | grep -q "NOT clean, NOT at baseline" || fail "--no-rise pass over baseline claimed clean: $out"
+echo "$out" | grep -q "all count baselines hold" && fail "--no-rise over baseline printed 'all count baselines hold': $out"
+printf 'fn a(x: &S) { let y = x.clone(); let z = x.clone(); let w = x.clone(); }\n' > zenith-float-num/src/x.rs
+out="$(scan --count-only --no-rise HEAD)" && fail "a third clone (rise 2 -> 3) passed --no-rise: $out"
+echo "$out" | grep -q "clone count 3 is ABOVE the baseline 0 and RISES vs HEAD (2)" || fail "rise not named: $out"
+printf 'fn a(x: &S) { let y = x.clone(); }\nfn t() { let _ = r.unwrap(); }\n' > zenith-float-num/src/x.rs
+mkdir -p zenith-float-num/tests; printf 'fn t() { let v = r.unwrap(); }\n' > zenith-float-num/tests/t.rs
+out="$(scan --count-only --no-rise HEAD)" && fail "a new test panic (0 -> 1) passed --no-rise: $out"
+echo "$out" | grep -q "test-panic site count 1 is ABOVE the baseline 0 and RISES vs HEAD (0)" || fail "test-panic rise not named: $out"
+rm -rf zenith-float-num/tests
+out="$(scan --count-only --no-rise HEAD)" || fail "1 clone (down from 2) failed --no-rise: $out"
+scan --count-only --no-rise no-such-rev >/dev/null && fail "--no-rise with an unknown rev passed"
+out="$(RULES_SCAN_FAULT=clone scan --count-only --no-rise HEAD 2>&1)" && fail "a crash under --no-rise passed: $out"
+git checkout -q -- . ; printf 'fn a() {}\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm clean-again
 
 echo "rules_scan selftest: ok"

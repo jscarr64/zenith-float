@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -132,7 +132,7 @@
+     /// `InvalidArgument` when the array's rank is not 1.
+     pub fn from_array(a: BallArray) -> BoundResult<BallVec> {
+         match a.rank() {
+-            1 => Ok(BallVec(a)),
++            1 | 2 => Ok(BallVec(a)),
+             _ => Err(BoundError::InvalidArgument {
+                 op: "BallVec::from_array",
+                 detail: "rank must be 1",

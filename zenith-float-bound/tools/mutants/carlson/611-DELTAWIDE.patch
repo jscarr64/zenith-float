@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -338,7 +338,7 @@
+     if !finite(w) {
+         return None;
+     }
+-    let shift = i64::try_from(prec).ok()?.checked_add(BRACKET_SHIFT)?;
++    let shift = i64::try_from(prec).ok()?.checked_sub(BRACKET_SHIFT)?;
+     let delta = pow2(w.exponent()?.checked_sub(shift)?)?;
+     let c = match side {
+         Side::Below => round(w, wp, RoundingMode::Down).sub(&delta, wp, RoundingMode::Down),

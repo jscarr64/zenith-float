@@ -1,0 +1,13 @@
+diff --git a/src/mag/sqrt.rs b/src/mag/sqrt.rs
+index 6f35fb4..0f7aea9 100644
+--- a/src/mag/sqrt.rs
++++ b/src/mag/sqrt.rs
+@@ -59,7 +59,7 @@ fn sqrt_checked(exp: i64, mant: NonZeroU64, up: bool) -> Option<Mag> {
+     };
+     // mant < 2^64 and factor <= 2^64, so the product fits in a u128 and is nonzero by type.
+     let radicand = NonZeroU128::from(mant).checked_mul(factor)?;
+-    let root = radicand.isqrt();
++    let root = NonZeroU128::MIN.max(radicand.isqrt());
+     // root < 2^64, so root * root < 2^128 and the checked multiply cannot fail.
+     let sticky = root.get().checked_mul(root.get())? != radicand.get();
+     norm(root, scale.checked_div(2)?, sticky, up)

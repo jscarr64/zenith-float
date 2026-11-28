@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 50bf6cd..c9531fd 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -231,7 +231,7 @@ impl Ball {
+         const OP: &str = "Ball::div";
+         check_prec(OP, prec)?;
+         let (n, s) = (other.mid(), other.rad());
+-        if n.is_zero() && s.is_zero() {
++        if n.is_zero() || s.is_zero() {
+             return Err(domain(OP, "division by the exact zero ball"));
+         }
+         let Some(n_lo) = clear_of_zero(n, s) else {

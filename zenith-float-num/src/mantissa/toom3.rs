@@ -48,11 +48,11 @@ impl Mantissa {
         let mut p2 = SliceWithSign::new_mut(buf2, 1);
         let mut p3 = SliceWithSign::new_mut(buf3, 1);
 
-        m0.add(&m2, x1)?;
-        x1.add(&m1, &mut p1)?;
-        x1.sub(&m1, &mut p2)?;
+        SliceWithSign::add(&m0, &m2, x1)?;
+        SliceWithSign::add(x1, &m1, &mut p1)?;
+        SliceWithSign::sub(x1, &m1, &mut p2)?;
 
-        p2.add(&m2, &mut p3)?;
+        SliceWithSign::add(&p2, &m2, &mut p3)?;
         p3.shift_left(1);
         p3.sub_assign(&m0);
 

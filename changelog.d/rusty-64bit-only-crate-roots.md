@@ -1,0 +1,2 @@
+### Changed
+- zenith-float and zenith-float-num now refuse to compile for a target whose pointer width is not 64 bits (compile_error!), as zenith-float-bound already did. zenith-float 2.0 is 64-bit only (P6/P8). The 32-bit and wasm hex-gold scripts (ci_hex_32bit.sh, ci_hex_wasm.sh) and the thumbv7em-none-eabihf QEMU no_std runner were removed; ci_nostd.sh builds the libraries for x86_64-unknown-none and aarch64-unknown-none.

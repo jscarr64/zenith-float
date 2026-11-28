@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -543,7 +543,7 @@
+     if above.is_nan() || below.is_nan() {
+         return Err(resource(op, "radius"));
+     }
+-    let rad = Mag::from_exact_num(&above).max(Mag::from_exact_num(&below));
++    let rad = Mag::from_exact_num(&above);
+     Ball::from_mid_rad(mid, rad, prec)
+ }
+ 

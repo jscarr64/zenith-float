@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 5995d15..a3bc63d 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -125,7 +125,7 @@ impl Ball {
+         // A `mul_full_prec` exponent overflow passes through `finish` to all reals; pinned by
+         // tests/harness/slice_arith.rs `overflow_is_all_reals` (line 424).
+         let sq = m.mul_full_prec(m);
+-        let lost = sq.inexact();
++        let lost = false;
+         finish("Ball::sqr", round_to(&sq, prec), &rad, prec, lost)
+     }
+ 

@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -73,7 +73,7 @@
+ 
+     /// The number of axes.
+     pub fn rank(&self) -> usize {
+-        self.shape.len()
++        self.data.len()
+     }
+ 
+     /// The number of elements.

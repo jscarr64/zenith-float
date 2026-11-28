@@ -1,4 +1,22 @@
 #!/usr/bin/env bash
+# Selftest for .githooks/pre-push. Two parts, both must pass (merge of #42 and #40; Jeff 2026-11-27 10:42 PM CT):
+#   part 1 (wiring, #42): real pushes to a local bare origin with stub scanners; the hook judges the PUSHED commit
+#          in a clean --shared clone, never the pusher's working tree.
+#   part 2 (real scanners, #40): the repo's own rules_scan.sh and no_suppress_scan.py on fixture commits of a
+#          --shared clone of this repo.
+# usage: tools/pre_push_selftest.sh               both parts (rc 0 only when both pass)
+#        tools/pre_push_selftest.sh --part 1|2    one part
+# PRE_PUSH_HOOK points both parts at another hook (the mutation runner uses this). Scratch under $ZF_SCRATCH, not /tmp.
+set -u
+if [ "${1:-}" != --part ]; then
+  bash "$0" --part 1; r1=$?
+  bash "$0" --part 2; r2=$?
+  echo "pre_push_selftest: $([ $r1 = 0 ] && [ $r2 = 0 ] && echo PASS || echo FAIL) (part 1 rc=$r1, part 2 rc=$r2)"
+  [ $r1 = 0 ] && [ $r2 = 0 ]; exit
+fi
+case "${2:-}" in 1|2) ;; *) echo "usage: tools/pre_push_selftest.sh [--part 1|2]" >&2; exit 2;; esac
+if [ "$2" = 1 ]; then
+# ---------------------------------------------------------------- part 1 (#42) ----------------------------------------
 # Selftest for .githooks/pre-push (plan v2 C-HOOK). The hook must judge the PUSHED commit, never the pusher's working
 # tree: every scanner runs inside a clean --shared clone checked out at the pushed sha. Root cause of the 2026-11-25
 # 2:11 PM CT refusal of d41d938 (pushed from a detached LINKED worktree): git exports GIT_DIR=<that worktree's
@@ -97,7 +115,7 @@ fx h7; c "$r" push -q origin w:refs/heads/tmpb >/dev/null 2>&1
 push "branch deletion: pushed" 0 "$r" ":refs/heads/tmpb"
 
 fx h8; c "$r" rm -q tools/no_suppress_scan.py; c "$r" commit -qm "no no_suppress"
-push "tree without no_suppress_scan.py: pushed (scanner absent is reported)" 0 "$r"
+push "tree without no_suppress_scan.py: refused (fail closed once #40 lands)" 1 "$r"
 fx h9; c "$r" rm -q tools/rules_scan.sh; c "$r" commit -qm "no rules_scan"
 push "tree without tools/rules_scan.sh: refused (fail closed)" 1 "$r"
 
@@ -139,3 +157,72 @@ left=$(find "$ZF_SCRATCH" -mindepth 2 -maxdepth 2 2>/dev/null | wc -l)
 if sed 's/#.*//' "$hook" | grep -q '/tmp'; then bad "hook uses /tmp"; else ok "hook does not use /tmp"; fi
 echo "pre_push_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
+exit $?
+fi
+# ---------------------------------------------------------------- part 2 (#40) ----------------------------------------
+# Selftest for .githooks/pre-push (Jeff 2026-11-24 1:17 PM CT: "pre-push hook"). The hook runs, for every pushed
+# commit, the CI rules-scan command (tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..<sha>", .github/workflows/
+# rules-scan.yml) and tools/no_suppress_scan.py on that commit's tree. Fixture: a --shared clone of this repo's HEAD
+# with one base commit that drops any clippy.toml threshold keys (empty since clippy.toml is at defaults, 2e50ed1);
+# RATCHET_BASE = that base, so each case scans only its own fixture commit.
+# usage: tools/pre_push_selftest.sh
+set -uo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+hook="${PRE_PUSH_HOOK:-$root/.githooks/pre-push}"
+fail=0; n=0
+bad() { echo "FAIL: $*"; fail=1; }
+scratch="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-push-selftest"  # job scratch, not /tmp (Spence m6); like fold_pr1_selftest
+mkdir -p "$scratch" || exit 2
+w=$(mktemp -d "$scratch/run.XXXXXX") || exit 2
+trap 'rm -rf "$w"' EXIT
+if [ ! -x "$hook" ]; then
+  echo "FAIL: $hook missing or not executable"; echo "pre_push_selftest: FAIL"; exit 1
+fi
+c="$w/clone"
+git clone -q --shared "$root" "$c" || exit 2
+g() { git -C "$c" -c user.name=t -c user.email=t@t "$@"; }
+sed -i -E '/^[a-z-]*(threshold|max-[a-z-]*|-limit) *=/d' "$c/clippy.toml"
+printf 'pre_push_selftest fixture base\n' > "$c/.pre-push-fixture-base"  # a base commit even when clippy.toml had no keys
+g add -A; g commit -qm "fixture base: no clippy thresholds"; base=$(g rev-parse HEAD)
+mkc() { # mkc FILE CONTENT -> sha of a commit on base adding FILE
+  g checkout -q --detach "$base"; mkdir -p "$c/$(dirname "$1")"; printf '%b' "$2" > "$c/$1"
+  g add -A; g commit -qm "case $1"; g rev-parse HEAD
+}
+zero=0000000000000000000000000000000000000000
+# case WANT LABEL SHA [OUTPUT-REGEX]
+case_() {
+  local want=$1 label=$2 sha=$3 rx=${4:-}; n=$((n + 1))
+  local out rc
+  out=$(cd "$c" && printf 'refs/heads/x %s refs/heads/x %s\n' "$sha" "$zero" \
+        | RATCHET_BASE="$base" bash "$hook" origin "$w/remote" 2>&1); rc=$?
+  if [ "$want" = pass ] && [ $rc -ne 0 ]; then bad "$label: expected pass, rc=$rc"; echo "$out" | tail -5
+  elif [ "$want" = fail ] && [ $rc -eq 0 ]; then bad "$label: expected fail, rc=0"
+  elif [ -n "$rx" ] && ! grep -Eq "$rx" <<<"$out"; then bad "$label: output lacks /$rx/"; echo "$out" | tail -5
+  else echo "ok $n $label (rc=$rc)"; fi
+}
+clean=$(mkc zenith-float-num/src/zz_fixture.rs '/// fixture\npub fn zz(x: u32) -> u32 {\n    x + 1\n}\n')
+clone=$(mkc zenith-float-num/src/zz_fixture.rs 'pub fn zz(x: &Vec<u8>) -> Vec<u8> {\n    x.clone()\n}\n')
+tallow=$(mkc tests/zz_fixture.rs '#[allow(dead_code)]\nfn zz() {}\n')
+lallow=$(mkc zenith-float-num/src/zz_fixture.rs '#[allow(clippy::too_many_arguments)]\npub fn zz() {}\n')
+relaxed=$(g checkout -q --detach "$base" && printf 'too-many-arguments-threshold = 10\n' >> "$c/clippy.toml" \
+  && g commit -qam "case relaxed clippy.toml" && g rev-parse HEAD)
+unsafe_=$(mkc zenith-float-num/src/zz_fixture.rs 'pub fn zz(p: *const u8) -> u8 {\n    unsafe { *p }\n}\n')
+# Spence m3 on 0a1cb6c: a tracked file that matches .gitignore is still pushed (and CI scans it); the hook must see it
+ignored=$(g checkout -q --detach "$base" && printf 'zz_ignored.rs\n' >> "$c/.gitignore" \
+  && printf '#[allow(dead_code)]\nfn zz() {}\n' > "$c/tests/zz_ignored.rs" && g add -A && g add -f tests/zz_ignored.rs \
+  && g commit -qm "case tracked file matching .gitignore" && g rev-parse HEAD)
+g checkout -q --detach "$tallow"   # the working tree is NOT the pushed commit: the hook must scan the pushed tree
+case_ pass "clean commit passes both scans" "$clean" 'pre-push: ok'
+case_ fail "added .clone() in library code fails rules-scan" "$clone" 'FAIL rules-scan'
+case_ fail "#[allow] in tests/ passes rules-scan but fails no-suppress" "$tallow" 'ok rules-scan.*|FAIL no-suppress'
+case_ fail "#[allow] in library code fails" "$lallow" 'FAIL (rules-scan|no-suppress)'
+case_ fail "unsafe in library code fails no-suppress" "$unsafe_" 'FAIL no-suppress'
+case_ fail "a relaxed clippy.toml threshold fails no-suppress" "$relaxed" '\[clippy-config\] too-many-arguments-threshold'
+case_ fail "#[allow] in a tracked file that matches .gitignore fails no-suppress" "$ignored" 'tests/zz_ignored.rs:1 \[allow\]'
+n=$((n + 1)); out=$(cd "$c" && printf 'refs/heads/x %s refs/heads/x %s\n' "$zero" "$clean" | RATCHET_BASE="$base" bash "$hook" origin "$w/remote" 2>&1)
+if [ $? -eq 0 ]; then echo "ok $n branch delete (nothing to scan) passes"; else bad "branch delete: $out"; fi
+grep -q 'FAIL no-suppress' <<<"$(cd "$c" && printf 'refs/heads/x %s refs/heads/x %s\n' "$tallow" "$zero" | RATCHET_BASE="$base" bash "$hook" origin x 2>&1)" \
+  && grep -q 'ok rules-scan' <<<"$(cd "$c" && printf 'refs/heads/x %s refs/heads/x %s\n' "$tallow" "$zero" | RATCHET_BASE="$base" bash "$hook" origin x 2>&1)" \
+  && echo "ok $((n + 1)) tests/ #[allow]: rules-scan ok, no-suppress FAIL (why the hook runs both)" || bad "tests/ allow split"
+[ $fail -eq 0 ] && echo "pre_push_selftest: ok ($n cases + split)" || echo "pre_push_selftest: FAIL"
+exit $fail

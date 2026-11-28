@@ -25,6 +25,10 @@ const POWI_EXP_BITS: usize = 64;
 /// The top bit of the `powi_internal` exponent integer.
 const POWI_EXP_TOP: u64 = 1 << 63;
 
+/// Largest exponent part in `powsi`'s negative path: x0^part with x0 in [1/2, 1) stays >= 2^-(2^61), inside
+/// the normal range, and so does its reciprocal.
+const POWSI_PART_MAX: u64 = 1 << 61;
+
 struct SinhArgReductionEstimator {}
 
 impl ArgReductionEstimator for SinhArgReductionEstimator {
@@ -172,6 +176,12 @@ impl ExactNumNumber {
             return Err(Error::ExponentOverflow(self.sign()));
         }
 
+        if crate::ops::exp_bb::use_exp_arf_bb(self, p) {
+            // This helper always returns exp(|self|); the caller inverts when self < 0.
+            let mag = self.with_sign(Sign::Pos)?;
+            return crate::ops::exp_bb::exp_arf_bb(&mag, p);
+        }
+
         let p_work = p + 4;
 
         // compute separately for int and fract parts, then combine the results.
@@ -253,22 +263,42 @@ impl ExactNumNumber {
             let mut p_wrk = q.max(self.mantissa_max_bit_len()) + p_inc;
 
             loop {
-                let p_x = p_wrk + 2;
+                // Up to four factors (k <= 2^63, each part <= 2^61) can add a few units of error: 8 guard bits.
+                let p_x = p_wrk + 8;
 
-                let y = self.powi_internal(k, p_x, RoundingMode::None, false, true)?;
-                if y.is_zero() || y.is_subnormal() {
-                    // x0^k below the range needs k > 2^62; the reciprocal is then past every finite value.
-                    return Err(Error::ExponentOverflow(y.sign()));
+                // x0^k itself leaves the range once k > 2^62 (ZF-71: 2^-(2^62 + 1000) came back +Inf). Form
+                // 1 / x0^k as a product of 1 / x0^part with part <= 2^61, so each factor is normal; the factors
+                // and the product are kept at exponent 0, their binary exponents summed in `carry` (i128).
+                let mut carry: i128 = 0;
+                let mut acc: Option<Self> = None;
+                let mut left = k;
+                while left > 0 {
+                    let part = left.min(POWSI_PART_MAX);
+                    left -= part;
+                    let y = self.powi_internal(part, p_x, RoundingMode::None, false, true)?;
+                    let mut f = ONE.div(&y, p_x, RoundingMode::None)?;
+                    carry += i128::from(f.exponent());
+                    f.set_exponent(0);
+                    acc = Some(match acc {
+                        None => f,
+                        Some(a) => {
+                            let mut m = a.mul(&f, p_x, RoundingMode::None)?;
+                            carry += i128::from(m.exponent());
+                            m.set_exponent(0);
+                            m
+                        }
+                    });
                 }
-
-                let mut r = ONE.div(&y, p_x, RoundingMode::None)?;
+                let Some(mut r) = acc else {
+                    return Err(Error::InvalidArgument); // k >= 2 here
+                };
                 let rounded = r.inexact();
                 if !rounded || r.try_set_precision(q, RoundingMode::ToZero, p_wrk)? {
                     if !rounded {
                         r.set_precision(q, RoundingMode::ToZero)?;
                     }
                     let rounded = r.inexact();
-                    let e = i128::from(r.exponent()) + scale;
+                    let e = i128::from(r.exponent()) + carry + scale;
                     let mut ret = r.place_scaled(e, rounded, p, rm)?;
                     ret.set_inexact(ret.inexact() | self.inexact());
                     return Ok(ret);
@@ -417,8 +447,7 @@ impl ExactNumNumber {
             return self.pow_exact_integer_underflow(mag, k * lead, p, rm);
         }
         let p = round_p(p);
-        let mut square = self.clone()?;
-        square.set_sign(Sign::Pos);
+        let mut square = self.with_sign(Sign::Pos)?;
         let mut exp = mag;
         let mut acc = ExactNumNumber::small_const(1);
         while exp > 1 {
@@ -1016,6 +1045,7 @@ impl ExactNumNumber {
 
 #[cfg(test)]
 mod test {
+    use crate::test_must::Must;
 
     use crate::common::{consts::TWO, util::random_subnormal};
 
@@ -1185,7 +1215,15 @@ mod test {
         let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-10, p, RoundingMode::None)?;
         // y = 1 - 2^-10: x^y = x x^(-2^-10) ~ 2^(EXPONENT_MIN + 2^52), normal
         let y = ONE.sub(&tiny, p, RoundingMode::None)?;
-        for rm in [RoundingMode::ToZero, RoundingMode::FromZero, RoundingMode::ToEven] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let r = x.pow(&y, p, rm, &mut cc)?;
             let e = i128::from(r.exponent()) - i128::from(EXPONENT_MIN);
             assert!(
@@ -1203,9 +1241,132 @@ mod test {
             ExactNumNumber::from_word(1, p)?.ldexp(EXPONENT_MIN - 34, p, RoundingMode::None)?;
         let hi =
             ExactNumNumber::from_word(1, p)?.ldexp(EXPONENT_MIN - 32, p, RoundingMode::None)?;
-        for rm in [RoundingMode::ToZero, RoundingMode::FromZero, RoundingMode::ToEven] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let r = x.pow(&y, p, rm, &mut cc)?;
             assert!(r.cmp(&lo) > 0 && r.cmp(&hi) < 0, "{rm:?}: {r:?}");
+        }
+        Ok(())
+    }
+
+    fn parse_exp_arg(arg: &str, p: usize, cc: &mut Consts) -> crate::ExactNum {
+        if let Some((num, den)) = arg.split_once('/') {
+            let n = crate::ExactNum::parse(num, crate::Radix::Dec, p, RoundingMode::ToEven, cc);
+            let d = crate::ExactNum::parse(den, crate::Radix::Dec, p, RoundingMode::ToEven, cc);
+            crate::ExactNum::div_ref(&n, &d, p, RoundingMode::ToEven)
+        } else {
+            crate::ExactNum::parse(arg, crate::Radix::Dec, p, RoundingMode::ToEven, cc)
+        }
+    }
+
+    fn agree_bits(got: &crate::ExactNum, want: &crate::ExactNum) -> i32 {
+        let d =
+            crate::ExactNum::sub_ref(got, want, got.precision().unwrap_or(64), RoundingMode::None)
+                .abs();
+        if d.is_zero() {
+            10_000
+        } else {
+            (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+        }
+    }
+
+    #[test]
+    fn zf_exp_matches_flint_golds() -> Result<(), String> {
+        // FLINT 3.6 arb.exp midpoints at dest p = 64, 4096, 65536, and 2^20.
+        let mut cc = crate::Consts::new()?;
+        let raw = include_str!("../testdata/exp_flint_golds.txt");
+        for line in raw.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.splitn(3, ' ');
+            let p: usize = parts.next().must("field")?.parse().must("parse")?;
+            let arg = parts.next().must("field")?;
+            let dec = parts.next().must("field")?;
+            let t0 = std::time::Instant::now();
+            let x = parse_exp_arg(arg, p, &mut cc);
+            let got = x.exp(p, RoundingMode::ToEven, &mut cc);
+            let ms = t0.elapsed().as_millis();
+            // The gold is a FLINT midpoint with far more digits than dest p;
+            // p+256 is enough to compare to dest-p accuracy without a 4p parse
+            // at dest 2^20 (4*2^20 bits of decimal conversion is minutes).
+            let want = crate::ExactNum::parse(
+                dec,
+                crate::Radix::Dec,
+                p.saturating_add(256),
+                RoundingMode::ToEven,
+                &mut cc,
+            );
+            let bits = agree_bits(&got, &want);
+            eprintln!("exp({arg}) p={p}: {ms} ms, {bits} bits");
+            assert!(
+                bits >= (p as i32) - 16 || got == want,
+                "exp({arg}) p={p} only {bits} bits after {ms} ms"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn zf_exp_edge_cases() -> Result<(), String> {
+        let mut cc = crate::Consts::new()?;
+        let p = 256usize;
+
+        let zero = crate::ExactNum::from_u8(0, p);
+        let e0 = zero.exp(p, RoundingMode::ToEven, &mut cc);
+        let one = crate::ExactNum::from_u8(1, p);
+        assert!(e0 == one, "exp(0) must be 1");
+
+        // Tiny argument: exp(2^{-1000}) = 1 + 2^{-1000} + O(2^{-2000}), rounds to 1 at 256 bits.
+        let tiny = crate::ExactNum::from_u8(1, p).ldexp(-1000, p, RoundingMode::None);
+        let et = tiny.exp(p, RoundingMode::ToEven, &mut cc);
+        assert!(
+            et == one,
+            "exp of a 2^{{-1000}} argument must round to 1 at 256 bits"
+        );
+
+        // Huge but finite: exp(10) matches the FLINT gold at this width (already in the gold file
+        // at 64 and up); check a modest-p value is finite and greater than 2^{14}.
+        let ten = crate::ExactNum::from_u8(10, p);
+        let e10 = ten.exp(p, RoundingMode::ToEven, &mut cc);
+        assert!(!e10.is_nan() && !e10.is_inf(), "exp(10) is finite");
+        let thresh = crate::ExactNum::from_u8(1, p).ldexp(14, p, RoundingMode::None);
+        assert!(e10 > thresh, "exp(10) > 2^{{14}}");
+
+        // Overflow refusal: exp(2^{100}) is far past the exponent range.
+        let mut huge = ExactNumNumber::from_word(1, p)?;
+        huge.set_exponent(100);
+        match huge.exp(p, RoundingMode::ToEven, &mut cc) {
+            Err(crate::Error::ExponentOverflow(Sign::Pos)) => {}
+            other => {
+                return Err(format!(
+                    "exp(2^{{100}}) must refuse with ExponentOverflow(Pos), got {other:?}"
+                ))
+            }
+        }
+
+        // Underflow of exp(-2^{100}): either a refusal or a result at/below the subnormal range.
+        let mut huge_neg = ExactNumNumber::from_word(1, p)?;
+        huge_neg.set_sign(Sign::Neg);
+        huge_neg.set_exponent(100);
+        match huge_neg.exp(p, RoundingMode::ToEven, &mut cc) {
+            Err(crate::Error::ExponentOverflow(_)) => {}
+            Ok(v) => {
+                assert!(
+                    v.is_zero() || v.exponent() <= crate::EXPONENT_MIN + p as i64,
+                    "exp(-2^{{100}}) must underflow, got exponent {}",
+                    v.exponent()
+                );
+            }
+            other => return Err(format!("exp(-2^{{100}}) unexpected {other:?}")),
         }
         Ok(())
     }

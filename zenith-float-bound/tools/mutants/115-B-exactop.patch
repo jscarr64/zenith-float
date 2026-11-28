@@ -1,0 +1,12 @@
+diff --git a/src/ball/mod.rs b/src/ball/mod.rs
+--- a/src/ball/mod.rs
++++ b/src/ball/mod.rs
+@@ -28,7 +28,7 @@
+     /// # Errors
+     /// `InvalidArgument` when `prec == 0`; `Representation` when `mid` is NaN or infinite.
+     pub fn exact(mid: ExactNum, prec: Precision) -> BoundResult<Ball> {
+-        check_prec("Ball::exact", prec)?;
++        check_prec("Ball::from_mid_rad", prec)?;
+         Ball::from_mid_rad(mid, Mag::zero(), prec)
+     }
+ 

@@ -4,8 +4,11 @@
 //! printed to p·log10(2)+12 digits). The first 1.0.5 candidate returned NaN for 34 of these
 //! 54 cases.
 
+// Per-row wall-clock limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the
+// library (test_time::wait_row).
 use core::ops::Neg;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, Radix, RoundingMode};
+use zenith_float_testkit::test_time;
 
 const RM: RoundingMode = RoundingMode::ToEven;
 
@@ -116,5 +119,33 @@ fn complex_2f1_log_case_mpmath() -> Result<(), Box<dyn std::error::Error>> {
         failures.len(),
         failures.join("\n")
     );
+    Ok(())
+}
+
+/// c − a − b = −2 at z = 0.9999999 − 1e-7 i (`CASES` index 13; index 40 is the same at p = 256): Euler's transformation turns it into
+/// c − a′ − b′ = +2, which needs the logarithmic 1 − z connection again. 404a9b5 marked that connection
+/// "seen" before the Euler step, so the inner call fell back to the plain series at |z| = 1 − 1e-7
+/// (about 10^9 terms) and never returned. At be63db9 the whole table took 0.43 s; 60 s is far above
+/// the native and the qemu-scaled (factor ≤ 8) cost of this one value, so no time factor is applied.
+#[test]
+fn log_case_negative_m_near_one_returns() -> Result<(), Box<dyn std::error::Error>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let run = || -> Result<ExactComplex, String> {
+            let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
+            let p = 128;
+            let s = |x: &str, cc: &mut Consts| c(x, p, cc).map_err(|e| e.to_string());
+            let a = s("-0.25,1", &mut cc)?;
+            let b = s("2.5,-0.5", &mut cc)?;
+            let cp = s("0.25,0.5", &mut cc)?;
+            let z = s("0.9999999,-1e-7", &mut cc)?;
+            Ok(a.hypergeom_2f1(&b, &cp, &z, p, RM, &mut cc))
+        };
+        let _sent = tx.send(run());
+    });
+    let got = test_time::wait_row(&rx, std::time::Duration::from_secs(60)).map_err(|e| {
+        format!("2F1(-0.25+i, 2.5-0.5i; 0.25+0.5i; 0.9999999-1e-7i) did not return in 60 s: {e:?}")
+    })??;
+    assert!(!got.is_nan(), "NaN");
     Ok(())
 }

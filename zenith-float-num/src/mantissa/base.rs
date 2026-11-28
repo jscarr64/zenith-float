@@ -580,7 +580,17 @@ impl Mantissa {
     ) -> Result<(i64, Self), Error> {
         let p = Self::bit_len_to_word_len(p);
 
-        let k = (p + m2.len()).max(self.len()) + 1;
+        // A mantissa is a fraction, so the divisor's zero low words (a short value held at a wide
+        // precision) do not change its value: divide by the words above them. Without this a 1-word
+        // divisor at 65600 bits ran the dense 1025-word division (r2nd/zeta root cause, with `mul`).
+        let z2 =
+            m2.m.iter()
+                .position(|w| w != &0)
+                .unwrap_or(m2.len())
+                .min(m2.len().saturating_sub(1));
+        let m2w: &[Word] = &m2.m[z2..];
+
+        let k = (p + m2w.len()).max(self.len()) + 1;
 
         // The operands are as stored. A subnormal dividend is shifted left (normalized) while it is written
         // into the padded working buffer `m1` below, which exists for every dividend; a subnormal divisor
@@ -590,7 +600,7 @@ impl Mantissa {
         let lz2 = m2.leading_zero_bits();
 
         let mut e_shift =
-            (m2.len() as i64 - k as i64) * WORD_BIT_SIZE as i64 + lz2 as i64 - lz1 as i64;
+            (m2w.len() as i64 - k as i64) * WORD_BIT_SIZE as i64 + lz2 as i64 - lz1 as i64;
 
         let mut m1 = Self::reserve_new(k)?;
         let l = k - self.len();
@@ -600,13 +610,13 @@ impl Mantissa {
         let d = if lz2 == 0 {
             None
         } else {
-            let mut d = Self::reserve_new(m2.len())?;
-            Self::write_shifted_left(&mut d, &m2.m, lz2);
+            let mut d = Self::reserve_new(m2w.len())?;
+            Self::write_shifted_left(&mut d, m2w, lz2);
             Some(d)
         };
         let divisor: &[Word] = match &d {
             Some(d) => d,
-            None => &m2.m,
+            None => m2w,
         };
 
         let (q, r) = Self::div_unbalanced(&m1, divisor)?;
@@ -663,35 +673,22 @@ impl Mantissa {
         d3[d1.len()] = (m / WORD_BASE) as Word;
     }
 
-    /// `self` to power of `i` mod `n`
-    pub fn pow_mod(&self, mut i: usize, n: &Self) -> Result<Self, Error> {
-        // first non-zero bit in i
-        let mut bit_pos = WORD_BIT_SIZE;
-
-        while bit_pos > 0 {
-            bit_pos -= 1;
-            i <<= 1;
-            if i & WORD_SIGNIFICANT_BIT as usize != 0 {
-                bit_pos -= 1;
-                i <<= 1;
-                break;
-            }
+    /// `self` to the power `i` mod `n` (`i ≥ 1`; `i = 0` is `InvalidArgument`), by left-to-right
+    /// square-and-multiply over every bit of `i`. The scan starts at the top set bit found with
+    /// `leading_zeros`: the old scan shifted before testing, so it dropped bit 63 and an exponent
+    /// at or past 2^63 (the gap of `MAX rem minpos`) was reduced mod 2^63 — a silent wrong remainder.
+    pub fn pow_mod(&self, i: usize, n: &Self) -> Result<Self, Error> {
+        if i == 0 {
+            return Err(Error::InvalidArgument);
         }
-
+        let top = usize::BITS - 1 - i.leading_zeros();
         let mut x = self.clone()?;
-
-        while bit_pos > 0 {
-            bit_pos -= 1;
-
+        for b in (0..top).rev() {
             x = x.mul_mod(&x, n)?;
-
-            if i & WORD_SIGNIFICANT_BIT as usize != 0 {
+            if (i >> b) & 1 != 0 {
                 x = x.mul_mod(self, n)?;
             }
-
-            i <<= 1;
         }
-
         Ok(x)
     }
 
@@ -1131,6 +1128,7 @@ impl Mantissa {
     }
 
     /// Shift to the left by n bits and increase or decrease precision if needed just to fit the data.
+    #[cfg(test)]
     pub fn shift_left_resize(&mut self, n: usize) -> Result<(), Error> {
         if self.max_bit_len() >= self.bit_len() + n {
             self.shift_left(n);
@@ -1174,6 +1172,222 @@ impl Mantissa {
         CLONE_CALLS.with(|c| c.set(c.get() + 1));
         let mut m = Self::reserve_new(self.m.len())?;
         m.copy_from_slice(&self.m);
+        Ok(Mantissa { m, n: self.n })
+    }
+
+    /// The mantissa of a new result, read straight from `self`: `self` shifted left by `shl` bits (at most
+    /// its leading zero bits), stored in `dst_bits` rounded up to whole words, and rounded with `rm` while
+    /// the words are written. Gives the same words and bit length as `shift_left(shl)` (with the bit length
+    /// raised by `shl`), `round_mantissa(.., check_roundable = false, s = max_bit_len)` and
+    /// `set_length(dst_bits)` on an owned mantissa; `self` is only read.
+    /// Returns the mantissa and whether rounding carried out of the top word (the exponent then grows by
+    /// one). `inexact` is set when a dropped bit was one.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for the result.
+    pub(crate) fn rounded_from(
+        &self,
+        shl: usize,
+        dst_bits: usize,
+        rm: RoundingMode,
+        is_positive: bool,
+        inexact: &mut bool,
+    ) -> Result<(Self, bool), Error> {
+        let src: &[Word] = &self.m;
+        let (ws, bs) = (shl / WORD_BIT_SIZE, shl % WORD_BIT_SIZE);
+        // Word `i` of `self << shl`.
+        let word = |i: usize| -> Word {
+            if i < ws {
+                return 0;
+            }
+            let j = i - ws;
+            let hi = src[j] << bs;
+            if bs > 0 && j > 0 {
+                hi | (src[j - 1] >> (WORD_BIT_SIZE - bs))
+            } else {
+                hi
+            }
+        };
+        let (sl, dl) = (src.len(), Self::bit_len_to_word_len(dst_bits));
+        let mut m = Self::reserve_new(dl)?;
+        let mut n = self.n + shl;
+        if dl >= sl {
+            let low = dl - sl;
+            for (i, d) in m[low..].iter_mut().enumerate() {
+                *d = word(i);
+            }
+            if n != 0 {
+                n += low * WORD_BIT_SIZE;
+            }
+            return Ok((Mantissa { m, n }, false));
+        }
+        let k = sl - dl;
+        for (i, d) in m.iter_mut().enumerate() {
+            *d = word(k + i);
+        }
+        let dropped = |to: usize| (0..to).any(|i| word(i) != 0);
+        let up = match rm {
+            RoundingMode::None => {
+                *inexact |= dropped(k);
+                false
+            }
+            RoundingMode::ToEven | RoundingMode::ToOdd => {
+                let r = word(k - 1);
+                let half = r >> (WORD_BIT_SIZE - 1) == 1;
+                let rest = (r << 1) != 0 || dropped(k - 1);
+                *inexact |= half || rest;
+                let odd = m[0] & 1 == 1;
+                half && (rest || odd == (rm == RoundingMode::ToEven))
+            }
+            RoundingMode::ToZero
+            | RoundingMode::FromZero
+            | RoundingMode::Up
+            | RoundingMode::Down => {
+                let nz = dropped(k);
+                *inexact |= nz;
+                nz && match rm {
+                    RoundingMode::FromZero => true,
+                    RoundingMode::Up => is_positive,
+                    RoundingMode::Down => !is_positive,
+                    _ => false,
+                }
+            }
+        };
+        let mut ovf = false;
+        if up {
+            ovf = true;
+            for d in m.iter_mut() {
+                if *d < WORD_MAX {
+                    *d += 1;
+                    ovf = false;
+                    break;
+                }
+                *d = 0;
+            }
+            if ovf {
+                m[dl - 1] = WORD_SIGNIFICANT_BIT;
+            }
+        }
+        let nn = k * WORD_BIT_SIZE;
+        n = n.saturating_sub(nn);
+        Ok((Mantissa { m, n }, ovf))
+    }
+
+    /// The mantissa `set_precision(p, rm)` leaves, read straight from `self`, for `0 < p < max_bit_len`:
+    /// the words of `round_mantissa(max_bit_len - p, rm, is_positive, &mut false, max_bit_len, inexact)`
+    /// followed by `set_length(p)` on an owned mantissa. Only the `ceil(p / W)` kept words are written; the
+    /// dropped words are only read for the round and sticky bits. The bit length is `self`'s, less the
+    /// dropped words (as `set_length`). Returns the mantissa, whether the rounding carried out of the top
+    /// word, and whether the rounded mantissa at full length would be all zeros.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for the result.
+    pub(crate) fn precision_from(
+        &self,
+        p: usize,
+        rm: RoundingMode,
+        is_positive: bool,
+        inexact: &mut bool,
+    ) -> Result<(Self, bool, bool), Error> {
+        let src: &[Word] = &self.m;
+        let len = self.max_bit_len();
+        debug_assert!(0 < p && p < len);
+        let drop = len - p;
+        let (k, t) = (drop / WORD_BIT_SIZE, drop % WORD_BIT_SIZE);
+        // Bit `i` (from the bottom) of `self`, and whether every bit below `i` is zero.
+        let bit = |i: usize| (src[i / WORD_BIT_SIZE] >> (i % WORD_BIT_SIZE)) & 1 == 1;
+        let zero_below = |i: usize| {
+            let (w, b) = (i / WORD_BIT_SIZE, i % WORD_BIT_SIZE);
+            src[..w].iter().all(|v| v == &0) && (b == 0 || src[w] << (WORD_BIT_SIZE - b) == 0)
+        };
+        let up = match rm {
+            RoundingMode::None => {
+                // `round_mantissa` only records inexactness: the low `t` bits of word `k` stay.
+                *inexact |= !zero_below(drop);
+                None
+            }
+            RoundingMode::ToEven | RoundingMode::ToOdd => {
+                let half = bit(drop - 1);
+                let rest_zero = zero_below(drop - 1);
+                *inexact |= !rest_zero || half;
+                let odd = bit(drop);
+                let tie_up = if rm == RoundingMode::ToEven { odd } else { !odd };
+                Some(half && (!rest_zero || tie_up))
+            }
+            RoundingMode::ToZero
+            | RoundingMode::FromZero
+            | RoundingMode::Up
+            | RoundingMode::Down => {
+                let nz = !zero_below(drop);
+                *inexact |= nz;
+                Some(
+                    nz && match rm {
+                        RoundingMode::FromZero => true,
+                        RoundingMode::Up => is_positive,
+                        RoundingMode::Down => !is_positive,
+                        _ => false,
+                    },
+                )
+            }
+        };
+        let mut m = Self::reserve_new(src.len() - k)?;
+        for (d, w) in m.iter_mut().zip(src[k..].iter()) {
+            *d = *w;
+        }
+        let mut ovf = false;
+        match up {
+            None => {}
+            Some(false) => m[0] = (m[0] >> t) << t,
+            Some(true) => {
+                if ((m[0] >> t) as DoubleWord) + 1 < (WORD_BASE >> t) {
+                    m[0] = ((m[0] >> t) + 1) << t;
+                } else {
+                    m[0] = 0;
+                    ovf = true;
+                    for v in m[1..].iter_mut() {
+                        if *v < WORD_MAX {
+                            *v += 1;
+                            ovf = false;
+                            break;
+                        }
+                        *v = 0;
+                    }
+                    if ovf {
+                        let top = m.len() - 1;
+                        m[top] = WORD_SIGNIFICANT_BIT;
+                    }
+                }
+            }
+        }
+        let full_zero =
+            m.iter().all(|v| v == &0) && (up.is_some() || zero_below(k * WORD_BIT_SIZE));
+        let n = self.n.saturating_sub(k * WORD_BIT_SIZE);
+        Ok((Mantissa { m, n }, ovf, full_zero))
+    }
+
+    /// A new mantissa holding the top `keep` bits of `self` and zeros below them, written straight from
+    /// `self`: the words and bit length of `mask_bits(max_bit_len - keep, false)` on an owned mantissa (a
+    /// `keep` of zero gives a zero, as `set_zero`).
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for the result.
+    pub(crate) fn top_bits_from(&self, keep: usize) -> Result<Self, Error> {
+        let mut m = Self::reserve_new(self.m.len())?;
+        if keep == 0 {
+            return Ok(Mantissa { m, n: 0 });
+        }
+        let mut drop = self.max_bit_len().saturating_sub(keep);
+        for (d, &v) in m.iter_mut().zip(self.m.iter()) {
+            if drop >= WORD_BIT_SIZE {
+                drop -= WORD_BIT_SIZE;
+            } else {
+                *d = v & (WORD_MAX << drop);
+                drop = 0;
+            }
+        }
         Ok(Mantissa { m, n: self.n })
     }
 

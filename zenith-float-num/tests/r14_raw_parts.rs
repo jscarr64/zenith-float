@@ -1,4 +1,4 @@
-//! R14 (zenith-bound bridge): `ExactNum::as_raw_parts` / `ExactNum::from_raw_parts`.
+//! R14 (zenith-float-bound bridge): `ExactNum::as_raw_parts` / `ExactNum::from_raw_parts`.
 //! Round-trips over the whole representable set and named rejections of malformed parts.
 
 use std::ops::Neg;

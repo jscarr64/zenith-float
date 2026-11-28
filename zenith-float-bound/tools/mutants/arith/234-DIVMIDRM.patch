@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..ec4e4ad 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -250,7 +250,7 @@ impl Ball {
+         let rad = num.div_up(&n_lo.mul_lower(&n_lo.sub_lower(s)));
+         let q = match m.div_exact(n, prec) {
+             Ok(Some(q)) => q,
+-            Ok(None) | Err(_) => m.div(n, prec, MID_RM),
++            Ok(None) | Err(_) => m.div(n, prec, RoundingMode::Up),
+         };
+         finish(OP, q, &rad, prec, false)
+     }

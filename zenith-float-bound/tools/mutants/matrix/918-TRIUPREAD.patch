@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -636,7 +636,7 @@
+         let neg_u = match side {
+             Triangle::Lower => {
+                 let off = row.get(..i).ok_or_else(range)?;
+-                tri_neg_numerator(op, b_i, off.iter().zip(xw.iter()), k, w)?
++                tri_neg_numerator(op, b_i, t.iter().skip(i).step_by(n).zip(xw.iter()).take(off.len()), k, w)?
+             }
+             Triangle::Upper => {
+                 let start = i.checked_add(1).ok_or_else(range)?;

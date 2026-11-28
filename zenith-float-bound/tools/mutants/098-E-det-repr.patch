@@ -1,0 +1,12 @@
+diff --git a/src/error.rs b/src/error.rs
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -70,7 +70,7 @@
+     /// The short reason given by the operation.
+     pub fn detail(&self) -> &'static str {
+         match self {
+-            BoundError::Representation { detail, .. } => detail,
++            BoundError::Representation { detail: _, .. } => "",
+             BoundError::InvalidArgument { detail, .. } => detail,
+             BoundError::Domain { detail, .. } => detail,
+             BoundError::Resource { detail, .. } => detail,

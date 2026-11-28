@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -674,7 +674,7 @@
+     } else {
+         bu.mul_up(&bu)
+     };
+-    let u = u.add_up(&w.mul_up(x));
++    let u = u;
+     let v = v.add_up(&w.mul_up(y));
+     let re = div_rounded_den(a, &a2b2, inexact, &u.div_up(&t), prec)?;
+     let im = div_rounded_den(b, &a2b2, inexact, &v.div_up(&t), prec)?.negated();

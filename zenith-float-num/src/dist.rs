@@ -16,8 +16,9 @@ fn work_p(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE)
 }
 
+/// Strictly positive and finite: `+0` is not a valid scale or shape parameter.
 fn finite_pos(x: &ExactNum) -> bool {
-    x.is_positive() && !x.is_inf()
+    x.is_positive() && !x.is_zero() && !x.is_inf()
 }
 
 fn nn_int(x: &ExactNum) -> bool {
@@ -363,8 +364,8 @@ fn binom_mul(n: &ExactNum, k: &ExactNum, pw: usize) -> ExactNum {
     if k.is_zero() {
         return one;
     }
-    let mut i = one.clone();
-    let mut c = one.clone();
+    let mut i = ExactNum::from_u8(1, pw);
+    let mut c = ExactNum::from_u8(1, pw);
     // `term` = n - k + i, stepped with `i` (integers, exact)
     let mut term = ExactNum::sub_ref(n, k, pw, none).add(&one, pw, none);
     loop {
@@ -410,7 +411,7 @@ mod tests {
         assert_eq!(nc.compare(&half), Some(0));
 
         let gp = one.gamma_pdf(&one, &one, p, rm, &mut cc);
-        let em1 = one.neg_via_mul().exp(p, rm, &mut cc);
+        let em1 = ExactNum::from_i8(-1, p).exp(p, rm, &mut cc);
         assert_eq!(gp.compare(&em1), Some(0));
 
         let po = zero.poisson_pmf(&one, p, rm, &mut cc);
@@ -424,7 +425,9 @@ mod tests {
         assert_eq!(chi.compare(&table), Some(0));
 
         assert!(one.normal_pdf(&zero, &zero, p, rm, &mut cc).is_nan());
-        assert!(one.neg_via_mul().poisson_pmf(&one, p, rm, &mut cc).is_nan());
+        assert!(ExactNum::from_i8(-1, p)
+            .poisson_pmf(&one, p, rm, &mut cc)
+            .is_nan());
         Ok(())
     }
 }

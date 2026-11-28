@@ -1,0 +1,13 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -400,8 +400,7 @@
+         .add_up(&bm.mul_up(dr))
+         .add_up(&cm.mul_up(ar))
+         .add_up(&dm.mul_up(br))
+-        .add_up(&ar.mul_up(cr))
+-        .add_up(&br.mul_up(dr));
++        .add_up(&ar.mul_up(cr));
+     let fr = am
+         .mul_up(dr)
+         .add_up(&bm.mul_up(cr))

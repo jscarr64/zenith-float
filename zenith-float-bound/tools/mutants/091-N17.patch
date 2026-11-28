@@ -1,0 +1,13 @@
+diff --git a/src/mag/mul.rs b/src/mag/mul.rs
+index ad2f4d9..188da74 100644
+--- a/src/mag/mul.rs
++++ b/src/mag/mul.rs
+@@ -34,7 +34,7 @@ pub(super) fn mul_parts(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64, up: bo
+ fn mul_checked(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64, up: bool) -> Option<Mag> {
+     // `ma * mb < 2^128` and both factors are nonzero, so the product is nonzero and the checked
+     // multiply cannot fail; |ea + eb - 128| < 2^66, so the exponent steps cannot fail either.
+-    let prod = NonZeroU128::from(ma).checked_mul(NonZeroU128::from(mb))?;
++    let prod = NonZeroU128::from(ma).checked_mul(NonZeroU128::from(mb))?.get().checked_add(1).and_then(NonZeroU128::new)?;
+     let scale = i128::from(ea)
+         .checked_add(i128::from(eb))?
+         .checked_sub(128)?;

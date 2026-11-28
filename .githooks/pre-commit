@@ -1,8 +1,30 @@
 #!/usr/bin/env bash
-# zenith-float pre-commit hook: unpushed cap (Jeff 2026-11-25: push every small step; plan v2 C-AHEAD).
-# Refuses a commit when the current branch (or detached HEAD) already has 1 unpushed commit: push it first.
-# drift_check.py drops GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE itself before every git call.
-# Enable once per clone: git config core.hooksPath .githooks     Test: tools/drift_check_selftest.sh
+# zenith-float pre-commit hook. Two parts, both required (merge of #42 and #40; Jeff 2026-11-27 10:42 PM CT):
+#   1. Unpushed cap (Jeff 2026-11-25: push every small step; plan v2 C-AHEAD): tools/drift_check.py --pre-commit
+#      refuses a commit when the current branch (or detached HEAD) already has 1 unpushed commit: push it first.
+#      A refusal (rc 1) or an error (rc 2) stops the hook here. drift_check.py drops GIT_DIR / GIT_WORK_TREE /
+#      GIT_INDEX_FILE itself before every git call. Test: tools/drift_check_selftest.sh
+#   2. Library rules (Jeff 2026-11-23 07:43 CT, ROOT-CAUSE.md: the library's rules_scan never ran for a week):
+#        tools/rules_scan.sh --working                  banned constructs on every added line (clone and panic rules include tests)
+#        tools/rules_scan.sh --count-only --no-rise HEAD every count vs its baseline; above baseline passes only if it does not
+#                                                       rise against HEAD (cleanup mode; never writes a baseline); a crash FAILS
+#        cargo fmt --all -- --check
+#        cargo clippy --workspace --all-targets --all-features -- -D warnings
+#      All four always run and report. Test: tools/test_rules_enforcement.sh part 4.
+# A FAIL stops the commit; fix it, never commit with --no-verify. Enable once per clone: git config core.hooksPath .githooks
 set -u
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "pre-commit: not in a git work tree" >&2; exit 2; }
-exec python3 -B "$top/tools/drift_check.py" --pre-commit --repo "$top"
+python3 -B "$top/tools/drift_check.py" --pre-commit --repo "$top" || exit $?
+cd "$top" || exit 2
+rc=0
+step() {
+  local name=$1; shift
+  echo "pre-commit: == $name: $*"
+  if "$@"; then echo "pre-commit: ok $name"; else echo "pre-commit: FAIL $name"; rc=1; fi
+}
+step rules-scan-diff tools/rules_scan.sh --working
+step rules-scan-counts tools/rules_scan.sh --count-only --no-rise HEAD
+step fmt cargo fmt --all -- --check
+step clippy cargo clippy --workspace --all-targets --all-features -- -D warnings
+if [ $rc -eq 0 ]; then echo "pre-commit: ok"; else echo "pre-commit: FAIL (commit refused; fix it, never --no-verify)"; fi
+exit $rc

@@ -1,6 +1,6 @@
 //! Widen software IEEE values to `ExactNum` and IEEE-round back.
 
-use super::arith::{pack_finite, pack_inf, pack_qnan, unpack, Class, Format};
+use super::arith::{pack_finite, pack_inf, pack_qnan, round_rne, unpack, Class, Format};
 use crate::defs::{Exponent, RoundingMode, Word, WORD_BIT_SIZE};
 use crate::ExactNum;
 use core::ops::Neg;
@@ -57,13 +57,10 @@ pub(super) fn from_exact(x: &ExactNum, f: Format) -> u64 {
     }
     let lz = top.leading_zeros();
     let aligned = top << lz;
-    let need = f.frac + 1;
-    let frac_part = aligned >> (64 - need);
-    let rest = aligned << need;
-    let half = 1u64 << 63;
-    let mut sig = frac_part as u128;
-    let g = rest >= half;
-    let st = sticky || (rest << 1) != 0;
+    // The significand plus three guard bits (round_rne's layout); everything below is sticky.
+    let need = f.frac + 1 + 3;
+    let sig = (aligned >> (64 - need)) as u128;
+    let st = sticky || (aligned << need) != 0;
     let e0 = x.exponent().unwrap_or(0);
     let unbiased = e0 - 1;
     // IEEE formats need |stored| far below 2^20; clamping keeps pack_finite's i32 arithmetic exact
@@ -71,15 +68,10 @@ pub(super) fn from_exact(x: &ExactNum, f: Format) -> u64 {
     let wide = unbiased
         .saturating_add(Exponent::from(f.bias))
         .clamp(-(1 << 20), 1 << 20);
-    let mut stored = i32::try_from(wide).unwrap_or(0);
-    if g && (st || (sig & 1) == 1) {
-        sig += 1;
-        if sig >= (1u128 << (f.frac + 1)) {
-            sig >>= 1;
-            stored += 1;
-        }
-    }
-    pack_finite(x.is_negative(), stored, sig, f)
+    let stored = i32::try_from(wide).unwrap_or(0);
+    // One rounding: round_rne moves a below-range value onto the subnormal grid first.
+    let (exp, core) = round_rne(sig, stored, st, f);
+    pack_finite(x.is_negative(), exp, core, f)
 }
 
 fn top64_sticky(words: &[Word]) -> (u64, bool) {

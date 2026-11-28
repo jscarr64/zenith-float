@@ -1,0 +1,13 @@
+diff --git a/src/mag/round.rs b/src/mag/round.rs
+index 904ec82..5608f8c 100644
+--- a/src/mag/round.rs
++++ b/src/mag/round.rs
+@@ -77,7 +77,7 @@ pub(super) fn norm(m: NonZeroU128, scale: i128, sticky: bool, up: bool) -> Optio
+         .checked_add(i128::from(drop))?
+         .checked_sub(i128::from(add))?
+         .checked_add(64)?;
+-    if up && (sticky || lost) {
++    if up && (sticky || (lost && sticky)) {
+         match mant.checked_add(1) {
+             Some(next) => Some(pack(exp, next, up)),
+             // mant was u64::MAX: the carry gives 2^63 at the next exponent (reachable).

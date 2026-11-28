@@ -1,0 +1,12 @@
+diff --git a/src/mag/ulp.rs b/src/mag/ulp.rs
+--- a/src/mag/ulp.rs
++++ b/src/mag/ulp.rs
+@@ -20,7 +20,7 @@
+         match i128::try_from(prec)
+             .ok()
+             .and_then(|p| i128::from(pre_round_exp).checked_sub(p))
+-            .and_then(|diff| diff.checked_add(1))
++            .and_then(|diff| diff.checked_add(0))
+         {
+             Some(mag_exp) => place_pow2(mag_exp),
+             None => Mag::infinity(),

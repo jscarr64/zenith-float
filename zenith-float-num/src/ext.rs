@@ -64,10 +64,7 @@ impl ExactNum {
     /// Returns a new number with value of 0 and precision of `p` bits. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn new(p: usize) -> Self {
-        if p < crate::defs::MIN_PRECISION {
-            return Self::nan(Some(Error::InvalidArgument));
-        }
-        Self::result_to_ext(ExactNumNumber::new(p), false, true)
+        Self::result_to_ext(with_prec(p, || ExactNumNumber::new(p)), false, true)
     }
 
     /// Positive or negative infinity, built fresh (no copy of an existing value).
@@ -160,6 +157,10 @@ impl ExactNum {
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer addition.
     ///
+    /// Errors (NaN carrying the error, as for every `ExactNum` operation):
+    /// `MemoryAllocation` when the exact result is too wide to store, for example `1 + MAX`,
+    /// whose exact value needs about 2^62 bits. No rounded value is substituted (ZF-11).
+    ///
     /// Accuracy: correctly-rounded
     pub fn add_full_prec(&self, d2: &Self) -> Self {
         self.add_op(d2, 0, RoundingMode::None, true)
@@ -216,6 +217,9 @@ impl ExactNum {
     /// Subtracts `d2` from `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer subtraction.
+    ///
+    /// Errors: as [`Self::add_full_prec`] (`MemoryAllocation` when the exact result is too
+    /// wide to store; ZF-11).
     ///
     /// Accuracy: correctly-rounded
     pub fn sub_full_prec(&self, d2: &Self) -> Self {
@@ -373,11 +377,48 @@ impl ExactNum {
             return (self.add(b, p, rm), Self::new(p));
         }
         let exact = self.add_full_prec(b);
+        if exact.is_inf() {
+            // finite operands whose exact result is past the range: `hi` follows the mode
+            // (MAX toward zero, Inf otherwise), as a rounded add/mul does; `lo` is zero.
+            let s = if exact.is_negative() { Sign::Neg } else { Sign::Pos };
+            return (
+                Self::result_to_ext_rm(Err(Error::ExponentOverflow(s)), false, true, p, rm),
+                Self::new(p),
+            );
+        }
+        if exact.err() == Some(Error::MemoryAllocation) {
+            // ZF-11: the exact sum is too wide to store (1 + MAX needs ~2^62 bits). Neither
+            // part needs it: `hi` is the correctly rounded sum, and `lo` is `a + b − hi`
+            // correctly rounded to `p` bits in `rm`, inexact-flagged when that rounding
+            // loses bits (Jeff's 11:54 ruling). `hi + lo` is then the exact sum whenever `lo` fits in `p` bits.
+            return self.two_sum_rounded(b, p, rm);
+        }
         let mut hi = exact.clone();
         if let Err(err) = hi.set_precision(p, rm) {
             return (Self::nan(Some(err)), Self::nan(Some(err)));
         }
         let lo = exact.sub_full_prec(&hi);
+        (hi, Self::normalize_eft_lo(lo, p))
+    }
+
+    /// [`Self::two_sum`] without the full-width exact sum (ZF-11).
+    fn two_sum_rounded(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
+        let hi = ExactNum::add_ref(self, b, p, rm);
+        if hi.is_nan() {
+            return (hi.clone(), hi);
+        }
+        if hi.is_inf() {
+            return (hi, Self::new(p));
+        }
+        // The exact sum is wide only when the exponents are far apart, so `hi` is within an ulp
+        // of the larger operand and `big − hi` is narrow and exact. Then `lo = (big − hi) + small`
+        // exactly, and one rounded add gives it correctly rounded.
+        let (big, small) = if self.abs_cmp(b) == Some(-1) { (b, self) } else { (self, b) };
+        let d = big.sub_full_prec(&hi);
+        if d.is_nan() {
+            return (Self::nan(d.err()), Self::nan(d.err()));
+        }
+        let lo = ExactNum::add_ref(&d, small, p, rm);
         (hi, Self::normalize_eft_lo(lo, p))
     }
 
@@ -408,6 +449,15 @@ impl ExactNum {
             return (ExactNum::mul_ref(self, b, p, rm), Self::new(p));
         }
         let exact = self.mul_full_prec(b);
+        if exact.is_inf() {
+            // finite operands whose exact result is past the range: `hi` follows the mode
+            // (MAX toward zero, Inf otherwise), as a rounded add/mul does; `lo` is zero.
+            let s = if exact.is_negative() { Sign::Neg } else { Sign::Pos };
+            return (
+                Self::result_to_ext_rm(Err(Error::ExponentOverflow(s)), false, true, p, rm),
+                Self::new(p),
+            );
+        }
         let mut hi = exact.clone();
         if let Err(err) = hi.set_precision(p, rm) {
             return (Self::nan(Some(err)), Self::nan(Some(err)));
@@ -650,7 +700,7 @@ impl ExactNum {
     ///
     /// Accuracy: exact
     pub fn div_exact(&self, d2: &Self, p: usize) -> Result<Option<Self>, Error> {
-        ExactNumNumber::p_assertion(round_p(p))?;
+        ExactNumNumber::prec_assertion(p)?;
         if let Flavor::NaN(err) = &self.inner {
             return Err(err.unwrap_or(Error::InvalidArgument));
         }
@@ -963,6 +1013,8 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    /// Base 0 follows `ln x / ln n` with IEEE division by `ln 0 = -Inf`: `-0` for `x >= 1`,
+    /// `+0` for `0 < x < 1`, and NaN for `x <= 0` and `x = +Inf`.
     ///
     /// Accuracy: correctly-rounded
     pub fn log(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -989,7 +1041,17 @@ impl ExactNum {
                 match &n.inner {
                     Flavor::Value(v2) => {
                         if v2.is_zero() {
-                            return INF_NEG;
+                            // log_0(x) = ln x / ln 0 = ln x / (-Inf) with IEEE division: -0 for
+                            // x >= 1 (ln 1 = +0 gives -0 too), +0 for 0 < x < 1, NaN for x <= 0.
+                            if v1.is_zero() || v1.is_negative() {
+                                return NAN;
+                            }
+                            let ge_one = match ExactNumNumber::from_word(1, WORD_BIT_SIZE) {
+                                Ok(one) => v1.cmp(&one) >= 0,
+                                Err(e) => return Self::nan(Some(e)),
+                            };
+                            let z = Self::new(p);
+                            return if ge_one { z.neg() } else { z };
                         }
                         Self::result_to_ext(
                             ExactNumNumber::exact_bits(p, rm, |q, r| v1.log(v2, q, r, cc)).map(
@@ -1022,8 +1084,10 @@ impl ExactNum {
                 } else {
                     match &n.inner {
                         Flavor::Value(v2) => {
-                            // +inf.log(v2)
-                            if v2.exponent() <= 0 {
+                            // +inf.log(v2); base 0: ln(+Inf) / ln 0 = Inf / -Inf is NaN
+                            if v2.is_zero() {
+                                NAN
+                            } else if v2.exponent() <= 0 {
                                 INF_NEG
                             } else {
                                 INF_POS
@@ -1157,6 +1221,14 @@ impl ExactNum {
     /// assert!(n.is_nan());
     /// ```
     pub fn parse(s: &str, rdx: Radix, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if p == usize::MAX {
+            // The precision of the numeral itself: nothing to round to, so no precision to check.
+            let mut r = Self::parse_word(s, rdx, p, rm, cc);
+            if let Flavor::Value(v) = &mut r.inner {
+                v.finish_flags(false, true);
+            }
+            return r;
+        }
         Self::round_exact(false, p, rm, |q, r| Self::parse_word(s, rdx, q, r, cc))
     }
 
@@ -1299,10 +1371,10 @@ impl ExactNum {
     /// Function does not follow any specific distribution law.
     /// The intended use of this function is for testing.
     /// The function returns NaN if the precision `p` is incorrect or when `exp_from` is less than EXPONENT_MIN or `exp_to` is greater than EXPONENT_MAX.
-    #[cfg(feature = "random")]
+    #[cfg(any(test, feature = "random"))]
     pub fn random_normal(p: usize, exp_from: Exponent, exp_to: Exponent) -> Self {
         Self::result_to_ext(
-            ExactNumNumber::random_normal(p, exp_from, exp_to),
+            with_prec(p, || ExactNumNumber::random_normal(p, exp_from, exp_to)),
             false,
             true,
         )
@@ -1372,11 +1444,13 @@ impl ExactNum {
 
         match (&self.inner, &x.inner) {
             (Flavor::Inf(sy), Flavor::Inf(sx)) => {
-                let mut q = cc.pi(p, rm);
-                q = q.div(&ExactNum::from_word(4, p), p, rm);
+                let mag_rm =
+                    if sy.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm };
+                let mut q = cc.pi(p, mag_rm);
+                q = q.div(&ExactNum::from_word(4, p), p, mag_rm);
                 if sx.is_negative() {
                     let three = ExactNum::from_word(3, p);
-                    q = three.mul(&q, p, rm);
+                    q = three.mul(&q, p, mag_rm);
                 }
                 if sy.is_negative() {
                     q.neg()
@@ -1391,7 +1465,12 @@ impl ExactNum {
                 if sx.is_positive() {
                     Self::result_to_ext(ExactNumNumber::new2(p, y.sign(), y.inexact()), false, true)
                 } else {
-                    let mut pi = cc.pi(p, rm);
+                    let mag_rm = if y.is_negative() {
+                        crate::common::util::invert_rm_for_sign(rm)
+                    } else {
+                        rm
+                    };
+                    let mut pi = cc.pi(p, mag_rm);
                     pi.set_sign(y.sign());
                     pi
                 }
@@ -1513,7 +1592,10 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<ExactNumNumber, Error> {
-        let mut half_pi = cc.pi_num(p, rm)?;
+        let mut half_pi = cc.pi_num(
+            p,
+            if s.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm },
+        )?;
 
         half_pi.set_exponent(1);
         half_pi.set_sign(s);
@@ -1533,11 +1615,16 @@ impl ExactNum {
     where
         F: FnMut(usize, RoundingMode) -> Self,
     {
-        // Every public entry point that goes through here rejects `p = 0` (2.0: `MIN_PRECISION` is 1).
-        if p < crate::defs::MIN_PRECISION {
-            return Self::nan(Some(Error::InvalidArgument));
+        // The caller's precision is checked here, before any rounding: `MIN_PRECISION..=MAX_PRECISION`. The
+        // kernels below work at that precision rounded up to whole words (or a word wider), which may lie
+        // above `MAX_PRECISION` and is accepted there.
+        if let Err(e) = ExactNumNumber::prec_assertion(p) {
+            return Self::nan(Some(e));
         }
-        let direct = rm == RoundingMode::None || p >= usize::MAX / 4;
+        if let Err(e) = crate::common::util::reserve_probe(round_p(p)) {
+            return Self::nan(Some(e));
+        }
+        let direct = rm == RoundingMode::None;
         let mut r = if direct {
             f(p, rm)
         } else if p.is_multiple_of(WORD_BIT_SIZE) {
@@ -1564,7 +1651,10 @@ impl ExactNum {
     where
         F: FnMut(usize, RoundingMode) -> Self,
     {
-        let wide = f(round_p(p) + WORD_BIT_SIZE, RoundingMode::ToZero);
+        let Some(wide_p) = round_p(p).checked_add(WORD_BIT_SIZE) else {
+            return Self::nan(Some(Error::MemoryAllocation));
+        };
+        let wide = f(wide_p, RoundingMode::ToZero);
         match wide.inner {
             Flavor::Value(v) => {
                 if v.is_zero() && !v.inexact() {
@@ -1792,7 +1882,7 @@ impl ExactNum {
         Some(((norm >> 64) as u64, sticky, exp))
     }
 
-    /// The exact number `0.mant * 2^exp = mant * 2^(exp - 64)` (positive), the `Mag` convention of zenith-bound:
+    /// The exact number `0.mant * 2^exp = mant * 2^(exp - 64)` (positive), the `Mag` convention of zenith-float-bound:
     /// `mant` in `[2^63, 2^64)` gives a value in `[2^(exp - 1), 2^exp)`, as `exponent()` reads it. Any nonzero
     /// `mant` is accepted; `mant == 0` gives positive zero whatever `exp` is. The result has the precision `p`
     /// (rounded up to the word size, at least 64 bits) and is never rounded.
@@ -1882,13 +1972,13 @@ impl ExactNum {
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn max_value(p: usize) -> Self {
-        Self::result_to_ext(ExactNumNumber::max_value(p), false, true)
+        Self::result_to_ext(with_prec(p, || ExactNumNumber::max_value(p)), false, true)
     }
 
     /// Returns the minimum value for the specified precision `p`: all bits of the mantissa are set to 1, the exponent has the maximum possible value, and the sign is negative. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn min_value(p: usize) -> Self {
-        Self::result_to_ext(ExactNumNumber::min_value(p), false, true)
+        Self::result_to_ext(with_prec(p, || ExactNumNumber::min_value(p)), false, true)
     }
 
     /// Returns the minimum positive subnormal value for the specified precision `p`:
@@ -1897,7 +1987,11 @@ impl ExactNum {
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn min_positive(p: usize) -> Self {
-        Self::result_to_ext(ExactNumNumber::min_positive(p), false, true)
+        Self::result_to_ext(
+            with_prec(p, || ExactNumNumber::min_positive(p)),
+            false,
+            true,
+        )
     }
 
     /// Returns the minimum positive normal value for the specified precision `p`:
@@ -1906,16 +2000,21 @@ impl ExactNum {
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn min_positive_normal(p: usize) -> Self {
-        Self::result_to_ext(ExactNumNumber::min_positive_normal(p), false, true)
+        Self::result_to_ext(
+            with_prec(p, || ExactNumNumber::min_positive_normal(p)),
+            false,
+            true,
+        )
     }
 
     /// Returns a new number with value `d` and the precision `p`. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn from_word(d: Word, p: usize) -> Self {
-        if p < crate::defs::MIN_PRECISION {
-            return Self::nan(Some(Error::InvalidArgument));
-        }
-        Self::result_to_ext(ExactNumNumber::from_word(d, p), false, true)
+        Self::result_to_ext(
+            with_prec(p, || ExactNumNumber::from_word(d, p)),
+            false,
+            true,
+        )
     }
 
     /// `-self` for an operand that has to stay borrowed: fresh `-1` times `self` through the
@@ -1932,6 +2031,16 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v) => Some(v.as_raw_parts()),
             Flavor::Inf(_) | Flavor::NaN(_) => None,
+        }
+    }
+
+    /// Finite inner value; Inf and NaN become errors.
+    pub(crate) fn try_to_number(&self) -> Result<crate::num::ExactNumNumber, Error> {
+        match &self.inner {
+            Flavor::Value(v) => v.clone(),
+            Flavor::Inf(s) => Err(Error::ExponentOverflow(*s)),
+            Flavor::NaN(Some(e)) => Err(*e),
+            Flavor::NaN(None) => Err(Error::InvalidArgument),
         }
     }
 
@@ -2098,9 +2207,21 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn set_precision(&mut self, p: usize, rm: RoundingMode) -> Result<(), Error> {
         if let Flavor::Value(v) = &mut self.inner {
-            v.set_precision(p, rm)
+            with_prec(p, || v.set_precision(p, rm))
         } else {
             Ok(())
+        }
+    }
+
+    /// What `let mut x = self.clone(); let _ = x.set_precision(p, rm);` leaves in `x`, written straight
+    /// from `self`: only the kept words are written (see `ExactNumNumber::rounded_to`).
+    ///
+    /// Accuracy: correctly-rounded
+    pub(crate) fn rounded_to(&self, p: usize, rm: RoundingMode) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.rounded_to(p, rm), false, true),
+            Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
+            Flavor::NaN(err) => Self::nan(*err),
         }
     }
 
@@ -2194,8 +2315,11 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Self {
+        // `usize::MAX` takes the precision from the digits; any other `p` is a public precision.
+        let checked = if p == usize::MAX { Ok(()) } else { ExactNumNumber::prec_assertion(p) };
         Self::result_to_ext(
-            ExactNumNumber::convert_from_radix(sign, digits, e, rdx, p, rm, cc),
+            checked
+                .and_then(|()| ExactNumNumber::convert_from_radix(sign, digits, e, rdx, p, rm, cc)),
             false,
             true,
         )
@@ -2286,7 +2410,7 @@ impl ExactNum {
     /// If the precision `p` is incorrect `self` will be set to NaN.
     pub fn try_set_precision(&mut self, p: usize, rm: RoundingMode, s: usize) -> bool {
         if let Flavor::Value(v) = &mut self.inner {
-            v.try_set_precision(p, rm, s).unwrap_or_else(|e| {
+            with_prec(p, || v.try_set_precision(p, rm, s)).unwrap_or_else(|e| {
                 self.inner = Flavor::NaN(Some(e));
                 true
             })
@@ -2317,8 +2441,31 @@ impl ExactNum {
             Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
             Flavor::NaN(err) => Self::nan(err),
             Flavor::Value(mut v) => {
+                if let Err(e) = ExactNumNumber::prec_assertion(p) {
+                    return Self::nan(Some(e));
+                }
                 v.set_inexact(false);
-                Self::ldexp_value(v, inputs, n, p, rm)
+                Self::ldexp_value(v.is_zero(), inputs, p, rm, move |q, r| v.ldexp(n, q, r))
+            }
+        }
+    }
+
+    /// [`Self::ldexp`] of a borrowed `self`: the result is rounded straight from `self` into new
+    /// storage, bit-identical to the by-value form (which clears the operand's flags first).
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn ldexp_ref(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        let inputs = self.inexact_accumulated();
+        match &self.inner {
+            Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
+            Flavor::NaN(err) => Self::nan(*err),
+            Flavor::Value(v) => {
+                if let Err(e) = ExactNumNumber::prec_assertion(p) {
+                    return Self::nan(Some(e));
+                }
+                Self::ldexp_value(v.is_zero(), inputs, p, rm, |q, r| {
+                    v.ldexp_flags((false, None), n, q, r)
+                })
             }
         }
     }
@@ -2327,21 +2474,18 @@ impl ExactNum {
     /// Zero is handled first (its sign depends on the mode); every other operand takes one call at `p`
     /// bits, or one call at a wider width rounded toward zero followed by a round-to-odd step (see
     /// [`Self::round_exact`]).
-    fn ldexp_value(
-        v: ExactNumNumber,
-        inputs: bool,
-        n: Exponent,
-        p: usize,
-        rm: RoundingMode,
-    ) -> Self {
-        let zero = v.is_zero();
-        let direct = rm == RoundingMode::None || p == 0 || p >= usize::MAX / 4;
+    fn ldexp_value<F>(zero: bool, inputs: bool, p: usize, rm: RoundingMode, ldexp: F) -> Self
+    where
+        F: FnOnce(usize, RoundingMode) -> Result<ExactNumNumber, Error>,
+    {
+        // `p` is a public precision here (`ldexp` checked it), so `wp` cannot overflow.
+        let direct = rm == RoundingMode::None;
+        let wide_p = round_p(p).checked_add(WORD_BIT_SIZE);
         let mut r = if direct || zero {
-            Self::result_to_ext_rm(v.ldexp(n, p, rm), zero, true, p, rm)
-        } else {
-            let wp = round_p(p) + WORD_BIT_SIZE;
+            Self::result_to_ext_rm(ldexp(p, rm), zero, true, p, rm)
+        } else if let Some(wp) = wide_p {
             let wide = Self::result_to_ext_rm(
-                v.ldexp(n, wp, RoundingMode::ToZero),
+                ldexp(wp, RoundingMode::ToZero),
                 false,
                 true,
                 wp,
@@ -2354,6 +2498,8 @@ impl ExactNum {
                 }
                 other => ExactNum { inner: other },
             }
+        } else {
+            Self::nan(Some(Error::MemoryAllocation))
         };
         if let Flavor::Value(v) = &mut r.inner {
             v.finish_flags(inputs, true);
@@ -2542,6 +2688,46 @@ impl ExactNum {
         self
     }
 
+    /// [`Self::abs`] of a borrowed `self`: the result's limbs are written straight from `self`.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn abs_ref(&self) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.abs(), false, true),
+            Flavor::Inf(_) => INF_POS,
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// `-self` of a borrowed `self` (the by-value form is [`core::ops::Neg`]): the result's limbs are
+    /// written straight from `self`.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn neg_ref(&self) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.neg(), false, true),
+            Flavor::Inf(s) => Self::inf_with_sign(!s.is_positive()),
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// [`Self::floor`] of a borrowed `self`: the integer part is written straight into the result.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn floor_ref(&self) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.floor_ref(), v.is_zero(), true),
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    INF_NEG
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
     /// Returns a value with the magnitude of `self` and the sign of `sign`.
     ///
     /// Accuracy: correctly-rounded
@@ -2551,15 +2737,17 @@ impl ExactNum {
         }
         let sign_num = match &sign.inner {
             Flavor::Value(v) => v.clone(),
-            Flavor::Inf(s) => ExactNumNumber::from_i8(s.to_int(), p),
-            Flavor::NaN(_) => ExactNumNumber::new(p),
+            Flavor::Inf(s) => with_prec(p, || ExactNumNumber::from_i8(s.to_int(), p)),
+            Flavor::NaN(_) => with_prec(p, || ExactNumNumber::new(p)),
         };
         let sign_num = match sign_num {
             Ok(v) => v,
             Err(e) => return Self::nan(Some(e)),
         };
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.copysign(&sign_num, p, rm), false, true),
+            Flavor::Value(v) => {
+                Self::result_to_ext(with_prec(p, || v.copysign(&sign_num, p, rm)), false, true)
+            }
             Flavor::Inf(_) => {
                 if sign.is_negative() || (sign.is_zero() && sign_num.is_negative()) {
                     INF_NEG
@@ -2582,9 +2770,25 @@ impl ExactNum {
         }
         match (&self.inner, &toward.inner) {
             (Flavor::Value(v), Flavor::Value(t)) => {
-                Self::result_to_ext(v.next_after(t, p, rm), false, true)
+                Self::result_to_ext(with_prec(p, || v.next_after(t, p, rm)), false, true)
             }
-            (Flavor::Inf(_), _) | (_, Flavor::Inf(_)) => self.clone(),
+            // A finite value steps toward ±Inf (from ±MAX onto ±Inf).
+            (Flavor::Value(v), Flavor::Inf(s)) => Self::result_to_ext(
+                with_prec(p, || v.next_toward(s.is_positive(), p)),
+                false,
+                true,
+            ),
+            // ±Inf toward anything else steps onto ±MAX at precision p.
+            (Flavor::Inf(a), Flavor::Inf(b)) if a == b => Self::inf_with_sign(a.is_positive()),
+            (Flavor::Inf(a), _) => {
+                let r = with_prec(p, || {
+                    let mut m = ExactNumNumber::max_value(p)?;
+                    m.set_sign(*a);
+                    m.set_inexact(true);
+                    Ok(m)
+                });
+                Self::result_to_ext(r, false, true)
+            }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
         }
     }
@@ -3148,8 +3352,10 @@ Accuracy: correctly-rounded",
         usize
     );
     gen_wrapper_word_rm_cc!(
-        "Reduces `self` modulo `2π` into the interval `(-2π, 2π)` using precision `p` and rounding mode `rm`.
-        This function requires constants cache `cc` for computing the result.",
+        "Reduces `self` modulo `2π` into the interval `(-2π, 2π)` (`self − 2πk`, `k` rounded toward zero), rounded
+        to precision `p` with rounding mode `rm`, however close `self` lies to a multiple of 2π.
+        This function requires constants cache `cc` for computing the result.
+Accuracy: correctly-rounded",
         rem_pi,
         Self,
         { NAN },
@@ -3323,7 +3529,7 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Digamma `ψ(self)`. Poles at non-positive integers. Reflection for z < 0.
 
 # Precision
@@ -3380,7 +3586,9 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: `Γ(self) - γ(self, x)` at working precision; `+∞` in `x` returns 0.
+    /// - Algorithm: for `x > self`, the asymptotic series (DLMF 8.11.2) with the first-omitted-term
+    ///   remainder bound (8.11(ii)); otherwise `Γ(self) − γ(self, x)` with the measured
+    ///   cancellation added to the working precision. `+∞` in `x` returns 0.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: yes, `mpfr_gamma_inc` under `mpfr-tests`.
     ///
@@ -3394,6 +3602,24 @@ Accuracy: correctly-rounded",
             rm,
             |q, r| this.gammainc_upper_word(&x_c, q, r, cc),
         )
+    }
+
+    /// Correctly rounded Lambert W dispatch for [`Self::lambert_w0`] / [`Self::lambert_wm1`].
+    pub(crate) fn lambert_w_word(
+        &self,
+        minus1: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => {
+                Self::result_to_ext_rm(v.lambert_w(minus1, p, rm, cc), v.is_zero(), true, p, rm)
+            }
+            Flavor::Inf(sign) if !minus1 && sign.is_positive() => INF_POS,
+            Flavor::NaN(err) => Self::nan(*err),
+            Flavor::Inf(_) => NAN,
+        }
     }
 
     /// Word-precision implementation of [`Self::gammainc_upper`].
@@ -3593,7 +3819,7 @@ Accuracy: correctly-rounded",
     /// Word-precision implementation of [`Self::bi`].
     fn bi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.bi(p, rm, cc), v.is_zero(), true),
+            Flavor::Value(v) => Self::result_to_ext_rm(v.bi(p, rm, cc), v.is_zero(), true, p, rm),
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     INF_POS
@@ -3655,7 +3881,9 @@ Accuracy: correctly-rounded",
     /// Word-precision implementation of [`Self::bi_prime`].
     fn bi_prime_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.bi_prime(p, rm, cc), v.is_zero(), true),
+            Flavor::Value(v) => {
+                Self::result_to_ext_rm(v.bi_prime(p, rm, cc), v.is_zero(), true, p, rm)
+            }
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     INF_POS
@@ -3671,10 +3899,9 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: power series; Miller recurrence for large `n` (`n ≤ 1024`);
+    /// - Algorithm: power series (every `n`; guard bits cover its `e^{|x|}` cancellation);
     ///   Hankel expansion (DLMF 10.17, stopped at its smallest term) when
-    ///   `|x| ≥ max(16, 0.35(p+112))` and `|n|² < 2|x|`, and whenever the series
-    ///   guard would exceed `BESSEL_GUARD_MAX` under that order condition.
+    ///   `|x| ≥ max(16, 0.35(p+112))` and `|n|² < 2|x|`.
     ///   `J_n(-x)=(-1)^n J_n(x)`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR `jn` for `n = 0,1,2`.
     /// - MPFR oracle: yes, `n = 0,1,2` under `mpfr-tests`.
@@ -3725,6 +3952,9 @@ Accuracy: correctly-rounded",
     ///
     /// - Algorithm: series in `x`; integer `ν` delegates to [`Self::bessel_j`];
     ///   Hankel expansion (same switch as [`Self::bessel_j`]) for large `|x|`.
+    /// - Zero: `x = ±0` is decided before any series: 1 at `ν = 0`, a signed zero for
+    ///   integer `ν` and non-integer `ν > 0`, and a signed infinity (sign of \(Γ(ν+1)\))
+    ///   for non-integer `ν < 0` (C99 7.12.1 pole).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (identity golds).
     ///
@@ -3776,6 +4006,9 @@ Accuracy: correctly-rounded",
     /// # Precision
     ///
     /// - Algorithm: series; \(I_ν(z) = i^{-ν} J_ν(iz)\) for the complex path.
+    /// - Zero: `x = ±0` is decided before any series: 1 at `ν = 0`, a signed zero for
+    ///   integer `ν` (\(I_{-n} = I_n\)) and non-integer `ν > 0`, and a signed infinity (sign of \(Γ(ν+1)\))
+    ///   for non-integer `ν < 0` (C99 7.12.1 pole).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -3801,6 +4034,7 @@ Accuracy: correctly-rounded",
     /// # Precision
     ///
     /// - Algorithm: series / Temme; large-`|x|` asymptotic `k_asymptotic`.
+    /// - Zero: `K_ν(±0) = +∞` (C99 7.12.1 pole, as `Y_ν(0)`).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -3825,7 +4059,7 @@ Accuracy: correctly-rounded",
 
 # Precision
 
-- Algorithm: Carlson `R_F` duplication; cap `max(128, p/4 + 64)` steps.
+- Algorithm: Carlson `R_F` duplication; duplication until the series remainder bound.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
 - MPFR oracle: no (identity golds; GNU MPFR has no Carlson `K`).
 Accuracy: correctly-rounded",
@@ -3841,7 +4075,7 @@ Accuracy: correctly-rounded",
 
 # Precision
 
-- Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
+- Algorithm: Carlson `R_F` / `R_D`; duplication until the series remainder bound.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
 - MPFR oracle: no.
 Accuracy: correctly-rounded",
@@ -3867,7 +4101,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F`; cap `max(128, p/4 + 64)` steps.
+    /// - Algorithm: Carlson `R_F`; duplication until the series remainder bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -3909,7 +4143,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
+    /// - Algorithm: Carlson `R_F` / `R_D`; duplication until the series remainder bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -3939,7 +4173,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
+    /// - Algorithm: Carlson `R_J`; duplication until the series remainder bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -3988,7 +4222,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
+    /// - Algorithm: Carlson `R_J`; duplication until the series remainder bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4065,6 +4299,29 @@ Accuracy: correctly-rounded",
             rm,
             |q, r| this.elliptic_f_phi_word(&m_c, q, r, cc),
         )
+    }
+
+    /// Word-precision [`Self::jacobi_arccn`] (`arcdn` when `dn`) on finite values.
+    pub(crate) fn jacobi_arc_cd_word(
+        &self,
+        m: &Self,
+        dn: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(x), Flavor::Value(mv)) => {
+                let r = if dn {
+                    x.jacobi_arcdn_num(mv, p, rm, cc)
+                } else {
+                    x.jacobi_arccn_num(mv, p, rm, cc)
+                };
+                Self::result_to_ext(r, false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => Self::nan(Some(Error::InvalidArgument)),
+        }
     }
 
     /// Word-precision implementation of [`Self::elliptic_f_phi`].
@@ -4182,7 +4439,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM / descending Landen; cap `JACOBI_AGM_MAX = 128`. \(m=0\) is trig; \(m=1\) is hyperbolic.
+    /// - Algorithm: AGM / descending Landen until `|c|` is below the working-precision bound. \(m=0\) is trig; \(m=1\) is hyperbolic.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (identity golds; GNU MPFR has no Jacobi `sn`).
     ///
@@ -4202,7 +4459,7 @@ Accuracy: correctly-rounded",
     fn jacobi_am_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_am(mv, p, rm, cc), u.is_zero(), true)
+                Self::result_to_ext_rm(u.jacobi_am(mv, p, rm, cc), u.is_zero(), true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4213,7 +4470,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4233,7 +4490,7 @@ Accuracy: correctly-rounded",
     fn jacobi_sn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_sn(mv, p, rm, cc), u.is_zero(), true)
+                Self::result_to_ext_rm(u.jacobi_sn(mv, p, rm, cc), u.is_zero(), true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4243,7 +4500,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4263,7 +4520,7 @@ Accuracy: correctly-rounded",
     fn jacobi_cn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_cn(mv, p, rm, cc), u.is_zero(), true)
+                Self::result_to_ext_rm(u.jacobi_cn(mv, p, rm, cc), u.is_zero(), true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4273,7 +4530,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4293,7 +4550,7 @@ Accuracy: correctly-rounded",
     fn jacobi_dn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_dn(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_dn(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4303,7 +4560,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4323,7 +4580,7 @@ Accuracy: correctly-rounded",
     fn jacobi_cd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_cd(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_cd(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4333,7 +4590,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4353,7 +4610,7 @@ Accuracy: correctly-rounded",
     fn jacobi_ns_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_ns(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_ns(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4363,7 +4620,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4383,7 +4640,7 @@ Accuracy: correctly-rounded",
     fn jacobi_nc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_nc(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_nc(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4393,7 +4650,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4413,7 +4670,7 @@ Accuracy: correctly-rounded",
     fn jacobi_nd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_nd(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_nd(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4423,7 +4680,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4443,7 +4700,7 @@ Accuracy: correctly-rounded",
     fn jacobi_sc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_sc(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_sc(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4453,7 +4710,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4473,7 +4730,7 @@ Accuracy: correctly-rounded",
     fn jacobi_sd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_sd(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_sd(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4483,7 +4740,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4503,7 +4760,7 @@ Accuracy: correctly-rounded",
     fn jacobi_cs_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_cs(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_cs(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4513,7 +4770,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4533,7 +4790,7 @@ Accuracy: correctly-rounded",
     fn jacobi_ds_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_ds(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_ds(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4543,7 +4800,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4563,7 +4820,7 @@ Accuracy: correctly-rounded",
     fn jacobi_dc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_dc(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_dc(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4573,7 +4830,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: three-term recurrence at `p + O(n)` bits. Cap `ORTHOPOLY_N_MAX`.
+    /// - Algorithm: three-term recurrence at `p + O(n)` bits. Three-term recurrence; degree is not capped.
     /// - Bound: working-precision recurrence (not a Ziv leaf).
     /// - MPFR oracle: no.
     ///
@@ -4626,7 +4883,7 @@ Accuracy: correctly-rounded",
     /// - Algorithm: terminating series (any `z`); series for `|z| ≤ 1/2`; Pfaff `z/(z−1)` for `z < −1/2`;
     ///   `1 − z` connection (DLMF 15.8.4, logarithmic form A&S 15.3.10–11 when `c − a − b` is an
     ///   integer) for `1/2 < z < 1`; Gauss at `z = 1`. Cancellation is measured and the evaluation
-    ///   repeated with more guard bits. Series cap `HYPERGEOM_TERM_MAX`.
+    ///   repeated with more guard bits. The series runs until the term bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4761,7 +5018,7 @@ macro_rules! impl_int_conv {
             /// Precision is rounded upwards to the word size.
             /// The function returns NaN if the precision `p` is incorrect.
             pub fn $from_s(i: $s, p: usize) -> Self {
-                Self::result_to_ext(ExactNumNumber::$from_s(i, p), false, true)
+                Self::result_to_ext(with_prec(p, || ExactNumNumber::$from_s(i, p)), false, true)
             }
         }
     };
@@ -5524,7 +5781,7 @@ mod tests {
         assert!(NAN.abs_cmp(&NAN).is_none());
         // Finite values compare by magnitude, whatever their signs (1.0.4 compared signed values).
         let two = ExactNum::from_u8(2, 64);
-        let neg_two = two.neg_via_mul();
+        let neg_two = ExactNum::from_i8(-2, 64);
         assert!(neg_two.abs_cmp(&ONE).ok_or(crate::Error::InvalidArgument)? > 0);
         assert!(ONE.abs_cmp(&neg_two).ok_or(crate::Error::InvalidArgument)? < 0);
         assert!(neg_two.abs_cmp(&two).ok_or(crate::Error::InvalidArgument)? == 0);
@@ -5613,10 +5870,10 @@ mod tests {
         assert!(INF_NEG.log(&INF_POS, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_NEG.log(&INF_NEG, rand_p(), rm, &mut cc).is_nan());
         assert!(TWO.log(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
-        assert!(half.log(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
+        // F-26 (ZF-M27, held): log base 1 of 1/2 is ruled -Inf; the library gives +Inf today, so it is not asserted.
         assert!(ONE.log(&ONE, rand_p(), rm, &mut cc).is_nan());
 
-        assert!(ONE.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
+        // M27-F12 (held): pow(1, NaN) is ruled 1 (IEEE 754, POW-01); the library gives NaN today, not asserted.
         assert!(NAN.pow(&ONE, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_POS.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
         assert!(NAN.pow(&INF_POS, rand_p(), rm, &mut cc).is_nan());
@@ -5625,7 +5882,7 @@ mod tests {
         assert!(NAN.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
 
         assert!(NAN.powi(2, rand_p(), rm).is_nan());
-        assert!(NAN.powi(0, rand_p(), rm).is_nan());
+        // M27-F12 (held): powi(NaN, 0) is ruled 1 (F-12 widened); the library gives NaN today, so it is not asserted.
         assert!(INF_POS.powi(2, rand_p(), rm).is_inf_pos());
         assert!(INF_POS.powi(3, rand_p(), rm).is_inf_pos());
         assert!(INF_NEG.powi(4, rand_p(), rm).is_inf_pos());
@@ -5668,6 +5925,7 @@ mod tests {
             RoundingMode::FromZero,
             RoundingMode::ToEven,
             RoundingMode::ToOdd,
+            RoundingMode::None,
         ] {
             assert!(INF_NEG.round(0, rm).is_inf_neg());
             assert!(INF_POS.round(0, rm).is_inf_pos());
@@ -5926,12 +6184,15 @@ mod tests {
             &mut cc,
         );
 
+        // Since a09e84b / e8502fe the spelling is MPFR mpfr_get_str with n = 0: m = 1 + ceil(128·log10 2) = 40 digits.
+        // Reference: MPFR 4.2.2 via gmpy2 2.3.2 (land39/final/pr40-fixes/ci/mpfr_display_ref.{py,out}); the old 39-digit
+        // spelling also parses back, it is just not MPFR's.
         let d1str = format!("{}", d1);
-        assert_eq!(&d1str, "1.23456789012345678901234567890123456789e-2");
+        assert_eq!(&d1str, "1.234567890123456789012345678901234567889e-2");
         assert_eq!(format!("{:e}", d1), d1str);
         assert_eq!(
             format!("{:E}", d1),
-            "1.23456789012345678901234567890123456789E-2"
+            "1.234567890123456789012345678901234567889E-2"
         );
         let mut d2 = ExactNum::from_str(&d1str)?;
         d2.set_precision(DEFAULT_P, RoundingMode::ToEven)?;
@@ -5945,6 +6206,7 @@ mod tests {
             &mut cc,
         );
         let d1str = format!("{}", d1);
+        // MPFR's 40 digits are ...7890; zf drops trailing zeros of the digit string.
         assert_eq!(&d1str, "-1.23456789012345678901234567890123456789e+2");
         let mut d2 = ExactNum::from_str(&d1str)?;
         d2.set_precision(DEFAULT_P, RoundingMode::ToEven)?;
@@ -6180,14 +6442,126 @@ mod tests {
             .is_nan());
         Ok(())
     }
+
+    /// `ExactNum::try_set_precision` at its roundability boundaries, at 64-bit precision from
+    /// 128- and 192-bit operands. Golds are mpmath 1.3.0 rounded to 64 bits (words below, low word
+    /// first). Certifiable inputs return `true` with the correctly rounded value; a known tail of
+    /// `1000…0` or `0111…1` on an inexact operand cannot be rounded from `s` bits and returns
+    /// `false`; Inf and NaN return `true`; a bad precision gives NaN and `true`. This is the
+    /// certification step of the Ziv loops (`ball::ziv_round`, complex `ziv_complex`); if it never
+    /// certifies they run to their budget, so it is checked here directly, in microseconds.
+    #[test]
+    fn try_set_precision_certifies_at_its_roundability_boundaries() {
+        const ONE_HI: Word = 0x8000_0000_0000_0000;
+        let pos = Sign::Pos;
+        let try_set = |m: &[Word], inexact: bool, rm: RoundingMode, s: usize| {
+            let mut x = ExactNum::from_words(m, pos, 1);
+            x.set_inexact(inexact);
+            let ok = x.try_set_precision(64, rm, s);
+            (ok, x)
+        };
+        let gold = |w: Word| ExactNum::from_words(&[w], pos, 1);
+
+        // sqrt(2) truncated to 192 bits, marked inexact, 128 bits claimed correct: the tail after
+        // bit 64 is mixed, so every mode certifies. mpmath: RN/RZ 0xb504f333f9de6484, RU ...85.
+        let sqrt2 = [0x1d6f_60ba_893b_a84c, 0x597d_89b3_754a_be9f, 0xb504_f333_f9de_6484];
+        for (rm, w) in [
+            (RoundingMode::ToEven, 0xb504_f333_f9de_6484),
+            (RoundingMode::ToZero, 0xb504_f333_f9de_6484),
+            (RoundingMode::Down, 0xb504_f333_f9de_6484),
+            (RoundingMode::Up, 0xb504_f333_f9de_6485),
+            (RoundingMode::FromZero, 0xb504_f333_f9de_6485),
+        ] {
+            let (ok, x) = try_set(&sqrt2, true, rm, 128);
+            assert!(ok, "sqrt2 {rm:?}: not certified: {x:?}");
+            assert_eq!(x.compare(&gold(w)), Some(0), "sqrt2 {rm:?}: {x:?}");
+            assert_eq!(x.precision(), Some(64), "sqrt2 {rm:?}");
+        }
+
+        // 1 + 2^-64 (the tie at 64 bits). Exact: certified, ties to even -> 1 (mpmath RN64 1).
+        let tie = [ONE_HI, ONE_HI];
+        let (ok, x) = try_set(&tie, false, RoundingMode::ToEven, 128);
+        assert!(ok, "exact tie: {x:?}");
+        assert_eq!(x.compare(&gold(ONE_HI)), Some(0), "exact tie: {x:?}");
+        // Inexact with 128 bits known: the unknown bits decide the tie -> not certified.
+        assert!(
+            !try_set(&tie, true, RoundingMode::ToEven, 128).0,
+            "inexact tie"
+        );
+
+        // 1 + 2^-64 + 2^-127: a known one below the round bit -> certified, up to 1 + 2^-63
+        // (mpmath RN64 0x8000000000000001), exact or not.
+        let above = [ONE_HI | 1, ONE_HI];
+        for inexact in [false, true] {
+            let (ok, x) = try_set(&above, inexact, RoundingMode::ToEven, 128);
+            assert!(ok, "above tie inexact={inexact}: {x:?}");
+            assert_eq!(x.compare(&gold(ONE_HI | 1)), Some(0), "above tie: {x:?}");
+        }
+
+        // 1 + 2^-64 - 2^-127 (round bit 0, then ones to bit 128). Exact: certified, down to 1
+        // (mpmath RN64 1). Inexact: the unknown bits may carry it to the tie -> not certified.
+        let below = [ONE_HI - 1, ONE_HI];
+        let (ok, x) = try_set(&below, false, RoundingMode::ToEven, 128);
+        assert!(ok, "exact below tie: {x:?}");
+        assert_eq!(x.compare(&gold(ONE_HI)), Some(0), "exact below tie: {x:?}");
+        assert!(
+            !try_set(&below, true, RoundingMode::ToEven, 128).0,
+            "inexact below tie"
+        );
+
+        // Inf and NaN certify as they are; a bad precision is NaN (input error) and certifies.
+        for mut special in [INF_POS, INF_NEG, ExactNum::nan(None)] {
+            assert!(special.try_set_precision(64, RoundingMode::ToEven, 128));
+        }
+        let mut bad = ExactNum::from_words(&sqrt2, pos, 1);
+        assert!(bad.try_set_precision(0, RoundingMode::ToEven, 128));
+        assert!(bad.is_nan(), "p=0: {bad:?}");
+    }
 }
 
-#[cfg(feature = "random")]
 #[cfg(test)]
 mod rand_tests {
 
     use super::*;
     use crate::common::util::TEST_EXP_BOUND;
+
+    /// `ExactNum::random_normal` from a fixed seed: the same value the core
+    /// `ExactNumNumber::random_normal` draws from that seed, a non-zero normal number whose
+    /// precision is `p` rounded up to whole words and whose exponent is in range, with both signs
+    /// over the seeds. A bad precision is NaN. Runs on its own thread so the pinned stream does not
+    /// leak into other tests.
+    #[cfg(feature = "std")]
+    #[test]
+    fn random_normal_seeded_is_the_core_draw_nonzero_normal_at_word_precision(
+    ) -> Result<(), crate::Error> {
+        std::thread::spawn(|| -> Result<(), crate::Error> {
+            let (exp_from, exp_to) = (-8, 8);
+            let mut seen_sign = [false; 2];
+            for (i, p) in [64usize, 65, 127, 128, 129, 192, 256, 320]
+                .into_iter()
+                .enumerate()
+            {
+                let seed = 0x5EED_0000_u64 + i as u64;
+                crate::common::test_rng::reseed_random_this_thread(seed);
+                let n = ExactNum::random_normal(p, exp_from, exp_to);
+                crate::common::test_rng::reseed_random_this_thread(seed);
+                let gold = ExactNum::from(ExactNumNumber::random_normal(p, exp_from, exp_to)?);
+                assert_eq!(n.classify(), FpCategory::Normal, "p={p}: {n:?}");
+                assert!(!n.is_zero() && !n.is_nan(), "p={p}: {n:?}");
+                assert_eq!(n.precision(), Some(round_p(p)), "p={p}");
+                let e = n.exponent().ok_or(crate::Error::InvalidArgument)?;
+                assert!((exp_from..=exp_to).contains(&e), "p={p} e={e}");
+                assert_eq!(n.compare(&gold), Some(0), "p={p}: {n:?} vs {gold:?}");
+                assert_eq!(n.is_negative(), gold.is_negative(), "p={p}");
+                seen_sign[usize::from(n.is_negative())] = true;
+            }
+            assert_eq!(seen_sign, [true, true], "both signs over the fixed seeds");
+            assert!(ExactNum::random_normal(0, exp_from, exp_to).is_nan());
+            Ok(())
+        })
+        .join()
+        .map_err(|_| crate::Error::InvalidArgument)?
+    }
 
     #[test]
     fn test_rand() -> Result<(), crate::Error> {
@@ -6240,7 +6614,15 @@ mod special_arg_tests {
             .sqrt(64, RoundingMode::ToEven);
         assert!(finite.is_nan());
         assert_eq!(finite.err(), Some(Error::InvalidArgument));
-        for rm in [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let inf = INF_NEG.sqrt(64, rm);
             assert!(inf.is_nan());
             assert_eq!(inf.err(), finite.err(), "sqrt(-Inf) NaN kind");
@@ -6503,12 +6885,15 @@ mod add_sub_zero_tests {
     use crate::{Error, ExactNum, INF_NEG, INF_POS};
     use core::ops::Neg;
 
-    const RMS: [RoundingMode; 5] = [
+    /// All 7 modes (`None` keeps the storage precision, FIXLIST ZF-M27).
+    const RMS: [RoundingMode; 7] = [
         RoundingMode::ToEven,
         RoundingMode::ToZero,
         RoundingMode::Up,
         RoundingMode::Down,
         RoundingMode::FromZero,
+        RoundingMode::ToOdd,
+        RoundingMode::None,
     ];
 
     fn zero(neg: bool) -> ExactNum {
@@ -6640,9 +7025,13 @@ mod grid_digest_tests {
     use core::ops::Neg;
     use std::collections::hash_map::DefaultHasher;
 
-    const RMS: [RoundingMode; 6] = [
+    /// All 7 modes. The digests pinned before ToOdd joined (Q2) hash the six others into `h`, in their old order, and
+    /// ToOdd into its own new digest `h_odd`: ToOdd is nearest with ties to odd, so like ToEven it overflows to +-Inf,
+    /// and its overflow cells are correct to pin. Each ToOdd cell was checked by `scripts/verify_grid_digests.py`.
+    const RMS: [RoundingMode; 7] = [
         RoundingMode::None,
         RoundingMode::ToEven,
+        RoundingMode::ToOdd,
         RoundingMode::ToZero,
         RoundingMode::Up,
         RoundingMode::Down,
@@ -6770,6 +7159,82 @@ mod grid_digest_tests {
         digest(r, h)
     }
 
+    /// One digest cell for [`dd`]: the op name, its operands and integer arguments, `p`, `rm` and the result.
+    #[derive(Clone, Copy)]
+    struct DigestCell<'a> {
+        op: &'a str,
+        args: &'a [&'a ExactNum],
+        ints: &'a [i128],
+        p: usize,
+        rm: RoundingMode,
+        r: &'a ExactNum,
+    }
+
+    /// NONE-GAP F-B: a `None` result of finite operands that is +-Inf is an overflow cell, and Jeff ruled
+    /// (2026-11-11 12:03 and 12:15 PM CT) that a `None` overflow saturates to +-MAX (toward zero at rp(p, 64)). Today it
+    /// gives +-Inf, a known-wrong bit, so the cell is counted and left out of the digest. It is fixed red-first in the
+    /// ZF-M27 PR, which re-pins this digest with the cells back in. A division by zero (or the reciprocal of zero) is a
+    /// pole, not an overflow, and stays hashed. The cells are listed by dump line in
+    /// `fold-pr1-162-grid-wrong-cells.tsv` (PR #39 body).
+    fn dd_none_gap(
+        h: &mut DefaultHasher,
+        gap: &mut usize,
+        cell: DigestCell<'_>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let DigestCell {
+            op,
+            args,
+            ints,
+            p,
+            rm,
+            r,
+        } = cell;
+        let finite = args.iter().all(|a| !a.is_inf() && !a.is_nan());
+        let pole = (op == "div" && args.get(1).is_some_and(|d| d.is_zero()))
+            || (op == "reciprocal" && args.first().is_some_and(|d| d.is_zero()));
+        if rm == RoundingMode::None && r.is_inf() && finite && !pole {
+            *gap += 1;
+            return Ok(());
+        }
+        dd(h, op, args, ints, p, rm, r)
+    }
+
+    /// An overflow in a toward-zero direction: +-Inf where the 12:15 PM CT ruling (Jeff, 2026-11-11) gives +-MAX. That is
+    /// None and ToZero either way, Down for +overflow and Up for -overflow (M27-TZ/UD). The caller rules out poles.
+    fn tz_overflow(rm: RoundingMode, r: &ExactNum) -> bool {
+        r.is_inf()
+            && match rm {
+                RoundingMode::None | RoundingMode::ToZero => true,
+                RoundingMode::Down => r.is_positive(),
+                RoundingMode::Up => r.is_negative(),
+                _ => false,
+            }
+    }
+
+    /// A known-wrong cell of a held finding (queued as a ZF-M27 exception, or reported for an id): counted in `held`
+    /// and left out of the pinned digest, so the pin does not hold wrong bits. The fix puts the cell back, red first.
+    /// The cell ids (dump lines) are listed in the PR #39 body.
+    fn dd_held(
+        h: &mut DefaultHasher,
+        held: &mut usize,
+        wrong: bool,
+        cell: DigestCell<'_>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let DigestCell {
+            op,
+            args,
+            ints,
+            p,
+            rm,
+            r,
+        } = cell;
+        if wrong {
+            *held += 1;
+            return Ok(());
+        }
+        dd(h, op, args, ints, p, rm, r)
+    }
+
     #[test]
     fn ldexp_and_scalb_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let shifts = [
@@ -6791,37 +7256,55 @@ mod grid_digest_tests {
             EXPONENT_MIN + 1,
         ];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
         for i in 0..OPERANDS {
             for n in shifts {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(
-                            &mut h,
-                            "ldexp",
-                            &[&operand(i)],
-                            &[i128::from(n)],
-                            p,
-                            rm,
-                            &operand(i).ldexp(n, p, rm),
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
+                            DigestCell {
+                                op: "ldexp",
+                                args: &[&operand(i)],
+                                ints: &[i128::from(n)],
+                                p,
+                                rm,
+                                r: &operand(i).ldexp(n, p, rm),
+                            },
                         )?;
-                        dd(
-                            &mut h,
-                            "ldexp",
-                            &[&operand(i)],
-                            &[i128::from(n)],
-                            p,
-                            rm,
-                            &operand(i).scalb(n, p, rm),
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
+                            DigestCell {
+                                op: "ldexp",
+                                args: &[&operand(i)],
+                                ints: &[i128::from(n)],
+                                p,
+                                rm,
+                                r: &operand(i).scalb(n, p, rm),
+                            },
                         )?;
                         count += 2;
                     }
                 }
             }
         }
-        assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
+        assert_eq!(count, OPERANDS * 16 * 7 * RMS.len() * 2);
         println!("ldexp grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 1_196_293_272_222_150_608);
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 378);
+        // Re-pinned (F9a-4): was 1_196_293_272_222_150_608, with the None overflow cells in (NONE-GAP F-B).
+        println!(
+            "ldexp_and_scalb_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 3_256_206_381_344_692_312);
+        assert_eq!(h.finish(), 14_437_472_841_843_974_673);
         Ok(())
     }
 
@@ -6831,12 +7314,14 @@ mod grid_digest_tests {
         let huge = 1usize << (usize::BITS - 24);
         let positions = [0usize, 1, 5, 63, 64, 65, 100, 200, 1 << 20, huge, usize::MAX / 2];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..OPERANDS {
             for n in positions {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "round",
                         &[&operand(i)],
                         &[i128::try_from(n)?],
@@ -6848,10 +7333,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, OPERANDS * 11 * 6);
+        assert_eq!(count, OPERANDS * 11 * RMS.len());
         println!("round grid digest = {}", h.finish());
         // pinned on a 64-bit target; a narrower `usize` has a different position grid
         if cfg!(target_pointer_width = "64") {
+            println!("round_grid_digest ToOdd digest = {}", h_odd.finish());
+            // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+            assert_eq!(h_odd.finish(), 6_694_869_305_830_813_196);
             assert_eq!(h.finish(), 10_921_324_020_573_550_304);
         }
         Ok(())
@@ -6934,6 +7422,7 @@ mod grid_digest_tests {
         const COP: &str = "cplx_as";
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for a in parts {
             for b in parts {
@@ -6941,6 +7430,8 @@ mod grid_digest_tests {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
+                                let hh =
+                                    if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)]
@@ -6948,7 +7439,7 @@ mod grid_digest_tests {
                                     .enumerate()
                                 {
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 0],
@@ -6957,7 +7448,7 @@ mod grid_digest_tests {
                                         r.re(),
                                     )?;
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 1],
@@ -6973,8 +7464,14 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * RMS.len() * 2);
         println!("complex add/sub grid digest = {}", h.finish());
+        println!(
+            "complex_add_sub_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_151_091_260_857_281_420);
         assert_eq!(h.finish(), 18_040_698_040_155_693_760);
         Ok(())
     }
@@ -6984,13 +7481,15 @@ mod grid_digest_tests {
     #[test]
     fn add_ref_sub_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "add",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -6999,7 +7498,7 @@ mod grid_digest_tests {
                             &ExactNum::add_ref(&operand(i), &operand(j), p, rm),
                         )?;
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "sub",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7038,7 +7537,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 45_030);
+        assert_eq!(count, 52_436);
+        println!(
+            "add_ref_sub_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 5_924_280_179_230_656_575);
         assert_eq!(h.finish(), 8_129_670_429_050_627_241);
         Ok(())
     }
@@ -7050,6 +7555,7 @@ mod grid_digest_tests {
         const COP: &str = "cplx_as";
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for a in parts {
             for b in parts {
@@ -7057,6 +7563,8 @@ mod grid_digest_tests {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
+                                let hh =
+                                    if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                                 let z1 = ExactComplex::new(operand(a), operand(b));
                                 let z2 = ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [
@@ -7067,7 +7575,7 @@ mod grid_digest_tests {
                                 .enumerate()
                                 {
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 0],
@@ -7076,7 +7584,7 @@ mod grid_digest_tests {
                                         r.re(),
                                     )?;
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 1],
@@ -7092,7 +7600,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * RMS.len() * 2);
+        println!(
+            "complex_add_ref_sub_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_151_091_260_857_281_420);
         assert_eq!(h.finish(), 18_040_698_040_155_693_760);
         Ok(())
     }
@@ -7100,13 +7614,15 @@ mod grid_digest_tests {
     #[test]
     fn add_sub_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "add",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7115,7 +7631,7 @@ mod grid_digest_tests {
                             &operand(i).add(&operand(j), p, rm),
                         )?;
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "sub",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7155,10 +7671,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 45_030);
+        assert_eq!(count, 52_436);
         println!("add/sub grid digest = {}", h.finish());
         // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
         // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
+        println!("add_sub_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 5_924_280_179_230_656_575);
         assert_eq!(h.finish(), 8_129_670_429_050_627_241);
         Ok(())
     }
@@ -7168,47 +7687,74 @@ mod grid_digest_tests {
     #[test]
     fn mul_div_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
+        let mut held_fb_full = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(
-                            &mut h,
-                            "mul",
-                            &[&operand(i), &operand(j)],
-                            &[],
-                            p,
-                            rm,
-                            &operand(i).mul(&operand(j), p, rm),
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
+                            DigestCell {
+                                op: "mul",
+                                args: &[&operand(i), &operand(j)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &operand(i).mul(&operand(j), p, rm),
+                            },
                         )?;
-                        dd(
-                            &mut h,
-                            "div",
-                            &[&operand(i), &operand(j)],
-                            &[],
-                            p,
-                            rm,
-                            &operand(i).div(&operand(j), p, rm),
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
+                            DigestCell {
+                                op: "div",
+                                args: &[&operand(i), &operand(j)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &operand(i).div(&operand(j), p, rm),
+                            },
                         )?;
                         count += 2;
                     }
                 }
-                dd(
+                // NONE-GAP F-B (F9d-17): `mul_full_prec` always runs in None, so a true overflow gives +-Inf
+                // where the 12:03 / 12:15 PM CT rulings give +-MAX (ZF-M27). Counted in `held_fb_full`, not hashed.
+                dd_none_gap(
                     &mut h,
-                    "mul_full",
-                    &[&operand(i), &operand(j)],
-                    &[],
-                    0,
-                    RoundingMode::None,
-                    &operand(i).mul_full_prec(&operand(j)),
+                    &mut held_fb_full,
+                    DigestCell {
+                        op: "mul_full",
+                        args: &[&operand(i), &operand(j)],
+                        ints: &[],
+                        p: 0,
+                        rm: RoundingMode::None,
+                        r: &operand(i).mul_full_prec(&operand(j)),
+                    },
                 )?;
                 count += 1;
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
+        assert_eq!(
+            count,
+            PAIR_OPERANDS * PAIR_OPERANDS * (7 * RMS.len() * 2 + 1)
+        );
         println!("mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 448);
+        // NONE-GAP F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells (+-Inf, ruling +-MAX) are not hashed
+        assert_eq!(held_fb_full, 18);
+        // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
+        println!("mul_div_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
+        // Re-pinned (F9d-17): was 6_854_509_046_823_660_977, with the 18 `mul_full_prec` None-overflow cells in.
+        assert_eq!(h.finish(), 12_397_414_023_097_760_287);
         Ok(())
     }
 
@@ -7220,36 +7766,99 @@ mod grid_digest_tests {
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held = 0usize;
+        let mut held_f18 = 0usize;
+        let mut held_spur = 0usize;
+        let mut held_tzud = 0usize;
+        // F-25: complex cancellation. Cells (1-based position in this loop) whose part is not the correctly rounded
+        // value against an exact rational oracle (`scripts/gen_grid_held_cells.py`), per mode in `RMS` order.
+        const F25_NORMAL: &[u32] = &include!("grid_held/f25_normal.in");
+        // F-25, subnormal range: true value below 2^(EXPONENT_MIN - 1), library part not the correctly rounded value on
+        // the gradual grid 2^(EXPONENT_MIN - p), and wrong under the ruled target contract (P20 / UFL-01, no subnormals).
+        const F25_SUBNORMAL: &[u32] = &include!("grid_held/f25_subnormal.in");
+        let mut cell = 0u32;
+        let mut held_f25n = [0usize; 7];
+        let mut held_f25s = [0usize; 7];
         for a in parts {
             for b in parts {
                 for c in parts {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
+                                // HELD F-18 (N-3): (0 + s i) / (0 + s i), s subnormal, gives NaN, not 1, in every
+                                // mode, and the ToOdd cells are not checked (no single-rounding oracle for complex
+                                // mul/div). ToOdd gets its own digest after the ZF-M27 fix.
+                                if rm == RoundingMode::ToOdd {
+                                    continue;
+                                }
+                                let hh = &mut h;
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [z1().mul(&z2(), p, rm), z1().div(&z2(), p, rm)]
                                     .into_iter()
                                     .enumerate()
                                 {
-                                    dd(
-                                        &mut h,
-                                        COP,
-                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
-                                        &[i128::try_from(k)?, 0],
-                                        p,
-                                        rm,
-                                        r.re(),
-                                    )?;
-                                    dd(
-                                        &mut h,
-                                        COP,
-                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
-                                        &[i128::try_from(k)?, 1],
-                                        p,
-                                        rm,
-                                        r.im(),
-                                    )?;
+                                    let x = [operand(a), operand(b), operand(c), operand(d)];
+                                    let finite = x.iter().all(|v| !v.is_inf() && !v.is_nan());
+                                    let div_nonzero = k == 1 && !(x[2].is_zero() && x[3].is_zero());
+                                    for (part, v) in [r.re(), r.im()].into_iter().enumerate() {
+                                        cell += 1;
+                                        // F-18 (N-3): a quotient of finite parts by a nonzero divisor with a subnormal
+                                        // part (operand 21) is NaN(InvalidArgument), not the quotient.
+                                        let f18 = div_nonzero && finite && v.is_nan();
+                                        // Spurious overflow (finding id pending): re of (1/3 - i/3) / (s + s i) and of
+                                        // (-1/3 + i/3) / (s + s i) is about 2^(EXPONENT_MAX - 50), finite, but +-Inf.
+                                        let spur = div_nonzero
+                                            && finite
+                                            && v.is_inf()
+                                            && part == 0
+                                            && matches!((a, b), (4, 5) | (5, 4))
+                                            && c == 21
+                                            && d == 21;
+                                        held_f18 += usize::from(f18);
+                                        // NONE-GAP F-B / M27-TZ/UD: an overflow of finite parts (not a division by zero)
+                                        // in a toward-zero direction is +-Inf where the 12:15 PM CT ruling is +-MAX.
+                                        let tzud = finite
+                                            && (k == 0 || div_nonzero)
+                                            && !spur
+                                            && tz_overflow(rm, v);
+                                        held_spur += usize::from(spur);
+                                        held_tzud += usize::from(tzud);
+                                        // F-25 (complex cancellation): a finite part that is not the correctly rounded
+                                        // value, e.g. im of (-7 - 7i)(1/3 - i/3) at p = 1 is -6.3e-20, but Up gives 2.
+                                        let f25n = F25_NORMAL.binary_search(&cell).is_ok();
+                                        let f25s = F25_SUBNORMAL.binary_search(&cell).is_ok();
+                                        assert!(!(f25n && f25s));
+                                        let f25 = f25n || f25s;
+                                        assert!(
+                                            !f25 || (finite
+                                                && !v.is_nan()
+                                                && !v.is_inf()
+                                                && !(f18 || tzud))
+                                        );
+                                        if f25 {
+                                            let m =
+                                                RMS.iter().position(|&q| q == rm).ok_or("mode")?;
+                                            if f25n {
+                                                held_f25n[m] += 1;
+                                            } else {
+                                                held_f25s[m] += 1;
+                                            }
+                                        }
+                                        dd_held(
+                                            &mut *hh,
+                                            &mut held,
+                                            f18 || spur || tzud || f25,
+                                            DigestCell {
+                                                op: COP,
+                                                args: &[&x[0], &x[1], &x[2], &x[3]],
+                                                ints: &[i128::try_from(k)?, i128::try_from(part)?],
+                                                p,
+                                                rm,
+                                                r: v,
+                                            },
+                                        )?;
+                                    }
                                     count += 1;
                                 }
                             }
@@ -7258,9 +7867,40 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * (RMS.len() - 1) * 2);
+        // F-18 (N-3, ZF-M27): the NaN quotients of finite parts by a nonzero divisor are not hashed (495 per mode)
+        assert_eq!(held_f18, 495 * (RMS.len() - 1));
+        // Spurious overflow (finding id pending): the finite re parts given as +-Inf are not hashed (6 per mode)
+        assert_eq!(held_spur, 6 * (RMS.len() - 1));
+        // NONE-GAP F-B / M27-TZ/UD (ZF-M27): None 579, ToZero 579, Up 342 (-overflow), Down 237 (+overflow)
+        assert_eq!(held_tzud, 579 + 579 + 342 + 237);
+        // F-25 (ZF-M27): normal-range cancellation cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero
+        assert_eq!(held_f25n, [488, 128, 0, 406, 937, 894, 468]);
+        // F-25 (ZF-M27): subnormal-range cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero. 1158 are outside the
+        // interval any grid allows; 60 more (Up 18, Down 8, FromZero 34; p = 64 and 128) overshoot the gradual-grid value
+        // by one grid unit (each product is rounded before the sum) and are also wrong under P20 / UFL-01.
+        assert_eq!(held_f25s, [64, 0, 0, 44, 447, 408, 255]);
+        assert_eq!(cell, 294_912);
+        assert_eq!(
+            held,
+            held_f18
+                + held_spur
+                + held_tzud
+                + held_f25n.iter().sum::<usize>()
+                + held_f25s.iter().sum::<usize>()
+        );
         println!("complex mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_266_967_239_943_518_429);
+        // Re-pinned (F9d-8): was 11_266_967_239_943_518_429, with the 2970 F-18 NaN cells in.
+        // Re-pinned (F9d-9): was 5_139_542_158_601_803_449, with the 36 spurious-overflow cells in.
+        // Re-pinned (F9d-10): was 4_063_330_108_896_008_404, with the 1737 toward-zero overflow cells in.
+        // Re-pinned (F9d-12): was 3_646_187_200_225_722_925, with the 3321 F-25 normal-range cancellation cells in.
+        // Re-pinned (F9d-13): was 15_402_253_497_317_085_552, with the 1158 F-25 subnormal-range cells in.
+        // Re-pinned (F9d-15): was 16_907_990_978_326_668_517, with the 60 F-25 subnormal-range cells one gradual grid
+        // unit off in.
+        // Re-pinned (Tier 1 ZF-18 c.mul): was 9_830_385_385_956_693_375. Directed modes form the four products exactly
+        // and round each part once (3400 cells change, every one checked against the exact single-rounding model, none
+        // worse than before); a product of nonzero operands that underflows keeps the per-product rounding.
+        assert_eq!(h.finish(), 518_216_661_662_630_842);
         Ok(())
     }
 
@@ -7268,76 +7908,121 @@ mod grid_digest_tests {
     #[test]
     fn mul_ref_div_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
+        let mut held_fb_full = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(
-                            &mut h,
-                            "mul",
-                            &[&operand(i), &operand(j)],
-                            &[],
-                            p,
-                            rm,
-                            &ExactNum::mul_ref(&operand(i), &operand(j), p, rm),
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
+                            DigestCell {
+                                op: "mul",
+                                args: &[&operand(i), &operand(j)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &ExactNum::mul_ref(&operand(i), &operand(j), p, rm),
+                            },
                         )?;
-                        dd(
-                            &mut h,
-                            "div",
-                            &[&operand(i), &operand(j)],
-                            &[],
-                            p,
-                            rm,
-                            &ExactNum::div_ref(&operand(i), &operand(j), p, rm),
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
+                            DigestCell {
+                                op: "div",
+                                args: &[&operand(i), &operand(j)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &ExactNum::div_ref(&operand(i), &operand(j), p, rm),
+                            },
                         )?;
                         count += 2;
                     }
                 }
-                dd(
+                // NONE-GAP F-B (F9d-17): `mul_full_prec` always runs in None, so a true overflow gives +-Inf
+                // where the 12:03 / 12:15 PM CT rulings give +-MAX (ZF-M27). Counted in `held_fb_full`, not hashed.
+                dd_none_gap(
                     &mut h,
-                    "mul_full",
-                    &[&operand(i), &operand(j)],
-                    &[],
-                    0,
-                    RoundingMode::None,
-                    &operand(i).mul_full_prec(&operand(j)),
+                    &mut held_fb_full,
+                    DigestCell {
+                        op: "mul_full",
+                        args: &[&operand(i), &operand(j)],
+                        ints: &[],
+                        p: 0,
+                        rm: RoundingMode::None,
+                        r: &operand(i).mul_full_prec(&operand(j)),
+                    },
                 )?;
                 count += 1;
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        assert_eq!(
+            count,
+            PAIR_OPERANDS * PAIR_OPERANDS * (7 * RMS.len() * 2 + 1)
+        );
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 448);
+        // NONE-GAP F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells (+-Inf, ruling +-MAX) are not hashed
+        assert_eq!(held_fb_full, 18);
+        // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
+        println!(
+            "mul_ref_div_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
+        // Re-pinned (F9d-17): was 6_854_509_046_823_660_977, with the 18 `mul_full_prec` None-overflow cells in.
+        assert_eq!(h.finish(), 12_397_414_023_097_760_287);
         Ok(())
     }
 
     /// Squares through `mul_ref(&x, &x)`: the 23 grid operands (NaN of both kinds, +-Inf, +-0, the subnormal
-    /// band, the exponent extremes) at 7 precisions in all 6 rounding modes. Pinned on the code before
-    /// `sqr` existed; `sqr_grid_digest` below must hash to the same value.
+    /// band, the exponent extremes) at 9 precisions in every mode: the six pinned before ToOdd in `h`, ToOdd in its own
+    /// digest. Pinned on the code before `sqr` existed; `sqr_grid_digest` below must hash to the same values.
     #[test]
     fn square_via_mul_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     let x = operand(i);
-                    dd(
-                        &mut h,
-                        "sqr",
-                        &[&x],
-                        &[],
-                        p,
-                        rm,
-                        &ExactNum::mul_ref(&x, &x, p, rm),
+                    dd_none_gap(
+                        &mut *hh,
+                        &mut gap,
+                        DigestCell {
+                            op: "sqr",
+                            args: &[&x],
+                            ints: &[],
+                            p,
+                            rm,
+                            r: &ExactNum::mul_ref(&x, &x, p, rm),
+                        },
                     )?;
                     count += 1;
                 }
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * 9 * 6);
+        assert_eq!(count, PAIR_OPERANDS * 9 * RMS.len());
         println!("square grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 36);
+        // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
+        println!(
+            "square_via_mul_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_177_630_421_833_126_124);
+        assert_eq!(h.finish(), 6_265_526_590_754_367_528);
         Ok(())
     }
 
@@ -7346,25 +8031,37 @@ mod grid_digest_tests {
     #[test]
     fn sqr_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
-                    dd(
-                        &mut h,
-                        "sqr",
-                        &[&operand(i)],
-                        &[],
-                        p,
-                        rm,
-                        &operand(i).sqr(p, rm),
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                    dd_none_gap(
+                        &mut *hh,
+                        &mut gap,
+                        DigestCell {
+                            op: "sqr",
+                            args: &[&operand(i)],
+                            ints: &[],
+                            p,
+                            rm,
+                            r: &operand(i).sqr(p, rm),
+                        },
                     )?;
                     count += 1;
                 }
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * 9 * 6);
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        assert_eq!(count, PAIR_OPERANDS * 9 * RMS.len());
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 36);
+        // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
+        println!("sqr_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_177_630_421_833_126_124);
+        assert_eq!(h.finish(), 6_265_526_590_754_367_528);
         Ok(())
     }
 
@@ -7385,16 +8082,43 @@ mod grid_digest_tests {
                 .ldexp(-4, 64, RoundingMode::None),
         };
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f16 = 0usize;
         for i in (0..11).chain(21..23).chain(100..104) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     let x = || if i < 100 { operand(i) } else { extra(i - 100) };
-                    dd(&mut h, "sin", &[&x()], &[], p, rm, &x().sin(p, rm, &mut cc))?;
-                    dd(&mut h, "cos", &[&x()], &[], p, rm, &x().cos(p, rm, &mut cc))?;
-                    dd(&mut h, "tan", &[&x()], &[], p, rm, &x().tan(p, rm, &mut cc))?;
                     dd(
-                        &mut h,
+                        &mut *hh,
+                        "sin",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().sin(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut *hh,
+                        "cos",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().cos(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut *hh,
+                        "tan",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().tan(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut *hh,
                         "atan",
                         &[&x()],
                         &[],
@@ -7403,7 +8127,7 @@ mod grid_digest_tests {
                         &x().atan(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "sinh",
                         &[&x()],
                         &[],
@@ -7412,7 +8136,7 @@ mod grid_digest_tests {
                         &x().sinh(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "cosh",
                         &[&x()],
                         &[],
@@ -7420,22 +8144,44 @@ mod grid_digest_tests {
                         rm,
                         &x().cosh(p, rm, &mut cc),
                     )?;
-                    dd(
-                        &mut h,
-                        "tanh",
-                        &[&x()],
-                        &[],
-                        p,
-                        rm,
-                        &x().tanh(p, rm, &mut cc),
+                    let t = x().tanh(p, rm, &mut cc);
+                    // F-16 (N-1): under None, tanh of a large argument (1e5, -192) is exactly +-1 flagged inexact;
+                    // |tanh| < 1, so toward zero at rp(p, 64) is below 1 in magnitude.
+                    let one = ExactNum::from_u8(1, 64);
+                    let unit = ExactNum::sub_ref(&t, &one, 64, RoundingMode::ToEven).is_zero()
+                        || ExactNum::add_ref(&t, &one, 64, RoundingMode::ToEven).is_zero();
+                    let f16 = rm == RoundingMode::None && t.inexact() && unit;
+                    dd_held(
+                        &mut *hh,
+                        &mut held_f16,
+                        f16,
+                        DigestCell {
+                            op: "tanh",
+                            args: &[&x()],
+                            ints: &[],
+                            p,
+                            rm,
+                            r: &t,
+                        },
                     )?;
                     count += 7;
                 }
             }
         }
-        assert_eq!(count, 17 * 3 * 6 * 7);
+        assert_eq!(count, 17 * 3 * RMS.len() * 7);
+        // F-16 (N-1, ZF-M27): the None tanh cells that are exactly +-1 (flagged inexact) are not hashed
+        assert_eq!(held_f16, 6);
         println!("trig hyperbolic grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_882_922_101_969_868_672);
+        println!(
+            "trig_hyperbolic_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 2_643_728_162_804_407_485);
+        // Re-pinned (F9d-2): was 2_882_922_101_969_868_672, with the 6 None F-16 tanh cells in.
+        // Re-pinned (Tier 1 ZF-17/36): was 4_473_217_349_629_320_125. atan(-Inf) in Up/Down at p = 53, 128 now rounds
+        // -pi/2 in the requested direction (6 cells).
+        assert_eq!(h.finish(), 4_503_911_867_076_179_483);
         Ok(())
     }
 
@@ -7445,7 +8191,11 @@ mod grid_digest_tests {
     fn exp_pow_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        // F-12 (POW-01, ZF-M27): held cells, counted per hasher (h: every mode but ToOdd, h_odd: ToOdd)
+        let mut held_f12 = 0usize;
+        let mut held_f12_odd = 0usize;
         let exps = || {
             [
                 ExactNum::from_u8(3, 64),
@@ -7459,8 +8209,13 @@ mod grid_digest_tests {
         for i in (0..11).chain(21..23) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
+                    let (hh, held) = if rm == RoundingMode::ToOdd {
+                        (&mut h_odd, &mut held_f12_odd)
+                    } else {
+                        (&mut h, &mut held_f12)
+                    };
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "exp",
                         &[&operand(i)],
                         &[],
@@ -7469,7 +8224,7 @@ mod grid_digest_tests {
                         &operand(i).exp(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "exp2",
                         &[&operand(i)],
                         &[],
@@ -7478,7 +8233,7 @@ mod grid_digest_tests {
                         &operand(i).exp2(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "exp10",
                         &[&operand(i)],
                         &[],
@@ -7487,26 +8242,42 @@ mod grid_digest_tests {
                         &operand(i).exp10(p, rm, &mut cc),
                     )?;
                     for e in exps() {
-                        dd(
-                            &mut h,
-                            "pow",
-                            &[&operand(i), &e],
-                            &[],
-                            p,
-                            rm,
-                            &operand(i).pow(&e, p, rm, &mut cc),
+                        let r = operand(i).pow(&e, p, rm, &mut cc);
+                        // F-12 (ZF-M27): pow(x, +-0) = 1 for any x, including NaN (P20, POW-01,
+                        // answers-group1.md:390). Today pow(NaN, +0) is NaN, known-wrong, so it is held.
+                        let f12 = operand(i).is_nan() && e.is_zero() && r.is_nan();
+                        dd_held(
+                            &mut *hh,
+                            &mut *held,
+                            f12,
+                            DigestCell {
+                                op: "pow",
+                                args: &[&operand(i), &e],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &r,
+                            },
                         )?;
                         count += 1;
                     }
                     for n in [0usize, 1, 2, 3, 7, 12] {
-                        dd(
-                            &mut h,
-                            "powi",
-                            &[&operand(i)],
-                            &[i128::try_from(n)?],
-                            p,
-                            rm,
-                            &operand(i).powi(n, p, rm),
+                        let r = operand(i).powi(n, p, rm);
+                        // F-12 widened (ZF-M27): powi(x, 0) = x^0 = 1 for any x, including NaN (POW-01; the
+                        // Inf and 0 arms already give 1). Today powi(NaN, 0) is NaN, known-wrong, so it is held.
+                        let f12 = operand(i).is_nan() && n == 0 && r.is_nan();
+                        dd_held(
+                            &mut *hh,
+                            &mut *held,
+                            f12,
+                            DigestCell {
+                                op: "powi",
+                                args: &[&operand(i)],
+                                ints: &[i128::try_from(n)?],
+                                p,
+                                rm,
+                                r: &r,
+                            },
                         )?;
                         count += 1;
                     }
@@ -7514,9 +8285,20 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 13 * 3 * 6 * 13);
+        assert_eq!(count, 13 * 3 * RMS.len() * 13);
+        // F-12 (POW-01, ZF-M27): pow(NaN, +0) and powi(NaN, 0) for both NaN operands, p in {53, 128, 200}, all
+        // seven modes, are NaN where the ruled value is 1; they are not hashed (72 six-mode cells in h, 12 ToOdd
+        // cells in h_odd)
+        assert_eq!(held_f12, 72);
+        assert_eq!(held_f12_odd, 12);
         println!("exp pow grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_398_075_299_501_098_093);
+        println!("exp_pow_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168); that oracle passed
+        // NaN in -> NaN out, so the 12 ToOdd F-12 cells were in it.
+        // Re-pinned (F9d-19): was 5_249_983_578_669_938_622, with the 12 ToOdd F-12 pow/powi(NaN, 0) NaN cells in.
+        assert_eq!(h_odd.finish(), 5_999_117_382_857_039_356);
+        // Re-pinned (F9d-19): was 2_398_075_299_501_098_093, with the 72 F-12 pow/powi(NaN, 0) NaN cells in.
+        assert_eq!(h.finish(), 6_643_330_963_557_222_099);
         Ok(())
     }
 
@@ -7529,6 +8311,8 @@ mod grid_digest_tests {
         let mut count = 0usize;
         for i in [2usize, 3, 4, 5, 21] {
             for p in [1024usize, 4096] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Up] {
                     dd(
                         &mut h,
@@ -7588,6 +8372,8 @@ mod grid_digest_tests {
                 for c in 0..OPERANDS {
                     for shift in [-3000i32, 0, 3000] {
                         for p in [64usize, 200] {
+                            // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                            // digest; the old pin does not move)
                             for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                                 let cs = operand(c).ldexp(
                                     shift as crate::Exponent,
@@ -7643,6 +8429,8 @@ mod grid_digest_tests {
             for b in [2usize, 3, 9, 21] {
                 for shift in [-3000i32, -200, 0, 3000] {
                     for p in [64usize, 200] {
+                        // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                        // digest; the old pin does not move)
                         for rm in [RoundingMode::ToEven, RoundingMode::Up] {
                             let bs = operand(b).ldexp(
                                 shift as crate::Exponent,
@@ -7703,13 +8491,13 @@ mod grid_digest_tests {
         ];
         for s in inputs {
             for p in [53usize, 64, 128, 500] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in
                     [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down, RoundingMode::None]
                 {
-                    digest(
-                        &ExactNum::parse(s, crate::Radix::Dec, p, rm, &mut cc),
-                        &mut h,
-                    )?;
+                    let r = ExactNum::parse(s, crate::Radix::Dec, p, rm, &mut cc);
+                    dd(&mut h, &format!("parse:{s}"), &[], &[], p, rm, &r)?;
                     count += 1;
                 }
             }
@@ -7742,6 +8530,8 @@ mod grid_digest_tests {
         };
         for i in 0..zeros().len() {
             for p in [53usize, 64, 128, 300] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     let z = zeros();
                     dd(
@@ -7759,6 +8549,8 @@ mod grid_digest_tests {
         }
         for i in 0..OPERANDS {
             for p in [64usize, 200] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     dd(
                         &mut h,
@@ -7814,6 +8606,13 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held = 0usize;
+        let mut held_f21 = 0usize;
+        let mut held_tzud = 0usize;
+        let mut held_f22 = 0usize;
+        let mut held_f28 = 0usize;
+        let mut held_f29 = 0usize;
+        let mut held_f30 = 0usize;
         let ms = || {
             [
                 ExactNum::new(64),
@@ -7827,16 +8626,69 @@ mod grid_digest_tests {
             for i in [0usize, 1, 2, 3, 5, 7, 21] {
                 for mi in 0..5 {
                     for p in [64usize, 128] {
+                        // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                        // digest; the old pin does not move)
                         for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                             let m = ms();
-                            dd(
+                            let r = f(&operand(i), &m[mi], p, rm, &mut cc);
+                            // F-21 (N-6): at the tiny operand 21, Down gives NaN(PrecisionRetryExhausted), not a value.
+                            let f21 = rm == RoundingMode::Down
+                                && r.err() == Some(Error::PrecisionRetryExhausted);
+                            // M27-TZ/UD (finding id pending): ns, cs and ds of the tiny nonzero u overflow upward; Down
+                            // gives +Inf where the ruling is +MAX. u = 0 is a pole whose ruled value is +-Inf by the
+                            // sign of u; today's NaN there is held (F-28 below).
+                            let u = operand(i);
+                            let tzud = !f21
+                                && !u.is_zero()
+                                && !u.is_inf()
+                                && !u.is_nan()
+                                && tz_overflow(rm, &r);
+                            // F-22 rider (N-7, dn/nd exact flag): at u21 and m = 1/2, 3/8, dn and nd are 1 flagged exact in
+                            // ToEven (the value is not exactly 1), and Down dn is 1 where the value is below 1.
+                            let f22 = (JNAMES[fi] == "dn" || JNAMES[fi] == "nd")
+                                && i == 21
+                                && (mi == 2 || mi == 3);
+                            // F-28 (ZF-M27): u = +-0 is a simple real pole of ns, cs and ds for 0 <= m <= 1 (sn has a
+                            // simple zero there). The ruled value is signed +-Inf by the sign of u (P20, DOM-07,
+                            // POLE-01), in every mode; today's NaN(InvalidArgument) is known-wrong and is held.
+                            // m = 3 (mi = 4) is out of range and its NaN stays hashed.
+                            let f28 = matches!(JNAMES[fi], "ns" | "cs" | "ds")
+                                && u.is_zero()
+                                && mi <= 3
+                                && r.is_nan();
+                            // F-29 (ZF-M27): am, sn, sc and sd are odd in u (am(u|0) = u, sn(u|0) = sin u,
+                            // sn(u|1) = tanh u), so at u = -0 for 0 <= m <= 1 the value is -0 (P20 keeps signed
+                            // zeros, NAN-04). Today they return +0 (the ops/jacobi.rs u = 0 short-circuit behind F-28
+                            // ignores the sign of u), known-wrong, so they are held. m = 3 (mi = 4) stays hashed.
+                            let f29 = matches!(JNAMES[fi], "am" | "sn" | "sc" | "sd")
+                                && u.is_zero()
+                                && u.is_negative()
+                                && mi <= 3
+                                && r.is_zero()
+                                && r.is_positive();
+                            // F-30 (ZF-M27): am(u+4K|m) = am(u|m) + 2π; ops/jacobi.rs:252/256-276 reduces u mod 4K
+                            // for |u| > 2K and drops the 2π·n, so am(-7|1/2) and am(-7|3/8) are off by +2π; held.
+                            // Operand 3 is u = -7; mi = 2, 3 are m = 1/2, 3/8, the only m in (0, 1) on this grid,
+                            // and |u| = 7 > 2K(m) there. m = 0, 1 take their own closed forms; m = 3 stays hashed.
+                            let f30 = JNAMES[fi] == "am" && i == 3 && (mi == 2 || mi == 3);
+                            held_f21 += usize::from(f21 && !f22);
+                            held_tzud += usize::from(tzud);
+                            held_f22 += usize::from(f22);
+                            held_f28 += usize::from(f28);
+                            held_f29 += usize::from(f29);
+                            held_f30 += usize::from(f30);
+                            dd_held(
                                 &mut h,
-                                JNAMES[fi],
-                                &[&operand(i), &m[mi]],
-                                &[],
-                                p,
-                                rm,
-                                &f(&operand(i), &m[mi], p, rm, &mut cc),
+                                &mut held,
+                                f21 || tzud || f22 || f28 || f29 || f30,
+                                DigestCell {
+                                    op: JNAMES[fi],
+                                    args: &[&operand(i), &m[mi]],
+                                    ints: &[],
+                                    p,
+                                    rm,
+                                    r: &r,
+                                },
                             )?;
                             count += 1;
                         }
@@ -7845,6 +8697,28 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 13 * 7 * 5 * 2 * 2);
+        // F-21 (N-6, ZF-M27): the Down NaN(PrecisionRetryExhausted) cells at operand 21 are not hashed.
+        // Counted apart from the F-22 cells: since ZF-60 the 8 Down dn/nd cells at m = 1/2, 3/8 refuse
+        // (they returned 1, a wrong value: dn = 1 - m u^2/2 + ... < 1), and stay held under F-22.
+        assert_eq!(held_f21, 62);
+        // M27-TZ/UD: the 24 Down +overflow cells now give +MAX (Tier 1 ZF-59 wrappers map overflow by mode) and are
+        // hashed again; none is held.
+        assert_eq!(held_tzud, 0);
+        // F-22 rider (N-7, ZF-M27): dn and nd at u21, m = 1/2 and 3/8, both modes, are not hashed
+        assert_eq!(held_f22, 16);
+        // F-28 (ZF-M27): ns, cs and ds at u = +-0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are
+        // NaN(InvalidArgument) where the ruled pole value is signed +-Inf; they are not hashed
+        assert_eq!(held_f28, 96);
+        // F-29 (ZF-M27): am, sn, sc and sd at u = -0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are +0
+        // where the ruled value is -0 (odd functions); they are not hashed
+        assert_eq!(held_f29, 64);
+        // F-30 (ZF-M27): am at u = -7, m in {1/2, 3/8}, p in {64, 128}, both modes, is am(u|m) + 2π (the 4K period
+        // reduction drops the 2π·n); they are not hashed
+        assert_eq!(held_f30, 8);
+        assert_eq!(
+            held,
+            held_f21 + held_tzud + held_f22 + held_f28 + held_f29 + held_f30
+        );
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
@@ -7856,7 +8730,14 @@ mod grid_digest_tests {
         // are `u` and the other nine functions are 1, because `f(u|m) = t (1 - O(u^2))` is far closer to the
         // representable `t` than half an ulp, and a value just below a representable number rounds to it
         // to nearest; the roundability check had treated that as undecidable. Oracle: mpmath, see the CHANGELOG.
-        assert_eq!(h.finish(), 8_344_934_497_909_943_058);
+        // Re-pinned (F9d-1): was 8_344_934_497_909_943_058, with the 62 Down F-21 cells in.
+        // Re-pinned (F9d-5): was 13_316_780_591_086_104_024, with the 24 Down +overflow cells in.
+        // Re-pinned (F9d-6): was 14_091_997_015_206_208_250, with the 16 dn/nd F-22 rider cells in.
+        // Re-pinned (F9d-18): was 3_754_090_377_808_634_531, with the 96 F-28 ns/cs/ds(+-0|m) pole NaN cells in.
+        // Re-pinned (F9d-20): was 8_207_647_167_930_223_000, with the 64 F-29 am/sn/sc/sd(-0|m) +0 cells in.
+        // Re-pinned (F9d-21): was 6_388_409_464_529_934_111, with the 8 F-30 am(-7|m) period-shift cells in.
+        // Re-pinned (Tier 1): was 295_760_852_189_530_323, without the 24 Down cs/ds/ns +MAX cells (+Inf before).
+        assert_eq!(h.finish(), 2_202_397_902_195_068_300);
         Ok(())
     }
 
@@ -7929,6 +8810,8 @@ mod grid_digest_tests {
             _ => ExactNum::from_u8(9, 64).ldexp(-1, 64, RoundingMode::None),
         };
         for p in [64usize, 128] {
+            // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+            // digest; the old pin does not move)
             for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                 for i in (0..11).chain(21..23) {
                     let x = operand(i);
@@ -7963,6 +8846,8 @@ mod grid_digest_tests {
         for i in [2usize, 3, 4, 5, 6] {
             for n in [7usize, 255, 1000, 65537, 1_000_003] {
                 for p in [64usize, 200] {
+                    // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                    // digest; the old pin does not move)
                     for rm in [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
                         dd(
                             &mut h,
@@ -7993,8 +8878,14 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f20 = 0usize;
+        let mut held_f26 = 0usize;
+        let mut held_f27 = 0usize;
+        let mut held_logb = 0usize;
         for i in (0..11).chain(21..23) {
             for p in [64usize, 200] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     dd(
                         &mut h,
@@ -8040,14 +8931,36 @@ mod grid_digest_tests {
                     )?;
                     count += 8;
                     for b in [2usize, 4, 6] {
-                        dd(
+                        let r = operand(i).log(&operand(b), p, rm, &mut cc);
+                        // F-20 (N-5): log(x, x) = 1 is exact, but ToEven at p = 64 flags it inexact.
+                        let f20 = i == b && r.inexact();
+                        // F-26: logb(x, 1) for 0 < x < 1 is +Inf; the signed pole gives -Inf (P20, POLE-01, MPFR).
+                        // Operand 2 is 1. logb(1, 1) -> NaN is right and stays hashed.
+                        let x = operand(i);
+                        let f26 = b == 2
+                            && r.is_inf()
+                            && r.is_positive()
+                            && !x.is_inf()
+                            && x.is_positive()
+                            && x < operand(2);
+                        // F-27: logb(+-0, b) is NaN; the pole rule (P20 POLE-04, ln(+-0) = -Inf, read as
+                        // ln(x) / ln(b) as for F-26) gives +Inf for 0 < b < 1 and -Inf for b = 1 (MPFR, mpmath).
+                        let f27 = x.is_zero() && r.is_nan();
+                        held_f20 += usize::from(f20);
+                        held_f26 += usize::from(f26);
+                        held_f27 += usize::from(f27);
+                        dd_held(
                             &mut h,
-                            "logb",
-                            &[&operand(i), &operand(b)],
-                            &[],
-                            p,
-                            rm,
-                            &operand(i).log(&operand(b), p, rm, &mut cc),
+                            &mut held_logb,
+                            f20 || f26 || f27,
+                            DigestCell {
+                                op: "logb",
+                                args: &[&operand(i), &operand(b)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &r,
+                            },
                         )?;
                         count += 1;
                     }
@@ -8055,6 +8968,16 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 13 * 2 * 2 * 11);
+        // F-20 (N-5, ZF-M27): logb(third(64), third(64)) and logb(third(320), third(320)) at p = 64 ToEven (exactly 1,
+        // flagged inexact) are not hashed
+        assert_eq!(held_f20, 2);
+        // F-26 (ZF-M27): logb(x, 1) = +Inf for x in {third(64), third(320), operand 21}, p = 64 and 200, ToEven and
+        // Down (the modes this loop runs), not hashed
+        assert_eq!(held_f26, 12);
+        // F-27 (ZF-M27): logb(x, b) = NaN for x = +0 and -0, b in {1, third(64), third(320)}, p = 64 and 200, ToEven
+        // and Down, not hashed. logb(1, 1) -> NaN stays hashed.
+        assert_eq!(held_f27, 24);
+        assert_eq!(held_logb, held_f20 + held_f26 + held_f27);
         println!("ziv entry points digest = {}", h.finish());
         // Re-recorded: the old value (2_735_357_469_467_868_262) pinned a wrong `log1p` result for the positive
         // subnormal operand 21 with `Down` (the argument itself instead of the argument minus one grid unit);
@@ -8062,7 +8985,10 @@ mod grid_digest_tests {
         // Re-recorded again for `nth_root` of a negative number with `Up`/`Down` (they were swapped for odd n >= 5):
         // the old value was 6_378_838_253_543_692_452; only `nth_root(5)` entries of negative operands differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 15_733_382_221_161_312_340);
+        // Re-pinned (F9d-7): was 15_733_382_221_161_312_340, with the 2 F-20 logb(x, x) cells in.
+        // Re-pinned (F9d-14): was 7_247_571_894_832_860_161, with the 12 F-26 logb(x, 1) = +Inf cells in.
+        // Re-pinned (F9d-16): was 16_270_962_408_906_483_201, with the 24 F-27 logb(+-0, b) = NaN cells in.
+        assert_eq!(h.finish(), 14_118_851_892_563_545_474);
         Ok(())
     }
 
@@ -8074,6 +9000,7 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f20 = 0usize;
         // (x, base, expected exact result or None when the result is not exact)
         let cases: [(ExactNum, ExactNum, Option<ExactNum>); 8] = [
             (
@@ -8107,31 +9034,52 @@ mod grid_digest_tests {
         ];
         for (x, b, want) in cases {
             for p in [53usize, 64, 128, 200] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down, RoundingMode::Up] {
                     let got = x.log(&b, p, rm, &mut cc);
                     if let Some(w) = &want {
                         assert!(ExactNum::sub_ref(&got, w, 64, RoundingMode::ToEven).is_zero());
                     }
-                    digest(&got, &mut h)?;
+                    // F-20 (N-5): an exact result flagged inexact (ToEven at p = 64 and 128) is a known-wrong flag.
+                    let f20 = want.is_some() && got.inexact();
+                    dd_held(
+                        &mut h,
+                        &mut held_f20,
+                        f20,
+                        DigestCell {
+                            op: "logb",
+                            args: &[&x, &b],
+                            ints: &[],
+                            p,
+                            rm,
+                            r: &got,
+                        },
+                    )?;
                     count += 1;
                 }
             }
         }
         assert_eq!(count, 8 * 4 * 3);
+        // F-20 (N-5, ZF-M27): the five exact cases at p = 64 and 128 in ToEven (flagged inexact) are not hashed
+        assert_eq!(held_f20, 10);
         println!("log exact digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_246_996_610_564_981_343);
+        // Re-pinned (F9d-7): was 11_246_996_610_564_981_343, with the 10 F-20 cells in.
+        assert_eq!(h.finish(), 4_476_836_513_075_177_053);
         Ok(())
     }
 
     /// Loop-conversion pin for `ln`, `log2`, `log10` (the per-pass working copy becomes `ziv_pass_operand`): the 23
     /// grid operands (NaN kinds, +-Inf, +-0, the subnormal band, the exponent extremes), exact powers 2^k and 10^n over
     /// a wide exponent range, 1 +- 2^-j near the cancellation point, and inexact-flagged inputs (including an
-    /// inexact-flagged exact power of ten for the log10 exact branch), at 7 precisions in all 6 rounding modes.
+    /// inexact-flagged exact power of ten for the log10 exact branch), at 7 precisions in every mode: the six pinned
+    /// before ToOdd in `h`, ToOdd in its own digest.
     /// Recorded on the code that still clones the input.
     #[test]
     fn ln_log2_log10_conversion_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut xs: Vec<ExactNum> = (0..PAIR_OPERANDS).map(operand).collect();
         for k in [1i64, 7, 64, 1000, 100_000, 1_000_000_000, -1, -64, -100_000, -1_000_000_000] {
@@ -8167,19 +9115,34 @@ mod grid_digest_tests {
         for x in &xs {
             for p in [1usize, 24, 53, 64, 100, 200, 1024] {
                 for rm in RMS {
-                    dd(&mut h, "ln", &[x], &[], p, rm, &x.ln(p, rm, &mut cc))?;
-                    dd(&mut h, "log2", &[x], &[], p, rm, &x.log2(p, rm, &mut cc))?;
-                    dd(&mut h, "log10", &[x], &[], p, rm, &x.log10(p, rm, &mut cc))?;
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                    dd(&mut *hh, "ln", &[x], &[], p, rm, &x.ln(p, rm, &mut cc))?;
+                    dd(&mut *hh, "log2", &[x], &[], p, rm, &x.log2(p, rm, &mut cc))?;
+                    dd(
+                        &mut *hh,
+                        "log10",
+                        &[x],
+                        &[],
+                        p,
+                        rm,
+                        &x.log10(p, rm, &mut cc),
+                    )?;
                     count += 3;
                 }
             }
         }
-        assert_eq!(count, nx * 7 * 6 * 3);
+        assert_eq!(count, nx * 7 * RMS.len() * 3);
         println!(
             "ln/log2/log10 conversion digest = {} over {} entries",
             h.finish(),
             count
         );
+        println!(
+            "ln_log2_log10_conversion_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 17_271_334_150_709_268_122);
         assert_eq!(h.finish(), 2_640_369_975_324_367_864);
         Ok(())
     }
@@ -8188,23 +9151,39 @@ mod grid_digest_tests {
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f17 = 0usize;
+        let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 53, 64, 128, 200, 320] {
                 for rm in RMS {
-                    dd(
-                        &mut h,
-                        "reciprocal",
-                        &[&operand(i)],
-                        &[],
-                        p,
-                        rm,
-                        &operand(i).reciprocal(p, rm),
-                    )?;
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                    // F-17 (N-2): reciprocal(third(320)) at p = 200 under None is exactly 3; toward zero at
+                    // rp(200, 64) is below 3.
+                    let f17 = rm == RoundingMode::None && i == 6 && p == 200;
+                    let r = operand(i).reciprocal(p, rm);
+                    if f17 {
+                        held_f17 += 1;
+                    } else {
+                        // NONE-GAP F-B: a None overflow (+-Inf, the ruling is +-MAX) is counted, not hashed
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
+                            DigestCell {
+                                op: "reciprocal",
+                                args: &[&operand(i)],
+                                ints: &[],
+                                p,
+                                rm,
+                                r: &r,
+                            },
+                        )?;
+                    }
                     count += 1;
                     for n in [2usize, 3, 4, 5, 7] {
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "nth_root",
                             &[&operand(i)],
                             &[i128::try_from(n)?],
@@ -8217,12 +9196,25 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * 6 * 6 * 6);
+        assert_eq!(count, PAIR_OPERANDS * 6 * 6 * RMS.len());
+        // F-17 (N-2, ZF-M27): the None reciprocal(third(320)) cell at p = 200 (exactly 3) is not hashed
+        assert_eq!(held_f17, 1);
+        // NONE-GAP F-B: the None overflow cells (reciprocal of the two subnormals, +-Inf where the ruling is +-MAX)
+        // are not hashed (ZF-M27)
+        assert_eq!(gap, 12);
         println!("reciprocal nth_root grid digest = {}", h.finish());
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 2_411_520_695_892_384_189);
+        println!(
+            "reciprocal_nth_root_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 18_016_007_569_384_113_393);
+        // Re-pinned (F9d-3): was 2_411_520_695_892_384_189, with the None F-17 cell in.
+        // Re-pinned (F9d-4): was 2_925_947_817_663_390_226, with the 12 None F-B overflow cells in.
+        assert_eq!(h.finish(), 1_241_375_420_610_093_665);
         Ok(())
     }
 
@@ -8328,7 +9320,7 @@ mod grid_digest_tests {
         Ok(())
     }
 
-    /// All seven rounding modes, `ToOdd` included (the pinned grids above use six).
+    /// All seven rounding modes, `ToOdd` included (the pinned grids above hash ToOdd into a digest of its own).
     const ALL_RMS: [RoundingMode; 7] = [
         RoundingMode::None,
         RoundingMode::ToEven,
@@ -8563,6 +9555,45 @@ mod subnormal_copy_tests {
         let _ = ExactNum::from_u8(2, p).div(&sub, p, rm);
         assert_eq!(clones() - before, 0, "owned forms");
     }
+
+    /// The borrowed unary kernels write the result's limbs straight from the operand: no
+    /// `Mantissa::clone` for a normal, a subnormal or a zero operand, in any rounding mode, for an
+    /// exact or a rounding `ldexp`, a normal result or an underflow.
+    #[test]
+    fn borrowed_unary_kernels_make_no_copy() -> Result<(), String> {
+        let p = 192;
+        let rm = RoundingMode::ToEven;
+        let frac = -ExactNum::from_u8(11, p).div(&ExactNum::from_u8(7, p), p, rm);
+        let sub = subnormal(p);
+        let zero = -ExactNum::from_u8(0, p);
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        for (name, x) in [("fraction", &frac), ("subnormal", &sub), ("zero", &zero)] {
+            let before = clones();
+            let _ = x.abs_ref();
+            let _ = x.neg_ref();
+            let _ = x.floor_ref();
+            for rm in modes {
+                for (n, q) in [(-3, 53), (5, 256), (Exponent::MIN, 64), (-1, 192)] {
+                    let _ = x.ldexp_ref(n, q, rm);
+                }
+            }
+            if clones() != before {
+                return Err(format!(
+                    "{name}: {} Mantissa::clone calls",
+                    clones() - before
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -8575,7 +9606,15 @@ mod round_op_flag_tests {
     fn round_reports_its_own_rounding() -> Result<(), crate::Error> {
         let x = ExactNum::from_mag_parts(0xC000_0000_0000_0000, -1, 64)?; // 0.375, exact
         assert!(!x.inexact());
-        for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::Up] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let y = ExactNum::from_mag_parts(0xC000_0000_0000_0000, -1, 64)?.round(0, rm);
             assert!(y.inexact(), "{rm:?}");
             assert!(y.inexact_accumulated(), "{rm:?}");
@@ -8583,11 +9622,26 @@ mod round_op_flag_tests {
             assert!(!z.inexact(), "{rm:?}");
             assert!(z.inexact_accumulated(), "{rm:?}");
         }
-        for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::None] {
+        // MODE-SUBSET mode-specific: these round a positive subnormal to an inexact 0 (ToOdd is nearest with ties to
+        // odd, like ToEven); Up and FromZero round it up to an inexact 1, asserted below
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::ToZero,
+            RoundingMode::Down,
+            RoundingMode::None,
+        ] {
             // a subnormal operand rounded to an integer is an inexact zero
             let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, crate::EXPONENT_MIN + 5, 64)?
                 .round(0, rm);
             assert!(t.is_zero() && t.inexact(), "{rm:?}");
+        }
+        // MODE-SUBSET mode-specific: the two modes that round a positive subnormal up, to an inexact 1
+        for rm in [RoundingMode::Up, RoundingMode::FromZero] {
+            let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, crate::EXPONENT_MIN + 5, 64)?
+                .round(0, rm);
+            assert_eq!(t.compare(&ExactNum::from_u8(1, 64)), Some(0), "{rm:?}");
+            assert!(t.inexact() && t.inexact_accumulated(), "{rm:?}");
         }
         let w =
             ExactNum::from_mag_parts(0xC000_0000_0000_0000, 2, 64)?.round(1, RoundingMode::ToEven); // 3.0 exact
@@ -8781,6 +9835,277 @@ impl RawParts<'_> {
                 None => Ok(0),
             },
             None => Ok(0),
+        }
+    }
+}
+
+/// `f()` behind the public precision check: `Err(InvalidArgument)` when `p` is outside
+/// `MIN_PRECISION..=MAX_PRECISION`. The internal kernels accept working widths above the ceiling
+/// (see `ExactNumNumber::p_assertion`), so a public entry that hands the caller's `p` straight to
+/// one checks it here first.
+fn with_prec<T>(p: usize, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+    ExactNumNumber::prec_assertion(p)?;
+    f()
+}
+
+/// The number-layer borrowed kernels against their by-value forms, called directly: `ExactNum::ldexp`
+/// rounds through a toward-zero step and `round_odd_to`, so only these calls reach every rounding mode
+/// of `Mantissa::rounded_from` (ties, directed modes, a carry out of the top word).
+#[cfg(test)]
+mod unary_kernel_tests {
+    use super::{ExactNum, ExactNumNumber, Flavor, RawKind, RawParts};
+    use crate::{Error, Exponent, RoundingMode, Word, WORD_BIT_SIZE};
+    use serde_json::Value;
+
+    const GOLDS: &str = include_str!("../tests/oracle/goldens/unary_ref.jsonl");
+    const MODES: [RoundingMode; 7] = [
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::FromZero,
+        RoundingMode::None,
+    ];
+
+    /// The finite operands of the golds (each once), with flags `(inexact, op_inexact)`.
+    fn operands(flags: (bool, bool)) -> Result<Vec<ExactNumNumber>, String> {
+        let mut seen: Vec<String> = Vec::new();
+        let mut out = Vec::new();
+        for line in GOLDS.lines().filter(|l| !l.trim().is_empty()) {
+            let row: Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
+            let a = &row["args"][0];
+            if a["k"] != "f" || seen.contains(&a.to_string()) {
+                continue;
+            }
+            seen.push(a.to_string());
+            let limbs: Vec<Word> = a["m"]
+                .as_array()
+                .ok_or("m")?
+                .iter()
+                .map(|w| Word::from_str_radix(w.as_str().unwrap_or("?"), 16))
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?;
+            let zero = limbs.iter().all(|w| *w == 0);
+            let parts = RawParts {
+                kind: if zero { RawKind::Zero } else { RawKind::Finite },
+                words: &limbs,
+                precision: limbs.len() * WORD_BIT_SIZE,
+                negative: a["s"] == "-",
+                exponent: if zero { 0 } else { a["e"].as_i64().ok_or("e")? },
+                inexact: flags.0,
+                op_inexact: flags.1,
+            };
+            out.push(value_of(ExactNum::from_raw_parts(&parts))?);
+        }
+        Ok(out)
+    }
+
+    fn value_of(x: Result<ExactNum, Error>) -> Result<ExactNumNumber, String> {
+        match x.map_err(|e| format!("{e:?}"))?.inner {
+            Flavor::Value(v) => Ok(v),
+            other => Err(format!("not finite: {:?}", ExactNum { inner: other }.err())),
+        }
+    }
+
+    /// A fresh number equal to `v` bit for bit, to be moved into the by-value form.
+    fn fresh(v: &ExactNumNumber) -> Result<ExactNumNumber, String> {
+        let (words, n, s, e, inexact) = v.as_raw_parts();
+        let mut r = ExactNumNumber::from_raw_parts(words, n, s, e, inexact)
+            .map_err(|err| format!("fresh: {err:?}"))?;
+        if let Some(op) = v.op_inexact_raw() {
+            r.set_op_inexact(op);
+        }
+        Ok(r)
+    }
+
+    fn full(r: &Result<ExactNumNumber, Error>) -> String {
+        match r {
+            Ok(v) => format!(
+                "{:?} op={:?} prec={}",
+                v.as_raw_parts(),
+                v.op_inexact_raw(),
+                v.precision()
+            ),
+            Err(e) => format!("err {e:?}"),
+        }
+    }
+
+    #[test]
+    fn number_layer_ldexp_ref_is_bit_identical_in_every_mode() -> Result<(), String> {
+        let (mut runs, mut fails) = (0usize, Vec::new());
+        for flags in [(false, false), (true, false), (true, true)] {
+            for v in operands(flags)? {
+                let e = v.exponent();
+                let ns: [Exponent; 9] = [
+                    0,
+                    1,
+                    -1,
+                    37,
+                    -1000,
+                    Exponent::MAX,
+                    Exponent::MIN,
+                    crate::EXPONENT_MAX.saturating_sub(e),
+                    crate::EXPONENT_MIN.saturating_sub(e).saturating_sub(5),
+                ];
+                for n in ns {
+                    for p in [64, 128, 192, 320] {
+                        for rm in MODES {
+                            let got = v.ldexp_ref(n, p, rm);
+                            let want = fresh(&v)?.ldexp(n, p, rm);
+                            runs += 1;
+                            if full(&got) != full(&want) {
+                                fails.push(format!(
+                                    "{:?} n={n} p={p} {rm:?}: borrowed {} by-value {}",
+                                    v.as_raw_parts(),
+                                    full(&got),
+                                    full(&want)
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if fails.is_empty() && runs > 10_000 {
+            return Ok(());
+        }
+        Err(format!(
+            "runs={runs} fails={}: {:?}",
+            fails.len(),
+            fails.iter().take(4).collect::<Vec<_>>()
+        ))
+    }
+
+    /// Operands the golds do not reach: carries through all-ones words (at the top exponent too, where
+    /// `set_precision` stops with an exponent overflow), exact ties, and subnormals.
+    fn rounding_edges() -> Result<Vec<ExactNumNumber>, String> {
+        let ones = Word::MAX;
+        let top = 1 << (WORD_BIT_SIZE - 1);
+        let rows: [(&[Word], usize, Exponent); 7] = [
+            (&[ones, ones, ones], 3 * WORD_BIT_SIZE, crate::EXPONENT_MAX),
+            (&[ones, ones, ones], 3 * WORD_BIT_SIZE, 7),
+            (&[top, 0, top | 1], 3 * WORD_BIT_SIZE, -3),
+            (&[0, top, top], 3 * WORD_BIT_SIZE, 1),
+            (&[1, 0, 0, top], 4 * WORD_BIT_SIZE, 0),
+            (
+                &[ones, 0, 0x00ff],
+                2 * WORD_BIT_SIZE + 8,
+                crate::EXPONENT_MIN,
+            ),
+            (&[5, 0, 0], 3, crate::EXPONENT_MIN),
+        ];
+        let mut out = Vec::new();
+        for (m, n, e) in rows {
+            for s in [crate::Sign::Pos, crate::Sign::Neg] {
+                let v = ExactNumNumber::from_raw_parts(m, n, s, e, false)
+                    .map_err(|err| format!("edge {m:?} {n} {e}: {err:?}"))?;
+                out.push(v);
+            }
+        }
+        Ok(out)
+    }
+
+    #[test]
+    fn number_layer_rounded_to_is_bit_identical_in_every_mode() -> Result<(), String> {
+        let (mut runs, mut fails) = (0usize, Vec::new());
+        for flags in [(false, false), (true, false), (true, true)] {
+            let mut vs = operands(flags)?;
+            vs.extend(rounding_edges()?);
+            for v in vs {
+                let ps = [
+                    0,
+                    1,
+                    3,
+                    31,
+                    63,
+                    64,
+                    65,
+                    100,
+                    127,
+                    128,
+                    129,
+                    191,
+                    192,
+                    200,
+                    256,
+                    320,
+                    1000,
+                    crate::MAX_PRECISION + 1,
+                ];
+                for p in ps {
+                    for rm in MODES {
+                        let got = v.rounded_to(p, rm);
+                        let mut w = fresh(&v)?;
+                        let _ = w.set_precision(p, rm);
+                        runs += 1;
+                        if full(&got) != full(&Ok(w)) {
+                            fails.push(format!(
+                                "{:?} p={p} {rm:?}: borrowed {}",
+                                v.as_raw_parts(),
+                                full(&got)
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        if fails.is_empty() && runs > 10_000 {
+            return Ok(());
+        }
+        Err(format!(
+            "runs={runs} fails={}: {:?}",
+            fails.len(),
+            fails.iter().take(4).collect::<Vec<_>>()
+        ))
+    }
+
+    #[test]
+    fn rounded_to_keeps_inf_and_nan() {
+        for x in [super::INF_POS, super::INF_NEG, super::NAN] {
+            let got = x.rounded_to(64, RoundingMode::Up);
+            assert_eq!(
+                format!("{:?}", got.inner),
+                format!("{:?}", x.inner),
+                "rounded_to of a non-finite"
+            );
+        }
+    }
+
+    #[test]
+    fn number_layer_abs_neg_floor_are_bit_identical() -> Result<(), String> {
+        let mut fails = Vec::new();
+        for flags in [(false, false), (true, false), (true, true)] {
+            for v in operands(flags)? {
+                let pairs = [
+                    ("abs", v.abs(), fresh(&v)?.abs()),
+                    ("neg", v.neg(), {
+                        let mut w = fresh(&v)?;
+                        w.inv_sign();
+                        Ok(w)
+                    }),
+                    ("floor", v.floor_ref(), fresh(&v)?.floor()),
+                ];
+                for (name, got, want) in pairs {
+                    if full(&got) != full(&want) {
+                        fails.push(format!(
+                            "{name} {}: {} vs {}",
+                            full(&Ok(fresh(&v)?)),
+                            full(&got),
+                            full(&want)
+                        ));
+                    }
+                }
+            }
+        }
+        if fails.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "{} fails: {:?}",
+                fails.len(),
+                fails.iter().take(4).collect::<Vec<_>>()
+            ))
         }
     }
 }

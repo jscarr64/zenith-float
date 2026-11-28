@@ -6,8 +6,8 @@
 //! rounding mode (`ToEven`, `Up`, `Down`, `ToZero`, `FromZero`) at exactly `p`
 //! bits over the i64 exponent range.
 //!
-//! Digamma rows at p >= 16384, and in debug builds the rows in `DEBUG_FULL_TIER_IDS`, run only
-//! with `MPFR_TIER=full` (see `full_tier_only`). `EXCLUDED_IDS` (empty since S3) never run.
+//! Digamma rows at p >= 16384 run only with `MPFR_TIER=full` (see `full_tier_only`). `EXCLUDED_IDS` (empty since S3) never run.
+//! `POLE08_ZETA_HELD` (the five zeta(1) rows, known-wrong NaN) never run either; `s9_zeta` counts them.
 //!
 //! One test per function. A test fails when any of its rows differs, times out,
 //! or has no directed implementation yet (`Unsupported`).
@@ -17,7 +17,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
+
+// Timing limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the library.
 use zenith_float_num::{Consts, Error, ExactNum, Exponent, RoundingMode, Sign, Word};
+use zenith_float_testkit::test_time;
 
 const GOLDS: &str = include_str!("oracle/goldens/s9_specials.jsonl");
 
@@ -257,32 +260,40 @@ fn full_tier() -> bool {
 /// Full-tier rows: digamma at p >= 16384. ψ(½) = −γ − 2 ln 2 needs Euler γ at the working
 /// precision; since S3 (binary-splitting B1) that is 0.49 s release at p=65536 (was 44 s).
 fn full_tier_only(row: &Value) -> bool {
-    let high_p_digamma = row.get("fn").and_then(Value::as_str) == Some("digamma")
+    row.get("fn").and_then(Value::as_str) == Some("digamma")
         && row
             .get("p")
             .and_then(Value::as_u64)
-            .is_some_and(|p| p >= 16384);
-    high_p_digamma || (cfg!(debug_assertions) && row_id_in(row, DEBUG_FULL_TIER_IDS))
+            .is_some_and(|p| p >= 16384)
 }
-
-/// Debug builds only: rows that exceed the default row budget unoptimized (measured in the
-/// debug gate) run in the full tier. Chosen by id, never by timing; release keeps them.
-const DEBUG_FULL_TIER_IDS: &[&str] = &[
-    "s9-erf-65536-ToEven-1695",
-    "s9-erf-65536-Up-1696",
-    "s9-erf-65536-Down-1697",
-    "s9-erf-65536-ToZero-1698",
-    "s9-erf-65536-FromZero-1699",
-    "s9-digamma-4096-ToEven-3170",
-    "s9-digamma-4096-Up-3171",
-    "s9-digamma-4096-Down-3172",
-    "s9-digamma-4096-ToZero-3173",
-    "s9-digamma-4096-FromZero-3174",
-];
 
 /// Rows excluded from every tier by id. Empty: ψ(½)@65536 (s9-digamma-65536-*) runs in the
 /// full tier again since S3 made Euler γ 0.49 s (release) at p=65536.
 const EXCLUDED_IDS: &[&str] = &[];
+
+/// M27-POLE08 (held): the zeta(1) rows at p = 53, one per mode. The golden expects NaN(InvalidArgument); POLE-08
+/// rules zeta(1) = +Inf, divideByZero, exact. The library still returns NaN, so the rows are left out by id (no
+/// golden regen in #39); `s9_zeta` asserts all 5 are in the goldens. ZF-M27 fixes them red-first.
+const POLE08_ZETA_HELD: &[&str] = &[
+    "s9-zeta-53-ToEven-4580",
+    "s9-zeta-53-Up-4581",
+    "s9-zeta-53-Down-4582",
+    "s9-zeta-53-ToZero-4583",
+    "s9-zeta-53-FromZero-4584",
+];
+
+/// How many golden rows have an id in `ids`.
+fn held_rows(ids: &[&str]) -> Result<usize, String> {
+    let mut n = 0usize;
+    for line in GOLDS.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: Value = serde_json::from_str(line).map_err(|e| format!("json: {e}"))?;
+        n += usize::from(row_id_in(&row, ids));
+    }
+    Ok(n)
+}
 
 fn row_id_in(row: &Value, ids: &[&str]) -> bool {
     row.get("id")
@@ -300,6 +311,7 @@ fn rows_for(func: &str) -> Result<Vec<Value>, String> {
         if row.get("fn").and_then(Value::as_str) == Some(func)
             && (full_tier() || !full_tier_only(&row))
             && !row_id_in(&row, EXCLUDED_IDS)
+            && !row_id_in(&row, POLE08_ZETA_HELD)
         {
             out.push(row);
         }
@@ -347,7 +359,10 @@ fn check(func: &'static str) -> Result<(), String> {
             }
         }
     });
-    let (native_row, native_fn) = if full_tier() {
+    // The default-tier row/table budgets are timing limits: release step only (Jeff 2026-11-23 23:04 CT,
+    // shared switch test_time::LIMITS_ENFORCED). A debug build runs every row under the full-tier budgets,
+    // which stay as the hang watchdog.
+    let (native_row, native_fn) = if full_tier() || !test_time::LIMITS_ENFORCED {
         (FULL_ROW_BUDGET, FULL_FN_BUDGET)
     } else {
         (ROW_BUDGET, FN_BUDGET)
@@ -453,6 +468,8 @@ fn s9_bessel_j1() -> Result<(), String> {
 
 #[test]
 fn s9_zeta() -> Result<(), String> {
+    // M27-POLE08: the 5 zeta(1) NaN rows are held, not asserted
+    assert_eq!(held_rows(POLE08_ZETA_HELD)?, 5);
     check("zeta")
 }
 

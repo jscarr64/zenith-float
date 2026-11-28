@@ -1,0 +1,13 @@
+diff --git a/src/mag/ulp.rs b/src/mag/ulp.rs
+index 94fed1e..64413d0 100644
+--- a/src/mag/ulp.rs
++++ b/src/mag/ulp.rs
+@@ -57,7 +57,7 @@ impl Mag {
+         };
+         match self.nonzero() {
+             Some((exp, _)) => i128::from(exp) <= threshold,
+-            None => !self.is_infinity(),
++            None => self.is_infinity(),
+         }
+     }
+ }

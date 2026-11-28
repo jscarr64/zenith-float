@@ -169,19 +169,26 @@ e="$work/pcu"; git init -q -b w "$e"
                 expect "pre-commit, unborn branch (first commit of a new repo)" 0 run --pre-commit --repo "$e"
 # the real hook
 hook="${PRE_COMMIT_HOOK:-$here/../.githooks/pre-commit}"
-r=$(fresh hk); mkdir -p "$r/.githooks" "$r/tools"; cp "$hook" "$r/.githooks/pre-commit"; chmod +x "$r/.githooks/pre-commit"; cp "$dc" "$r/tools/drift_check.py"
+# The hook also runs #40's library rules (tools/rules_scan.sh, cargo fmt, cargo clippy; merge of #42 and #40). They are
+# stubs here (exit 0), so this part tests the unpushed cap only; the rules part is tools/test_rules_enforcement.sh part 4.
+stubs="$work/hook-stubs"; mkdir -p "$stubs"; printf '#!/usr/bin/env bash\nexit 0\n' > "$stubs/cargo"; chmod +x "$stubs/cargo"
+hookfx() { mkdir -p "$1/.githooks" "$1/tools"; cp "$hook" "$1/.githooks/pre-commit"; chmod +x "$1/.githooks/pre-commit"; cp "$dc" "$1/tools/drift_check.py"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$1/tools/rules_scan.sh"; chmod +x "$1/tools/rules_scan.sh"; }
+opath=$PATH; PATH="$stubs:$PATH"
+r=$(fresh hk); hookfx "$r"
 git -C "$r" config core.hooksPath .githooks
 git -C "$r" add .githooks tools; git -C "$r" commit -q -m hooks 2>/dev/null && ok "hook: 1st unpushed commit allowed" || bad "hook: 1st unpushed commit allowed"
 echo z >> "$r/f.txt"; git -C "$r" add f.txt
 if git -C "$r" commit -q -m second 2>/dev/null; then bad "hook: 2nd unpushed commit refused"; else ok "hook: 2nd unpushed commit refused"; fi
 git -C "$r" push -q 2>/dev/null
 git -C "$r" commit -q -m second 2>/dev/null && ok "hook: commit allowed again after push" || bad "hook: commit allowed again after push"
-e="$work/hku"; git init -q -b w "$e"; mkdir -p "$e/.githooks" "$e/tools"; cp "$hook" "$e/.githooks/pre-commit"; chmod +x "$e/.githooks/pre-commit"; cp "$dc" "$e/tools/drift_check.py"
+e="$work/hku"; git init -q -b w "$e"; hookfx "$e"
 git -C "$e" config core.hooksPath .githooks; git -C "$e" add -A
 git -C "$e" commit -q -m first 2>/dev/null && ok "hook: first commit of a new repo allowed" || bad "hook: first commit of a new repo allowed"
 # outside a work tree the hook fails closed with its own message (Cassie N6 X16)
 out=$(cd "$work/notgit" && bash "$hook" 2>&1); rc=$?
 [ $rc = 2 ] && grep -q 'pre-commit: not in a git work tree' <<<"$out" && ok "hook outside a work tree: rc 2" || { bad "hook outside a work tree (rc=$rc)"; show "$out"; }
+PATH=$opath
 # ---- --scan DIR: DIR and its direct children; a child with a .git it cannot read fails closed (Cassie B3) ----
 s="$work/scan"; mkdir -p "$s"
 g=$(fresh sg); b=$(fresh sb); commit_at "$b" 10 b1; commit_at "$b" 5 b2

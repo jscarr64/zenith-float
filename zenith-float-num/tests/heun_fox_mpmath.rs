@@ -1,7 +1,10 @@
 //! Meijer G / Fox H / Heun vs mpmath 1.4.1 (50-digit golds) and independent reductions.
 
 use std::ops::Neg;
-use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode};
+use zenith_float_num::{
+    Consts, Error, ExactNum, FoxHParams, HeunCParams, HeunGParams, MeijerParams, Radix,
+    RoundingMode,
+};
 
 /// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
 fn neg_of(x: &ExactNum) -> ExactNum {
@@ -89,7 +92,17 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
 
     check(
         "G^{1,0}_{0,1}(1/2)=e^{-1/2}",
-        half.meijer_g(&[], &[], core::slice::from_ref(&zero), &[], p, RM, &mut cc),
+        half.meijer_g(
+            MeijerParams {
+                an: &[],
+                ap: &[],
+                bm: core::slice::from_ref(&zero),
+                bq: &[],
+            },
+            p,
+            RM,
+            &mut cc,
+        ),
         "0.60653065971263342360379953499118045344191813548719",
         p,
         &mut cc,
@@ -97,7 +110,17 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     );
     check(
         "G^{1,0}_{0,1}(2)=e^{-2}",
-        two.meijer_g(&[], &[], core::slice::from_ref(&zero), &[], p, RM, &mut cc),
+        two.meijer_g(
+            MeijerParams {
+                an: &[],
+                ap: &[],
+                bm: core::slice::from_ref(&zero),
+                bq: &[],
+            },
+            p,
+            RM,
+            &mut cc,
+        ),
         "0.13533528323661269189399949497248440340763154590958",
         p,
         &mut cc,
@@ -107,10 +130,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G^{1,1}_{1,1}(1/2|0.3;0)",
         half.meijer_g(
-            core::slice::from_ref(&a03),
-            &[],
-            core::slice::from_ref(&zero),
-            &[],
+            MeijerParams {
+                an: core::slice::from_ref(&a03),
+                ap: &[],
+                bm: core::slice::from_ref(&zero),
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -124,10 +149,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G^{1,1}_{1,1}(3|0.3;0)",
         three.meijer_g(
-            core::slice::from_ref(&a03),
-            &[],
-            core::slice::from_ref(&zero),
-            &[],
+            MeijerParams {
+                an: core::slice::from_ref(&a03),
+                ap: &[],
+                bm: core::slice::from_ref(&zero),
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -140,10 +167,15 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G^{2,0}_{0,2}(0.3|0,1/2)",
         dec("0.3", p, &mut cc).meijer_g(
-            &[],
-            &[],
-            &[ExactNum::new(p), ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM)],
-            &[],
+            MeijerParams {
+                an: &[],
+                ap: &[],
+                bm: &[
+                    ExactNum::new(p),
+                    ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM),
+                ],
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -158,10 +190,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G^{2,1}_{1,2}(0.15|1/2; 1/4,-1/4)",
         dec("0.15", p, &mut cc).meijer_g(
-            core::slice::from_ref(&half),
-            &[],
-            &[ExactNum::from_u8(1, p).div(&ExactNum::from_u8(4, p), p, RM), neg_of(&qtr)],
-            &[],
+            MeijerParams {
+                an: core::slice::from_ref(&half),
+                ap: &[],
+                bm: &[ExactNum::from_u8(1, p).div(&ExactNum::from_u8(4, p), p, RM), neg_of(&qtr)],
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -174,10 +208,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G^{1,1}_{1,2}(0.3|0.4; 0.1; 0.6)",
         dec("0.3", p, &mut cc).meijer_g(
-            &[dec("0.4", p, &mut cc)],
-            &[],
-            &[dec("0.1", p, &mut cc)],
-            &[dec("0.6", p, &mut cc)],
+            MeijerParams {
+                an: &[dec("0.4", p, &mut cc)],
+                ap: &[],
+                bm: &[dec("0.1", p, &mut cc)],
+                bq: &[dec("0.6", p, &mut cc)],
+            },
             p,
             RM,
             &mut cc,
@@ -190,10 +226,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G^{1,0}_{1,2}(0.8| ;1 ; 0; 1/2)",
         dec("0.8", p, &mut cc).meijer_g(
-            &[],
-            core::slice::from_ref(&one),
-            core::slice::from_ref(&zero),
-            core::slice::from_ref(&half),
+            MeijerParams {
+                an: &[],
+                ap: core::slice::from_ref(&one),
+                bm: core::slice::from_ref(&zero),
+                bq: core::slice::from_ref(&half),
+            },
             p,
             RM,
             &mut cc,
@@ -210,10 +248,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G Bessel J_{1/4}(1.2)",
         arg.meijer_g(
-            &[],
-            &[],
-            &[ExactNum::div_ref(&nu, &two, p, RM)],
-            &[nu.neg().div(&two, p, RM)],
+            MeijerParams {
+                an: &[],
+                ap: &[],
+                bm: &[ExactNum::div_ref(&nu, &two, p, RM)],
+                bq: &[nu.neg().div(&two, p, RM)],
+            },
             p,
             RM,
             &mut cc,
@@ -226,10 +266,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G^{1,1}_{1,1}(5|0.4;0) series-2",
         ExactNum::from_u8(5, p).meijer_g(
-            &[dec("0.4", p, &mut cc)],
-            &[],
-            core::slice::from_ref(&zero),
-            &[],
+            MeijerParams {
+                an: &[dec("0.4", p, &mut cc)],
+                ap: &[],
+                bm: core::slice::from_ref(&zero),
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -242,10 +284,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G^{1,1}_{1,1}(0.2|1.7;0) (negative)",
         dec("0.2", p, &mut cc).meijer_g(
-            &[dec("1.7", p, &mut cc)],
-            &[],
-            core::slice::from_ref(&zero),
-            &[],
+            MeijerParams {
+                an: &[dec("1.7", p, &mut cc)],
+                ap: &[],
+                bm: core::slice::from_ref(&zero),
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -259,10 +303,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "fox_h A=B=1 → e^{-1/2}",
         half.fox_h(
-            &[],
-            &[],
-            &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
-            &[],
+            FoxHParams {
+                an: &[],
+                ap: &[],
+                bm: &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -275,10 +321,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "fox_h (0,2)",
         half.fox_h(
-            &[],
-            &[],
-            &[(ExactNum::new(p), ExactNum::from_u8(2, p))],
-            &[],
+            FoxHParams {
+                an: &[],
+                ap: &[],
+                bm: &[(ExactNum::new(p), ExactNum::from_u8(2, p))],
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -291,10 +339,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "fox_h (0,3) z=0.4",
         dec("0.4", p, &mut cc).fox_h(
-            &[],
-            &[],
-            &[(ExactNum::new(p), ExactNum::from_u8(3, p))],
-            &[],
+            FoxHParams {
+                an: &[],
+                ap: &[],
+                bm: &[(ExactNum::new(p), ExactNum::from_u8(3, p))],
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -307,10 +357,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "fox_h [[(0.3,1)],[(0,1)]]",
         half.fox_h(
-            &[(dec("0.3", p, &mut cc), ExactNum::from_u8(1, p))],
-            &[],
-            &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
-            &[],
+            FoxHParams {
+                an: &[(dec("0.3", p, &mut cc), ExactNum::from_u8(1, p))],
+                ap: &[],
+                bm: &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -323,13 +375,15 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "fox_h (0,1/2) rational scale",
         half.fox_h(
-            &[],
-            &[],
-            &[(
-                ExactNum::new(p),
-                ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM),
-            )],
-            &[],
+            FoxHParams {
+                an: &[],
+                ap: &[],
+                bm: &[(
+                    ExactNum::new(p),
+                    ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM),
+                )],
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -348,14 +402,16 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunG 2F1(1/3,2/5;4/3;0.35)",
         zz.heun_g(
-            &dec("2.5", p, &mut cc),
-            &dec("2.5", p, &mut cc).mul(&alpha, p, RM).mul(&beta, p, RM),
-            &alpha,
-            &beta,
-            &gamma,
-            &ExactNum::add_ref(&alpha, &beta, p, RM)
-                .sub(&gamma, p, RM)
-                .add(&one, p, RM),
+            HeunGParams {
+                a: &dec("2.5", p, &mut cc),
+                q: &dec("2.5", p, &mut cc).mul(&alpha, p, RM).mul(&beta, p, RM),
+                alpha: &alpha,
+                beta: &beta,
+                gamma: &gamma,
+                delta: &ExactNum::add_ref(&alpha, &beta, p, RM)
+                    .sub(&gamma, p, RM)
+                    .add(&one, p, RM),
+            },
             p,
             RM,
             &mut cc,
@@ -369,12 +425,14 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunG(2,0.3;0.4,0.5,0.8,0.6;0.25)",
         dec("0.25", p, &mut cc).heun_g(
-            &two,
-            &dec("0.3", p, &mut cc),
-            &dec("0.4", p, &mut cc),
-            &half,
-            &dec("0.8", p, &mut cc),
-            &dec("0.6", p, &mut cc),
+            HeunGParams {
+                a: &two,
+                q: &dec("0.3", p, &mut cc),
+                alpha: &dec("0.4", p, &mut cc),
+                beta: &half,
+                gamma: &dec("0.8", p, &mut cc),
+                delta: &dec("0.6", p, &mut cc),
+            },
             p,
             RM,
             &mut cc,
@@ -387,12 +445,14 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunG(1.5,-0.2;0.3,-0.4,1.1,0.7;0.4)",
         dec("0.4", p, &mut cc).heun_g(
-            &dec("1.5", p, &mut cc),
-            &dec("-0.2", p, &mut cc),
-            &dec("0.3", p, &mut cc),
-            &dec("-0.4", p, &mut cc),
-            &dec("1.1", p, &mut cc),
-            &dec("0.7", p, &mut cc),
+            HeunGParams {
+                a: &dec("1.5", p, &mut cc),
+                q: &dec("-0.2", p, &mut cc),
+                alpha: &dec("0.3", p, &mut cc),
+                beta: &dec("-0.4", p, &mut cc),
+                gamma: &dec("1.1", p, &mut cc),
+                delta: &dec("0.7", p, &mut cc),
+            },
             p,
             RM,
             &mut cc,
@@ -407,11 +467,13 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunC 1F1(-0.4;1.3;0.35)",
         dec("0.35", p, &mut cc).heun_c(
-            &dec("0.4", p, &mut cc),
-            &dec("1.3", p, &mut cc),
-            &zero,
-            &neg_of(&one),
-            &dec("0.4", p, &mut cc),
+            HeunCParams {
+                alpha: &dec("0.4", p, &mut cc),
+                gamma: &dec("1.3", p, &mut cc),
+                delta: &zero,
+                eps: &neg_of(&one),
+                q: &dec("0.4", p, &mut cc),
+            },
             p,
             RM,
             &mut cc,
@@ -424,11 +486,13 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunC 1F1(0.7;2.2;0.6) (α=-0.7)",
         dec("0.6", p, &mut cc).heun_c(
-            &dec("-0.7", p, &mut cc),
-            &dec("2.2", p, &mut cc),
-            &zero,
-            &neg_of(&one),
-            &dec("-0.7", p, &mut cc),
+            HeunCParams {
+                alpha: &dec("-0.7", p, &mut cc),
+                gamma: &dec("2.2", p, &mut cc),
+                delta: &zero,
+                eps: &neg_of(&one),
+                q: &dec("-0.7", p, &mut cc),
+            },
             p,
             RM,
             &mut cc,
@@ -444,10 +508,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G coincident b=b=1/4",
         dec("0.3", p, &mut cc).meijer_g(
-            &[],
-            &[],
-            &[dec("0.25", p, &mut cc), dec("0.25", p, &mut cc)],
-            &[],
+            MeijerParams {
+                an: &[],
+                ap: &[],
+                bm: &[dec("0.25", p, &mut cc), dec("0.25", p, &mut cc)],
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -460,10 +526,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G coincident b=b=0 = 2 K_0(2 sqrt(z))",
         dec("0.7", p, &mut cc).meijer_g(
-            &[],
-            &[],
-            &[ExactNum::new(p), ExactNum::new(p)],
-            &[],
+            MeijerParams {
+                an: &[],
+                ap: &[],
+                bm: &[ExactNum::new(p), ExactNum::new(p)],
+                bq: &[],
+            },
             p,
             RM,
             &mut cc,
@@ -477,10 +545,12 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "G coincident a=a=1 = ln(1+z)",
         dec("0.4", p, &mut cc).meijer_g(
-            &[ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)],
-            &[],
-            core::slice::from_ref(&one),
-            core::slice::from_ref(&zero),
+            MeijerParams {
+                an: &[ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)],
+                ap: &[],
+                bm: core::slice::from_ref(&one),
+                bq: core::slice::from_ref(&zero),
+            },
             p,
             RM,
             &mut cc,
@@ -496,14 +566,16 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunG 2F1 at z=-1.5",
         dec("-1.5", p, &mut cc).heun_g(
-            &dec("2.5", p, &mut cc),
-            &dec("2.5", p, &mut cc).mul(&alpha, p, RM).mul(&beta, p, RM),
-            &alpha,
-            &beta,
-            &gamma,
-            &ExactNum::add_ref(&alpha, &beta, p, RM)
-                .sub(&gamma, p, RM)
-                .add(&one, p, RM),
+            HeunGParams {
+                a: &dec("2.5", p, &mut cc),
+                q: &dec("2.5", p, &mut cc).mul(&alpha, p, RM).mul(&beta, p, RM),
+                alpha: &alpha,
+                beta: &beta,
+                gamma: &gamma,
+                delta: &ExactNum::add_ref(&alpha, &beta, p, RM)
+                    .sub(&gamma, p, RM)
+                    .add(&one, p, RM),
+            },
             p,
             RM,
             &mut cc,
@@ -516,12 +588,14 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunG Taylor z=-1.25 (mpmath ODE)",
         dec("-1.25", p, &mut cc).heun_g(
-            &two,
-            &dec("0.3", p, &mut cc),
-            &dec("0.4", p, &mut cc),
-            &half,
-            &dec("0.8", p, &mut cc),
-            &dec("0.6", p, &mut cc),
+            HeunGParams {
+                a: &two,
+                q: &dec("0.3", p, &mut cc),
+                alpha: &dec("0.4", p, &mut cc),
+                beta: &half,
+                gamma: &dec("0.8", p, &mut cc),
+                delta: &dec("0.6", p, &mut cc),
+            },
             p,
             RM,
             &mut cc,
@@ -534,12 +608,14 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunG Taylor z=0.7 past |a|=0.4 (mpmath ODE)",
         dec("0.7", p, &mut cc).heun_g(
-            &dec("-0.4", p, &mut cc),
-            &dec("0.2", p, &mut cc),
-            &dec("0.3", p, &mut cc),
-            &half,
-            &dec("1.2", p, &mut cc),
-            &dec("0.4", p, &mut cc),
+            HeunGParams {
+                a: &dec("-0.4", p, &mut cc),
+                q: &dec("0.2", p, &mut cc),
+                alpha: &dec("0.3", p, &mut cc),
+                beta: &half,
+                gamma: &dec("1.2", p, &mut cc),
+                delta: &dec("0.4", p, &mut cc),
+            },
             p,
             RM,
             &mut cc,
@@ -550,12 +626,14 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
         &mut failures,
     );
     let blocked = dec("3", p, &mut cc).heun_g(
-        &two,
-        &dec("0.3", p, &mut cc),
-        &dec("0.4", p, &mut cc),
-        &half,
-        &dec("0.8", p, &mut cc),
-        &dec("0.6", p, &mut cc),
+        HeunGParams {
+            a: &two,
+            q: &dec("0.3", p, &mut cc),
+            alpha: &dec("0.4", p, &mut cc),
+            beta: &half,
+            gamma: &dec("0.8", p, &mut cc),
+            delta: &dec("0.6", p, &mut cc),
+        },
         p,
         RM,
         &mut cc,
@@ -570,11 +648,13 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunC 1F1 at z=-2.5",
         dec("-2.5", p, &mut cc).heun_c(
-            &dec("0.4", p, &mut cc),
-            &dec("1.3", p, &mut cc),
-            &zero,
-            &neg_of(&one),
-            &dec("0.4", p, &mut cc),
+            HeunCParams {
+                alpha: &dec("0.4", p, &mut cc),
+                gamma: &dec("1.3", p, &mut cc),
+                delta: &zero,
+                eps: &neg_of(&one),
+                q: &dec("0.4", p, &mut cc),
+            },
             p,
             RM,
             &mut cc,
@@ -587,11 +667,13 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunC 1F1 at z=3 (entire)",
         dec("3", p, &mut cc).heun_c(
-            &dec("0.4", p, &mut cc),
-            &dec("1.3", p, &mut cc),
-            &zero,
-            &neg_of(&one),
-            &dec("0.4", p, &mut cc),
+            HeunCParams {
+                alpha: &dec("0.4", p, &mut cc),
+                gamma: &dec("1.3", p, &mut cc),
+                delta: &zero,
+                eps: &neg_of(&one),
+                q: &dec("0.4", p, &mut cc),
+            },
             p,
             RM,
             &mut cc,
@@ -604,11 +686,13 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     check(
         "HeunC Taylor z=-1.7 (mpmath ODE)",
         dec("-1.7", p, &mut cc).heun_c(
-            &dec("0.2", p, &mut cc),
-            &dec("1.4", p, &mut cc),
-            &dec("0.3", p, &mut cc),
-            &dec("0.5", p, &mut cc),
-            &dec("-0.15", p, &mut cc),
+            HeunCParams {
+                alpha: &dec("0.2", p, &mut cc),
+                gamma: &dec("1.4", p, &mut cc),
+                delta: &dec("0.3", p, &mut cc),
+                eps: &dec("0.5", p, &mut cc),
+                q: &dec("-0.15", p, &mut cc),
+            },
             p,
             RM,
             &mut cc,
@@ -619,11 +703,13 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
         &mut failures,
     );
     let blocked_c = dec("2", p, &mut cc).heun_c(
-        &dec("0.2", p, &mut cc),
-        &dec("1.4", p, &mut cc),
-        &dec("0.3", p, &mut cc),
-        &dec("0.5", p, &mut cc),
-        &dec("-0.15", p, &mut cc),
+        HeunCParams {
+            alpha: &dec("0.2", p, &mut cc),
+            gamma: &dec("1.4", p, &mut cc),
+            delta: &dec("0.3", p, &mut cc),
+            eps: &dec("0.5", p, &mut cc),
+            q: &dec("-0.15", p, &mut cc),
+        },
         p,
         RM,
         &mut cc,
@@ -643,7 +729,19 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     let m20 = ExactNum::from_i32(-20, p);
     check(
         "HeunG exact 2F1(-10,1;1;1/2)",
-        z_half.heun_g(&two, &m20, &m10, &one, &one, &m9, p, RM, &mut cc),
+        z_half.heun_g(
+            HeunGParams {
+                a: &two,
+                q: &m20,
+                alpha: &m10,
+                beta: &one,
+                gamma: &one,
+                delta: &m9,
+            },
+            p,
+            RM,
+            &mut cc,
+        ),
         "0.0009765625",
         p,
         &mut cc,
@@ -654,7 +752,19 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     let q_near = m20.add(&ExactNum::from_u8(1, p).ldexp(-120, p, RM), p, RM);
     check_not_closed_form(
         "HeunG near-miss q=-20+2^{-120}",
-        z_half.heun_g(&two, &q_near, &m10, &one, &one, &m9, p, RM, &mut cc),
+        z_half.heun_g(
+            HeunGParams {
+                a: &two,
+                q: &q_near,
+                alpha: &m10,
+                beta: &one,
+                gamma: &one,
+                delta: &m9,
+            },
+            p,
+            RM,
+            &mut cc,
+        ),
         "0.0009765625000000000000000000000000000081960427050093559462",
         "0.0009765625",
         p,
@@ -667,7 +777,18 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     let gam3 = ExactNum::from_i32(3, p);
     check(
         "HeunC exact 1F1(-2;3;1/2)",
-        z_half.heun_c(&al2, &gam3, &zero, &neg_of(&one), &al2, p, RM, &mut cc),
+        z_half.heun_c(
+            HeunCParams {
+                alpha: &al2,
+                gamma: &gam3,
+                delta: &zero,
+                eps: &neg_of(&one),
+                q: &al2,
+            },
+            p,
+            RM,
+            &mut cc,
+        ),
         "0.6875",
         p,
         &mut cc,
@@ -679,7 +800,18 @@ fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     let q_c = ExactNum::from_i32(10, p).add(&ExactNum::from_u8(1, p).ldexp(-119, p, RM), p, RM);
     check_not_closed_form(
         "HeunC near-miss q=10+2^{-119}",
-        z_half.heun_c(&al10, &gam3, &zero, &neg_of(&one), &q_c, p, RM, &mut cc),
+        z_half.heun_c(
+            HeunCParams {
+                alpha: &al10,
+                gamma: &gam3,
+                delta: &zero,
+                eps: &neg_of(&one),
+                q: &q_c,
+            },
+            p,
+            RM,
+            &mut cc,
+        ),
         "0.05432435599265874059710865266420821969265251848607852039",
         "0.05432435599265874059710865266420821976377531933087488643",
         p,

@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 130a321..5732909 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -170,7 +170,7 @@ fn map_zf_error(op: &'static str, e: Error) -> BoundError {
+             op,
+             detail: "zf invalid argument",
+         },
+-        Error::DivisionByZero => BoundError::Domain {
++        Error::DivisionByZero => BoundError::Representation {
+             op,
+             detail: "zf division by zero",
+         },

@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..ebf3554 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -296,7 +296,7 @@ impl Ball {
+         };
+         let lo =
+             abs_lower(m, r, &rn, wp).hypot(&abs_lower(n, s, &sn, wp), prec, RoundingMode::Down);
+-        let hi = abs_upper(m, &rn, wp).hypot(&abs_upper(n, &sn, wp), prec, RoundingMode::Up);
++        let hi = abs_upper(m, &rn, wp).hypot(&abs_upper(n, &sn, wp), prec, RoundingMode::ToZero);
+         let (Mid::Value(lo), Mid::Value(hi)) = (classify(OP, lo)?, classify(OP, hi)?) else {
+             return Ball::all_reals(prec);
+         };

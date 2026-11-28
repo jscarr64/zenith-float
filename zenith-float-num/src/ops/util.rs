@@ -3,30 +3,56 @@
 //! Auxiliary items.
 
 use crate::common::consts::TRIG_EXP_THRES;
-use crate::common::util::round_p;
+use crate::common::util::{reduction_width, round_p};
 use crate::{num::ExactNumNumber, Consts, Error, RoundingMode};
 
 impl ExactNumNumber {
-    /// Reduce `self` to the interval `(-2π, 2π)` for trigonometric evaluation.
-    ///
-    /// Uses the same working precision as `sin`/`cos`/`tan` before modular reduction.
-    pub fn rem_pi(&self, p: usize, _rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+    /// Reduce `self` modulo `2π` to the interval `(-2π, 2π)` (the sign of `self`), correctly rounded to `p`
+    /// bits with `rm`. π carries `exponent(self)` extra bits, and the width grows until the remainder's own
+    /// leading bits (it may lie close to a multiple of 2π) are certain.
+    pub fn rem_pi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         if p < crate::defs::MIN_PRECISION {
             return Err(Error::InvalidArgument);
         }
         let p = round_p(p);
+        if self.is_zero() || self.exponent() <= 2 {
+            let mut x = self.clone()?;
+            x.set_precision(p, rm)?;
+            return Ok(x);
+        }
         let add_p = (3 - TRIG_EXP_THRES) as usize;
-        let p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);
-        let mut x = self.clone()?;
-        x.set_precision(p_x, RoundingMode::None)?;
-        x.reduce_trig_arg(cc, RoundingMode::None)
+        let mut p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);
+        loop {
+            let mut x = self.clone()?;
+            x.set_precision(p_x, RoundingMode::None)?;
+            let mut r = x.reduce_trig_arg(cc, RoundingMode::None)?;
+            if r.is_zero() {
+                p_x = round_p(p_x.saturating_mul(2));
+                continue;
+            }
+            // |error| <= 2^(4 - p_x) absolute (|self| / 2π multiples of a p_x + e(self) bit 2π).
+            let lost = (4 - r.exponent()).max(0) as usize;
+            if let Some(s) = p_x.checked_sub(lost + 4) {
+                let s = s / crate::defs::WORD_BIT_SIZE * crate::defs::WORD_BIT_SIZE;
+                if s > p && r.try_set_precision(p, rm, s)? {
+                    return Ok(r);
+                }
+            }
+            p_x = round_p(
+                p_x.saturating_add(lost)
+                    .saturating_add(p_x / 4)
+                    .saturating_add(64),
+            );
+        }
     }
 
     /// Reduce `self` to interval (-2*pi; 2*pi)
     pub(crate) fn reduce_trig_arg(self, cc: &mut Consts, rm: RoundingMode) -> Result<Self, Error> {
         if self.exponent() > 2 {
-            let extra = trig_reduce_extra(self.exponent());
-            let mut pi = cc.pi_num(self.mantissa_max_bit_len().saturating_add(extra), rm)?;
+            // π carries exponent(self) extra bits, so the remainder keeps every bit of `self`;
+            // the width is checked (`MemoryAllocation` past what the machine holds), never capped.
+            let width = reduction_width(self.mantissa_max_bit_len(), self.exponent())?;
+            let mut pi = cc.pi_num(width, rm)?;
 
             pi.set_exponent(pi.exponent() + 1);
 
@@ -88,22 +114,32 @@ macro_rules! compute_small_exp {
 
 pub(super) use compute_small_exp;
 
-/// Extra bits of pi for reducing an argument with exponent `e` (`e > 2`), capped at 2^16.
-fn trig_reduce_extra(e: crate::Exponent) -> usize {
-    // `e > 2`; an exponent past `usize` saturates to the cap instead of truncating on 32-bit.
-    usize::try_from(e).map_or(1 << 16, |x| x.min(1 << 16))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::trig_reduce_extra;
+    use crate::common::util::reduction_width;
+    use crate::Error;
 
-    /// An exponent past `u32` must hit the 2^16 cap; a 32-bit `usize` truncation would give 5.
+    /// The π width follows the argument exponent with no limit: 2^16 (main's old silent cap),
+    /// 2^22 (Tier 1's old refusal) and one past each are all carried in full. Only a width the
+    /// exponent arithmetic cannot hold is refused, and as `MemoryAllocation`, not a precision limit.
     #[test]
-    fn trig_reduce_extra_exponent_beyond_u32() {
-        assert_eq!(trig_reduce_extra((1i64 << 32) + 5), 1 << 16);
-        assert_eq!(trig_reduce_extra(3), 3);
-        assert_eq!(trig_reduce_extra(1i64 << 16), 1 << 16);
-        assert_eq!(trig_reduce_extra(crate::EXPONENT_MAX), 1 << 16);
+    fn trig_reduction_width_has_no_cap() {
+        for e in [
+            3i64,
+            (1 << 16) - 1,
+            1 << 16,
+            (1 << 16) + 1,
+            (1 << 22) - 1,
+            1 << 22,
+            (1 << 22) + 1,
+            (1i64 << 32) + 5,
+        ] {
+            assert_eq!(reduction_width(128, e), Ok(128 + e as usize), "e = {e}");
+        }
+        assert_eq!(
+            reduction_width(128, crate::EXPONENT_MAX),
+            Err(Error::MemoryAllocation)
+        );
+        assert_eq!(reduction_width(usize::MAX, 1), Err(Error::MemoryAllocation));
     }
 }

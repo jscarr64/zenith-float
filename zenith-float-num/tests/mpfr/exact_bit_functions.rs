@@ -13,11 +13,26 @@ use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode, WORD_BIT_SIZE};
 
 pub const PRECISIONS: [usize; 11] = [24, 53, 64, 65, 100, 113, 127, 128, 130, 200, 255];
 
-/// zenith-bound P14: the 256- and 512-bit sets every unary kernel is also swept at (all six modes, so `Up` and
+/// zenith-float-bound P14: the 256- and 512-bit sets every unary kernel is also swept at (all 7 modes, so `Up` and
 /// `Down` included), exact cases too.
 pub const P14_PRECISIONS: [usize; 2] = [256, 512];
 
-pub const MODES: [RoundingMode; 6] = [
+/// All 7 modes: `None` is checked against MPFR toward zero at the storage precision rp(p, 64) (FIXLIST ZF-M27).
+pub const MODES: [RoundingMode; 7] = [
+    RoundingMode::ToEven,
+    RoundingMode::ToOdd,
+    RoundingMode::Up,
+    RoundingMode::Down,
+    RoundingMode::ToZero,
+    RoundingMode::FromZero,
+    RoundingMode::None,
+];
+
+/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
+/// Up, Down, ToZero, FromZero), for the families that fail the strict None oracle. NONE-GAP F-A: an exact `pow` /
+/// `nth_root` result comes back as its predecessor at rp(p, 64), flagged inexact. NONE-GAP F-B: a `None` overflow gives
+/// +-Inf; Jeff ruled +-MAX.
+pub const NONE_GAP_MODES: [RoundingMode; 6] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
     RoundingMode::Up,

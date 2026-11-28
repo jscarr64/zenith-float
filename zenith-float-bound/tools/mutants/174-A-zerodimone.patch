@@ -1,0 +1,13 @@
+diff --git a/src/array.rs b/src/array.rs
+index 925bfdd..6aa2ec6 100644
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -223,7 +223,7 @@ impl BallMat {
+ fn element_count(op: &'static str, shape: &[usize]) -> BoundResult<usize> {
+     // Any zero extent empties the array, whatever the other extents (WR-ND).
+     if shape.contains(&0) {
+-        return Ok(0);
++        return Ok(1);
+     }
+     shape
+         .iter()

@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -345,7 +345,7 @@
+         if self.perm_sign() < 0 {
+             acc = zero(w)?.sub(&acc, w)?;
+         }
+-        round(acc, prec)
++        Ok(acc)
+     }
+ 
+     /// `A⁻¹b`: classify every `u_kk` (16.LA2.4), apply `P`, then `solve_lower` (unit), then `solve_upper` (16.S6.12).

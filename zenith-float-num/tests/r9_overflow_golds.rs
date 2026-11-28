@@ -13,9 +13,12 @@
 //! hex and octal out-of-range flushes, exp at |x| just below 2^63) carry an
 //! optional `"rdx"` for parse rows and the same p+256 / p+512 agreement.
 
+// Per-row wall-clock limits apply in the release step only (Jeff 2026-11-23 23:04 CT); one switch, shared with the
+// library (test_time::wait_row).
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use zenith_float_testkit::test_time;
 
 use serde_json::Value;
 use zenith_float_num::{Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, Word};
@@ -187,8 +190,9 @@ fn check(func: &str) -> Result<(), String> {
         thread::spawn(move || {
             let _ = tx.send(run_line(line));
         });
-        let outcome = match rx.recv_timeout(ROW_BUDGET) {
+        let outcome = match test_time::wait_row(&rx, ROW_BUDGET) {
             Ok(r) => r,
+            Err(test_time::RowWait::Hang) => Err("hang watchdog (debug)".to_string()),
             Err(_) => Err("timed out".to_string()),
         };
         if let Err(why) = outcome {

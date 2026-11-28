@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 0ce786b..51f8a5f 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -90,7 +90,7 @@ impl Mag {
+             return None;
+         }
+         if self.is_infinity() {
+-            return Some(Ordering::Greater);
++            return Some(Ordering::Less);
+         }
+         let (ea, eb) = match (exp_of(a), exp_of(b)) {
+             (Some(ea), Some(eb)) => (ea, eb),

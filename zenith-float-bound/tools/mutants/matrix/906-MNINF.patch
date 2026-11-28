@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -446,7 +446,7 @@
+             .as_slice()
+             .chunks_exact(n)
+             .map(|row| sum_up(row.iter()))
+-            .fold(Mag::zero(), Ord::max)
++            .fold(Mag::zero(), |a, b| a.add_up(&b))
+     }
+ 
+     /// Upper bound of the max column sum of `|m| + r` (CONTRACT 16.S6.6).

@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -26,7 +26,7 @@
+ const CAP_FACTOR: Precision = 8;
+ const CAP_EXTRA: Precision = 4096;
+ /// Newton steps per working precision (the iteration then is certified; an unconverged estimate only fails the test).
+-const NEWTON_STEPS: usize = 200;
++const NEWTON_STEPS: usize = 0;
+ /// Endpoints `m ± r` are computed exactly when the exponents of `m` and `r` differ by at most this.
+ const EXACT_GAP: i64 = 1 << 16;
+ /// `0.1b` as a `Mag`/`from_mag_parts` mantissa.

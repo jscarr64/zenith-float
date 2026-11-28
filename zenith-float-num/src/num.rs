@@ -22,6 +22,8 @@ use crate::mantissa::AddSubSpec;
 use crate::mantissa::Mantissa;
 
 // The one approved Ziv working-copy helper (see its file); used only at the pinned sites in tools/ziv_shape_a_sites.txt.
+#[cfg(test)]
+mod zfn01;
 mod ziv_operand;
 
 /// A finite floating point number with mantissa of an arbitrary size, an exponent, and the sign.
@@ -51,13 +53,35 @@ impl ExactNumNumber {
         (m_slice, n, self.s, self.e, self.inexact)
     }
 
-    // Check the precision so it does not cause arithmetic overflows anywhere.
-    pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
-        // Exponent arithmetic is done in i64; sizes in usize, which is 32 bits wide on some targets.
+    /// A precision passed to the public API: `MIN_PRECISION..=MAX_PRECISION`, `InvalidArgument` otherwise.
+    /// The public entry points (`ExactNum`) check the caller's precision with this, before any rounding.
+    pub(crate) fn prec_assertion(p: usize) -> Result<(), Error> {
         if p == 0 || p > crate::defs::MAX_PRECISION {
             Err(Error::InvalidArgument)
         } else {
             Ok(())
+        }
+    }
+
+    /// A working width: the precision a kernel of this type computes at. It is not the caller's precision
+    /// (that one is checked by [`Self::prec_assertion`] at the public entry): a kernel works at that precision
+    /// rounded up to whole words, or some words wider for one correct rounding, so near the top of the public
+    /// range a working width lies above `MAX_PRECISION`, and it must be accepted there. What a width must keep
+    /// is the exponent arithmetic: an exponent plus or minus twice a width stays inside `i64`. A wider mantissa
+    /// is more memory than any machine has, so it is `MemoryAllocation`; only a width of 0 is `InvalidArgument`.
+    pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
+        if p == 0 {
+            return Err(Error::InvalidArgument);
+        }
+        let room = i128::from(i64::MAX) - i128::from(EXPONENT_MAX);
+        let fits = i128::try_from(p)
+            .ok()
+            .and_then(|w| w.checked_mul(2))
+            .is_some_and(|twice| twice <= room);
+        if fits {
+            Ok(())
+        } else {
+            Err(Error::MemoryAllocation)
         }
     }
 
@@ -80,11 +104,9 @@ impl ExactNumNumber {
 
     /// Like [`Self::new`], but also accepts `p = 0` (an empty mantissa). Crate-private: the full-precision
     /// kernels (`add_full_prec`, `sub_full_prec`, `mul_full_prec`) use `p = 0` to mean "as wide as the exact
-    /// result", and the constants cache builds on them. Public entry points reject `p = 0`.
+    /// result", and the constants cache builds on them. Public entry points reject `p = 0`. The callers pass
+    /// a working width they have already checked with [`Self::p_assertion`] (or 0), so it is not checked again.
     pub(crate) fn new_internal(p: usize) -> Result<Self, Error> {
-        if p > crate::defs::MAX_PRECISION {
-            return Err(Error::InvalidArgument);
-        }
         Ok(ExactNumNumber {
             m: Mantissa::new(p)?,
             e: 0,
@@ -288,9 +310,78 @@ impl ExactNumNumber {
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     pub fn neg(&self) -> Result<Self, Error> {
-        let mut ret = self.clone()?;
-        ret.s = ret.s.invert();
-        Ok(ret)
+        self.with_sign(self.s.invert())
+    }
+
+    /// A new number with the magnitude, storage and flags of `self` and the sign `s`; the result's
+    /// limbs are written straight from `self`.
+    pub(crate) fn with_sign(&self, s: Sign) -> Result<Self, Error> {
+        let mut unused = false;
+        let (m, _) = self.m.rounded_from(
+            0,
+            self.m.max_bit_len(),
+            RoundingMode::None,
+            true,
+            &mut unused,
+        )?;
+        Ok(ExactNumNumber {
+            e: self.e,
+            s,
+            m,
+            inexact: self.inexact,
+            op_inexact: self.op_inexact,
+        })
+    }
+
+    /// `self` with exponent `e` after a left shift of the mantissa by `shl` bits (at most its leading
+    /// zero bits), rounded to `p` bits (a whole number of words) with `rm` straight into a new number whose
+    /// flags start as `inexact` and `op_inexact`: the result of `set_precision(p, rm)` on an owned number
+    /// in that state. `self` is only read.
+    ///
+    /// ## Errors
+    ///
+    ///  - ExponentOverflow: rounding carried past `EXPONENT_MAX`.
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    pub(crate) fn rescaled(
+        &self,
+        shl: usize,
+        e: Exponent,
+        p: usize,
+        rm: RoundingMode,
+        flags: (bool, Option<bool>),
+    ) -> Result<Self, Error> {
+        let longer = self.mantissa_max_bit_len() > p;
+        let mut rounded = false;
+        let (m, ovf) = self.m.rounded_from(
+            shl,
+            p,
+            if longer { rm } else { RoundingMode::None },
+            self.is_positive(),
+            &mut rounded,
+        )?;
+        let mut r = ExactNumNumber {
+            e,
+            s: self.s,
+            m,
+            inexact: flags.0,
+            op_inexact: flags.1,
+        };
+        if longer {
+            r.inexact |= rounded;
+            r.op_inexact = None;
+            if ovf {
+                if r.e == EXPONENT_MAX {
+                    return Err(Error::ExponentOverflow(r.s));
+                }
+                r.e += 1;
+            } else if r.m.is_all_zero() {
+                r.m.set_bit_len(0);
+                r.e = 0;
+            } else if r.is_subnormal() {
+                r.m.update_bit_len();
+            }
+        }
+        Ok(r)
     }
 
     /// Adds `d2` to `self` and returns the result of the operation with precision `p` rounded according to `rm`.
@@ -447,6 +538,30 @@ impl ExactNumNumber {
         self.div_general_case(d2, p, rm, true)
     }
 
+    /// Exponent of the leading bit of `self` plus one: a normal number's `exponent()`, or
+    /// `EXPONENT_MIN` minus the leading-zero count of a subnormal.
+    fn true_exponent(&self) -> i128 {
+        exp::wide(self.e) - (self.mantissa_max_bit_len() as i128 - self.precision() as i128)
+    }
+
+    /// The exact product may have exponent below `EXPONENT_MIN` (including a 1-unit margin for
+    /// the mantissa product of two values just above a power of two).
+    fn product_may_underflow(a: &Self, b: &Self) -> bool {
+        a.true_exponent() + b.true_exponent() < exp::wide(EXPONENT_MIN) + 2
+    }
+
+    /// The exact quotient may have exponent below `EXPONENT_MIN`.
+    fn quot_may_underflow(num: &Self, den: &Self) -> bool {
+        num.true_exponent() - den.true_exponent() < exp::wide(EXPONENT_MIN) + 2
+    }
+
+    /// Either operand's last bit sits below the minimum normal, so the exact sum or difference
+    /// can land on the subnormal grid (or below it).
+    fn sum_may_underflow(a: &Self, b: &Self) -> bool {
+        let ulp = |x: &Self| exp::wide(x.e) - x.mantissa_max_bit_len() as i128;
+        ulp(a).min(ulp(b)) < exp::wide(EXPONENT_MIN) - 1
+    }
+
     fn mul_general_case(
         &self,
         d2: &Self,
@@ -474,11 +589,47 @@ impl ExactNumNumber {
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
 
-        let (e_shift, m3) = self
-            .m
-            .mul(&d2.m, p, rm, s == Sign::Pos, full_prec, &mut inexact)?;
+        // A product that may fall below the normal range is computed toward zero a word
+        // wider than `p`, then rounded once by `place_scaled`. Rounding to `p` bits first
+        // and then again in `subnormalize` loses sticky bits (ZF-N01). An exact `full_prec`
+        // product is not used here: it drops trailing zeros, so the mantissa width and the
+        // exponent would disagree in `place_scaled`.
+        let use_wide = !full_prec && Self::product_may_underflow(self, d2);
+        let (e_shift, m3) = if use_wide {
+            let wp = p.saturating_add(WORD_BIT_SIZE);
+            let wp = if wp > MAX_PRECISION { p } else { wp };
+            self.m.mul(
+                &d2.m,
+                wp,
+                RoundingMode::ToZero,
+                s == Sign::Pos,
+                false,
+                &mut inexact,
+            )?
+        } else {
+            self.m
+                .mul(&d2.m, p, rm, s == Sign::Pos, full_prec, &mut inexact)?
+        };
 
-        let e = exp::narrow(exp::wide(self.e) + exp::wide(d2.e) - exp::wide(e_shift));
+        let e_wide = exp::wide(self.e) + exp::wide(d2.e) - exp::wide(e_shift);
+
+        if use_wide {
+            if e_wide > exp::wide(EXPONENT_MAX) {
+                return Err(Error::ExponentOverflow(s));
+            }
+            let ret = ExactNumNumber {
+                m: m3,
+                s,
+                e: 0,
+                inexact,
+                op_inexact: Some(inexact),
+            };
+            let mut ret = ret.place_scaled(e_wide, inexact, p, rm)?;
+            ret.finish_flags(inputs, per_op);
+            return Ok(ret);
+        }
+
+        let e = exp::narrow(e_wide);
 
         if e > EXPONENT_MAX {
             return Err(Error::ExponentOverflow(s));
@@ -557,6 +708,34 @@ impl ExactNumNumber {
         // zero bits itself), so no operand is cloned.
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
+
+        // Same double-rounding hole as multiplication: a quotient rounded to `p` bits and then
+        // again by `subnormalize` can treat a value just above half of minpos as a tie.
+        if Self::quot_may_underflow(self, d2) {
+            let wp = p.saturating_add(WORD_BIT_SIZE);
+            let wp = if wp > MAX_PRECISION { p } else { wp };
+            let (e_shift, m3) = self.m.div(
+                &d2.m,
+                wp,
+                RoundingMode::ToZero,
+                s == Sign::Pos,
+                &mut inexact,
+            )?;
+            let e_wide = exp::wide(self.e) - exp::wide(d2.e) + exp::wide(e_shift);
+            if e_wide > exp::wide(EXPONENT_MAX) {
+                return Err(Error::ExponentOverflow(s));
+            }
+            let ret = ExactNumNumber {
+                m: m3,
+                s,
+                e: 0,
+                inexact,
+                op_inexact: Some(inexact),
+            };
+            let mut ret = ret.place_scaled(e_wide, inexact, p, rm)?;
+            ret.finish_flags(inputs, per_op);
+            return Ok(ret);
+        }
 
         let (e_shift, m3) = self.m.div(&d2.m, p, rm, s == Sign::Pos, &mut inexact)?;
 
@@ -667,10 +846,12 @@ impl ExactNumNumber {
             // (m1 * 2^(e1eff - e2eff)) mod m2 = ((m1 mod m2) * ( 2^(e1eff - e2eff) mod m2 )) mod m2
 
             let mut two = Mantissa::from_raw_parts(&[2], 2)?;
-            let powm = if (e1eff - e2eff) as usize >= m2_normalized.max_bit_len() {
-                two.pow_mod((e1eff - e2eff) as usize, m2_normalized)?
+            // The gap can exceed i64 (e.g. MAX rem the least subnormal); it is positive here.
+            let gap = e1eff.abs_diff(e2eff) as usize;
+            let powm = if gap >= m2_normalized.max_bit_len() {
+                two.pow_mod(gap, m2_normalized)?
             } else {
-                two.pow2((e1eff - e2eff - 1) as usize)?;
+                two.pow2(gap - 1)?;
                 two // m3 still becomes 0 in rare case when two == m2_normalized
             };
 
@@ -780,6 +961,20 @@ impl ExactNumNumber {
             Self::p_assertion(p)?;
         }
 
+        // When the exact sum or difference can land on the subnormal grid, the kernel rounds
+        // toward zero a word wider and `place` finishes with one rounding by `rm`. Rounding to
+        // `p` bits first and then again in `subnormalize` is the same ZF-N01 hole as in mul/div.
+        let place = !full_prec && Self::sum_may_underflow(self, d2);
+        let (ker_p, ker_rm) = if place {
+            let wp = p.saturating_add(WORD_BIT_SIZE);
+            (
+                if wp > MAX_PRECISION { p } else { wp },
+                RoundingMode::ToZero,
+            )
+        } else {
+            (p, rm)
+        };
+
         let mut d3 = Self::new_internal(0)?;
 
         // Both operands are zero: the result is a zero of precision `p`, signed by the rules for zeros.
@@ -809,16 +1004,26 @@ impl ExactNumNumber {
             let (shift, m3) = m0.abs_add(
                 &zero,
                 AddSubSpec {
-                    p,
+                    p: ker_p,
                     m2_shift: 1,
-                    rm,
+                    rm: ker_rm,
                     is_positive: d3.is_positive(),
                     full_prec,
                 },
                 &mut inexact,
             )?;
-            let mut ret =
-                Self::finish_sum(d3, e0 - shift, m3, (inexact, inputs), rm, per_op, full_prec)?;
+            let mut ret = Self::finish_sum(
+                d3,
+                e0 - shift,
+                m3,
+                (inexact, inputs),
+                ker_rm,
+                per_op,
+                full_prec,
+            )?;
+            if place {
+                ret = ret.round_odd_to(p, rm)?;
+            }
             if ret.is_zero() {
                 // A subnormal operand rounded to zero keeps the minimal exponent, as `set_precision` left it.
                 ret.e = EXPONENT_MIN;
@@ -844,9 +1049,9 @@ impl ExactNumNumber {
                 m1.abs_sub(
                     m2,
                     AddSubSpec {
-                        p,
+                        p: ker_p,
                         m2_shift: exp::abs_diff_shift(e1, e2),
-                        rm,
+                        rm: ker_rm,
                         is_positive: d3.is_positive(),
                         full_prec,
                     },
@@ -858,9 +1063,9 @@ impl ExactNumNumber {
                 m2.abs_sub(
                     m1,
                     AddSubSpec {
-                        p,
+                        p: ker_p,
                         m2_shift: exp::abs_diff_shift(e2, e1),
-                        rm,
+                        rm: ker_rm,
                         is_positive: d3.is_positive(),
                         full_prec,
                     },
@@ -883,9 +1088,9 @@ impl ExactNumNumber {
                 m1.abs_add(
                     m2,
                     AddSubSpec {
-                        p,
+                        p: ker_p,
                         m2_shift: exp::abs_diff_shift(e1, e2),
-                        rm,
+                        rm: ker_rm,
                         is_positive: d3.is_positive(),
                         full_prec,
                     },
@@ -896,9 +1101,9 @@ impl ExactNumNumber {
                 m2.abs_add(
                     m1,
                     AddSubSpec {
-                        p,
+                        p: ker_p,
                         m2_shift: exp::abs_diff_shift(e2, e1),
-                        rm,
+                        rm: ker_rm,
                         is_positive: d3.is_positive(),
                         full_prec,
                     },
@@ -911,15 +1116,19 @@ impl ExactNumNumber {
         {
             debug_assert!(shift <= i64::MAX / 2 && e >= -exp::WIDE_LIMIT);
         }
-        Self::finish_sum(
+        let mut ret = Self::finish_sum(
             d3,
             exp::narrow(exp::wide(e) - exp::wide(shift)),
             m3,
             (inexact, inputs),
-            rm,
+            ker_rm,
             per_op,
             full_prec,
-        )
+        )?;
+        if place {
+            ret = ret.round_odd_to(p, rm)?;
+        }
+        Ok(ret)
     }
 
     /// Writes the exponent and mantissa of a finished sum into `d3` (sign already set) and sets the flags.
@@ -1122,9 +1331,7 @@ impl ExactNumNumber {
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     pub fn abs(&self) -> Result<Self, Error> {
-        let mut ret = self.clone()?;
-        ret.s = Sign::Pos;
-        Ok(ret)
+        self.with_sign(Sign::Pos)
     }
 
     /// Constructs a number from the raw parts:
@@ -1277,6 +1484,36 @@ impl ExactNumNumber {
             return int.sub(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
         }
         Ok(int)
+    }
+
+    /// [`Self::floor`] of a borrowed `self`: the integer part is written straight into the result.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    pub fn floor_ref(&self) -> Result<Self, Error> {
+        let below = self.is_negative() && !self.is_int();
+        let int = self.int_ref()?;
+        if below {
+            return int.sub(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
+        }
+        Ok(int)
+    }
+
+    /// [`Self::int`] of a borrowed `self`, written straight into the result.
+    fn int_ref(&self) -> Result<Self, Error> {
+        let (keep, e) = if self.e > 0 {
+            ((self.e as usize).min(self.m.max_bit_len()), self.e)
+        } else {
+            (0, 0)
+        };
+        Ok(ExactNumNumber {
+            e,
+            s: self.s,
+            m: self.m.top_bits_from(keep)?,
+            inexact: self.inexact,
+            op_inexact: self.op_inexact,
+        })
     }
 
     /// Returns the smallest integer greater than or equal to `self`.
@@ -1599,6 +1836,59 @@ impl ExactNumNumber {
             .map(|_| {})
     }
 
+    /// What `set_precision(p, rm)` leaves in an owned copy of `self`, written straight from `self` (only the
+    /// kept words are written). A `p` that `set_precision` refuses leaves the copy as it was, and an exponent
+    /// overflow leaves the full-length rounded mantissa with the exponent unchanged, as the owned call does
+    /// before it returns the error.
+    ///
+    /// ## Errors
+    ///
+    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    pub(crate) fn rounded_to(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        if Self::prec_assertion(p).is_err() || Self::p_assertion(p).is_err() {
+            return self.with_sign(self.s);
+        }
+        let len = self.mantissa_max_bit_len();
+        if len <= p {
+            let mut unused = false;
+            let (m, _) = self
+                .m
+                .rounded_from(0, p, RoundingMode::None, true, &mut unused)?;
+            return Ok(ExactNumNumber {
+                e: self.e,
+                s: self.s,
+                m,
+                inexact: self.inexact,
+                op_inexact: self.op_inexact,
+            });
+        }
+        let mut inexact = self.inexact;
+        let (m, ovf, full_zero) = self
+            .m
+            .precision_from(p, rm, self.is_positive(), &mut inexact)?;
+        let mut r = ExactNumNumber {
+            e: self.e,
+            s: self.s,
+            m,
+            inexact: self.inexact | inexact,
+            op_inexact: None,
+        };
+        if ovf {
+            if r.e == EXPONENT_MAX {
+                r.m.set_length(len)?;
+                r.m.set_bit_len(self.m.bit_len());
+                return Ok(r);
+            }
+            r.e += 1;
+        } else if full_zero {
+            r.m.set_bit_len(0);
+            r.e = 0;
+        } else if self.is_subnormal() {
+            r.m.update_bit_len();
+        }
+        Ok(r)
+    }
+
     /// Try to round and then set the precision to `p`, given `self` has `s` correct digits in mantissa.
     /// Returns true if rounding succeeded. If the fuction returns `false`, `self` is still modified, and should be discarded.
     ///
@@ -1623,19 +1913,24 @@ impl ExactNumNumber {
     where
         F: FnMut(usize, RoundingMode) -> Result<Self, Error>,
     {
-        Self::p_assertion(p)?;
+        Self::prec_assertion(p)?;
         if rm == RoundingMode::None {
             return op(p, rm);
         }
         if p.is_multiple_of(WORD_BIT_SIZE) {
             let r = op(p, rm)?;
-            // A rounded subnormal result was rounded twice (at `p` bits, then onto the
-            // subnormal grid); recompute it through the round-to-odd path.
-            if r.e != EXPONENT_MIN || !r.op_inexact() {
+            // A rounded subnormal, or a value flushed to zero by a second rounding, is
+            // recomputed through the round-to-odd path. An inexact zero at exponent 0 is the
+            // flush-to-zero case; a correctly rounded underflow of the same kind is idempotent
+            // under that path.
+            if !r.op_inexact() || (r.e != EXPONENT_MIN && !r.is_zero()) {
                 return Ok(r);
             }
         }
-        let wide = op(round_p(p) + WORD_BIT_SIZE, RoundingMode::ToZero)?;
+        let wide_p = round_p(p)
+            .checked_add(WORD_BIT_SIZE)
+            .ok_or(Error::MemoryAllocation)?;
+        let wide = op(wide_p, RoundingMode::ToZero)?;
         if wide.is_zero() && !wide.op_inexact() {
             // Exact zero: its sign depends on the rounding mode.
             return op(p, rm);
@@ -1667,6 +1962,12 @@ impl ExactNumNumber {
 
         self.inexact = acc || rounded_again;
         self.op_inexact = Some(rounded || rounded_again);
+        if self.m.is_zero() {
+            // Canonical zero: exponent 0. A flushed sticky unit can leave e = EXPONENT_MIN
+            // after set_precision in RoundingMode::None, which is the same value with a
+            // different representation and would shift grid digests.
+            self.e = 0;
+        }
         Ok(self)
     }
 
@@ -1829,11 +2130,14 @@ impl ExactNumNumber {
     pub fn from_u128(mut v: u128, p: usize) -> Result<Self, Error> {
         const SZ: usize = core::mem::size_of::<u128>() * 8;
 
-        if p < SZ {
-            return Err(Error::InvalidArgument);
-        }
-
         Self::p_assertion(p)?;
+
+        if p < SZ {
+            // Build at the full 128 bits, then round once to `p` (to nearest, ties to even).
+            let mut ret = Self::from_u128(v, SZ)?;
+            ret.set_precision(p, RoundingMode::ToEven)?;
+            return Ok(ret);
+        }
 
         if v == 0 {
             Self::new(p)
@@ -1908,6 +2212,11 @@ impl ExactNumNumber {
     /// Returns true if the operation that produced `self` rounded. Values whose producing
     /// operation does not record that report the accumulated flag, `inexact()`.
     #[inline]
+    /// The per-operation flag as stored: `None` falls back to the accumulated flag.
+    pub(crate) fn op_inexact_raw(&self) -> Option<bool> {
+        self.op_inexact
+    }
+
     pub fn op_inexact(&self) -> bool {
         self.op_inexact.unwrap_or(self.inexact)
     }
@@ -1973,6 +2282,50 @@ mod tests {
 
     #[cfg(not(feature = "std"))]
     use alloc::format;
+
+    // Rusty (2026-11-10): the working-width check is bounded by the exponent arithmetic, not by
+    // MAX_PRECISION: twice a width fits the room i64 leaves above EXPONENT_MAX. room = 2^63 - 1 - (2^62 - 1)
+    // = 2^62, so the widest width is exactly room / 2 = 2^61 (2 * 2^61 == room), and one more bit is out.
+    #[test]
+    fn working_width_is_bounded_by_the_exponent_arithmetic() -> Result<(), String> {
+        let room = i128::from(i64::MAX) - i128::from(EXPONENT_MAX);
+        assert_eq!(room, 1i128 << 62);
+        let top = usize::try_from(room / 2).map_err(|e| format!("{e:?}"))?;
+        let over = top.checked_add(1).ok_or("top + 1")?;
+        assert_eq!(ExactNumNumber::p_assertion(0), Err(Error::InvalidArgument));
+        assert_eq!(ExactNumNumber::p_assertion(1), Ok(()));
+        assert_eq!(
+            ExactNumNumber::p_assertion(top.checked_sub(1).ok_or("top - 1")?),
+            Ok(())
+        );
+        assert_eq!(ExactNumNumber::p_assertion(top), Ok(()));
+        assert_eq!(
+            ExactNumNumber::p_assertion(over),
+            Err(Error::MemoryAllocation)
+        );
+        assert_eq!(
+            ExactNumNumber::p_assertion(usize::MAX),
+            Err(Error::MemoryAllocation)
+        );
+        // The working widths of the top public precision: rounded up to whole words, and one word wider.
+        let rounded = round_p(MAX_PRECISION);
+        assert_eq!(ExactNumNumber::p_assertion(rounded), Ok(()));
+        let wide = rounded.checked_add(WORD_BIT_SIZE).ok_or("wide")?;
+        assert_eq!(ExactNumNumber::p_assertion(wide), Ok(()));
+        // The public check is the caller's precision before any rounding.
+        assert_eq!(
+            ExactNumNumber::prec_assertion(0),
+            Err(Error::InvalidArgument)
+        );
+        assert_eq!(ExactNumNumber::prec_assertion(1), Ok(()));
+        assert_eq!(ExactNumNumber::prec_assertion(MAX_PRECISION), Ok(()));
+        let past = MAX_PRECISION.checked_add(1).ok_or("MAX + 1")?;
+        assert_eq!(
+            ExactNumNumber::prec_assertion(past),
+            Err(Error::InvalidArgument)
+        );
+        Ok(())
+    }
 
     #[test]
     fn test_number() -> Result<(), crate::Error> {

@@ -1,0 +1,13 @@
+diff --git a/src/mag/mul.rs b/src/mag/mul.rs
+index ad2f4d9..78ef6f0 100644
+--- a/src/mag/mul.rs
++++ b/src/mag/mul.rs
+@@ -15,7 +15,7 @@ impl Mag {
+     /// residue rounds up. Exponent underflow rounds up to the smallest positive
+     /// `Mag` (CONTRACT 3.2). Exponent overflow is `Infinity` (CONTRACT 3.3).
+     pub fn mul_up(&self, other: &Mag) -> Mag {
+-        if self.is_infinity() || other.is_infinity() {
++        if self.is_infinity() && other.is_infinity() {
+             Mag::infinity()
+         } else {
+             match (self.nonzero(), other.nonzero()) {

@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -266,7 +266,7 @@
+             None => return false,
+         }
+     }
+-    false
++    true
+ }
+ 
+ /// A certified bound of `W(x)` on `side` (16.S4b.2), `x` inside the branch's domain.

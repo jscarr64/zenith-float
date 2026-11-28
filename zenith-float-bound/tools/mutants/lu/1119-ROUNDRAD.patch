@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -61,7 +61,7 @@
+ 
+ /// The one outward rounding of a result to `prec` (16.LA.6).
+ fn round(x: Ball, prec: Precision) -> BoundResult<Ball> {
+-    x.add(&zero(prec)?, prec)
++    Ball::exact(x.into_parts().0, prec)?.add(&zero(prec)?, prec)
+ }
+ 
+ fn is_exact_zero(x: &Ball) -> bool {

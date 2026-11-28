@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -365,7 +365,7 @@
+     /// Upper bound of the Euclidean norm of every vector in the ball, `sqrt(sum (|m| + r)^2)` rounded up (CONTRACT 16.S6.6);
+     /// 0 for the empty vector.
+     pub fn norm_2_up(&self) -> Mag {
+-        sum_sq_up(self.as_array().as_slice().iter()).sqrt_up()
++        self.as_array().as_slice().iter().fold(Mag::zero(), |a, b| { let m = Mag::from_exact_num(b.mid()); a.add_up(&m.mul_up(&m)) }).sqrt_up()
+     }
+ }
+ 

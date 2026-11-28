@@ -1,0 +1,12 @@
+diff --git a/tests/harness/slice_cball.rs b/tests/harness/slice_cball.rs
+--- a/tests/harness/slice_cball.rs
++++ b/tests/harness/slice_cball.rs
+@@ -878,7 +878,7 @@
+ /// input radii (`a[1]`, `a[3]`) in exact arithmetic (Spence ruling, 2026-10-25).
+ fn sqr_ref(r: &GoldRow) -> [ExactNum; 2] {
+     let (rx, ry) = (&r.a[1], &r.a[3]);
+-    let so_re = rx.mul_full_prec(rx).add_full_prec(&ry.mul_full_prec(ry));
++    let so_re = rx.mul_full_prec(rx);
+     let xy = rx.mul_full_prec(ry);
+     let so_im = xy.add_full_prec(&xy);
+     [

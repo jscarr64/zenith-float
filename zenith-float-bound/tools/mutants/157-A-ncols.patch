@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -200,7 +200,7 @@
+ 
+     /// The number of columns.
+     pub fn ncols(&self) -> usize {
+-        self.0.shape().get(1).map_or(0, |c| *c)
++        self.0.shape().get(0).map_or(0, |c| *c)
+     }
+ 
+     /// Element `(i, j)`, or `None` when out of range.

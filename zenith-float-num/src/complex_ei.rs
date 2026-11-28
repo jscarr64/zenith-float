@@ -1,13 +1,15 @@
 //! Complex `Ei`, `Si`, `Ci`, `li`, and Fresnel integrals.
 
 use crate::common::util::round_p;
+use crate::complex_ball::CB;
+use crate::complex_ball::RB;
 use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
 use crate::complex_special::neg_c;
 use crate::complex_special::pi_c;
-use crate::complex_special::series_term_cap;
 use crate::complex_special::term_negligible;
 use crate::complex_special::two_c;
+use crate::complex_special::typed_nan_pair;
 use crate::complex_special::ziv_complex;
 use crate::defs::Exponent;
 use crate::Consts;
@@ -76,7 +78,7 @@ impl ExactComplex {
     /// Implementation of [`Self::ei`] on operands without inexact history.
     fn ei_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         if self.re().is_zero() && self.im().is_zero() {
             return nan_pair(Error::InvalidArgument);
@@ -103,18 +105,39 @@ impl ExactComplex {
     /// Implementation of [`Self::si`] on operands without inexact history.
     fn si_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
+        }
+        // Si(0) = 0, odd, with C99 signed zeros. Must not allocate dest.
+        if self.re().is_zero() && self.im().is_zero() {
+            return crate::complex::compact_complex_zero(
+                self.re().is_negative(),
+                self.im().is_negative(),
+            );
         }
         let dest = round_p(p);
         // Si is odd with real Taylor coefficients: Si(iy) is purely imaginary and Si(x) is real.
         // Pin the exactly-zero part so the Ziv test does not chase rounding noise.
+        // The pinned zero carries the sign of the limit: Re Si(x + iy) ≈ x sinh(y)/y, so it is
+        // the sign of x; Im Si(x + iy) ≈ y sin(x)/x, so it is sign(y) · sign(sin x / x).
         let re_zero = self.re().is_zero();
         let im_zero = self.im().is_zero();
+        let im_zero_neg = im_zero && !re_zero && {
+            let sx = self.re().sin(WORD_BIT_SIZE, RoundingMode::ToEven, cc);
+            self.im().is_negative() ^ (sx.is_negative() ^ self.re().is_negative())
+        };
+        let zero = |neg: bool, pw: usize| {
+            let mut z = ExactNum::new(pw);
+            if neg {
+                z = z.neg();
+            }
+            z
+        };
+        let re_neg = self.re().is_negative();
         ziv_complex(dest, rm, |pw| {
             let v = self.si_at(pw, dest, cc);
             match (re_zero, im_zero) {
-                (true, false) => ExactComplex::new(ExactNum::new(pw), v.im().clone()),
-                (false, true) => ExactComplex::new(v.re().clone(), ExactNum::new(pw)),
+                (true, false) => ExactComplex::new(zero(re_neg, pw), v.into_parts().1),
+                (false, true) => ExactComplex::new(v.into_parts().0, zero(im_zero_neg, pw)),
                 _ => v,
             }
         })
@@ -139,12 +162,21 @@ impl ExactComplex {
     /// Implementation of [`Self::ci`] on operands without inexact history.
     fn ci_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         if self.re().is_zero() && self.im().is_zero() {
             return nan_pair(Error::InvalidArgument);
         }
         let dest = round_p(p);
+        // ZF-37: on the positive real axis Ci(x ± 0i) = Ci(x) ± 0i (real Taylor coefficients
+        // off the cut); the exactly-zero imaginary part is pinned, as in `si_word`, so Ziv does
+        // not chase rounding noise. Its sign is the limit's: Im Ci(x + iy) ≈ y cos(x)/x.
+        if self.im().is_zero() && self.re().is_positive() {
+            let cx = self.re().cos(WORD_BIT_SIZE, RoundingMode::ToEven, cc);
+            // The imaginary part is an exact signed zero; do not allocate dest for it.
+            let z = crate::complex::compact_signed_zero(self.im().is_negative() ^ cx.is_negative());
+            return ExactComplex::new(self.re().ci(dest, rm, cc), z);
+        }
         ziv_complex(dest, rm, |pw| self.ci_at(pw, dest, cc))
     }
 
@@ -166,7 +198,7 @@ impl ExactComplex {
     /// Implementation of [`Self::li`] on operands without inexact history.
     fn li_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
         }
         if self.re().is_zero() && self.im().is_zero() {
             return nan_pair(Error::InvalidArgument);
@@ -192,10 +224,31 @@ impl ExactComplex {
     /// Implementation of [`Self::fresnel_s`] on operands without inexact history.
     fn fresnel_s_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
+        }
+        // S(0) is an exact signed zero (C99 odd, conjugate-symmetric; Im(S)
+        // takes the opposite sign of Im(z)). Must not allocate dest.
+        if self.re().is_zero() && self.im().is_zero() {
+            return crate::complex::compact_complex_zero(
+                self.re().is_negative(),
+                !self.im().is_negative(),
+            );
         }
         let dest = round_p(p);
-        ziv_complex(dest, rm, |pw| self.fresnel_s_at(pw, cc))
+        if !finite_parts(self) {
+            let pw = dest + WORD_BIT_SIZE;
+            let v = self.fresnel_pair_plain(pw, cc).0;
+            let (mut re, mut im) = v.into_parts();
+            let _ = re.set_precision(dest, rm);
+            let _ = im.set_precision(dest, rm);
+            return ExactComplex::new(re, im);
+        }
+        if let Some(v) = self.fresnel_axis(true, dest, rm, cc) {
+            return v;
+        }
+        crate::complex_ball::ziv_complex_ball(dest, rm, |q| {
+            self.fresnel_pair_ball(q, cc).map(|pair| pair.0)
+        })
     }
 
     /// Fresnel cosine integral \(C(z)\). Entire.
@@ -215,10 +268,31 @@ impl ExactComplex {
     /// Implementation of [`Self::fresnel_c`] on operands without inexact history.
     fn fresnel_c_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return ExactComplex::new(self.re().clone(), self.im().clone());
+            return typed_nan_pair(self);
+        }
+        // C(0) is an exact signed zero that copies the operand's signed zeros
+        // (C99 odd, conjugate-symmetric; C(z) ~ z). Must not allocate dest.
+        if self.re().is_zero() && self.im().is_zero() {
+            return crate::complex::compact_complex_zero(
+                self.re().is_negative(),
+                self.im().is_negative(),
+            );
         }
         let dest = round_p(p);
-        ziv_complex(dest, rm, |pw| self.fresnel_c_at(pw, cc))
+        if !finite_parts(self) {
+            let pw = dest + WORD_BIT_SIZE;
+            let v = self.fresnel_pair_plain(pw, cc).1;
+            let (mut re, mut im) = v.into_parts();
+            let _ = re.set_precision(dest, rm);
+            let _ = im.set_precision(dest, rm);
+            return ExactComplex::new(re, im);
+        }
+        if let Some(v) = self.fresnel_axis(false, dest, rm, cc) {
+            return v;
+        }
+        crate::complex_ball::ziv_complex_ball(dest, rm, |q| {
+            self.fresnel_pair_ball(q, cc).map(|pair| pair.1)
+        })
     }
 
     fn ei_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -253,16 +327,10 @@ impl ExactComplex {
         let lnz = self.ln(p, RoundingMode::None, cc);
         let mut term = self.clone();
         let mut sum = term.clone();
-        // Terms peak near n = |z|; allow e·|z| terms beyond the precision-based cap.
-        let az_bound = self
-            .abs(64, RoundingMode::None)
-            .exponent()
-            .map_or(
-                0usize,
-                |e| if e > 0 { 3usize << (e as u32).min(40) } else { 0 },
-            );
-        for n in 2..=series_term_cap(p).max(az_bound.saturating_add(WORD_BIT_SIZE)) {
-            let nw = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p);
+        // Terms peak near n = |z| and then decay; run until the tail is below 2^{-p}.
+        let mut n: u32 = 2;
+        loop {
+            let nw = ExactComplex::from_real(ExactNum::from_u32(n, p), p);
             term = term
                 .mul(self, p, RoundingMode::None)
                 .div(&nw, p, RoundingMode::None);
@@ -271,6 +339,10 @@ impl ExactComplex {
             if term_negligible(&piece, p) {
                 break;
             }
+            let Some(next) = n.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            n = next;
         }
         g.add(&lnz, p, RoundingMode::None)
             .add(&sum, p, RoundingMode::None)
@@ -284,8 +356,9 @@ impl ExactComplex {
         let mut term = ExactComplex::one(p);
         let mut s = term.clone();
         let mut prev_e = Exponent::MIN;
-        for k in 1..=series_term_cap(p) {
-            let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
+        let mut k: u32 = 1;
+        loop {
+            let kk = ExactComplex::from_real(ExactNum::from_u32(k, p), p);
             term = term
                 .mul(&kk, p, RoundingMode::None)
                 .div(self, p, RoundingMode::None);
@@ -301,6 +374,10 @@ impl ExactComplex {
             if term_negligible(&term, p) {
                 break;
             }
+            let Some(next) = k.checked_add(1) else {
+                return nan_pair(Error::PrecisionRetryExhausted);
+            };
+            k = next;
         }
         pre.mul(&s, p, RoundingMode::None)
     }
@@ -311,7 +388,11 @@ impl ExactComplex {
         }
         // \(\mathrm{Si}\) is odd; the \(\mathrm{Ei}\) combination minus \(\pi/2\) is the
         // principal value for \(\mathrm{Re}\,z\ge 0\).
-        if self.re().is_negative() || (self.re().is_zero() && self.im().is_negative()) {
+        // Si is odd and entire. Decide the half-plane by value, not by the zero's sign: with
+        // re = −0 the old test negated to re = −0 again (−1 · +0 is −0 under neg_via_mul) and
+        // recursed until the stack overflowed (ZF-72).
+        let re_neg = !self.re().is_zero() && self.re().is_negative();
+        if re_neg || (self.re().is_zero() && self.im().is_negative()) {
             return neg_c(self.neg_via_mul().si_at(work_p, dest_p, cc));
         }
         let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
@@ -360,7 +441,8 @@ impl ExactComplex {
             .ei_at(work_p, dest_p, cc)
     }
 
-    fn fresnel_pair(&self, p: usize, cc: &mut Consts) -> (Self, Self) {
+    /// One-shot `(S, C)` from complex `erf` (non-finite operands keep its NaN results).
+    fn fresnel_pair_plain(&self, p: usize, cc: &mut Consts) -> (Self, Self) {
         let sqrt_pi =
             ExactComplex::from_real(cc.pi(p, RoundingMode::None).sqrt(p, RoundingMode::None), p);
         let scale = sqrt_pi
@@ -399,13 +481,129 @@ impl ExactComplex {
         (s, c)
     }
 
-    fn fresnel_s_at(&self, p: usize, cc: &mut Consts) -> Self {
-        self.fresnel_pair(p, cc).0
+    /// Fresnel `S`/`C` on an axis, from the real functions (DLMF 7.4.7–7.4.8: `S(iy) = −i S(y)`,
+    /// `C(iy) = i C(y)`). The zero part is signed as its limit from the side of the operand's
+    /// signed zero: `Im S(x ± iε) = ±ε sin(πx²/2) + O(ε³)` (and `∓ε³π cos(πx²/2)/6` where the sine
+    /// vanishes), and likewise for `C` with `cos`/`sin` and for the imaginary axis.
+    /// `None` off the axes and for non-finite parts.
+    fn fresnel_axis(
+        &self,
+        sine: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        let (re, im) = (self.re(), self.im());
+        if re.is_nan() || im.is_nan() || re.is_inf() || im.is_inf() {
+            return None;
+        }
+        let real_fn = |x: &ExactNum, rm: RoundingMode, cc: &mut Consts| {
+            if sine {
+                x.fresnel_s(p, rm, cc)
+            } else {
+                x.fresnel_c(p, rm, cc)
+            }
+        };
+        let zero = |neg: bool| if neg { ExactNum::new(p).neg() } else { ExactNum::new(p) };
+        if im.is_zero() {
+            let (s, c) = pi_half_sq_signs(re)?;
+            let sigma = if im.is_negative() { -1 } else { 1 };
+            let sgn = if sine {
+                if s != 0 {
+                    sigma * s
+                } else {
+                    -sigma * c
+                }
+            } else if c != 0 {
+                sigma * c
+            } else {
+                sigma * s
+            };
+            return Some(ExactComplex::new(real_fn(re, rm, cc), zero(sgn < 0)));
+        }
+        if re.is_zero() {
+            let (s, c) = pi_half_sq_signs(im)?;
+            let sigma = if re.is_negative() { -1 } else { 1 };
+            let sgn = if sine {
+                if s != 0 {
+                    -sigma * s
+                } else {
+                    sigma * c
+                }
+            } else if c != 0 {
+                sigma * c
+            } else {
+                sigma * s
+            };
+            let v = if sine {
+                let mirrored = match rm {
+                    RoundingMode::Up => RoundingMode::Down,
+                    RoundingMode::Down => RoundingMode::Up,
+                    other => other,
+                };
+                real_fn(im, mirrored, cc).neg()
+            } else {
+                real_fn(im, rm, cc)
+            };
+            return Some(ExactComplex::new(zero(sgn < 0), v));
+        }
+        None
     }
 
-    fn fresnel_c_at(&self, p: usize, cc: &mut Consts) -> Self {
-        self.fresnel_pair(p, cc).1
+    /// `(S, C)` as balls: `S ± iC`-type combinations of `erf((1 ∓ i)√π z/2)` (DLMF 7.5.7),
+    /// with the erf arguments' rounding carried by [`ExactComplex::erf_of_ball`].
+    fn fresnel_pair_ball(&self, q: usize, cc: &mut Consts) -> Option<(CB, CB)> {
+        let sqrt_pi = RB::rounded(cc.pi(q, RoundingMode::None), q)?.sqrt(q)?;
+        let scale = CB::exact(self).mul_real(&sqrt_pi, q)?.scale2(-1)?;
+        let one = || RB::exact(ExactNum::from_u8(1, WORD_BIT_SIZE));
+        let one_p_i = CB::from_parts(one(), one());
+        let one_m_i = CB::from_parts(one(), one().neg());
+        let erf_m = ExactComplex::erf_of_ball(&one_m_i.mul(&scale, q)?, q, cc)?;
+        let erf_p = ExactComplex::erf_of_ball(&one_p_i.mul(&scale, q)?, q, cc)?;
+        let c_plus_is = one_p_i.scale2(-1)?.mul(&erf_m, q)?;
+        let c_minus_is = one_m_i.scale2(-1)?.mul(&erf_p, q)?;
+        // S = (c+ − c−)/(2i) = −i (c+ − c−)/2, C = (c+ + c−)/2.
+        let s = c_plus_is.sub(&c_minus_is, q)?.mul_neg_i().scale2(-1)?;
+        let c = c_plus_is.add(&c_minus_is, q)?.scale2(-1)?;
+        Some((s, c))
     }
+}
+
+fn finite_parts(z: &ExactComplex) -> bool {
+    !z.re().is_nan() && !z.im().is_nan() && !z.re().is_inf() && !z.im().is_inf()
+}
+
+/// Signs (−1, 0, 1) of `sin(πx²/2)` and `cos(πx²/2)`, exactly, from `t = x²/2 mod 2`.
+fn pi_half_sq_signs(x: &ExactNum) -> Option<(i32, i32)> {
+    let t = x.mul_full_prec(x).ldexp(
+        -1,
+        x.mantissa_max_bit_len()?.saturating_mul(2) + WORD_BIT_SIZE,
+        RoundingMode::None,
+    );
+    let r = t.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
+    let at = |k: u8, d: i64| {
+        let v = ExactNum::from_u8(k, WORD_BIT_SIZE).ldexp(d, WORD_BIT_SIZE, RoundingMode::None);
+        r.compare(&v)
+    };
+    let c0 = r.compare(&ExactNum::new(WORD_BIT_SIZE))?; // r ≥ 0
+    let c_half = at(1, -1)?;
+    let c_one = at(1, 0)?;
+    let c_3half = at(3, -1)?;
+    let sin = if c0 == 0 || c_one == 0 {
+        0
+    } else if c_one < 0 {
+        1
+    } else {
+        -1
+    };
+    let cos = if c_half == 0 || c_3half == 0 {
+        0
+    } else if c_half < 0 || c_3half > 0 {
+        1
+    } else {
+        -1
+    };
+    Some((sin, cos))
 }
 
 #[cfg(test)]
@@ -414,6 +612,7 @@ mod tests {
     use crate::complex_special::neg_c;
     use crate::complex_special::pi_c;
     use crate::complex_special::two_c;
+    use crate::test_must::Must;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
@@ -519,6 +718,81 @@ mod tests {
 
         let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.ei(p, rm, &mut cc).is_nan());
+        Ok(())
+    }
+    fn compact_signed_zero(neg: bool) -> ExactNum {
+        let mut z = ExactNum::from_word(0, crate::DEFAULT_P);
+        if neg {
+            z.set_sign(crate::Sign::Neg);
+        }
+        z
+    }
+
+    /// Exact signed zeros of S, C and Si at dest \(2^{59}\) must return immediately
+    /// with a compact mantissa. C99 oddness and conjugate symmetry fix the signs;
+    /// S takes the opposite imaginary sign from the operand (the existing p=64
+    /// axis convention).
+    #[test]
+    fn zf_fresnel_and_si_signed_zero_at_dest_2_59_returns_immediately() -> Result<(), String> {
+        let p = 1usize << 59;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().must("Consts")?;
+        for (re_neg, im_neg) in [(false, false), (false, true), (true, false), (true, true)] {
+            let z = ExactComplex::new(compact_signed_zero(re_neg), compact_signed_zero(im_neg));
+            let t0 = std::time::Instant::now();
+            let s = z.fresnel_s(p, rm, &mut cc);
+            assert!(
+                crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
+                "fresnel_s at dest 2^59 took {:?}",
+                t0.elapsed()
+            );
+            assert!(
+                s.re().is_zero() && s.re().is_negative() == re_neg,
+                "S({z:?}) re {:?}",
+                s
+            );
+            assert!(
+                s.im().is_zero() && s.im().is_negative() == !im_neg,
+                "S({z:?}) im {:?}",
+                s
+            );
+
+            let t0 = std::time::Instant::now();
+            let c = z.fresnel_c(p, rm, &mut cc);
+            assert!(
+                crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
+                "fresnel_c at dest 2^59 took {:?}",
+                t0.elapsed()
+            );
+            assert!(
+                c.re().is_zero() && c.re().is_negative() == re_neg,
+                "C({z:?}) re {:?}",
+                c
+            );
+            assert!(
+                c.im().is_zero() && c.im().is_negative() == im_neg,
+                "C({z:?}) im {:?}",
+                c
+            );
+
+            let t0 = std::time::Instant::now();
+            let si = z.si(p, rm, &mut cc);
+            assert!(
+                crate::test_time::within(t0.elapsed(), std::time::Duration::from_secs(1)),
+                "si at dest 2^59 took {:?}",
+                t0.elapsed()
+            );
+            assert!(
+                si.re().is_zero() && si.re().is_negative() == re_neg,
+                "Si({z:?}) re {:?}",
+                si
+            );
+            assert!(
+                si.im().is_zero() && si.im().is_negative() == im_neg,
+                "Si({z:?}) im {:?}",
+                si
+            );
+        }
         Ok(())
     }
 }

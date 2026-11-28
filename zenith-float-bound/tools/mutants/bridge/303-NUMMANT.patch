@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 0ce786b..1696817 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -78,7 +78,7 @@ impl Mag {
+         } else {
+             Ordering::Equal
+         };
+-        Some(me.cmp(&xe).then(mm.cmp(&xm)).then(tail))
++        Some(me.cmp(&xe).then(xm.cmp(&mm)).then(tail))
+     }
+ 
+     /// `self` against `|a - b|`, decided exactly (16.S2.2). Operands within [`EXACT_GAP`] binades are subtracted

@@ -1,17 +1,20 @@
 //! Airy \(\mathrm{Ai}\) / \(\mathrm{Bi}\) and their first derivatives.
 
 use crate::common::util::bump_prec_retry;
+use crate::common::util::prec_retry_exhausted;
+use crate::common::util::reduction_width;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
+use crate::defs::EXPONENT_MIN;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::Sign;
 use crate::Word;
 use crate::WORD_BIT_SIZE;
 
-/// Term cap for the Taylor pair \((f,g)\) (only used while \(\xi<0.35\,p\)).
-const AIRY_SERIES_MAX: usize = 1 << 16;
+// The Taylor pair (f,g) runs until both terms are below 2^{-p}; it is only
+// selected while xi < 0.35 p.
 
 impl ExactNumNumber {
     /// Airy \(\mathrm{Ai}(\mathrm{self})\) at precision `p`.
@@ -44,55 +47,162 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
 
+        // DLMF 9.7.15: 0 < Ai(x) < exp(-ζ) for x > 0, ζ = (2/3) x^{3/2}.
+        // The same ζ governs Bi ~ π^{-1/2} x^{-1/4} exp(+ζ) (9.7.7) and the
+        // derivatives (9.7.6, 9.7.8). When ζ is past 2^{63}, exp(-ζ) is far
+        // below the subnormal grid and exp(+ζ) is far above EXPONENT_MAX.
+        // Handle each component alone so Bi's overflow cannot poison Ai.
+        if self.is_positive() {
+            if let Some(v) = self.airy_pos_past_exp_range(which, p, rm)? {
+                let mut v = v;
+                v.set_inexact(true | self.inexact());
+                return Ok(v);
+            }
+        }
+
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
+        let mut first_lost: Option<usize> = None;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE;
-            let mut ret = self.airy_at(which, p_x, cc)?;
-            if ret.try_set_precision(p, rm, p_wrk)? {
+            let (mut ret, scale) = self.airy_at(which, p_x, cc)?;
+            // The value is a combination of terms of size `scale` (each good to the working
+            // precision): near a zero of Ai, Bi or their derivatives the cancellation costs
+            // exponent(scale) - exponent(value) bits, which the roundability claim must not include.
+            let lost = if ret.is_zero() {
+                p_wrk
+            } else {
+                usize::try_from((scale.exponent() - ret.exponent()).max(0))
+                    .map_err(|_| Error::InvalidArgument)?
+                    .saturating_add(2)
+            };
+            let acc = p_wrk.saturating_sub(lost) / WORD_BIT_SIZE * WORD_BIT_SIZE;
+            if acc > p && ret.try_set_precision(p, rm, acc)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 return Ok(ret);
             }
-            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            // Restore the cancelled bits in one step; the retry budget is measured past the
+            // loss seen at the first evaluation (fixed), so the loop still ends.
+            let allow = *first_lost.get_or_insert(lost);
+            let gap = p.saturating_add(WORD_BIT_SIZE).saturating_sub(acc);
+            if lost > WORD_BIT_SIZE && !ret.is_zero() {
+                let next = round_p(p_wrk + gap.max(WORD_BIT_SIZE));
+                if prec_retry_exhausted(next, p.saturating_add(allow)) {
+                    return Err(Error::PrecisionRetryExhausted);
+                }
+                p_wrk = next;
+            } else if prec_retry_exhausted(p_wrk, p.saturating_add(allow)) {
+                return Err(Error::PrecisionRetryExhausted);
+            } else {
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            }
         }
     }
 
-    fn airy_at(&self, which: AiryWhich, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+    /// The picked value at `p` bits and the size of the terms it was combined from.
+    fn airy_at(&self, which: AiryWhich, p: usize, cc: &mut Consts) -> Result<(Self, Self), Error> {
         let mut x = self.clone()?;
         x.set_inexact(false);
-        let (ai, bi, aip, bip) = x.airy_all(p, cc)?;
+        // Large-positive asymptotic: compute only the requested function
+        // (DLMF 9.7.5–9.7.8). The four-way path also evaluates exp(+ζ) for Bi,
+        // which overflows while Ai is an underflow or a tiny exp(-ζ) term.
+        if !x.is_zero() && x.is_positive() && !x.airy_prefer_series(p, cc)? {
+            return x.airy_asymp_pos_one(which, p, cc);
+        }
+        let AiryParts {
+            vals: [ai, bi, aip, bip],
+            scales: [sai, sbi, saip, sbip],
+        } = x.airy_all(p, cc)?;
         Ok(match which {
-            AiryWhich::Ai => ai,
-            AiryWhich::Bi => bi,
-            AiryWhich::AiPrime => aip,
-            AiryWhich::BiPrime => bip,
+            AiryWhich::Ai => (ai, sai),
+            AiryWhich::Bi => (bi, sbi),
+            AiryWhich::AiPrime => (aip, saip),
+            AiryWhich::BiPrime => (bip, sbip),
         })
     }
 
-    fn airy_all(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {
+    /// The Taylor pair is used while a smallest asymptotic term e^{-2ζ} is still
+    /// above 2^{-p} (the same cutoff as `airy_all`).
+    fn airy_prefer_series(&self, p: usize, cc: &mut Consts) -> Result<bool, Error> {
+        let ax = self.with_sign(Sign::Pos)?;
+        let xi = ax.airy_xi_scales(p, cc)?.0;
+        if xi.exponent() >= 24 {
+            return Ok(false);
+        }
+        let n = xi.int_as_usize()?;
+        Ok(n < (p + 16) * 7 / 20)
+    }
+
+    /// Proven overflow / underflow when ζ is past the exponent range.
+    fn airy_pos_past_exp_range(
+        &self,
+        which: AiryWhich,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Option<Self>, Error> {
+        if !self.airy_zeta_past_exp_range()? {
+            return Ok(None);
+        }
+        match which {
+            AiryWhich::Ai | AiryWhich::AiPrime => Ok(Some(airy_underflow_pos(p, rm)?)),
+            AiryWhich::Bi | AiryWhich::BiPrime => Err(Error::ExponentOverflow(Sign::Pos)),
+        }
+    }
+
+    /// True when ζ = (2/3) x^{3/2} exceeds 2^{63}, so e^{-ζ} is far below the
+    /// smallest subnormal and e^{ζ} is far above EXPONENT_MAX (DLMF 9.7.15).
+    fn airy_zeta_past_exp_range(&self) -> Result<bool, Error> {
+        if self.exponent() >= 64 {
+            return Ok(true);
+        }
+        if self.exponent() < 42 {
+            return Ok(false);
+        }
+        let p = WORD_BIT_SIZE;
+        let two = Self::from_word(2, p)?;
+        let three = Self::from_word(3, p)?;
+        let sx = self.sqrt(p, RoundingMode::None)?;
+        let x32 = self.mul(&sx, p, RoundingMode::None)?;
+        let xi = two
+            .div(&three, p, RoundingMode::None)?
+            .mul(&x32, p, RoundingMode::None)?;
+        Ok(xi.exponent() > 63)
+    }
+
+    /// Ai, Bi, Ai', Bi' and, for each, the size of the terms it is combined from.
+    fn airy_all(&self, p: usize, cc: &mut Consts) -> Result<AiryParts, Error> {
         let (c1, c2, sqrt3) = airy_cs(p, cc)?;
         if self.is_zero() {
             let bi0 = sqrt3.mul(&c1, p, RoundingMode::None)?;
             let aip0 = c2.neg()?;
             let bip0 = sqrt3.mul(&c2, p, RoundingMode::None)?;
-            return Ok((c1, bi0, aip0, bip0));
+            let scales = [c1.clone()?, bi0.clone()?, aip0.clone()?, bip0.clone()?];
+            return Ok(AiryParts {
+                vals: [c1, bi0, aip0, bip0],
+                scales,
+            });
         }
         // The asymptotic expansions stop at a smallest term of about e^{-2ξ}, ξ = (2/3)|x|^{3/2};
         // use them only once that is below 2^-p. Otherwise sum the Taylor pair, whose terms
         // reach about e^{ξ} while Ai can be as small as e^{-ξ}: carry 2ξ·log₂e extra bits.
-        let mut ax = self.clone()?;
-        ax.set_sign(Sign::Pos);
+        let ax = self.with_sign(Sign::Pos)?;
         let xi = ax.airy_xi_scales(p, cc)?.0;
         let xi_bits = if xi.exponent() >= 24 { None } else { Some(xi.int_as_usize()?) };
         if let Some(xi_n) = xi_bits.filter(|&n| n < (p + 16) * 7 / 20) {
             let pw = p + round_p(3 * (xi_n + 1)) + WORD_BIT_SIZE;
-            let (c1, c2, sqrt3) = airy_cs(pw, cc)?;
-            let (f, g, fp, gp) = self.airy_fg_series(pw)?;
-            return combine_fg(&c1, &c2, &sqrt3, &f, &g, &fp, &gp, pw);
+            let cs = airy_cs(pw, cc)?;
+            let fg = self.airy_fg_series(pw)?;
+            return combine_fg(&cs, &fg, pw);
         }
         if self.is_positive() {
-            self.airy_asymp_pos(p, cc)
+            // Every term has the sign of the leading one: no cancellation.
+            let (ai, bi, aip, bip) = self.airy_asymp_pos(p, cc)?;
+            let scales = [ai.clone()?, bi.clone()?, aip.clone()?, bip.clone()?];
+            Ok(AiryParts {
+                vals: [ai, bi, aip, bip],
+                scales,
+            })
         } else {
             self.airy_asymp_neg(p, cc)
         }
@@ -109,7 +219,8 @@ impl ExactNumNumber {
         let mut tg = self.clone()?;
         let mut g = self.clone()?;
         let mut gp = one;
-        for k in 1..=AIRY_SERIES_MAX {
+        let mut k: usize = 1;
+        loop {
             let k3 = Self::from_word((3 * k) as Word, p)?;
             let k3m1 = Self::from_word((3 * k - 1) as Word, p)?;
             let k3p1 = Self::from_word((3 * k + 1) as Word, p)?;
@@ -136,16 +247,15 @@ impl ExactNumNumber {
             let tf_done = tf.is_zero() || tf.exponent() + (p as i64) < 0;
             let tg_done = tg.is_zero() || tg.exponent() + (p as i64) < 0;
             if tf_done && tg_done {
-                break;
+                return Ok((f, g, fp, gp));
             }
+            k = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
-        Ok((f, g, fp, gp))
     }
 
     fn airy_asymp_pos(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {
         let (xi, x14, x_m14, pi_m12) = self.airy_xi_scales(p, cc)?;
-        let mut nxi = xi.clone()?;
-        nxi.set_sign(Sign::Neg);
+        let nxi = xi.with_sign(Sign::Neg)?;
         let exp_m = nxi.exp(p, RoundingMode::None, cc)?;
         let exp_p = xi.exp(p, RoundingMode::None, cc)?;
         let (su, sv) = airy_uv_sums(&xi, p, true)?;
@@ -176,14 +286,70 @@ impl ExactNumNumber {
         ))
     }
 
-    fn airy_asymp_neg(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {
-        let mut z = self.clone()?;
-        z.set_sign(Sign::Pos);
-        let (zeta, z14, z_m14, pi_m12) = z.airy_xi_scales(p, cc)?;
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let four = Self::from_word(4, p)?;
-        let pi4 = pi.div(&four, p, RoundingMode::None)?;
-        let chi = zeta.add(&pi4, p, RoundingMode::None)?;
+    /// One of Ai, Bi, Ai', Bi' from the x → +∞ expansions (DLMF 9.7.5–9.7.8),
+    /// with the remainder controlled by stopping at the first growing term
+    /// (Arb-style: the truncated tail is smaller than the last included term,
+    /// which itself is below 2^{-p} when this path is selected).
+    fn airy_asymp_pos_one(
+        &self,
+        which: AiryWhich,
+        p: usize,
+        cc: &mut Consts,
+    ) -> Result<(Self, Self), Error> {
+        let (xi, x14, x_m14, pi_m12) = self.airy_xi_scales(p, cc)?;
+        let half = one_half_airy(p)?;
+        match which {
+            AiryWhich::Ai | AiryWhich::AiPrime => {
+                let nxi = xi.with_sign(Sign::Neg)?;
+                let exp_m = nxi.exp(p, RoundingMode::None, cc)?;
+                let (su, sv) = airy_uv_sums(&xi, p, true)?;
+                let val = if matches!(which, AiryWhich::Ai) {
+                    half.mul(&pi_m12, p, RoundingMode::None)?
+                        .mul(&x_m14, p, RoundingMode::None)?
+                        .mul(&exp_m, p, RoundingMode::None)?
+                        .mul(&su, p, RoundingMode::None)?
+                } else {
+                    half.mul(&pi_m12, p, RoundingMode::None)?
+                        .mul(&x14, p, RoundingMode::None)?
+                        .mul(&exp_m, p, RoundingMode::None)?
+                        .neg()?
+                        .mul(&sv, p, RoundingMode::None)?
+                };
+                let scale = val.clone()?;
+                Ok((val, scale))
+            }
+            AiryWhich::Bi | AiryWhich::BiPrime => {
+                let exp_p = xi.exp(p, RoundingMode::None, cc)?;
+                let (tu, tv) = airy_uv_sums(&xi, p, false)?;
+                let val = if matches!(which, AiryWhich::Bi) {
+                    pi_m12
+                        .mul(&x_m14, p, RoundingMode::None)?
+                        .mul(&exp_p, p, RoundingMode::None)?
+                        .mul(&tu, p, RoundingMode::None)?
+                } else {
+                    pi_m12
+                        .mul(&x14, p, RoundingMode::None)?
+                        .mul(&exp_p, p, RoundingMode::None)?
+                        .mul(&tv, p, RoundingMode::None)?
+                };
+                let scale = val.clone()?;
+                Ok((val, scale))
+            }
+        }
+    }
+
+    fn airy_asymp_neg(&self, p: usize, cc: &mut Consts) -> Result<AiryParts, Error> {
+        let z = self.with_sign(Sign::Pos)?;
+        let (zeta_p, z14, z_m14, pi_m12) = z.airy_xi_scales(p, cc)?;
+        // The phase χ = ζ + π/4 enters sin/cos with an absolute error, so ζ = (2/3) z^{3/2} and
+        // π carry exponent(ζ) extra bits (as the trig reduction does): at p bits alone ζ ~ 2^1500
+        // for z = 2^1000 is off by far more than 2π.
+        let wz = round_p(reduction_width(p + WORD_BIT_SIZE, zeta_p.exponent())?);
+        let zeta = if wz > p { z.airy_xi_scales(wz, cc)?.0 } else { zeta_p };
+        let pi = cc.pi_num(wz, RoundingMode::None)?;
+        let four = Self::from_word(4, wz)?;
+        let pi4 = pi.div(&four, wz, RoundingMode::None)?;
+        let chi = zeta.add(&pi4, wz, RoundingMode::None)?;
         let (s, c) = chi.sin_cos(p, RoundingMode::None, cc)?;
         let (p_even, q_odd) = airy_pq_sums(&zeta, p, false)?;
         let (r_even, s_odd) = airy_pq_sums(&zeta, p, true)?;
@@ -231,7 +397,13 @@ impl ExactNumNumber {
             p,
             RoundingMode::None,
         )?;
-        Ok((ai, bi, aip, bip))
+        // Each value is amp·(±sin χ P ± cos χ Q) with |P|, |Q| ≤ 1-ish: the term size is the
+        // prefactor; near a zero of the combination the loss is measured against it.
+        let scales = [amp.clone()?, amp, amp_p.clone()?, amp_p];
+        Ok(AiryParts {
+            vals: [ai, bi, aip, bip],
+            scales,
+        })
     }
 
     /// \(\xi=(2/3)x^{3/2}\), \(x^{1/4}\), \(x^{-1/4}\), \(\pi^{-1/2}\) for \(x>0\).
@@ -266,6 +438,16 @@ fn one_half_airy(p: usize) -> Result<ExactNumNumber, Error> {
     Ok(h)
 }
 
+/// IEEE underflow of a positive value far below half of `min_positive(p)`:
+/// +0 in every mode that rounds toward zero, `min_positive` in Up / FromZero.
+fn airy_underflow_pos(p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
+    let mut ret = ExactNumNumber::from_word(1, p)?;
+    ret.set_sign(Sign::Pos);
+    ret.set_exponent(EXPONENT_MIN);
+    ret.subnormalize(2 * EXPONENT_MIN, rm);
+    Ok(ret)
+}
+
 fn airy_cs(
     p: usize,
     cc: &mut Consts,
@@ -292,24 +474,27 @@ fn airy_cs(
     Ok((c1, c2, sqrt3))
 }
 
+/// Ai, Bi, Ai', Bi' (`vals`) and, for each, the size of the terms it was combined from
+/// (`scales`), in that order.
+struct AiryParts {
+    vals: [ExactNumNumber; 4],
+    scales: [ExactNumNumber; 4],
+}
+
+/// Ai = c1 f − c2 g, Bi = √3 (c1 f + c2 g) and the primes, from `cs` = (c1, c2, √3) and
+/// `fg` = (f, g, f', g').
 fn combine_fg(
-    c1: &ExactNumNumber,
-    c2: &ExactNumNumber,
-    sqrt3: &ExactNumNumber,
-    f: &ExactNumNumber,
-    g: &ExactNumNumber,
-    fp: &ExactNumNumber,
-    gp: &ExactNumNumber,
-    p: usize,
-) -> Result<
-    (
+    cs: &(ExactNumNumber, ExactNumNumber, ExactNumNumber),
+    fg: &(
         ExactNumNumber,
         ExactNumNumber,
         ExactNumNumber,
         ExactNumNumber,
     ),
-    Error,
-> {
+    p: usize,
+) -> Result<AiryParts, Error> {
+    let (c1, c2, sqrt3) = cs;
+    let (f, g, fp, gp) = fg;
     let c1f = c1.mul(f, p, RoundingMode::None)?;
     let c2g = c2.mul(g, p, RoundingMode::None)?;
     let c1fp = c1.mul(fp, p, RoundingMode::None)?;
@@ -326,7 +511,23 @@ fn combine_fg(
         p,
         RoundingMode::None,
     )?;
-    Ok((ai, bi, aip, bip))
+    // Ai = c1 f - c2 g cancels near its zeros (and at negative x the terms grow like e^{ξ}):
+    // the term size is the larger of the two products.
+    let big = |a: &ExactNumNumber, b: &ExactNumNumber| -> Result<ExactNumNumber, Error> {
+        if a.abs_cmp(b) >= 0 {
+            a.abs()
+        } else {
+            b.abs()
+        }
+    };
+    let s_f = big(&c1f, &c2g)?;
+    let s_fp = big(&c1fp, &c2gp)?;
+    let s_bi = sqrt3.mul(&s_f, p, RoundingMode::None)?;
+    let s_bip = sqrt3.mul(&s_fp, p, RoundingMode::None)?;
+    Ok(AiryParts {
+        vals: [ai, bi, aip, bip],
+        scales: [s_f, s_bi, s_fp, s_bip],
+    })
 }
 
 /// \(\sum u_k\xi^{-k}\) and \(\sum v_k\xi^{-k}\). `alt` applies \((-1)^k\).

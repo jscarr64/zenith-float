@@ -15,7 +15,7 @@ pub struct Case {
     /// Reference imaginary part (`""` for real results).
     pub im: &'static str,
     /// Minimum number of correct bits.
-    pub min_bits: i32,
+    pub min_bits: i64,
 }
 
 /// All cases.

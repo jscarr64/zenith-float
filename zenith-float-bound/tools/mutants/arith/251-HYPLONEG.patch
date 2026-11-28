@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..6f680eb 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -494,7 +494,7 @@ fn abs_lower(m: &ExactNum, r: &Mag, rn: &ExactNum, wp: Precision) -> ExactNum {
+     match r.cmp_exact_num(m).map(Ordering::reverse) {
+         Some(Ordering::Greater) => {
+             let x = ExactNum::from(1i64).mul(m, wp, RoundingMode::ToZero);
+-            if m.is_negative() {
++            if !m.is_negative() {
+                 x.add(rn, wp, RoundingMode::ToZero)
+             } else {
+                 x.sub(rn, wp, RoundingMode::ToZero)

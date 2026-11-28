@@ -1,0 +1,15 @@
+diff --git a/src/mag/mod.rs b/src/mag/mod.rs
+--- a/src/mag/mod.rs
++++ b/src/mag/mod.rs
+@@ -66,10 +66,7 @@
+     pub fn finite(mant: u64, exp: i64) -> Result<Mag, BoundError> {
+         match NonZeroU64::new(mant) {
+             None if exp == 0 => Ok(Mag::zero()),
+-            None => Err(BoundError::Representation {
+-                op: "Mag::finite",
+-                detail: "zero mantissa with nonzero exponent",
+-            }),
++            None => Ok(Mag::zero()),
+             Some(nonzero) => {
+                 // A nonzero `u64` has at most 63 leading zeros, so the shift below drops only
+                 // zero bits and loses nothing.

@@ -1,0 +1,13 @@
+diff --git a/src/mag/sqrt.rs b/src/mag/sqrt.rs
+index 6f35fb4..e536a35 100644
+--- a/src/mag/sqrt.rs
++++ b/src/mag/sqrt.rs
+@@ -55,7 +55,7 @@ fn sqrt_checked(exp: i64, mant: NonZeroU64, up: bool) -> Option<Mag> {
+     let (factor, scale) = if exp.checked_rem_euclid(2)? == 0 {
+         (p64(), exp.checked_sub(128)?)
+     } else {
+-        (p63(), exp.checked_sub(127)?)
++        (p63(), exp.checked_sub(126)?)
+     };
+     // mant < 2^64 and factor <= 2^64, so the product fits in a u128 and is nonzero by type.
+     let radicand = NonZeroU128::from(mant).checked_mul(factor)?;

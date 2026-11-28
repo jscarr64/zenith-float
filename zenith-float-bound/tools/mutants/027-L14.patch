@@ -1,0 +1,13 @@
+diff --git a/src/mag/lower.rs b/src/mag/lower.rs
+index d225a6c..9bae7a2 100644
+--- a/src/mag/lower.rs
++++ b/src/mag/lower.rs
+@@ -17,7 +17,7 @@ impl Mag {
+         // `nonzero()` is `None` for `Infinity`, so an `Infinity` operand falls to zero.
+         match (self.nonzero(), other.nonzero()) {
+             (Some((ea, ma)), Some((eb, mb))) => mul_parts(ea, ma, eb, mb, false),
+-            _ => Mag::zero(),
++            _ => Mag::infinity(),
+         }
+     }
+ 

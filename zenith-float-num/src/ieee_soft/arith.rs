@@ -176,6 +176,20 @@ pub(super) fn round_rne(
         sig <<= 1;
         exp -= 1;
     }
+    // Below the normal range: shift onto the subnormal grid (stored exponent 1, no hidden bit)
+    // before the one rounding, so a subnormal result is rounded once, not twice.
+    if exp < 1 {
+        let sh = 1i64 - i64::from(exp);
+        if sh >= 128 {
+            extra_sticky |= sig != 0;
+            sig = 0;
+        } else {
+            let sh = sh as u32;
+            extra_sticky |= (sig & ((1u128 << sh) - 1)) != 0;
+            sig >>= sh;
+        }
+        exp = 1;
+    }
     let grs = (sig as u32) & 7;
     let sticky_bit = extra_sticky || (grs & 1) != 0;
     let g = (grs >> 2) & 1;
@@ -220,18 +234,25 @@ fn add_finite(mut ua: Unp, mut ub: Unp, f: Format) -> u64 {
     let sa = (ua.sig as u128) << GRS;
     let mut sb = (ub.sig as u128) << GRS;
     let diff = (ea - ub.exp) as u32;
-    let mut sticky = false;
     if diff > 0 {
-        if diff >= 128 {
-            sticky = sb != 0;
+        // Bits shifted out are jammed into the aligned operand's lowest bit BEFORE the
+        // add/subtract (three guard bits sit below ua's last bit), so a subtraction borrows
+        // from them; ORing the sticky into the difference afterwards rounds the wrong way.
+        let sticky = if diff >= 128 {
+            let s = sb != 0;
             sb = 0;
+            s
         } else {
             let mask = (1u128 << diff) - 1;
-            sticky = (sb & mask) != 0;
+            let s = (sb & mask) != 0;
             sb >>= diff;
+            s
+        };
+        if sticky {
+            sb |= 1;
         }
     }
-    let (sign, mut sum) = if ua.sign == ub.sign {
+    let (sign, sum) = if ua.sign == ub.sign {
         (ua.sign, sa + sb)
     } else if sa > sb {
         (ua.sign, sa - sb)
@@ -240,9 +261,6 @@ fn add_finite(mut ua: Unp, mut ub: Unp, f: Format) -> u64 {
     } else {
         return 0;
     };
-    if sticky {
-        sum |= 1;
-    }
     if sum == 0 {
         return 0;
     }
@@ -327,12 +345,16 @@ pub(super) fn div_bits(a: u64, b: u64, f: Format) -> u64 {
             }
         }
         _ => {
+            // Normalize subnormal significands to the hidden-bit position first, so the
+            // quotient always carries frac + 4 bits (a subnormal dividend gave too few).
+            let lead = |u: &Unp| (u.sig.leading_zeros() - (63 - f.frac)) as i32;
+            let (la, lb) = (lead(&ua), lead(&ub));
             let extra = f.frac + 4;
-            let num = (ua.sig as u128) << extra;
-            let den = ub.sig as u128;
+            let num = ((ua.sig as u128) << la) << extra;
+            let den = (ub.sig as u128) << lb;
             let q = num / den;
             let r = num % den;
-            let scale = ua.exp - ub.exp - extra as i32;
+            let scale = (ua.exp - la) - (ub.exp - lb) - extra as i32;
             pack_mag(sign, scale, q, r != 0, f)
         }
     }
@@ -391,7 +413,11 @@ pub(super) fn fma_bits(a: u64, b: u64, c: u64, f: Format) -> u64 {
             }
             return pack_inf(psign, f);
         }
-        (Class::Zero, _) | (_, Class::Zero) => return c,
+        // Exact zero product: (±0) + c is c, except that zeros of opposite sign sum to +0
+        // in round-to-nearest.
+        (Class::Zero, _) | (_, Class::Zero) => {
+            return if uc.class == Class::Zero && uc.sign != psign { 0 } else { c };
+        }
         _ => {}
     }
     if uc.class == Class::Inf {
@@ -409,34 +435,32 @@ pub(super) fn fma_add(psign: bool, pe: i32, prod: u128, uc: Unp, f: Format) -> u
     if prod == 0 {
         return pack_finite(uc.sign, uc.exp, uc.sig as u128, f);
     }
-    let mut mp = prod;
-    let mut sp = pe - f.bias - 2 * f.frac as i32;
-    let mut mc = uc.sig as u128;
+    let sp = pe - f.bias - 2 * f.frac as i32;
+    let mc = uc.sig as u128;
     let sc = uc.exp - f.bias - f.frac as i32;
-    let mut sticky = false;
-    if sp > sc {
-        let d = (sp - sc) as u32;
-        if d >= 128 {
-            sticky = mc != 0;
-            mc = 0;
+    // Align both terms on a common grid `base` whose window (top bit down to `base`) is at most
+    // 124 bits, so the sum fits a u128 with one spare bit below. A term reaching below `base`
+    // is far (≥ 18 bits) under the other's top bit, so the result loses at most one leading
+    // bit to cancellation, and its dropped bits are kept as an odd half-step below `base`:
+    // that lies strictly inside the same unit interval as the true value, so the single
+    // rounding in pack_mag sees the right side of every rounding boundary.
+    let top = |m: u128, s: i32| i64::from(s) + i64::from(128 - m.leading_zeros());
+    let hi = top(prod, sp).max(top(mc, sc));
+    let base = i64::from(sp.min(sc)).max(hi - 124);
+    let align = |m: u128, s: i32| -> u128 {
+        let d = i64::from(s) - base;
+        if d >= 0 {
+            m << (d as u32 + 1)
         } else {
-            let mask = (1u128 << d) - 1;
-            sticky = (mc & mask) != 0;
-            mc >>= d;
+            let d = (-d) as u32;
+            let (q, lost) =
+                if d >= 128 { (0, m != 0) } else { (m >> d, (m & ((1u128 << d) - 1)) != 0) };
+            (q << 1) | u128::from(lost)
         }
-    } else if sc > sp {
-        let d = (sc - sp) as u32;
-        if d >= 128 {
-            sticky = mp != 0;
-            mp = 0;
-        } else {
-            let mask = (1u128 << d) - 1;
-            sticky = (mp & mask) != 0;
-            mp >>= d;
-        }
-        sp = sc;
-    }
-    let (sign, mut sum) = if psign == uc.sign {
+    };
+    let mp = align(prod, sp);
+    let mc = align(mc, sc);
+    let (sign, sum) = if psign == uc.sign {
         (psign, mp + mc)
     } else if mp > mc {
         (psign, mp - mc)
@@ -445,10 +469,8 @@ pub(super) fn fma_add(psign: bool, pe: i32, prod: u128, uc: Unp, f: Format) -> u
     } else {
         return 0;
     };
-    if sticky {
-        sum |= 1;
-    }
-    pack_mag(sign, sp, sum, sticky, f)
+    // `base` is within the i32 exponent range: it lies between the operands' own scales.
+    pack_mag(sign, (base - 1) as i32, sum, false, f)
 }
 
 pub(super) fn next_up(bits: u64, f: Format) -> u64 {

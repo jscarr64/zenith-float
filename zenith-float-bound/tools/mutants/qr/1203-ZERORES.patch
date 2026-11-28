@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -109,7 +109,7 @@
+             .map(|i| at(op, level, i, 0, cols))
+             .collect::<BoundResult<Vec<&Ball>>>()?;
+         if x.iter().all(|b| is_exact_zero(b)) {
+-            return Err(singular(op, "rank_deficient"));
++            return Err(resource(op, "undecided_rank"));
+         }
+         let sigma2 = dot_pairs(op, x.iter().map(|b| (*b, *b)), rows, w)?;
+         if !excludes_zero(&sigma2) {

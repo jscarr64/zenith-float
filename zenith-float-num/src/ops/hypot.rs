@@ -1,7 +1,7 @@
 //! Hypotenuse: `sqrt(x² + y²)` without intermediate overflow.
 
 use crate::common::util::round_p;
-use crate::defs::{Error, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
+use crate::defs::{Error, Exponent, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::{RoundingMode, Sign};
 
@@ -37,10 +37,9 @@ impl ExactNumNumber {
         }
 
         // sqrt(x^2 + y^2) with the sum of squares formed exactly after scaling x to
-        // [0.5, 1): one correct rounding by sqrt, exact results included (3, 4 -> 5).
-        // Mantissas may carry leading zeros (a subnormal operand has many); normalize so exponents
-        // compare magnitudes. The exponents are kept in an `i64`, so a subnormal operand needs no
-        // special case: the result is moved onto the subnormal grid below when it lies under the range.
+        // [0.5, 1): exact results included (3, 4 -> 5). Mantissas may carry leading
+        // zeros (a subnormal operand has many); normalize so exponents compare magnitudes.
+        // The exponents are kept in an `i64`, so a subnormal operand needs no special case.
         // ax and ay are not used again: move them.
         let ax_exp = ax.exponent();
         let mut sx = ax;
@@ -59,18 +58,15 @@ impl ExactNumNumber {
         let s2 = sx
             .mul_full_prec(&sx)?
             .add_full_prec(&sy.mul_full_prec(&sy)?)?;
-        let mut ret = s2.sqrt(p, rm)?;
-        let e = crate::exp::narrow(crate::exp::wide(ret.exponent()) + crate::exp::wide(ex));
-        if e > EXPONENT_MAX {
-            return Err(Error::ExponentOverflow(Sign::Pos));
-        }
-        if e < EXPONENT_MIN {
-            // Under the range (the operands were subnormal): the same step `sqrt`, `mul` and `div` take.
-            ret.set_exponent(EXPONENT_MIN);
-            ret.subnormalize(e, rm);
-        } else {
-            ret.set_exponent(e as Exponent);
-        }
+        // The sum of squares is exact after scaling. sqrt is computed toward zero one
+        // word wide, then place_scaled rounds once onto the p-bit grid, including the
+        // subnormal range. A first p-bit sqrt followed by subnormalize would be the
+        // same double-rounding hole as ZF-N01.
+        let wp = p + WORD_BIT_SIZE;
+        let wide = s2.sqrt(wp, RoundingMode::ToZero)?;
+        let at = i128::from(wide.exponent()) + i128::from(ex);
+        let dropped = wide.inexact() || wide.op_inexact();
+        let mut ret = wide.place_scaled(at, dropped, p, rm)?;
         ret.set_inexact(ret.inexact() | inexact);
         Ok(ret)
     }

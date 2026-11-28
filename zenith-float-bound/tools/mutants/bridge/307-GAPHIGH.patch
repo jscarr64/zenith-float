@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 11b06b8..6c208d7 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -134,7 +134,7 @@ impl Mag {
+         if me <= e.checked_sub(1)? {
+             return Some(Ordering::Less);
+         }
+-        if me >= e.checked_add(2)? {
++        if me >= e.checked_add(1)? {
+             return Some(Ordering::Greater);
+         }
+         // a - b = tb + ts with tb = ±big, ts = ±small; |a - b| = sb (a - b) where sb is the sign of tb.

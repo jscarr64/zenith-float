@@ -7,7 +7,8 @@
 # Full matrix (132 / 1000 / 10000 bits, all tasks):
 #   ./scripts/compare-bench.sh --full
 #
-# Output: doc/compare-results.tsv (tab-separated, no JSON)
+# Output: doc/compare-results.tsv (tab-separated, no JSON), or COMPARE_OUT; the prepublish gate step sets COMPARE_OUT to
+# scratch under CARGO_TARGET_DIR so a gate never rewrites the tracked file.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"

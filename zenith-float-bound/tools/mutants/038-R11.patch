@@ -1,0 +1,13 @@
+diff --git a/src/mag/round.rs b/src/mag/round.rs
+index 904ec82..1618c63 100644
+--- a/src/mag/round.rs
++++ b/src/mag/round.rs
+@@ -28,7 +28,7 @@ pub(super) fn loose(up: bool) -> Mag {
+ pub(super) fn settle(r: Option<Mag>, up: bool) -> Mag {
+     match r {
+         Some(m) => m,
+-        None => loose(up),
++        None => loose(!up),
+     }
+ }
+ 

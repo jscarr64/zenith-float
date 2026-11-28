@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -60,7 +60,7 @@
+                 op: "BallArray::zeros",
+                 detail: "allocation failed",
+             })?;
+-        for _ in 0..len {
++        for _ in 1..len {
+             balls.push(Ball::exact(ExactNum::new(ZERO_PREC), prec)?);
+         }
+         BallArray::from_balls(shape, balls)

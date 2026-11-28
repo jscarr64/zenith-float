@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -103,7 +103,7 @@
+         (true, true) => is_exact_zero(best) && !is_exact_zero(c),
+         (true, false) => false,
+         (false, true) => true,
+-        (false, false) => matches!(c.mid().abs_cmp(best.mid()), Some(s) if s > 0),
++        (false, false) => false,
+     }
+ }
+ 

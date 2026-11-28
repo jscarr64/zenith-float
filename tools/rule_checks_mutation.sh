@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hand mutation test for the shell/Python rule checks (no cargo-mutants for these; plan v2 step 1).
 # Each row flips one comparison, threshold, guard or exit code in a scratch copy of a check and runs that
-# check's selftest against the mutant (via DRIFT_CHECK / PR_DONE_CHECK / PRE_COMMIT_HOOK / PRE_PUSH_HOOK /
+# check's selftest(s) against the mutant (via DRIFT_CHECK / PR_DONE_CHECK / PRE_COMMIT_HOOK / PRE_PUSH_HOOK /
 # RULE_CHECKS_DAILY / SCOPED_GATE).
 # KILLED = the selftest fails on the mutant. Any SURVIVED row fails this script (rc 1).
 # Usage: tools/rule_checks_mutation.sh [-j N]      Scratch: ${ZF_SCRATCH:-$HOME/.cache/zenith-float} (never /tmp)
@@ -38,7 +38,14 @@ A21|tools/drift_check.py|1|            if key in done: ==>             if False:
 A22|tools/drift_check.py|1|        explicit += [l.strip() for l in open(f) ==>         explicit = [l.strip() for l in open(f)
 A23|tools/drift_check.py|1|times = [int(git(repo, "log", "-1", "--format=%ct", "HEAD").strip())] ==> times = [0]
 C01|.githooks/pre-commit|1| --pre-commit --repo ==>  --repo
-C02|.githooks/pre-commit|1|exec python3 -B "$top/tools/drift_check.py" --pre-commit --repo "$top" ==> python3 -B "$top/tools/drift_check.py" --pre-commit --repo "$top"; exit 0
+C02|.githooks/pre-commit|1|--pre-commit --repo "$top" || exit $? ==> --pre-commit --repo "$top" || true
+P01|.githooks/pre-commit|1|else echo "pre-commit: FAIL $name"; rc=1; fi ==> else echo "pre-commit: FAIL $name"; fi
+P02|.githooks/pre-commit|1|step rules-scan-diff tools/rules_scan.sh --working ==> :
+P03|.githooks/pre-commit|1|step rules-scan-counts tools/rules_scan.sh --count-only --no-rise HEAD ==> :
+P04|.githooks/pre-commit|1|step fmt cargo fmt --all -- --check ==> :
+P05|.githooks/pre-commit|1|step clippy cargo clippy --workspace --all-targets --all-features -- -D warnings ==> :
+P06|.githooks/pre-commit|1|exit $rc ==> exit 0
+P07|.githooks/pre-commit|1|--pre-commit --repo "$top" || exit $? ==> --pre-commit --repo "$top" || exit 0
 D01|tools/drift_check.py|1|if n > max_ahead: ==> if n >= max_ahead:
 D02|tools/drift_check.py|1|if n > max_ahead: ==> if n > max_ahead + 1:
 D03|tools/drift_check.py|2|if n > max_ahead: ==> if n >= max_ahead:
@@ -81,6 +88,7 @@ H09|.githooks/pre-push|1|scratch="${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-p
 H10|.githooks/pre-push|1|exit $rc ==> exit 0
 H12|.githooks/pre-push|1|rc=1; continue ==> continue
 H13|.githooks/pre-push|1|n=$((n + 1)); t="$tmp/$n" ==> t="$tmp/$lsha"
+H14|.githooks/pre-push|1|has no tools/no_suppress_scan.py"; rc=1 ==> has no tools/no_suppress_scan.py"
 N01|tools/drift_check.py|1|except (FileNotFoundError, NotADirectoryError): ==> except OSError:
 N02|tools/drift_check.py|1|unreadable.append(c) ==> pass
 N03|tools/drift_check.py|1|    if unreadable or badorigin or nomatch: ==>     if badorigin or nomatch:
@@ -267,14 +275,14 @@ PY
   local st env
   case "$f" in
     tools/drift_check.py) st=tools/drift_check_selftest.sh; env="DRIFT_CHECK=$m";;
-    .githooks/pre-commit) st=tools/drift_check_selftest.sh; env="PRE_COMMIT_HOOK=$m";;
+    .githooks/pre-commit) st="tools/drift_check_selftest.sh tools/test_rules_enforcement.sh"; env="PRE_COMMIT_HOOK=$m";;  # cap + #40 rules part
     tools/pr_done_check.py) st=tools/pr_done_check_selftest.sh; env="PR_DONE_CHECK=$m";;
     .githooks/pre-push) st=tools/pre_push_selftest.sh; env="PRE_PUSH_HOOK=$m";;
     tools/rule_checks_daily.sh) st=tools/rule_checks_daily_selftest.sh; env="RULE_CHECKS_DAILY=$m";;
     tools/scoped_gate.sh) st=tools/scoped_gate_selftest.sh; env="SCOPED_GATE=$m";;
   esac
   # a mutant that hangs (a walk that never ends) counts as killed after 15 min
-  if timeout 900 env "$env" ZF_SCRATCH="$d/scratch" bash "$st" >"$d/log" 2>&1; then
+  if timeout 900 env "$env" ZF_SCRATCH="$d/scratch" TMPDIR="$d/scratch" bash -c 'for t; do bash "$t" || exit 1; done' _ $st >"$d/log" 2>&1; then
     echo "$id SURVIVED $f: '$old' -> '$new'"
   else
     echo "$id KILLED   $f: '$old' -> '$new' ($(grep -m1 '^FAIL' "$d/log" | cut -c1-90))"

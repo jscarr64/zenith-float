@@ -4,7 +4,8 @@
 #   a clean `git clone --shared --no-checkout` of this repo, checked out at the pushed sha under
 #   ${ZF_SCRATCH:-$HOME/.cache/zenith-float}/pre-push (never /tmp), and inside that clone:
 #   1. tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..<sha>"   the CI rules-scan command; REQUIRED (missing = FAIL)
-#   2. tools/no_suppress_scan.py --root <clone>                  run when the pushed tree has it (reported if absent)
+#   2. tools/no_suppress_scan.py --root <clone>                  REQUIRED since #40 landed (missing = FAIL; it was
+#      reported and skipped while #40 was open)
 # Why (2026-11-25 2:11 PM CT refusal of d41d938, reproduced in tools/pre_push_selftest.sh against #40's hook):
 #   * git exports GIT_DIR=<gitdir> to hooks; from a linked worktree it is absolute, so `git -C <clone> checkout`
 #     acted on the pusher's repo and the clone stayed empty -> "could not check out ... no no_suppress_scan.py".
@@ -42,7 +43,7 @@ while read -r lref lsha rref rsha; do
     if (cd "$t" && python3 -B tools/no_suppress_scan.py --root "$t"); then echo "pre-push: ok no-suppress"
     else echo "pre-push: FAIL no-suppress"; rc=1; fi
   else
-    echo "pre-push: note: $lsha has no tools/no_suppress_scan.py (lands with #40); skipped"
+    echo "pre-push: FAIL no-suppress: $lsha has no tools/no_suppress_scan.py"; rc=1
   fi
 done
 if [ $rc -eq 0 ]; then echo "pre-push: ok"; else echo "pre-push: FAIL (push refused; fix it, never --no-verify)"; fi

@@ -1,0 +1,12 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 0ce786b..5e829f3 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -175,6 +175,6 @@ impl Mag {
+                 }
+             }
+         };
+-        Some(signed(y_sign, tb_pos).reverse())
++        Some(signed(y_sign, tb_pos))
+     }
+ }

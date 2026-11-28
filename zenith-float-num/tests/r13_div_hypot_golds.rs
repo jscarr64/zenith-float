@@ -1,4 +1,4 @@
-//! R13 (zenith-bound S1): div, reciprocal, hypot in every directed mode, and div_exact.
+//! R13 (zenith-float-bound S1): div, reciprocal, hypot in every directed mode, and div_exact.
 //!
 //! `tests/oracle/goldens/r13_div_hypot.jsonl` comes from `scripts/gen_r13_goldens.py`:
 //! mpmath at p+256 and p+512 bits (the two must agree, or both be the same exact value)

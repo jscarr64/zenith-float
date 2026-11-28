@@ -1,0 +1,4 @@
+# Slice CB golden checksums (sha256sum format), checked by tools/goldens_regen.sh. Every *.txt in this directory must be listed.
+5e85f48fcc49d11b059b11ef02ebf7e05b0856d904f014a38f0d5d3b7d6b5a89  cball_rows.txt
+72295ccfd5dc8067659af24e28e072481adf90572fa1ea8cbcc148a9de490fcc  cball_arb_rows.txt
+19fb5dddf75c37a9daf3d2138dcc3851c8dbb930a1c9c66d54b5ab305f5c21c0  cball_arb_edge_rows.txt

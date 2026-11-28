@@ -1,0 +1,23 @@
+# Library rules on every push to any branch and on every PR (Jeff 2026-11-23 07:43 CT, ROOT-CAUSE.md: nothing ran the
+# library's rules_scan for a week). Text and history checks only: it builds and publishes nothing.
+# Test: tools/test_rules_enforcement.sh part 5 runs these `run:` commands in a fixture with a planted clone.
+name: rules-scan
+on:
+  push:
+    branches: [ '**' ]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  rules-scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: tools/rules_scan_selftest.sh
+      - run: tools/rules_scan.sh "${RATCHET_BASE:-c74e834^}..HEAD"
+      - run: tools/no_clone_selftest.sh && tools/no_clone.sh --progress
+      # Whole-tree zero suppression (Jeff 2026-11-24 1:17 PM CT: no #[allow]/#[expect], clippy.toml at defaults, no
+      # unsafe outside tools/unsafe_pending.tsv). No allowlist.
+      - run: tools/no_suppress_selftest.sh && tools/no_suppress_scan.sh

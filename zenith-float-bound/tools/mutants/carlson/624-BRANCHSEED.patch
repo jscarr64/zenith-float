@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -444,7 +444,7 @@
+         let p2 = p.mul_full_prec(&p).mul(&third(wp), wp, MID_RM);
+         match branch {
+             Branch::Principal => minus_one.add_full_prec(&p).sub(&p2, wp, MID_RM),
+-            Branch::Lower => minus_one.sub_full_prec(&p).sub(&p2, wp, MID_RM),
++            Branch::Lower => minus_one.add_full_prec(&p).sub(&p2, wp, MID_RM),
+         }
+     } else if log_form {
+         let big_l = abs_of(x).ln(wp, MID_RM, cc);

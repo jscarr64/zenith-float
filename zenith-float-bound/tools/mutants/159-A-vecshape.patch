@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -119,7 +119,7 @@
+ impl BallVec {
+     /// A vector of the given balls.
+     pub fn from_balls(balls: Vec<Ball>) -> BallVec {
+-        let shape: Box<[usize]> = Box::new([balls.len()]);
++        let shape: Box<[usize]> = Box::new([balls.len(), 1]);
+         BallVec(BallArray {
+             shape,
+             data: balls.into_boxed_slice(),

@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..1b064f3 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -96,7 +96,7 @@ impl Mag {
+     /// Greatest `Mag` at or below `|x|` (CONTRACT 3.4). NaN and ±Inf give zero; zero gives zero.
+     pub fn from_exact_num_lower(x: &ExactNum) -> Mag {
+         match top_of(x, false) {
+-            Some((mant, _, exp)) => Mag::from_canonical(exp, mant),
++            Some((mant, s, exp)) => Mag::from_canonical(exp, mant.checked_add(u64::from(s)).unwrap_or(mant)),
+             None => Mag::zero(),
+         }
+     }

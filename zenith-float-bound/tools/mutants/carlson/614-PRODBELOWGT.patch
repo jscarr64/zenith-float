@@ -1,0 +1,15 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -383,9 +383,9 @@
+     }
+     let f = w.mul_full_prec(&ew);
+     match (side, cmp(&f, x)) {
+-        (Side::Below, Some(Ordering::Less | Ordering::Equal))
++        (Side::Below, Some(Ordering::Less | Ordering::Equal | Ordering::Greater))
+         | (Side::Above, Some(Ordering::Greater | Ordering::Equal)) => true,
+-        (Side::Below, Some(Ordering::Greater) | None)
++        (Side::Below, None)
+         | (Side::Above, Some(Ordering::Less) | None) => false,
+     }
+ }

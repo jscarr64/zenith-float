@@ -8,8 +8,23 @@ use zenith_float_num::{
     INF_POS, PROPTEST_CASES, WORD_BIT_SIZE,
 };
 
-const MODES: [RoundingMode; 5] = [
+/// All 7 modes: `None` is toward zero at the storage precision rp(p, 64) (FIXLIST ZF-M27), so it lies in `[Down, Up]`.
+const MODES: [RoundingMode; 7] = [
     RoundingMode::ToEven,
+    RoundingMode::ToOdd,
+    RoundingMode::Up,
+    RoundingMode::Down,
+    RoundingMode::ToZero,
+    RoundingMode::FromZero,
+    RoundingMode::None,
+];
+
+/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
+/// Up, Down, ToZero, FromZero). NONE-GAP F-B: a `None` overflow gives +-Inf; Jeff ruled +-MAX (toward zero at rp(p,
+/// 64)).
+const NONE_GAP_MODES: [RoundingMode; 6] = [
+    RoundingMode::ToEven,
+    RoundingMode::ToOdd,
     RoundingMode::Up,
     RoundingMode::Down,
     RoundingMode::ToZero,
@@ -237,7 +252,8 @@ fn hypot_specials() {
 fn hypot_overflow_is_directional() {
     for p in [64usize, 192, 1024] {
         let max = ExactNum::max_value(p);
-        for rm in MODES {
+        // NONE-GAP F-B: hypot(max, max) overflows under None (ZF-M27)
+        for rm in NONE_GAP_MODES {
             let r = max.hypot(&max, p, rm);
             match rm {
                 RoundingMode::Down | RoundingMode::ToZero => {

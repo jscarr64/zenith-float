@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -452,7 +452,7 @@
+         for i in 0..m {
+             let row = row_of(OP, a, i, k)?;
+             for j in 0..n {
+-                let col = b.iter().skip(j).step_by(n);
++                let col = b.iter().skip(j).take(k);
+                 let terms = row
+                     .iter()
+                     .zip(col)

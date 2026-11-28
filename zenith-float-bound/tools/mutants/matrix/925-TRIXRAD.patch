@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -586,7 +586,7 @@
+     let neg_one = ExactNum::from(-1i64);
+     let zero = Mag::zero();
+     let terms = core::iter::once((b_i.mid(), b_i.rad(), &neg_one, &zero))
+-        .chain(off.map(|(t, x)| (t.mid(), t.rad(), x.mid(), x.rad())));
++        .chain(off.map(|(t, x)| (t.mid(), t.rad(), x.mid(), &zero)));
+     product_entry(op, terms, k, w)
+ }
+ 

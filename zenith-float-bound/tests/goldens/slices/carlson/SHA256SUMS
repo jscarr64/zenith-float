@@ -1,0 +1,2 @@
+# Slice S4b golden checksums (sha256sum format), checked by tools/goldens_regen.sh. Every *.txt in this directory must be listed.
+cc39305cfabdb23b7628f2495903a8619ca5e70d6f348ba49472826d1ff43ffc  lambertw_rows.txt

@@ -35,8 +35,7 @@ impl ExactNumNumber {
         let p_max = p.max(self.mantissa_max_bit_len());
         compute_small_exp!(self, self.exponent() * 2 - 2, true, p_max, p, rm);
 
-        let mut x = self.clone()?;
-        x.set_sign(Sign::Pos);
+        let mut x = self.with_sign(Sign::Pos)?;
         x.set_inexact(false);
 
         let rm = if self.is_negative() { invert_rm_for_sign(rm) } else { rm };

@@ -1,0 +1,12 @@
+diff --git a/src/error.rs b/src/error.rs
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -71,7 +71,7 @@
+     pub fn detail(&self) -> &'static str {
+         match self {
+             BoundError::Representation { detail, .. } => detail,
+-            BoundError::InvalidArgument { detail, .. } => detail,
++            BoundError::InvalidArgument { detail: _, .. } => "",
+             BoundError::Domain { detail, .. } => detail,
+             BoundError::Resource { detail, .. } => detail,
+             BoundError::NotPositiveDefinite { detail, .. } => detail,

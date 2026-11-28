@@ -1,0 +1,12 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -62,7 +62,7 @@
+         };
+         // d = mid - x, enclosed by [lo, hi]: both steps round in one direction and are monotone.
+         let hi = ExactNum::new(p)
+-            .sub(x, p, RoundingMode::Up)
++            .sub(x, p, RoundingMode::Down)
+             .add(self.mid(), p, RoundingMode::Up);
+         let lo =
+             ExactNum::new(p)

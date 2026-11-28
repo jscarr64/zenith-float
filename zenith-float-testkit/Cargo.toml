@@ -1,0 +1,16 @@
+[package]
+name = "zenith-float-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.99"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Test-only helpers shared by the zenith-float test suites (wall-clock budgets). Not published."
+publish = false
+
+# No doc examples: test helpers only (scripts/check_zero_test_targets.sh fails a 0-test target).
+[lib]
+doctest = false
+
+[dependencies]

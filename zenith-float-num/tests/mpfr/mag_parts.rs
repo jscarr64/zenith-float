@@ -1,5 +1,5 @@
 //! `leading_bit_exponent`, `top_u64_mantissa_and_sticky`, `from_mag_parts` and `pow2` (the prerequisites P1 to P3 of
-//! zenith-bound) over the whole exponent range, subnormals included, and widths from one word to 313 words
+//! zenith-float-bound) over the whole exponent range, subnormals included, and widths from one word to 313 words
 //! (20 000 bits). The oracle is exact integer arithmetic (`rug::Integer`) on the words of the operand, and MPFR
 //! (`Float`) for the powers of two that MPFR can hold.
 
@@ -100,8 +100,11 @@ fn operand(words: &[u64], negative: bool, e: i64) -> Result<ExactNum, Box<dyn st
         .map_err(|err| format!("from_raw_parts refused {words:x?} n={n} e={e}: {err:?}").into())
 }
 
+/// An operand, its expected magnitude parts and its label.
+type Operand = (ExactNum, Expect, String);
+
 /// Operands: normal and subnormal, 1 to 313 words, exponents over the whole range, both signs.
-fn operands() -> Result<Vec<(ExactNum, Expect, String)>, Box<dyn std::error::Error>> {
+fn operands() -> Result<Vec<Operand>, Box<dyn std::error::Error>> {
     let mut v = Vec::new();
     let es = [MIN, MIN + 1, -1, 0, 1, 77, MAX - 1, MAX];
     let mut seed = 1u64;

@@ -149,6 +149,53 @@ impl ExactNumNumber {
             return Self::new2(p, Sign::Pos, self.inexact());
         }
 
+        // Powers of two: ln(2^{e-1}) = (e-1) ln 2. FLINT returns the
+        // cached `arb_const_log2` for log(2) and a multiple for other
+        // dyadic powers, instead of a full Newton/series pass on the
+        // mantissa (which for 2 is 0.5 after the exponent is cleared).
+        let set_bits: u32 = m.mantissa().digits().iter().map(|w| w.count_ones()).sum();
+        if set_bits == 1 {
+            if e == 1 {
+                return Self::new2(p, Sign::Pos, self.inexact());
+            }
+            // e == 2 is exactly the cached constant, already ziv-rounded.
+            if e == 2 {
+                let mut ret = cc.ln_2_num(p, rm)?;
+                ret.set_inexact(ret.inexact() | self.inexact());
+                return Ok(ret);
+            }
+            let mut p_inc = WORD_BIT_SIZE;
+            let mut p_wrk = p + p_inc;
+            loop {
+                let ln2 = cc.ln_2_num(p_wrk, RoundingMode::None)?;
+                let mut n = Self::exp_magnitude(e - 1)?;
+                if e < 1 {
+                    n.set_sign(Sign::Neg);
+                }
+                let mut ret = ln2.mul(&n, p_wrk, RoundingMode::None)?;
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(ret.inexact() | self.inexact());
+                    return Ok(ret);
+                }
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            }
+        }
+
+        // FLINT arb_log_newton near-1 short series: |x-1| < 2^{-p/16}.
+        if self.ln_is_near_one(p)? {
+            let mut p_inc = WORD_BIT_SIZE;
+            let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+            loop {
+                let p_x = p_wrk + additional_prec;
+                let mut ret = self.ln_near_one(p_x)?;
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(ret.inexact() | self.inexact());
+                    return Ok(ret);
+                }
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            }
+        }
+
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
@@ -161,7 +208,11 @@ impl ExactNumNumber {
             }
             x.set_exponent(0);
 
-            let p1 = Self::ln_series(x, RoundingMode::None)?;
+            let p1 = if p_x > crate::ops::log_newton::ARB_LOG_NEWTON_PREC / 2 {
+                x.ln_newton(p_x, cc)?
+            } else {
+                Self::ln_series(x, RoundingMode::None)?
+            };
 
             let mut ret = if e == 0 {
                 p1
@@ -186,7 +237,7 @@ impl ExactNumNumber {
         }
     }
 
-    fn ln_series(mut x: Self, rm: RoundingMode) -> Result<Self, Error> {
+    pub(super) fn ln_series(mut x: Self, rm: RoundingMode) -> Result<Self, Error> {
         let p = x.mantissa_max_bit_len();
         let mut polycoeff_gen = AtanhPolycoeffGen::new(p)?;
         let (mut reduction_times, niter, e_eff) =
@@ -464,9 +515,6 @@ impl ExactNumNumber {
     }
 }
 
-/// Largest numerator / denominator tried by the exact-result check of [`ExactNumNumber::log`].
-const LOG_EXACT_MAX: usize = 4096;
-
 /// Returns true when `base^r == x` exactly, for a candidate `r = a / 2^j` with small `a`, `j`.
 fn log_is_exact_dyadic(
     x: &ExactNumNumber,
@@ -485,11 +533,11 @@ fn log_is_exact_dyadic(
         }
         t.set_exponent(t.exponent() + 1);
     }
-    if t.exponent() > 13 {
-        return Ok(false);
-    }
-    let a = t.int_as_usize()?;
-    if a == 0 || a > LOG_EXACT_MAX {
+    let a = match t.int_as_usize() {
+        Ok(a) => a,
+        Err(_) => return Ok(false),
+    };
+    if a == 0 {
         return Ok(false);
     }
     let lhs_bits = base
@@ -500,8 +548,15 @@ fn log_is_exact_dyadic(
         .mantissa_max_bit_len()
         .saturating_mul(den)
         .saturating_add(WORD_BIT_SIZE);
-    let lhs = base.powi(a, lhs_bits, RoundingMode::None)?;
-    let rhs = x.powi(den, rhs_bits, RoundingMode::None)?;
+    if lhs_bits > crate::defs::MAX_PRECISION || rhs_bits > crate::defs::MAX_PRECISION {
+        return Ok(false);
+    }
+    let Ok(lhs) = base.powi(a, lhs_bits, RoundingMode::None) else {
+        return Ok(false);
+    };
+    let Ok(rhs) = x.powi(den, rhs_bits, RoundingMode::None) else {
+        return Ok(false);
+    };
     if r.is_negative() {
         let prod = lhs.mul(&rhs, lhs_bits + rhs_bits, RoundingMode::None)?;
         Ok(prod.cmp(&ExactNumNumber::from_word(1, WORD_BIT_SIZE)?) == 0)
@@ -512,6 +567,7 @@ fn log_is_exact_dyadic(
 
 #[cfg(test)]
 mod tests {
+    use crate::test_must::Must;
 
     use crate::{
         common::{
@@ -525,6 +581,18 @@ mod tests {
 
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+
+    #[test]
+    fn test_log_exact_dyadic_beyond_old_4096_cap() -> Result<(), crate::Error> {
+        // 2^4097 is an exact power; the old 4096-bit exact-log bound (LOG_EXACT_MAX, removed) refused this
+        // numerator and skipped the exact-result flag.
+        let p = 64;
+        let two = ExactNumNumber::from_word(2, p)?;
+        let x = two.ldexp_ref(4096, p, RoundingMode::None)?; // 2 * 2^4096 = 2^4097
+        let r = ExactNumNumber::from_word(4097, p)?;
+        assert!(log_is_exact_dyadic(&x, &two, &r)?);
+        Ok(())
+    }
 
     #[test]
     fn test_logarithm() -> Result<(), crate::Error> {
@@ -797,6 +865,241 @@ mod tests {
         let refn = ExactNumNumber::parse(s, crate::Radix::Bin, 256, RoundingMode::None, &mut cc)?;
         let d1 = mediumlarge.log(&large, 256, RoundingMode::ToEven, &mut cc)?;
         assert!(d1.cmp(&refn) == 0);
+        Ok(())
+    }
+
+    #[test]
+    fn zf_ln_matches_flint_golds() -> Result<(), String> {
+        // FLINT 3.6 arb.log midpoints at dest p = 64, 4096, 65536, and 2^20.
+        let mut cc = crate::Consts::new()?;
+        let raw = include_str!("../testdata/ln_flint_golds.txt");
+        for line in raw.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let mut parts = line.splitn(3, ' ');
+            let p: usize = parts.next().must("field")?.parse().must("parse")?;
+            let arg = parts.next().must("field")?;
+            let dec = parts.next().must("field")?;
+            let t0 = std::time::Instant::now();
+            let x =
+                crate::ExactNum::parse(arg, crate::Radix::Dec, p, RoundingMode::ToEven, &mut cc);
+            let got = x.ln(p, RoundingMode::ToEven, &mut cc);
+            let ms = t0.elapsed().as_millis();
+            // The gold is a FLINT midpoint with far more digits than dest p;
+            // p+256 is enough to compare to dest-p accuracy without a 4p parse
+            // at dest 2^20 (4*2^20 bits of decimal conversion is minutes).
+            let want = crate::ExactNum::parse(
+                dec,
+                crate::Radix::Dec,
+                p.saturating_add(256),
+                RoundingMode::ToEven,
+                &mut cc,
+            );
+            let d = crate::ExactNum::sub_ref(&got, &want, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
+            eprintln!("ln({arg}) p={p}: {ms} ms, {bits} bits");
+            assert!(
+                bits >= (p as i32) - 16 || d.is_zero(),
+                "ln({arg}) p={p} only {bits} bits after {ms} ms"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn zf_ln_edge_cases() -> Result<(), crate::Error> {
+        let mut cc = crate::Consts::new()?;
+        let p = 256usize;
+        let one = crate::ExactNum::from_u8(1, p);
+        let z = one.ln(p, RoundingMode::ToEven, &mut cc);
+        assert!(z.is_zero(), "ln(1) must be 0");
+
+        // x near 1: ln(1 + 2^{-40}) ≈ 2^{-40}.
+        let eps = crate::ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
+        let near = crate::ExactNum::add_ref(&one, &eps, p, RoundingMode::None);
+        let ln_near = near.ln(p, RoundingMode::ToEven, &mut cc);
+        let d = crate::ExactNum::sub_ref(&ln_near, &eps, p, RoundingMode::None).abs();
+        // next term is ~eps^2/2 = 2^{-81}, so at 256 bits this is many bits of agreement
+        // on a 2^{-40} value (~40 bits of cancellation vs unit scale).
+        let agree = if d.is_zero() {
+            10_000
+        } else {
+            (eps.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+        };
+        assert!(
+            agree >= 16,
+            "ln(1+2^{{-40}}) vs 2^{{-40}}: only {agree} bits"
+        );
+
+        let ln2 = cc.ln_2(p, RoundingMode::ToEven);
+        for exp in [1000i64, -1000, 1_000_000, -1_000_000] {
+            let x = crate::ExactNum::from_u8(1, p).ldexp(exp, p, RoundingMode::None);
+            let got = x.ln(p, RoundingMode::ToEven, &mut cc);
+            let k = crate::ExactNum::from_i64(exp, p);
+            let want = crate::ExactNum::mul_ref(&ln2, &k, p, RoundingMode::ToEven);
+            let d = crate::ExactNum::sub_ref(&got, &want, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
+            assert!(
+                bits >= (p as i32) - 16 || d.is_zero(),
+                "ln(2^{exp}) vs {exp}*ln2 only {bits} bits"
+            );
+        }
+
+        // Subnormal-range input: a 2-bit mantissa with exponent well below 1-p.
+        let sub = crate::ExactNum::from_u8(3, p).ldexp(-(p as i64 + 500), p, RoundingMode::None);
+        let got = sub.ln(p, RoundingMode::ToEven, &mut cc);
+        assert!(!got.is_nan(), "ln(subnormal-range) is finite");
+        assert!(
+            got.is_negative(),
+            "ln of a subnormal-range value in (0,1) is negative"
+        );
+        let k = crate::ExactNum::from_i64(-(p as i64 + 500), p);
+        let ln3 = crate::ExactNum::from_u8(3, p).ln(p, RoundingMode::ToEven, &mut cc);
+        let want = crate::ExactNum::add_ref(
+            &ln3,
+            &crate::ExactNum::mul_ref(&ln2, &k, p, RoundingMode::None),
+            p,
+            RoundingMode::ToEven,
+        );
+        let d = crate::ExactNum::sub_ref(&got, &want, p, RoundingMode::None).abs();
+        let bits = if d.is_zero() {
+            10_000
+        } else {
+            (want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+        };
+        assert!(
+            bits >= (p as i32) - 16 || d.is_zero(),
+            "ln(3*2^{{-(p+500)}}) only {bits} bits"
+        );
+
+        // Near 1 at a Newton-log precision (p = 4096 > ARB_LOG_NEWTON_PREC/2).
+        let p4 = 4096usize;
+        let one4 = crate::ExactNum::from_u8(1, p4);
+        let eps4 = crate::ExactNum::from_u8(1, p4).ldexp(-80, p4, RoundingMode::None);
+        let near4 = crate::ExactNum::add_ref(&one4, &eps4, p4, RoundingMode::None);
+        let ln_near4 = near4.ln(p4, RoundingMode::ToEven, &mut cc);
+        let d4 = crate::ExactNum::sub_ref(&ln_near4, &eps4, p4, RoundingMode::None).abs();
+        let agree4 = if d4.is_zero() {
+            10_000
+        } else {
+            (eps4.exponent().unwrap_or(0) - d4.exponent().unwrap_or(0)) as i32
+        };
+        assert!(
+            agree4 >= 16,
+            "ln(1+2^{{-80}}) at p=4096 vs 2^{{-80}}: only {agree4} bits"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn zf_ln_exp_roundtrip() -> Result<(), crate::Error> {
+        let mut cc = crate::Consts::new()?;
+        // 64 and 4096 cover the series and Newton paths; 65536 covers bit-burst exp + Newton log.
+        for p in [64usize, 4096, 65536] {
+            for arg in ["2", "10", "0.5"] {
+                let t0 = std::time::Instant::now();
+                let x = crate::ExactNum::parse(
+                    arg,
+                    crate::Radix::Dec,
+                    p,
+                    RoundingMode::ToEven,
+                    &mut cc,
+                );
+                let ln_x = x.ln(p, RoundingMode::ToEven, &mut cc);
+                let back = ln_x.exp(p, RoundingMode::ToEven, &mut cc);
+                let d = crate::ExactNum::sub_ref(&back, &x, p, RoundingMode::None).abs();
+                let bits = if d.is_zero() {
+                    10_000
+                } else {
+                    (x.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+                };
+                let ms = t0.elapsed().as_millis();
+                eprintln!("exp(ln({arg})) p={p}: {ms} ms, {bits} bits");
+                assert!(
+                    bits >= (p as i32) - 16 || d.is_zero(),
+                    "exp(ln({arg})) p={p} only {bits} bits after {ms} ms"
+                );
+            }
+            // ln(exp(x)) for a non-integer x (covers the exp-first order).
+            let x =
+                crate::ExactNum::parse("0.5", crate::Radix::Dec, p, RoundingMode::ToEven, &mut cc);
+            let e = x.exp(p, RoundingMode::ToEven, &mut cc);
+            let back = e.ln(p, RoundingMode::ToEven, &mut cc);
+            let d = crate::ExactNum::sub_ref(&back, &x, p, RoundingMode::None).abs();
+            let bits = if d.is_zero() {
+                10_000
+            } else {
+                (x.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)) as i32
+            };
+            assert!(
+                bits >= (p as i32) - 16 || d.is_zero(),
+                "ln(exp(0.5)) p={p} only {bits} bits"
+            );
+        }
+        Ok(())
+    }
+
+    /// Phase costs of Newton `ln` at dest p=`2^20` vs the `ln(2)` constant.
+    /// Run with `--ignored --release`. Progress to stderr from the first phase.
+    #[test]
+    #[ignore = "profiles ln at 2^20; run with --ignored --release"]
+    fn zf_ln_profile_phases_p2e20() -> Result<(), crate::Error> {
+        let p = 1usize << 20;
+        let rm = RoundingMode::ToEven;
+        eprintln!(
+            "LNPROF START p={p} rustc phase=setup {}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        );
+        let wall = std::time::Instant::now();
+        let mut cc = crate::Consts::new()?;
+        eprintln!("LNPROF phase=consts_new ms={}", wall.elapsed().as_millis());
+
+        let wall = std::time::Instant::now();
+        let _ln2_cold = cc.ln_2(p, rm);
+        let ln2_cold_ms = wall.elapsed().as_millis();
+        eprintln!("LNPROF phase=ln2_cold ms={ln2_cold_ms}");
+
+        let wall = std::time::Instant::now();
+        let _ln2_warm = cc.ln_2(p, rm);
+        eprintln!("LNPROF phase=ln2_warm ms={}", wall.elapsed().as_millis());
+
+        let two = crate::ExactNum::from_u8(2, p);
+        let wall = std::time::Instant::now();
+        let _ln2v = two.ln(p, rm, &mut cc);
+        eprintln!(
+            "LNPROF phase=ln2_public_after_warm_const ms={}",
+            wall.elapsed().as_millis()
+        );
+
+        let arg = crate::ExactNum::from_u32(10007, p);
+        let wall = std::time::Instant::now();
+        let _lnx = arg.ln(p, rm, &mut cc);
+        eprintln!(
+            "LNPROF phase=ln_10007_after_warm_ln2 ms={}",
+            wall.elapsed().as_millis()
+        );
+
+        // Fresh Consts: public ln(2) includes a cold ln2 constant fill.
+        let mut cc2 = crate::Consts::new()?;
+        let wall = std::time::Instant::now();
+        let _ = crate::ExactNum::from_u8(2, p).ln(p, rm, &mut cc2);
+        eprintln!(
+            "LNPROF phase=ln2_public_cold ms={}",
+            wall.elapsed().as_millis()
+        );
         Ok(())
     }
 }

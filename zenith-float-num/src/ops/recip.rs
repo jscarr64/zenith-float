@@ -57,8 +57,7 @@ impl ExactNumNumber {
         let rm = RoundingMode::None;
         let p = round_p(p);
 
-        let mut a = self.clone()?;
-        a.set_sign(Sign::Pos);
+        let mut a = self.with_sign(Sign::Pos)?;
         a.set_inexact(false);
         a.set_precision(p, rm)?;
 

@@ -20,21 +20,23 @@ fn finite(x: &ExactNum) -> bool {
     !x.is_nan() && !x.is_inf()
 }
 
-fn n_ok(n: usize) -> bool {
-    n <= ORTHOPOLY_N_MAX
-}
-
 fn finish(mut y: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     let w = WORD_BIT_SIZE.max(1);
     let _ = y.set_precision(p.div_ceil(w).saturating_mul(w), rm);
     y
 }
 
+/// [`finish`] of a borrowed value: the rounded result is written straight from `y`.
+fn finish_ref(y: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+    let w = WORD_BIT_SIZE.max(1);
+    y.rounded_to(p.div_ceil(w).saturating_mul(w), rm)
+}
+
 impl ExactNum {
     /// Probabilist's Hermite polynomial `He_n(self)`.
     ///
     /// `He_0 = 1`, `He_1 = x`, `He_{n+1} = x He_n − n He_{n−1}`.
-    /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    /// Non-finite `self` is `NaN`.
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn hermite_he(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
@@ -46,7 +48,7 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::hermite_he`].
     fn hermite_he_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
-        if !n_ok(n) || !finite(self) {
+        if !finite(self) {
             return op_nan();
         }
         let wrk = work_p(p);
@@ -54,11 +56,10 @@ impl ExactNum {
             return finish(ExactNum::from_u8(1, wrk), p, rm);
         }
         if n == 1 {
-            return finish(self.clone(), p, rm);
+            return finish_ref(self, p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = self.clone();
-        let _ = cur.set_precision(wrk, RoundingMode::None);
+        let mut cur = self.rounded_to(wrk, RoundingMode::None);
         for k in 1..n {
             let kf = ExactNum::from_u32(k as u32, wrk);
             let next = ExactNum::mul_ref(self, &cur, wrk, RoundingMode::None).sub(
@@ -75,7 +76,7 @@ impl ExactNum {
     /// Physicist's Hermite polynomial `H_n(self)`.
     ///
     /// `H_0 = 1`, `H_1 = 2x`, `H_{n+1} = 2x H_n − 2n H_{n−1}`.
-    /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    /// Non-finite `self` is `NaN`.
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn hermite_h(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
@@ -87,7 +88,7 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::hermite_h`].
     fn hermite_h_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
-        if !n_ok(n) || !finite(self) {
+        if !finite(self) {
             return op_nan();
         }
         let wrk = work_p(p);
@@ -120,7 +121,7 @@ impl ExactNum {
     ///
     /// `L_0 = 1`, `L_1 = 1 − x`,
     /// `L_{n+1} = ((2n+1−x) L_n − n L_{n−1}) / (n+1)`.
-    /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    /// Non-finite `self` is `NaN`.
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn laguerre(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
@@ -139,7 +140,7 @@ impl ExactNum {
     ///
     /// `L_0^{(α)} = 1`, `L_1^{(α)} = 1+α−x`,
     /// `L_{n+1}^{(α)} = (((2n+1+α−x) L_n − (n+α) L_{n−1}) / (n+1)`.
-    /// `n > ORTHOPOLY_N_MAX` or a non-finite argument is `NaN`.
+    /// A non-finite argument is `NaN`.
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn gen_laguerre(&self, n: usize, alpha: &Self, p: usize, rm: RoundingMode) -> Self {
@@ -155,7 +156,7 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::gen_laguerre`].
     fn gen_laguerre_word(&self, n: usize, alpha: &Self, p: usize, rm: RoundingMode) -> Self {
-        if !n_ok(n) || !finite(self) || !finite(alpha) {
+        if !finite(self) || !finite(alpha) {
             return op_nan();
         }
         let wrk = work_p(p);
@@ -171,7 +172,7 @@ impl ExactNum {
                 rm,
             );
         }
-        let mut prev = one.clone();
+        let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = one
             .add(alpha, wrk, RoundingMode::None)
             .sub(self, wrk, RoundingMode::None);
@@ -199,7 +200,7 @@ impl ExactNum {
     /// Chebyshev polynomial of the first kind `T_n(self)`.
     ///
     /// `T_0 = 1`, `T_1 = x`, `T_{n+1} = 2x T_n − T_{n−1}`.
-    /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    /// Non-finite `self` is `NaN`.
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn chebyshev_t(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
@@ -211,7 +212,7 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::chebyshev_t`].
     fn chebyshev_t_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
-        if !n_ok(n) || !finite(self) {
+        if !finite(self) {
             return op_nan();
         }
         let wrk = work_p(p);
@@ -219,11 +220,10 @@ impl ExactNum {
             return finish(ExactNum::from_u8(1, wrk), p, rm);
         }
         if n == 1 {
-            return finish(self.clone(), p, rm);
+            return finish_ref(self, p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = self.clone();
-        let _ = cur.set_precision(wrk, RoundingMode::None);
+        let mut cur = self.rounded_to(wrk, RoundingMode::None);
         for _ in 1..n {
             let next = ExactNum::from_u8(2, wrk)
                 .mul(self, wrk, RoundingMode::None)
@@ -238,7 +238,7 @@ impl ExactNum {
     /// Chebyshev polynomial of the second kind `U_n(self)`.
     ///
     /// `U_0 = 1`, `U_1 = 2x`, `U_{n+1} = 2x U_n − U_{n−1}`.
-    /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    /// Non-finite `self` is `NaN`.
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn chebyshev_u(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
@@ -250,7 +250,7 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::chebyshev_u`].
     fn chebyshev_u_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
-        if !n_ok(n) || !finite(self) {
+        if !finite(self) {
             return op_nan();
         }
         let wrk = work_p(p);
@@ -279,7 +279,7 @@ impl ExactNum {
     /// `C_0 = 1`, `C_1 = 2λ x`,
     /// `C_{n+1} = (2(n+λ) x C_n − (n+2λ−1) C_{n−1}) / (n+1)`.
     /// Standard `C_n^{(λ)}`: `C_2^{(1)} = 4x² − 1 = U_2`, and
-    /// `C_n^{(1/2)} = P_n` (Legendre). `n > ORTHOPOLY_N_MAX` or a
+    /// `C_n^{(1/2)} = P_n` (Legendre). A
     /// non-finite argument is `NaN`.
     ///
     /// Accuracy: working-precision, 32 bits
@@ -296,7 +296,7 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::gegenbauer`].
     fn gegenbauer_word(&self, n: usize, lambda: &Self, p: usize, rm: RoundingMode) -> Self {
-        if !n_ok(n) || !finite(self) || !finite(lambda) {
+        if !finite(self) || !finite(lambda) {
             return op_nan();
         }
         let wrk = work_p(p);
@@ -313,7 +313,7 @@ impl ExactNum {
                 rm,
             );
         }
-        let mut prev = one.clone();
+        let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = ExactNum::from_u8(2, wrk)
             .mul(lambda, wrk, RoundingMode::None)
             .mul(self, wrk, RoundingMode::None);
@@ -352,7 +352,7 @@ impl ExactNum {
     /// `2(n+1)(n+α+β+1)(2n+α+β) P_{n+1}`
     /// `= [(2n+α+β+1)(α²−β²)+(2n+α+β)(2n+α+β+1)(2n+α+β+2)x] P_n`
     /// `− 2(n+α)(n+β)(2n+α+β+2) P_{n−1}`.
-    /// `α=β=0` is Legendre `P_n`. `n > ORTHOPOLY_N_MAX` or a non-finite
+    /// `α=β=0` is Legendre `P_n`. A non-finite
     /// argument is `NaN`.
     ///
     /// Accuracy: working-precision, 32 bits
@@ -384,7 +384,7 @@ impl ExactNum {
         p: usize,
         rm: RoundingMode,
     ) -> Self {
-        if !n_ok(n) || !finite(self) || !finite(alpha) || !finite(beta) {
+        if !finite(self) || !finite(alpha) || !finite(beta) {
             return op_nan();
         }
         let wrk = work_p(p);
@@ -408,7 +408,7 @@ impl ExactNum {
         if n == 1 {
             return finish(p1, p, rm);
         }
-        let mut prev = one.clone();
+        let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = p1;
         for k in 1..n {
             let k1 = ExactNum::from_u32((k + 1) as u32, wrk);
@@ -499,7 +499,7 @@ mod tests {
         let five = ExactNum::from_u8(5, p);
         let c = pi.div(&five, p, rm).cos(p, rm, &mut cc);
         let t5 = c.chebyshev_t(5, p, rm);
-        let neg_one = one.neg_via_mul();
+        let neg_one = ExactNum::from_i8(-1, p);
         assert_eq!(t5.compare(&neg_one), Some(0));
 
         // Standard C_2^{(1)} = 4x² − 1 = U_2. The plan's "3x²−1 at λ=1"
@@ -524,7 +524,11 @@ mod tests {
         let rec = two.mul(&half, p, rm).mul(&t5h, p, rm).sub(&t4h, p, rm);
         assert_eq!(t6.compare(&rec), Some(0));
 
-        assert!(zero.hermite_he(ORTHOPOLY_N_MAX + 1, p, rm).is_nan());
+        // He_{odd}(0) = 0; the old ORTHOPOLY_N_MAX = 256 cap returned NaN here.
+        assert_eq!(
+            zero.hermite_he(ORTHOPOLY_N_MAX + 1, p, rm).compare(&zero),
+            Some(0)
+        );
         assert_eq!(
             zero.hermite_h(4, p, rm).compare(&ExactNum::from_u8(12, p)),
             Some(0)
@@ -574,9 +578,12 @@ mod tests {
         let rhs7 = x.jacobi_p(7, &beta, &alpha, p, rm).neg();
         assert!(near(&lhs7, &rhs7, p), "odd-n reflection");
 
-        assert!(zero
-            .jacobi_p(ORTHOPOLY_N_MAX + 1, &zero, &zero, p, rm)
-            .is_nan());
+        // P_{odd}^{(0,0)}(0) = 0; the old cap returned NaN here.
+        assert_eq!(
+            zero.jacobi_p(ORTHOPOLY_N_MAX + 1, &zero, &zero, p, rm)
+                .compare(&zero),
+            Some(0)
+        );
         assert_eq!(zero.jacobi_p(0, &one, &two, p, rm).compare(&one), Some(0));
     }
 }

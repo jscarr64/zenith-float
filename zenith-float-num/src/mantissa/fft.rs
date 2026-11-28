@@ -295,7 +295,7 @@ impl Mantissa {
 
             for chunk in chunks {
                 let nn = SliceWithSign::new(chunk, sign);
-                acc.add_assign(&nn);
+                SliceWithSign::add_assign(&mut acc, &nn);
 
                 sign = -sign;
             }
@@ -319,7 +319,7 @@ impl Mantissa {
                     num[0] -= 1;
                     num[last] -= 1;
                 } else {
-                    num.add_assign(modulus);
+                    SliceWithSign::add_assign(num, modulus);
                 }
             }
         } else {
@@ -331,13 +331,13 @@ impl Mantissa {
                     num[0] -= 1;
                     num[last] -= 1;
                 } else {
-                    num.sub_assign(modulus);
+                    SliceWithSign::sub_assign(num, modulus);
                 }
             }
 
             if num.sign() < 0 && !num.is_zero() {
                 // unlikely
-                num.add_assign(modulus);
+                SliceWithSign::add_assign(num, modulus);
             }
         }
     }
@@ -497,7 +497,7 @@ impl Mantissa {
             Self::fft_div_mod(part3, k + t * j, n1, &modulus, tmp_buf)?;
 
             while part3.sign() < 0 && !part3.is_zero() {
-                part3.add_assign(&modulus);
+                SliceWithSign::add_assign(part3, &modulus);
             }
 
             let jm = j * m;
@@ -515,7 +515,7 @@ impl Mantissa {
             };
             let mut out = SliceWithSign::new_mut(&mut d3[rng], 1);
             part3.shift_left(shift);
-            out.add_assign(part3);
+            SliceWithSign::add_assign(&mut out, part3);
         }
 
         Ok(())

@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -127,7 +127,7 @@
+     fn neg(self) -> CBall {
+         CBall {
+             re: self.re.negated(),
+-            im: self.im.negated(),
++            im: self.im,
+         }
+     }
+ }

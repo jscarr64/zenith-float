@@ -1,0 +1,13 @@
+diff --git a/src/array.rs b/src/array.rs
+index 5b1b7dd..9a1c089 100644
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -56,7 +56,7 @@ impl BallArray {
+         let mut balls = Vec::new();
+         balls
+             .try_reserve_exact(len)
+-            .map_err(|_| BoundError::Resource {
++            .map_err(|_| BoundError::InvalidArgument {
+                 op: "BallArray::zeros",
+                 detail: "allocation failed",
+             })?;

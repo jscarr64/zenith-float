@@ -1,0 +1,3 @@
+# range: 400-499
+# Slice S3 (src/elementary.rs) mutants, owned by S3 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 400..=499; patches go in tools/mutants/elementary/ and the patch column reads elementary/NNN-<name>.patch.

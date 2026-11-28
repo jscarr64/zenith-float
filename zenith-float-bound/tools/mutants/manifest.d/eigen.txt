@@ -1,0 +1,3 @@
+# range: 1400-1499
+# Slice LA5 (src/eigen.rs) mutants, owned by LA5 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 1400..=1499; patches go in tools/mutants/eigen/ and the patch column reads eigen/NNN-<name>.patch.

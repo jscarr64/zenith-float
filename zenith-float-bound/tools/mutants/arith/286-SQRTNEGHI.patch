@@ -1,0 +1,16 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..22b877f 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -211,10 +211,7 @@ impl Ball {
+             (Ordering::Equal, _, _) | (Ordering::Less, false, Ordering::Greater) => {
+                 let root_up = if neg {
+                     // m < 0 < m + r: hi = m + r exactly when r is a zenith-float value (16.S1.7), else r (>= m + r).
+-                    match r.to_exact_num() {
+-                        Ok(rn) => Mag::from_exact_num(&rn.add_full_prec(m)).sqrt_up(),
+-                        Err(_) => r.sqrt_up(),
+-                    }
++                    Mag::from_exact_num(m).add_up(r).sqrt_up()
+                 } else {
+                     Mag::from_exact_num(m).add_up(r).sqrt_up()
+                 };

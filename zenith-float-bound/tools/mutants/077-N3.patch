@@ -1,0 +1,13 @@
+diff --git a/src/mag/div.rs b/src/mag/div.rs
+index 4ae9f19..4232a7f 100644
+--- a/src/mag/div.rs
++++ b/src/mag/div.rs
+@@ -46,7 +46,7 @@ fn div_checked(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64, up: bool) -> Op
+     let divisor = NonZeroU128::from(mb);
+     // quot >= 2^127 / 2^64 = 2^63, so it is nonzero; division does not carry that in its type,
+     // so a zero quotient would be `None` here and settle to the sound bound.
+-    let quot = NonZeroU128::new(numerator / divisor)?;
++    let quot = NonZeroU128::new((numerator / divisor) | 1)?;
+     let sticky = numerator % divisor != 0;
+     // |ea - eb - 64| < 2^66, so the checked steps cannot fail.
+     let scale = i128::from(ea)

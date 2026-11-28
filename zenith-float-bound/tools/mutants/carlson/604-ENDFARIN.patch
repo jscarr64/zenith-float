@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -236,7 +236,7 @@
+             .ok_or_else(|| resource(op, "endpoint precision"))?;
+         let neg = num(0).sub(&rn, p, RoundingMode::Up);
+         Ok((
+-            Some(neg.add(m, p, RoundingMode::Down)),
++            Some(neg.sub(m, p, RoundingMode::Down)),
+             Some(rn.add(m, p, RoundingMode::Up)),
+         ))
+     }

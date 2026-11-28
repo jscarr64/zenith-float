@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -360,7 +360,7 @@
+         if b.len() != n {
+             return Err(mismatch(OP, "b_len"));
+         }
+-        classify_pivots(OP, &self.u, "undecided_pivot")?;
++        classify_pivots(OP, &self.u, "undecided_pivot").map_err(|e| match e { BoundError::Singular { op, .. } => resource(op, "singular"), e => e })?;
+         let w = work_prec(prec, n);
+         let mut pb: Vec<Ball> = reserve(OP, n)?;
+         for src in self.perm.iter() {

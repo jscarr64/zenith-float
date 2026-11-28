@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -564,7 +564,7 @@
+     // [-a, b] / [t, u] = [-a/t, b/t];  [-a, b] / -[t, u] = [-b/t, a/t]
+     let b = mag_upper_ball(x);
+     let a = mag_sub_upper(x.rad(), x.mid())?;
+-    let (a, b) = if neg { (b, a) } else { (a, b) };
++    let (a, b) = (a, b);
+     set_interval(&a.div_up(&t), &b.div_up(&t), true, wp, prec)
+ }
+ 
