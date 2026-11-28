@@ -440,5 +440,30 @@ allow "r7 CR06: a broken .git under --only-origin: work-tree ERROR, rc 2" 2 re:"
 mkdir -p "$T/lp-work"; ln -s l "$T/lp-work/l"
 allow "r7 N1: a symlink-loop child: rc 2, ERROR line" 2 re:"ERROR $T/lp-work/l has a .git but is not a readable work tree" -- --scan "$T/lp-work" "${A[@]}"
 allow "r7 N1: a --scan DIR that is a symlink loop: rc 2" 2 re:"lp-work/l is not a directory" -- --scan "$T/lp-work/l"
+# ---- round 8 (Cassie): tests that kill M03, M04, M06, M07, M08 and M12. No code change; they pin today's
+# behavior. M11 (a $ on OWNER_NAME) is equivalent to fullmatch after strip, not a row. ----
+# M03/M04: a valid zenith-float URL with trailing junk cannot be parsed (origin_repo turns that into
+# ERROR rc 2). A space after the URL is eaten by the path and would be skipped, and git stores a
+# newline in the url as two values (already ERROR, on the count, for real code and for the mutant).
+# So this calls github_path() in $dc directly: a newline leftover makes fullmatch fail (None);
+# match()/search() accept the prefix and would return jscarr64/zenith-float.
+got=$(python3 -B -c 'import importlib.util, sys
+spec = importlib.util.spec_from_file_location("dc", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print(m.github_path("https://github.com/jscarr64/zenith-float.git\ntrailing"))
+' "$dc")
+[ "$got" = "None" ] && ok "r8 M03/M04: a zenith-float URL with trailing junk cannot be parsed" || { bad "r8 M03/M04: trailing junk (want None, got $got)"; }
+# M06: a remote whose name contains the substring origin, with no origin remote, is skipped as no origin
+# (the companion allowlisted clone keeps the zero-match ERROR from firing)
+zf "$T/m06-work/zf" "$ZF" ahead; git -C "$T/m06-work/zf" remote rename origin original
+allow "r8 M06: a remote named original with no origin is skipped as no-origin" 0 re:"skip $T/m06-work/zf \(" nore:FAIL -- --scan "$T/m06-work" "${A[@]}"
+# M07: host github.com. is not github.com (today: skip)
+zf "$T/m07-work/zf" https://github.com./jscarr64/zenith-float.git ahead
+allow "r8 M07: origin https://github.com./jscarr64/zenith-float.git is skipped" 0 re:"skip $T/m07-work/zf \(" nore:FAIL -- --scan "$T/m07-work" "${A[@]}"
+# M08 / M12: #frag and ?x=1 stay in the path (today: skip). The # case also pins M12 (split on # before parse).
+for u in https://github.com/jscarr64/zenith-float.git#frag https://github.com/jscarr64/zenith-float.git?x=1; do
+  i=$((i+1)); zf "$T/u$i-work/zf" "$u" ahead
+  allow "r8 M08/M12: origin $u is skipped" 0 re:"skip $T/u$i-work/zf \(" nore:FAIL -- --scan "$T/u$i-work" "${A[@]}"
+done
 echo "drift_check_selftest: $([ $fail = 0 ] && echo PASS || echo FAIL) ($pass ok, $fail failed)"
 [ $fail = 0 ]
