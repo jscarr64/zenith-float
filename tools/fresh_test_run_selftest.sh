@@ -81,11 +81,16 @@ while IFS= read -r line; do
   [[ $line == *'tools/fresh_test_run.sh cargo test'* ]] || fail "cargo test step not through fresh_test_run: $line"
 done < <(grep -E '^run [a-z0-9-]+ ".*cargo test' "$g")
 # the prepublish step (scripts/zenith_prepublish.sh) runs cargo test itself: each one goes through the script too
+# cargo test runs in a prepublish script: not comments, step titles or echo messages (the gate-evidence SKIP
+# message names the suite it skips; 498cb616)
+pp_runs() { grep -E '^[^#]*cargo test( |$)' "$1" | grep -v '^ *step ' | grep -vE '^ *echo ' || true; }
+printf '%s\n' '  echo "x: SKIP the cargo test --workspace rerun"' '  cargo test --workspace' > "$t/pp-plant"
+[[ "$(pp_runs "$t/pp-plant")" == '  cargo test --workspace' ]] || fail "pp_runs filter: a direct cargo test run must count, an echo must not"
 pp="$root/scripts/zenith_prepublish.sh"; n=0
 while IFS= read -r line; do
   n=$((n + 1))
   [[ $line == *'tools/fresh_test_run.sh" cargo test'* ]] || fail "prepublish cargo test not through fresh_test_run: $line"
-done < <(grep -E '^[^#]*cargo test( |$)' "$pp" | grep -v '^ *step ')
+done < <(pp_runs "$pp")
 [[ $n -ge 3 ]] || fail "prepublish: expected >= 3 cargo test runs, found $n"
 [[ $bad == 0 ]] && echo "fresh_test_run_selftest: ok"
 exit "$bad"
